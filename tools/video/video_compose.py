@@ -94,6 +94,14 @@ class VideoCompose(BaseTool):
             },
             "input_path": {"type": "string"},
             "output_path": {"type": "string"},
+            "preserve_existing_workspace": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Pass through to HyperFrames to render an existing authored "
+                    "workspace without scaffolding or modifying managed files."
+                ),
+            },
             "edit_decisions": {
                 "type": "object",
                 "description": "Full edit_decisions artifact (required for compose/render)",
@@ -1753,6 +1761,10 @@ class VideoCompose(BaseTool):
             hf_inputs["strict"] = inputs["strict"]
         if "skip_contrast" in inputs:
             hf_inputs["skip_contrast"] = inputs["skip_contrast"]
+        if "preserve_existing_workspace" in inputs:
+            hf_inputs["preserve_existing_workspace"] = inputs[
+                "preserve_existing_workspace"
+            ]
 
         render_result = HyperFramesCompose().execute(hf_inputs)
 

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/news/normalized_news_candidate",
+  "title": "Normalized News Candidate",
+  "description": "Mechanically normalized news record produced by the NewsNow adapter. Deterministic for a given raw input and adapter configuration.",
+  "type": "object",
+  "required": [
+    "candidate_id",
+    "canonical_url",
+    "title",
+    "publisher",
+    "published_at_utc",
+    "content_hash",
+    "title_hash",
+    "normalized_publisher",
+    "raw_provenance"
+  ],
+  "properties": {
+    "candidate_id": {
+      "type": "string",
+      "description": "Stable deterministic identifier for this normalized candidate.",
+      "minLength": 1
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL after canonicalization."
+    },
+    "original_url": {
+      "type": "string",
+      "description": "Original URL before canonicalization."
+    },
+    "title": {
+      "type": "string",
+      "description": "Cleaned headline text."
+    },
+    "publisher": {
+      "type": "string",
+      "description": "Publisher name as supplied."
+    },
+    "normalized_publisher": {
+      "type": "string",
+      "description": "Canonicalized publisher name."
+    },
+    "author": {
+      "type": "string"
+    },
+    "published_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Normalized publication timestamp in UTC."
+    },
+    "description": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "language": {
+      "type": "string"
+    },
+    "image_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "SHA-256 hex digest of the canonical content signature."
+    },
+    "title_hash": {
+      "type": "string",
+      "description": "SHA-256 hex digest of the normalized title."
+    },
+    "raw_provenance": {
+      "type": "object",
+      "description": "Subset of raw item fields kept for traceability.",
+      "required": ["source_id"],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_feed": {
+          "type": "string"
+        },
+        "extra": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "adapter_version": {
+      "type": "string",
+      "description": "Version of the adapter that produced this record."
+    }
+  },
+  "additionalProperties": false
+}

@@ -14,6 +14,7 @@ and what remains Remotion-only.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -193,6 +194,14 @@ class HyperFramesCompose(BaseTool):
                 "description": (
                     "Skip the WCAG contrast audit during validate. Acceptable "
                     "while iterating; forbidden for final delivery."
+                ),
+            },
+            "preserve_existing_workspace": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Render existing authored index.html and hyperframes.json without "
+                    "scaffolding. Verifies both files remain byte-identical."
                 ),
             },
         },
@@ -687,7 +696,7 @@ class HyperFramesCompose(BaseTool):
         )
 
     def _render(self, inputs: dict[str, Any]) -> ToolResult:
-        """Full pipeline: scaffold → lint → validate → render."""
+        """Full pipeline: scaffold or preserve → lint → validate → render."""
         runtime_ok = self._runtime_check()
         if not runtime_ok["runtime_available"]:
             return ToolResult(
@@ -705,19 +714,47 @@ class HyperFramesCompose(BaseTool):
         output_path = Path(
             inputs.get("output_path") or (workspace / "renders" / "final.mp4")
         ).expanduser().resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
+        preserve_workspace = inputs.get("preserve_existing_workspace", False)
         steps: dict[str, Any] = {}
+        integrity_before: dict[str, str] | None = None
 
-        # 1. Scaffold — generate HTML/CSS/assets.
-        scaffold = self._scaffold(inputs)
-        steps["scaffold"] = scaffold.data
-        if not scaffold.success:
-            return ToolResult(
-                success=False,
-                error=f"Scaffold failed: {scaffold.error}",
-                data={"steps": steps},
-            )
+        # 1. Scaffold generated workspaces, or preserve an authored workspace.
+        if preserve_workspace:
+            required_files = {
+                "index.html": workspace / "index.html",
+                "hyperframes.json": workspace / "hyperframes.json",
+            }
+            missing = [
+                str(path) for path in required_files.values() if not path.is_file()
+            ]
+            if missing:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "preserve_existing_workspace requires existing workspace files: "
+                        + ", ".join(missing)
+                    ),
+                    data={"steps": steps},
+                )
+            integrity_before = {
+                name: self._sha256_file(path) for name, path in required_files.items()
+            }
+            steps["scaffold"] = {
+                "skipped": True,
+                "reason": "preserve_existing_workspace",
+            }
+            steps["workspace_integrity"] = {"before": integrity_before}
+        else:
+            scaffold = self._scaffold(inputs)
+            steps["scaffold"] = scaffold.data
+            if not scaffold.success:
+                return ToolResult(
+                    success=False,
+                    error=f"Scaffold failed: {scaffold.error}",
+                    data={"steps": steps},
+                )
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 2. Lint — static contract checks.
         lint = self._lint({"workspace_path": str(workspace)})
@@ -783,6 +820,34 @@ class HyperFramesCompose(BaseTool):
                 data={"steps": steps},
             )
 
+        if integrity_before is not None:
+            integrity_after = {}
+            try:
+                integrity_after = {
+                    "index.html": self._sha256_file(workspace / "index.html"),
+                    "hyperframes.json": self._sha256_file(workspace / "hyperframes.json"),
+                }
+                steps["workspace_integrity"]["after"] = integrity_after
+            except FileNotFoundError as e:
+                missing = str(e).split("[Errno 2] No such file or directory: '")[1].rstrip("'")
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"HyperFrames render deleted preserved workspace file: {missing}. "
+                        "index.html and hyperframes.json must remain present and byte-identical."
+                    ),
+                    data={"steps": steps},
+                )
+            if integrity_after != integrity_before:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "HyperFrames render modified preserved workspace files: "
+                        "index.html and hyperframes.json must remain byte-identical."
+                    ),
+                    data={"steps": steps},
+                )
+
         return ToolResult(
             success=True,
             data={
@@ -797,6 +862,14 @@ class HyperFramesCompose(BaseTool):
             },
             artifacts=[str(output_path)],
         )
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     # ------------------------------------------------------------------
     # Workspace generation helpers

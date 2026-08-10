@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/news/raw_news_item",
+  "title": "Raw News Item",
+  "description": "Loose contract for one incoming NewsNow article as received from a transport. Transport-agnostic; accepts extra publisher-specific fields.",
+  "type": "object",
+  "required": ["id", "url", "title", "published_at"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable identifier supplied by the feed adapter. Must be unique within one ingest run.",
+      "minLength": 1
+    },
+    "url": {
+      "type": "string",
+      "description": "Original article URL before canonicalization.",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "description": "Article headline or feed title.",
+      "minLength": 1
+    },
+    "publisher": {
+      "type": "string",
+      "description": "Publisher or outlet name as supplied by the feed.",
+      "minLength": 1
+    },
+    "author": {
+      "type": "string",
+      "description": "Author name when available."
+    },
+    "published_at": {
+      "type": "string",
+      "description": "Publication timestamp in ISO-8601. Accepts explicit timezone or trailing Z.",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "Summary, deck, or lede when provided."
+    },
+    "body": {
+      "type": "string",
+      "description": "Full article body or best-effort extracted text."
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "Optional precomputed content hash. Adapter recomputes its own authoritative hash."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Topic tags, categories, or keywords."
+    },
+    "language": {
+      "type": "string",
+      "description": "ISO 639-1 language code when known."
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Lead image URL."
+    },
+    "source_feed": {
+      "type": "string",
+      "description": "Identifier for the source feed or pipeline step that emitted this item."
+    },
+    "extra": {
+      "type": "object",
+      "description": "Free-form transport-specific metadata carried through unchanged.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -417,6 +417,135 @@ def test_hyperframes_render_resolves_relative_output_path_once(tmp_path, monkeyp
     assert result.artifacts == [str(expected)]
 
 
+def test_hyperframes_render_preserves_workspace_success(tmp_path, monkeypatch):
+    import subprocess
+    from tools.base_tool import ToolResult
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    index_file = workspace / "index.html"
+    index_file.write_text("<html><body>Authored Page</body></html>", encoding="utf-8")
+    config_file = workspace / "hyperframes.json"
+    config_file.write_text('{"paths": {"blocks": "compositions"}}', encoding="utf-8")
+
+    tool = HyperFramesCompose()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tool, "_runtime_check", lambda: {"runtime_available": True})
+    scaffold_called = False
+
+    def _scaffold_trap(inputs):
+        nonlocal scaffold_called
+        scaffold_called = True
+        return ToolResult(success=True, data={})
+
+    monkeypatch.setattr(tool, "_scaffold", _scaffold_trap)
+    monkeypatch.setattr(tool, "_lint", lambda inputs: ToolResult(success=True, data={}))
+    monkeypatch.setattr(tool, "_validate", lambda inputs: ToolResult(success=True, data={}))
+
+    def run_render(args, *, cwd, timeout, check):
+        output = Path(args[args.index("--output") + 1])
+        rendered_output = output if output.is_absolute() else cwd / output
+        rendered_output.parent.mkdir(parents=True, exist_ok=True)
+        rendered_output.write_bytes(b"rendered")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(tool, "_run_hf", run_render)
+
+    result = tool._render(
+        {
+            "workspace_path": str(workspace),
+            "output_path": "renders/final.mp4",
+            "preserve_existing_workspace": True,
+        }
+    )
+
+    assert result.success, result.error
+    assert scaffold_called is False
+    assert result.data["steps"]["scaffold"]["skipped"] is True
+    assert index_file.read_text(encoding="utf-8") == "<html><body>Authored Page</body></html>"
+
+
+def test_hyperframes_render_preserves_workspace_fails_when_files_missing(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = HyperFramesCompose()
+    monkeypatch.setattr(tool, "_runtime_check", lambda: {"runtime_available": True})
+
+    result = tool._render(
+        {
+            "workspace_path": str(workspace),
+            "preserve_existing_workspace": True,
+        }
+    )
+
+    assert not result.success
+    assert "preserve_existing_workspace requires existing workspace files" in (result.error or "")
+
+
+def test_hyperframes_render_preserves_workspace_fails_on_tampering(tmp_path, monkeypatch):
+    import subprocess
+    from tools.base_tool import ToolResult
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    index_file = workspace / "index.html"
+    index_file.write_text("<html><body>Authored Page</body></html>", encoding="utf-8")
+    config_file = workspace / "hyperframes.json"
+    config_file.write_text('{"paths": {"blocks": "compositions"}}', encoding="utf-8")
+
+    tool = HyperFramesCompose()
+    monkeypatch.setattr(tool, "_runtime_check", lambda: {"runtime_available": True})
+    monkeypatch.setattr(tool, "_lint", lambda inputs: ToolResult(success=True, data={}))
+    monkeypatch.setattr(tool, "_validate", lambda inputs: ToolResult(success=True, data={}))
+
+    def run_render_tamper(args, *, cwd, timeout, check):
+        index_file.write_text("<html><body>Tampered Page</body></html>", encoding="utf-8")
+        output = Path(args[args.index("--output") + 1])
+        rendered_output = output if output.is_absolute() else cwd / output
+        rendered_output.parent.mkdir(parents=True, exist_ok=True)
+        rendered_output.write_bytes(b"rendered")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(tool, "_run_hf", run_render_tamper)
+
+    result = tool._render(
+        {
+            "workspace_path": str(workspace),
+            "output_path": "renders/final.mp4",
+            "preserve_existing_workspace": True,
+        }
+    )
+
+    assert not result.success
+    assert "modified preserved workspace files" in (result.error or "")
+
+
+def test_video_compose_forwards_preserve_existing_workspace(tmp_path, monkeypatch):
+    from tools.base_tool import ToolResult
+
+    captured_inputs = {}
+
+    def mock_hf_execute(self, hf_inputs):
+        captured_inputs.update(hf_inputs)
+        return ToolResult(success=True, data={"operation": "render", "output": str(tmp_path / "o.mp4")})
+
+    monkeypatch.setattr(VideoCompose, "_hyperframes_available", lambda self: True)
+    monkeypatch.setattr("tools.video.hyperframes_compose.HyperFramesCompose.execute", mock_hf_execute)
+    monkeypatch.setattr(VideoCompose, "_run_final_review", lambda self, *a, **k: {"status": "pass", "issues_found": []})
+
+    vc = VideoCompose()
+    result = vc._render_via_hyperframes(
+        inputs={"workspace_path": "/tmp/ws", "preserve_existing_workspace": True},
+        edit_decisions={"version": "1.0", "cuts": []},
+        asset_manifest={"assets": []},
+        resolved_cuts=[],
+        output_path=tmp_path / "out.mp4",
+        profile=None,
+    )
+    assert result.success
+    assert captured_inputs.get("preserve_existing_workspace") is True
+
+
 # ------------------------------------------------------------------
 # video_compose runtime routing
 # ------------------------------------------------------------------
