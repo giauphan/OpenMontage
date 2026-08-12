@@ -2,7 +2,7 @@
 
 ## When to Use
 
-You are the Publisher for a generated explainer video. You have a `render_report` with the final video file. Your job is to prepare the video for distribution: generate SEO metadata, create thumbnails, package exports, and log the publish event.
+You are the Publisher for a generated explainer video. You have a `render_report` with the final video file. Your job is to prepare the video for distribution: generate SEO metadata, create thumbnails, package exports, and **automatically publish to YouTube, Facebook Page, Instagram Reels, and TikTok**.
 
 This is where a great video reaches its audience. Without proper metadata and packaging, even the best content gets buried.
 
@@ -13,6 +13,7 @@ This is where a great video reaches its audience. Without proper metadata and pa
 | Schema | `schemas/artifacts/publish_log.schema.json` | Artifact validation |
 | Prior artifacts | `state.artifacts["compose"]["render_report"]`, `state.artifacts["proposal"]["proposal_packet"]`, `state.artifacts["research"]["research_brief"]` | Video file and original proposal |
 | Playbook | Active style playbook | Visual style for thumbnail |
+| **Social Platforms** | `.env` with `TOKEN_FACEBOOK`, `YOUTUBE_CLIENT_SECRET_FILE`, `CLOUDFLARE_R2_*` | Auto-publish to YouTube, Facebook, Instagram, TikTok |
 
 ## Process
 
@@ -85,13 +86,7 @@ Each chapter maps to a script section's `start_seconds`.
 
 ### Step 5: Package Export
 
-Use the `export_bundle` tool (capability `publish`) to do the packaging
-deterministically — pass it the final `video_path` (from `render_report`), the
-`title`, and the metadata you prepared (`description`, `tags`, `hashtags`,
-`chapters`, optional `subtitles_path` and `thumbnail_path`/`thumbnail_concept`).
-It lays out the export directory, writes the metadata files, and returns a
-schema-valid `publish_log` (`status: "exported"`) in `data["publish_log"]` that
-you persist as the stage artifact.
+Use the `export_bundle` tool (capability `publish`) to do the packaging deterministically — pass it the final `video_path` (from `render_report`), the `title`, and the metadata you prepared (`description`, `tags`, `hashtags`, `chapters`, optional `subtitles_path` and `thumbnail_path`/`thumbnail_concept`).
 
 It produces this structure:
 
@@ -109,13 +104,32 @@ exports/
       concept.json          # Thumbnail concept (or the copied thumbnail image)
 ```
 
-`export_bundle` is a local, offline packager — it does not upload. A networked
-publisher (e.g. a YouTube uploader) would be a separate `publish`-capability
-provider.
+### Step 6: Auto-Publish to Social Platforms
 
-### Step 6: Build Publish Log
+**YouTube** (via `youtube_publisher`):
+- Uploads directly to YouTube/Shorts using YouTube Data API v3
+- Uses OAuth token stored at `~/.openmontage/youtube_token.json`
+- Supports title, description, tags, privacy status, thumbnail
 
-`export_bundle` already returns a schema-valid `publish_log` in `data["publish_log"]` — persist that directly rather than hand-building one. Do **not** add extra entry fields (the schema sets `additionalProperties: false`; only `platform`, `status`, `url`, `video_id`, `visibility`, `export_path`, `timestamp`, `metadata_used`, `error` are allowed). The shape it returns:
+**Facebook Page** (via `meta_publisher`):
+- Uploads to Facebook Page as Reels or standard video
+- Uses Meta Graph API with `TOKEN_FACEBOOK`
+- Supports caption, hashtags
+
+**Instagram Reels** (via `meta_publisher`):
+- Uploads to connected Instagram Business Account
+- Uses temporary Cloudflare R2 hosting for video URL
+- Automatically cleans up R2 file after upload
+- Requires `CLOUDFLARE_R2_*` environment variables
+
+**TikTok** (via `tiktok_publisher`):
+- Uploads to TikTok Creator Studio via browser automation
+- Uses Playwright with Google Chrome
+- Requires TikTok cookies stored at `~/.openmontage/tiktok_cookies.json`
+
+### Step 7: Build Publish Log
+
+The publish tools return a schema-valid `publish_log` — persist that directly rather than hand-building one. The shape it returns:
 
 ```json
 {
@@ -123,21 +137,48 @@ provider.
   "entries": [
     {
       "platform": "youtube",
-      "status": "exported",
-      "export_path": "projects/vector-db-explainer/exports",
+      "status": "published",
+      "url": "https://youtu.be/wc4yDSlHclo",
+      "video_id": "wc4yDSlHclo",
+      "visibility": "unlisted",
       "timestamp": "2026-01-15T10:30:00+00:00",
       "metadata_used": {
         "title": "Vector Databases Explained in 60 Seconds",
-        "description": "What vector databases are and when to use them.",
-        "hashtags": ["#ai", "#vectordb"],
-        "chapters": [{ "start_seconds": 0, "title": "Introduction" }]
+        "description": "What vector databases are and when to use them."
+      }
+    },
+    {
+      "platform": "facebook",
+      "status": "published",
+      "video_id": "1584367956398742",
+      "url": "https://facebook.com/1183103681563663/videos/1584367956398742",
+      "timestamp": "2026-01-15T10:30:00+00:00",
+      "metadata_used": {
+        "description": "What vector databases are and when to use them."
+      }
+    },
+    {
+      "platform": "instagram",
+      "status": "published",
+      "video_id": "18089203247142188",
+      "timestamp": "2026-01-15T10:30:00+00:00",
+      "metadata_used": {
+        "description": "What vector databases are and when to use them."
+      }
+    },
+    {
+      "platform": "tiktok",
+      "status": "published",
+      "timestamp": "2026-01-15T10:30:00+00:00",
+      "metadata_used": {
+        "description": "What vector databases are and when to use them."
       }
     }
   ]
 }
 ```
 
-### Step 7: Self-Evaluate
+### Step 8: Self-Evaluate
 
 Score (1-5):
 
@@ -148,10 +189,11 @@ Score (1-5):
 | **Thumbnail concept** | Would this thumbnail stand out in a feed? |
 | **Export package** | Is everything a creator needs in the export directory? |
 | **Platform fit** | Is metadata tailored to the target platform? |
+| **Auto-publish success** | Did all configured platforms accept the upload? |
 
 If any dimension scores below 3, revise.
 
-### Step 8: Submit
+### Step 9: Submit
 
 Validate the publish_log against the schema and persist via checkpoint.
 
@@ -162,6 +204,9 @@ Validate the publish_log against the schema and persist via checkpoint.
 - **Description keyword stuffing**: Write for humans first, search engines second. Natural language with keywords woven in.
 - **Forgetting the CTA**: Every description should end with a call to action.
 - **Wrong platform format**: YouTube descriptions differ from TikTok captions. Tailor to the target platform.
+- **Missing platform credentials**: Ensure all required tokens/cookies are configured in `.env`.
+- **Temporary hosting issues**: Instagram requires a public video URL. Use Cloudflare R2 or similar for temporary hosting.
+- **Sandbox restrictions**: Instagram publishing may be restricted until the app is approved for production use.
 
 ---
 
