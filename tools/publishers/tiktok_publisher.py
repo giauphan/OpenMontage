@@ -42,7 +42,7 @@ class TiktokPublisher(BaseTool):
     dependencies = [
         "cmd:google-chrome",
         "python:playwright",
-        "python:dnspython",
+        "python:dns",
     ]
     install_instructions = (
         "1. Ensure google-chrome is installed on system.\n"
