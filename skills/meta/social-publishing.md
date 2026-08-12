@@ -37,12 +37,13 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
 - YouTube auto-classifies vertical videos ≤3 minutes as Shorts. There is no API flag for Shorts.
 - Use horizontal 16:9 if the user explicitly wants regular long-form YouTube placement.
 
-## Facebook + Instagram
+## Meta (Facebook Page + Instagram)
 
 - `meta_publisher` gets Page access token from `TOKEN_FACEBOOK`.
-- Facebook Page publish uses Graph API `/videos` and can result in `/reel/<id>` for short vertical formats.
-- Instagram Graph API does **not** accept local file upload. It requires a public `video_url`.
-- `meta_publisher` automatically uploads a temporary copy to Cloudflare R2, uses the R2 public URL for Instagram, then deletes the R2 object in `finally` after success or failure.
+- Facebook Page video upload uses Graph API `/{page_id}/videos`.
+- **Facebook Format**: Pass `final_full_vi.mp4` (120s Full Video) so Facebook Page receives the full video post/reel, matching YouTube long-form content.
+- **Instagram Reels Format**: Pass `final_full_vi.mp4` or `final_full_vi_reels.mp4` via Cloudflare R2 temporary URL.
+- Instagram Graph API requires a public `video_url`. `meta_publisher` uploads a temporary copy to Cloudflare R2, uses the R2 public URL for Instagram, then deletes the R2 object in `finally` after success or failure.
 - Required env vars:
   - `TOKEN_FACEBOOK`
   - `CLOUDFLARE_R2_KEY_ID`

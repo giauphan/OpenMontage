@@ -79,12 +79,19 @@ Note: YouTube auto-classifies vertical ≤3min as Shorts. No param needed.
 # YouTube
 YoutubePublisher().execute({"video_path": "...reels.mp4", "title": "... #Shorts", "privacy_status": "public"})
 
-# Facebook + Instagram (auto R2 hosting → auto-delete after publish)
+# Facebook Page (Full 120s video) + Instagram Reels (60s / Full Reels)
 MetaPublisher().execute({
-    "video_path": "...reels.mp4",
+    "video_path": "...final_full_vi.mp4",  # Full video for FB Page
     "page_id": "<page_id>",
     "caption": "Vietnamese caption + #hashtags",
     "post_to_facebook": True,
+    "post_to_instagram": False,
+})
+MetaPublisher().execute({
+    "video_path": "...reels.mp4",  # Reels video for IG
+    "page_id": "<page_id>",
+    "caption": "Vietnamese caption + #hashtags",
+    "post_to_facebook": False,
     "post_to_instagram": True,  # temp R2 upload, auto-cleanup
 })
 
