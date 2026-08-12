@@ -153,10 +153,12 @@ class YoutubePublisher(BaseTool):
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
-        secret_file_str = os.environ.get(
-            "YOUTUBE_CLIENT_SECRET_FILE",
-            "/home/genro68/OpenMontage/client_secret_584301246057-c2egnopjerhf7t1cqg9om2h2i848a3r8.apps.googleusercontent.com.json",
-        )
+        secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
+        if not secret_file_str:
+            return ToolResult(
+                success=False,
+                error="YOUTUBE_CLIENT_SECRET_FILE environment variable not set.",
+            )
         secret_file = Path(secret_file_str).expanduser()
         if not secret_file.is_file():
             return ToolResult(
