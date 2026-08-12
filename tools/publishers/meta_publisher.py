@@ -149,21 +149,27 @@ class MetaPublisher(BaseTool):
         return resp_data.get("id")
 
     def _upload_to_r2(self, video_path: Path) -> tuple[str, str, Any]:
-        """Upload video to Cloudflare R2 temporarily and return (public_url, object_key, s3_client)."""
+        """Upload video to Cloudflare R2 temporarily and return (presigned_url, object_key, s3_client)."""
         import boto3
 
         key_id = os.environ.get("CLOUDFLARE_R2_KEY_ID")
         secret_key = os.environ.get("CLOUDFLARE_R2_SECRET") or os.environ.get("CLOUDFLARE_R2_SERECT")
-        endpoint = os.environ.get("CLOUDFLARE_R2_ENDPOINT")
-        public_domain = os.environ.get("CLOUDFLARE_R2_ENDPOINT_public", "").rstrip("/")
-        bucket_name = os.environ.get("CLOUDFLARE_R2_BUCKET_NAME", "open-montage")
+        endpoint = os.environ.get("CLOUDFLARE_R2_ENDPOINT", "")
 
-        if not (key_id and secret_key and endpoint and public_domain):
+        # Clean endpoint to get base S3 endpoint without bucket path
+        if "/store-instagram" in endpoint:
+            base_endpoint = endpoint.replace("/store-instagram", "").rstrip("/")
+            bucket_name = "store-instagram"
+        else:
+            base_endpoint = endpoint.rstrip("/")
+            bucket_name = os.environ.get("CLOUDFLARE_R2_BUCKET_NAME", "open-montage")
+
+        if not (key_id and secret_key and base_endpoint):
             raise Exception("Cloudflare R2 environment variables are not fully configured.")
 
         s3 = boto3.client(
             "s3",
-            endpoint_url=endpoint,
+            endpoint_url=base_endpoint,
             aws_access_key_id=key_id,
             aws_secret_access_key=secret_key,
             region_name="auto",
@@ -180,14 +186,20 @@ class MetaPublisher(BaseTool):
             ExtraArgs={"ContentType": "video/mp4"},
         )
 
-        public_url = f"{public_domain}/{object_key}"
-        print(f"R2 Public URL generated: {public_url}")
+        # Generate S3 Presigned URL (valid for 2 hours)
+        public_url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket_name, "Key": object_key},
+            ExpiresIn=7200,
+        )
+        print(f"R2 Presigned URL generated successfully.")
 
         return public_url, object_key, s3
 
     def _delete_from_r2(self, s3_client: Any, object_key: str) -> None:
         """Delete temporary video from Cloudflare R2."""
-        bucket_name = os.environ.get("CLOUDFLARE_R2_BUCKET_NAME", "open-montage")
+        endpoint = os.environ.get("CLOUDFLARE_R2_ENDPOINT", "")
+        bucket_name = "store-instagram" if "/store-instagram" in endpoint else os.environ.get("CLOUDFLARE_R2_BUCKET_NAME", "open-montage")
         try:
             print(f"Cleaning up temporary file from R2: {object_key}...")
             s3_client.delete_object(Bucket=bucket_name, Key=object_key)
@@ -267,11 +279,19 @@ class MetaPublisher(BaseTool):
         r2_key = None
 
         try:
-            # 1. Fetch Page Info & Access Token
-            page_info = self._get_page_info(user_token, page_id)
-            page_token = page_info.get("access_token")
-            if not page_token:
-                return ToolResult(success=False, error="Could not retrieve Page Access Token.")
+            # 1. Fetch Page Info & Access Token (if needed)
+            page_token = user_token
+            ig_account_id = None
+            try:
+                page_info = self._get_page_info(user_token, page_id)
+                page_token = page_info.get("access_token", user_token)
+                ig_account_id = page_info.get("instagram_business_account", {}).get("id")
+            except Exception as e:
+                print(f"Warning: Could not fetch page info: {e}. Will try to proceed with default token if page_id is actually an IG account ID.")
+
+            # If page_id is actually an IG account ID, use it directly
+            if not ig_account_id and not post_to_fb and post_to_ig:
+                ig_account_id = page_id
 
             # 2. Upload to Facebook
             if post_to_fb:
@@ -288,9 +308,6 @@ class MetaPublisher(BaseTool):
 
             # 3. Upload to Instagram
             if post_to_ig:
-                ig_account = page_info.get("instagram_business_account", {})
-                ig_account_id = ig_account.get("id")
-
                 if not ig_account_id:
                     if not publish_entries:
                         return ToolResult(False, error="No Instagram Business Account linked to this Page.")
