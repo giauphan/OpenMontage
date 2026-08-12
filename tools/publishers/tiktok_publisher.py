@@ -42,6 +42,7 @@ class TiktokPublisher(BaseTool):
     dependencies = [
         "cmd:google-chrome",
         "python:playwright",
+        "python:dnspython",
     ]
     install_instructions = (
         "1. Ensure google-chrome is installed on system.\n"
@@ -189,8 +190,14 @@ class TiktokPublisher(BaseTool):
 
         try:
             from playwright.sync_api import sync_playwright
+            import shutil
 
-            chrome_path = "/usr/bin/google-chrome"
+            chrome_path = shutil.which("google-chrome") or shutil.which("chrome")
+            if not chrome_path:
+                return ToolResult(
+                    success=False,
+                    error="Chrome/Chromium not found in PATH. Install google-chrome or set PATH.",
+                )
 
             with sync_playwright() as p:
                 browser = p.chromium.launch(
@@ -245,9 +252,27 @@ class TiktokPublisher(BaseTool):
                 page.keyboard.insert_text(caption)
                 page.wait_for_timeout(2000)
 
-                # Click Post button
-                post_btn = page.locator('button:has-text("Post"), button:has-text("Đăng")').first
-                if post_btn.is_visible():
+                # Click Post button (try multiple locale variants)
+                post_btn_selectors = [
+                    'button:has-text("Post")',
+                    'button:has-text("Đăng")',  # Vietnamese
+                    'button:has-text("Publicar")',  # Spanish
+                    'button:has-text("Publier")',  # French
+                    'button:has-text("Veröffentlichen")',  # German
+                    'button[type="submit"]',  # Fallback to submit button
+                ]
+
+                post_btn = None
+                for selector in post_btn_selectors:
+                    try:
+                        btn = page.locator(selector).first
+                        if btn.is_visible(timeout=2000):
+                            post_btn = btn
+                            break
+                    except Exception:
+                        continue
+
+                if post_btn:
                     post_btn.click()
                     page.wait_for_timeout(10000)
                 else:

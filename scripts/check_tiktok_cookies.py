@@ -9,7 +9,13 @@ if target.is_file():
     print(f"✅ Đã tìm thấy file TikTok Cookie tại: {target}")
     try:
         data = json.loads(target.read_text())
-        print(f"   Trạng thái: File JSON hợp lệ ({len(data)} items)")
+        if isinstance(data, dict) and "cookies" in data:
+            count = len(data["cookies"])
+        elif isinstance(data, list):
+            count = len(data)
+        else:
+            count = 0
+        print(f"   Trạng thái: File JSON hợp lệ ({count} cookies)")
     except Exception as e:
         print(f"   ⚠️ File JSON bị lỗi: {e}")
 else:

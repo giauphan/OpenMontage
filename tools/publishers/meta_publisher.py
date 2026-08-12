@@ -43,6 +43,7 @@ class MetaPublisher(BaseTool):
     dependencies = [
         "env:TOKEN_FACEBOOK",
         "python:requests",
+        "python:boto3",
     ]
     install_instructions = (
         "1. Create an App in Meta for Developers.\n"
@@ -130,16 +131,17 @@ class MetaPublisher(BaseTool):
         import requests
 
         url = f"{self.GRAPH_URL}/{page_id}/videos"
-        files = {
-            "source": (video_path.name, open(video_path, "rb"), "video/mp4"),
-        }
-        data = {
-            "access_token": page_token,
-            "description": caption,
-        }
+        with open(video_path, "rb") as f:
+            files = {
+                "source": (video_path.name, f, "video/mp4"),
+            }
+            data = {
+                "access_token": page_token,
+                "description": caption,
+            }
 
-        response = requests.post(url, data=data, files=files, timeout=300)
-        resp_data = response.json()
+            response = requests.post(url, data=data, files=files, timeout=300)
+            resp_data = response.json()
 
         if "error" in resp_data:
             raise Exception(f"Facebook upload error: {resp_data['error']}")
@@ -151,7 +153,7 @@ class MetaPublisher(BaseTool):
         import boto3
 
         key_id = os.environ.get("CLOUDFLARE_R2_KEY_ID")
-        secret_key = os.environ.get("CLOUDFLARE_R2_SERECT")
+        secret_key = os.environ.get("CLOUDFLARE_R2_SECRET") or os.environ.get("CLOUDFLARE_R2_SERECT")
         endpoint = os.environ.get("CLOUDFLARE_R2_ENDPOINT")
         public_domain = os.environ.get("CLOUDFLARE_R2_ENDPOINT_public", "").rstrip("/")
         bucket_name = os.environ.get("CLOUDFLARE_R2_BUCKET_NAME", "open-montage")
@@ -292,6 +294,7 @@ class MetaPublisher(BaseTool):
                 if not ig_account_id:
                     if not publish_entries:
                         return ToolResult(False, error="No Instagram Business Account linked to this Page.")
+                    print("Warning: No Instagram Business Account linked to Page. Skipping Instagram upload.")
                 else:
                     video_url = inputs.get("video_url")
 
