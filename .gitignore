@@ -100,3 +100,4 @@ venv/
 .claude/task/
 .claude/settings.json
 .codeatlas/
+*.json
