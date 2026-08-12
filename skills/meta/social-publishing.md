@@ -1,5 +1,21 @@
 # Social Publishing — Auto-Publish Videos to Every Platform
 
+## 3-Tier Multi-Format Render & Publishing Matrix
+
+OpenMontage renders 3 video versions per topic to optimize reach on all major social platforms:
+
+1. **Version 1: 16:9 Landscape Full (120s, 1920x1080)**:
+   - Target Platform: **YouTube Long-Form Video** (ensures standard video player placement, avoiding Shorts classification).
+   - Tool: `youtube_publisher`
+
+2. **Version 2: 9:16 Vertical Short (~60s, 1080x1920 / 1080x1350)**:
+   - Target Platforms: **YouTube Shorts**, **Instagram Reels** (short high-pacing hook clips).
+   - Tools: `youtube_publisher` (Shorts auto-classification), `meta_publisher` (Instagram Reels via R2 temp upload)
+
+3. **Version 3: 9:16 Vertical Full (120s, 1080x1920)**:
+   - Target Platforms: **Facebook Reels**, **TikTok** (full-length vertical content).
+   - Tools: `meta_publisher` (Facebook Page Reels), `tiktok_publisher` (TikTok Creator Studio)
+
 ## When to Use
 
 After a video render is complete (`render_report` exists), use this skill to automatically distribute the final video to all configured social platforms: YouTube, Facebook Page, Instagram Reels, and TikTok.

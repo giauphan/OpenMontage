@@ -42,18 +42,14 @@ On `sandbox-video`:
   - 0 runtime errors
   - WCAG AA contrast check pass
 
-### Step 5: Dual Video Rendering & Encoding
+### Step 5: Multi-Format Video Rendering & Encoding
 On `sandbox-video`:
-1. **Main Video (120s, 1080x1920)**:
-   - `npx hyperframes render --quality high --output renders/final_full_vi_raw.mp4`
-   - Encode with FFmpeg:
-     - H.264 High Profile, Level 4.1, `yuv420p`
-     - CRF 19, GOP size 60 (max keyframe gap ≤2s)
-     - Audio AAC-LC 48kHz, `-16 LUFS`
-     - Output: `projects/<project_id>/renders/final_full_vi.mp4`
-2. **Reels/TikTok Video (60s, 1080x1350)**:
-   - Crop main video top/bottom: `crop=1080:1350:0:285` over first 60s.
+1. **Version 1: YouTube Long-Form (16:9 Landscape, 120s, 1920x1080)**:
+   - Output: `projects/<project_id>/renders/final_full_vi_16x9.mp4`
+2. **Version 2: YouTube Shorts & IG Reels (9:16 Vertical Short, 60s, 1080x1920 / 1080x1350)**:
    - Output: `projects/<project_id>/renders/final_full_vi_reels.mp4`
+3. **Version 3: Facebook Reels & TikTok (9:16 Vertical Full, 120s, 1080x1920)**:
+   - Output: `projects/<project_id>/renders/final_full_vi_9x16.mp4`
 
 ### Step 6: Artifacts & Checkpoint Update
 - Update `artifacts/render_report.json` with Vietnamese metadata & SHA-256 hashes.
@@ -63,40 +59,51 @@ On `sandbox-video`:
 ### Step 7: Auto-Publish to Social Platforms
 After checkpoint, auto-publish to all configured platforms:
 
-**120s Full Video (vertical 9:16, ~2 min) → YouTube as Shorts**:
+**Version 1 (16:9 Full 120s) → YouTube Long-Form**:
 ```python
 YoutubePublisher().execute({
-    "video_path": "projects/<id>/renders/final_full_vi.mp4",
-    "title": "Cuộc Chiến Chống AI Slop - ...",  # Vietnamese
-    "description": "Vietnamese description...",    # Vietnamese
-    "privacy_status": "unlisted",
+    "video_path": "projects/<id>/renders/final_full_vi_16x9.mp4",
+    "title": "Cuộc Chiến Chống AI Slop 2026",
+    "description": "Vietnamese description...",
+    "privacy_status": "public",
 })
 ```
-Note: YouTube auto-classifies vertical ≤3min as Shorts. No param needed.
 
-**60s Reels Video (vertical 4:5/9:16, 60s) → YouTube Shorts + Facebook + Instagram + TikTok**:
+**Version 2 (9:16 Short 60s) → YouTube Shorts + Instagram Reels**:
 ```python
-# YouTube
-YoutubePublisher().execute({"video_path": "...reels.mp4", "title": "... #Shorts", "privacy_status": "public"})
+# YouTube Shorts (auto-classified)
+YoutubePublisher().execute({
+    "video_path": "projects/<id>/renders/final_full_vi_reels.mp4",
+    "title": "Cuộc Chiến Chống AI Slop 2026 #Shorts",
+    "privacy_status": "public",
+})
 
-# Facebook Page (Full 120s video) + Instagram Reels (60s / Full Reels)
+# Instagram Reels (auto R2 hosting → auto-delete)
 MetaPublisher().execute({
-    "video_path": "...final_full_vi.mp4",  # Full video for FB Page
+    "video_path": "projects/<id>/renders/final_full_vi_reels.mp4",
+    "page_id": "<page_id>",
+    "caption": "Vietnamese caption + #hashtags",
+    "post_to_facebook": False,
+    "post_to_instagram": True,
+})
+```
+
+**Version 3 (9:16 Full 120s) → Facebook Reels + TikTok**:
+```python
+# Facebook Page Reels (Full 120s 9:16)
+MetaPublisher().execute({
+    "video_path": "projects/<id>/renders/final_full_vi_9x16.mp4",
     "page_id": "<page_id>",
     "caption": "Vietnamese caption + #hashtags",
     "post_to_facebook": True,
     "post_to_instagram": False,
 })
-MetaPublisher().execute({
-    "video_path": "...reels.mp4",  # Reels video for IG
-    "page_id": "<page_id>",
-    "caption": "Vietnamese caption + #hashtags",
-    "post_to_facebook": False,
-    "post_to_instagram": True,  # temp R2 upload, auto-cleanup
-})
 
-# TikTok (if cookies available)
-TiktokPublisher().execute({"video_path": "...reels.mp4", "caption": "Vietnamese + #hashtags"})
+# TikTok (Full 120s 9:16)
+TiktokPublisher().execute({
+    "video_path": "projects/<id>/renders/final_full_vi_9x16.mp4",
+    "caption": "Vietnamese caption + #hashtags",
+})
 ```
 
 **Critical**: All titles/descriptions/captions MUST be Vietnamese (matching the video language). English metadata on a Vietnamese video will harm reach.
