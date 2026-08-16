@@ -1,0 +1,24 @@
+{
+  "project_id": "robotics-dark-factories-2026",
+  "provider": "google_cloud_tts",
+  "preferred_voice": "vi-VN-Neural2-A",
+  "fallback_voice": "vi-VN-Standard-C",
+  "language_code": "vi-VN",
+  "speaking_rate": 0.93,
+  "pitch": 0.0,
+  "volume_gain_db": 0.0,
+  "audio_encoding": "MP3",
+  "sample_rate_hertz": 24000,
+  "elevenlabs_settings": {
+    "model_id": "eleven_multilingual_v2",
+    "stability": 0.45,
+    "similarity_boost": 0.80,
+    "style": 0.15,
+    "use_speaker_boost": true
+  },
+  "chunk_settings": {
+    "min_chunk_duration_sec": 5.0,
+    "max_chunk_duration_sec": 18.0,
+    "crossfade_ms": 30
+  }
+}

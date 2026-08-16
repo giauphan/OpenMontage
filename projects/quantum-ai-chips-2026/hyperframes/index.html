@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quantum AI Chips 2026 - HyperFrames</title>
+  <script src="assets/gsap.min.js"></script>
+  <style>
+    @import url('assets/Inter.css');
+    @import url('assets/JetBrainsMono.css');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* Root composition wrapper */
+    #root-composition {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      background: #020617;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Cosmic background for quantum theme */
+    #root-composition::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 20% 80%, rgba(100, 200, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(200, 100, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(50, 150, 255, 0.05) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Quantum particle effect */
+    .quantum-particle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: white;
+      border-radius: 50%;
+      opacity: 0.6;
+      box-shadow: 0 0 10px white;
+      pointer-events: none;
+    }
+
+    /* Scene containers */
+    .scene {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .scene.active { display: flex; }
+
+    /* Scene 1: Hero Title - Text Card */
+    #scene-1 {
+      flex-direction: column;
+      display: none;
+    }
+    #scene-1 .title {
+      font-size: 84px;
+      font-weight: 800;
+      color: #ECFDF5;
+      text-align: center;
+      line-height: 1.1;
+      letter-spacing: -2px;
+            max-width: 90%;
+    }
+    #scene-1 .subtitle {
+      font-size: 32px;
+      color: #A7F3D0;
+      text-align: center;
+      margin-top: 20px;
+            font-weight: 300;
+    }
+    #scene-1 .quantum-glow {
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(100, 200, 255, 0.2) 0%, transparent 70%);
+      border-radius: 50%;
+            pointer-events: none;
+    }
+
+    /* Scene 2: Use Case Grid */
+    #scene-2 {
+      display: none;
+      background: rgba(0, 0, 0, 0.3);
+    }
+    #scene-2 .grid-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 20px;
+      width: 85%;
+      height: 75%;
+          }
+    #scene-2 .grid-card {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+    }
+    #scene-2 .card-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      background: rgba(100, 200, 255, 0.15);
+      border: 1px solid rgba(100, 200, 255, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 15px;
+      color: #38BDF8;
+    }
+    #scene-2 .card-icon svg {
+      width: 36px;
+      height: 36px;
+    }
+    #scene-2 .card-title {
+      font-size: 20px;
+      color: #ECFDF5;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #scene-2 .card-desc {
+      font-size: 14px;
+      color: #94A3B8;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* Scene 3: Problem Space */
+    #scene-3 {
+      display: none;
+      flex-direction: column;
+    }
+    #scene-3 .tree-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 30px;
+      width: 80%;
+          }
+    #scene-3 .tree-level {
+      display: flex;
+      gap: 40px;
+      align-items: center;
+    }
+    #scene-3 .actor-box {
+      width: 120px;
+      height: 80px;
+      background: rgba(100, 200, 255, 0.1);
+      border: 1px solid rgba(100, 200, 255, 0.4);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #38BDF8;
+    }
+    #scene-3 .actor-box svg {
+      width: 40px;
+      height: 40px;
+    }
+    #scene-3 .connection-line {
+      height: 40px;
+      width: 2px;
+      background: linear-gradient(to bottom, rgba(100, 200, 255, 0.6), rgba(200, 100, 255, 0.6));
+    }
+    #scene-3 .decision-label {
+      font-size: 18px;
+      color: #ECFDF5;
+      font-weight: 500;
+    }
+
+    /* Scene 4: Combination Power */
+    #scene-4 {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      padding: 60px 40px;
+    }
+    #scene-4 .venn-container {
+      position: relative;
+      width: 600px;
+      height: 450px;
+          }
+    #scene-4 .venn-circle {
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      opacity: 0.8;
+      border: 3px solid rgba(255,255,255,0.2);
+    }
+    #scene-4 .venn-circle.quantum {
+      background: radial-gradient(circle, rgba(100, 200, 255, 0.4) 0%, transparent 70%);
+      left: 0;
+    }
+    #scene-4 .venn-circle.ai {
+      background: radial-gradient(circle, rgba(200, 100, 255, 0.4) 0%, transparent 70%);
+      right: 0;
+    }
+    #scene-4 .venn-overlap {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 48px;
+      color: white;
+      font-weight: 700;
+      text-align: center;
+      text-shadow: 0 0 8px #000;
+    }
+    #scene-4 .speed-meter {
+      width: 250px;
+      height: 250px;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, #06B6D4 0%, #ECFDF5 0%, transparent 0%);
+      border: 6px solid rgba(100, 200, 255, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+          }
+    #scene-4 .speed-value {
+      font-size: 64px;
+      color: #06B6D4;
+      font-weight: 700;
+    }
+
+    /* Scene 5: Limitations */
+    #scene-5 {
+      display: none;
+      flex-direction: column;
+    }
+    #scene-5 .warnings-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      width: 85%;
+          }
+    #scene-5 .warning-card {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    #scene-5 .warning-icon {
+      width: 48px;
+      height: 48px;
+      color: #EF4444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    #scene-5 .warning-icon svg {
+      width: 40px;
+      height: 40px;
+    }
+    #scene-5 .warning-text {
+      font-size: 18px;
+      color: #FCA5A5;
+      flex: 1;
+    }
+
+    /* Scene 6: 3 Challenges */
+    #scene-6 {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+    }
+    #scene-6 .warnings-container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      width: 85%;
+    }
+    #scene-6 .warning-card {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    #scene-6 .warning-icon {
+      width: 48px;
+      height: 48px;
+      color: #EF4444;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    #scene-6 .warning-icon svg {
+      width: 40px;
+      height: 40px;
+    }
+    #scene-6 .warning-text {
+      font-size: 18px;
+      color: #FCA5A5;
+      flex: 1;
+    }
+    #scene-6 .vs-text {
+      font-size: 36px;
+      color: #ECFDF5;
+      font-weight: 700;
+          }
+    #scene-6 .flowchart {
+      background: rgba(30, 41, 59, 0.7);
+      border-radius: 15px;
+      padding: 25px;
+          }
+    #scene-6 .flow-step {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+    }
+    #scene-6 .flow-step:last-child {
+      border-bottom: none;
+    }
+    #scene-6 .flow-arrow {
+      color: #06B6D4;
+      font-size: 20px;
+    }
+    #scene-6 .flow-text {
+      font-size: 16px;
+      color: #ECFDF5;
+      flex: 1;
+    }
+
+    /* Scene 7: Future Signs */
+    #scene-7 {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 60px;
+      padding: 120px 60px;
+    }
+    #scene-7 .signs-container {
+      display: flex;
+      justify-content: center;
+      gap: 80px;
+    }
+    #scene-7 .sign {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    #scene-7 .sign-icon {
+      width: 120px;
+      height: 120px;
+      color: #A7F3D0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto;
+      background: rgba(167, 243, 208, 0.1);
+      border: 2px solid rgba(167, 243, 208, 0.4);
+      border-radius: 50%;
+    }
+    #scene-7 .sign-icon svg {
+      width: 60px;
+      height: 60px;
+    }
+    #scene-7 .sign-label {
+      font-size: 24px;
+      color: #ECFDF5;
+      font-weight: 600;
+      text-align: center;
+    }
+    #scene-7 .converge-center {
+      width: 100px;
+      height: 100px;
+      color: #A7F3D0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #scene-7 .converge-center svg {
+      width: 80px;
+      height: 80px;
+    }
+    #scene-7 .final-text {
+      font-size: 52px;
+      color: #ECFDF5;
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+
+    /* Audio elements - HyperFrames managed */
+    audio {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- Root composition wrapper with required HyperFrames attributes -->
+  <div id="root-composition"
+       data-composition-id="quantum-ai-chips-2026"
+       data-start="0"
+       data-width="1080"
+       data-height="1920"
+       data-duration="120">
+
+    <!-- Quantum particles -->
+    <div class="quantum-particle" style="top: 10%; left: 15%;"></div>
+    <div class="quantum-particle" style="top: 25%; left: 80%;"></div>
+    <div class="quantum-particle" style="top: 60%; left: 10%;"></div>
+    <div class="quantum-particle" style="top: 85%; left: 75%;"></div>
+    <div class="quantum-particle" style="top: 40%; left: 90%;"></div>
+
+    <!-- Audio elements with data attributes for HyperFrames -->
+    <!-- BGM removed to prevent Meta copyright auto-mute; voice-only mix -->
+    <!-- <audio id="bg-music" src="assets/bg_music_1.mp3" data-start="0" data-duration="120" data-volume="0.3"></audio> -->
+    <audio id="narration" src="assets/narration.mp3" data-start="0" data-duration="120"></audio>
+
+    <!-- Scene 1: Hero Title + Hook (0-14.28s) -->
+    <div id="scene-1" class="scene" data-start="0" data-duration="14.28" data-composition-id="scene-1">
+      <div class="quantum-glow"></div>
+      <div class="title">QUANTUM AI CHIPS</div>
+      <div class="subtitle">Cuộc Cách Mạng Trong Tính Toán</div>
+      <div class="hook-card">
+        <div class="hook-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM11 19.93C7.05 19.44 4 16.08 4 12C4 11.38 4.08 10.79 4.21 10.22L9 15V16C9 17.1 9.9 18 11 18V19.93ZM17.9 17.39C17.64 16.58 16.9 16 16 16H15V13C15 12.45 14.55 12 14 12H8V10H10C10.55 10 11 9.55 11 9V7H13C14.1 7 15 6.1 15 5V4.59C17.93 5.78 20 8.65 20 12C20 14.08 19.2 15.97 17.9 17.39Z" fill="currentColor"/></svg></div>
+        <div class="hook-text">100×</div>
+      </div>
+    </div>
+
+    <!-- Scene 2: Use Case Grid (14.28-28.57s) -->
+    <div id="scene-2" class="scene" data-start="14.28" data-duration="14.29" data-composition-id="scene-2">
+      <div class="grid-container">
+        <div class="grid-card">
+          <div class="card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M19 21H5C4.44772 21 4 20.5523 4 20V12H6V20H18V12H20V20C20 20.5523 19.5523 21 19 21ZM16 10V7C16 6.44772 15.5523 6 15 6H9C8.44772 6 8 6.44772 8 7V10H16ZM20 9H18V7C18 5.34315 16.6569 4 15 4H9C7.34315 4 6 5.34315 6 7V9H4C3.44772 9 3 9.44772 3 10V12C3 12.5523 3.44772 13 4 13H20C20.5523 13 21 12.5523 21 12V10C21 9.44772 20.5523 9 20 9Z" fill="currentColor"/></svg></div>
+          <div class="card-title">Doanh Nghiệp</div>
+          <div class="card-desc">Tối ưu hóa quy trình sản xuất</div>
+        </div>
+        <div class="grid-card">
+          <div class="card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L3 8V10H21V8L12 2ZM5 11H9V20H5V11ZM10 11H14V20H10V11ZM15 11H19V20H15V11ZM3 21H21V23H3V21Z" fill="currentColor"/></svg></div>
+          <div class="card-title">Ngân Hàng</div>
+          <div class="card-desc">Phát hiện gian lận theo thời gian thực</div>
+        </div>
+        <div class="grid-card">
+          <div class="card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 21H20C20.5523 21 21 20.5523 21 20V12H17V16H13V20H11V16H7V12H3V20C3 20.5523 3.44772 21 4 21ZM6 4H18C18.5523 4 19 4.44772 19 5V10H5V5C5 4.44772 5.44772 4 6 4ZM10 6H8V8H6V10H8V12H10V10H12V8H10V6Z" fill="currentColor"/></svg></div>
+          <div class="card-title">Y Tế</div>
+          <div class="card-desc">Chẩn đoán hình ảnh y khoa</div>
+        </div>
+        <div class="grid-card">
+          <div class="card-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M19.7123 6.16154C19.484 5.29407 18.6851 4.68408 17.7909 4.68408H16.6419L16.4537 3.70662C16.2678 2.77476 15.4545 2.09399 14.5089 2.09399H9.49121C8.54562 2.09399 7.73233 2.77476 7.54642 3.70662L7.35819 4.68408H6.20923C5.31506 4.68408 4.51612 5.29407 4.2878 6.16154L3.3797 9.46928C3.14322 10.3749 2.99498 11.3097 3.00005 12.2436V16.6842C3.00005 17.7888 3.89543 18.6842 5.00005 18.6842H5.68426C5.49532 19.8668 4.47001 20.6842 3.52632 20.6842H2.36842C1.5975 20.6842 1 21.2817 1 22.0526C1 22.8235 1.5975 23.4211 2.36842 23.4211H6.47368C7.2446 23.4211 7.84211 22.8235 7.84211 22.0526C7.84211 21.2817 7.2446 20.6842 6.47368 20.6842H4.89474C4.63047 20.6842 4.52632 20.5801 4.52632 20.4211V18.9474H21.3684V20.4211C21.3684 20.6853 21.2643 20.7895 21 20.7895H18.6316C17.8606 20.7895 17.2632 21.3869 17.2632 22.1579C17.2632 22.9288 17.8606 23.5263 18.6316 23.5263H20.5263C21.2972 23.5263 21.8947 22.9288 21.8947 22.1579V21.2895C22.1307 21.2191 22.3684 21.1063 22.5841 20.9507C22.6472 20.9031 22.7056 20.8506 22.7581 20.7941C23.3269 20.1921 23.6842 19.3944 23.6842 18.5263V12.4211C23.6842 12.2163 23.6612 12.0141 23.6174 11.8175L22.6091 7.59569C22.5404 7.34446 22.5101 7.07409 22.5311 6.79714L19.7123 6.16154ZM7.52632 10.0526C7.52632 9.8813 7.6662 9.73684 7.84211 9.73684H9.52632C9.69763 9.73684 9.84211 9.8813 9.84211 10.0526V12.4737C9.84211 12.645 9.69763 12.7895 9.52632 12.7895H7.84211C7.6662 12.7895 7.52632 12.645 7.52632 12.4737V10.0526ZM13.8421 10.0526C13.8421 9.8813 13.982 9.73684 14.1579 9.73684H15.8421C16.0134 9.73684 16.1579 9.8813 16.1579 10.0526V12.4737C16.1579 12.645 16.0134 12.7895 15.8421 12.7895H14.1579C13.982 12.7895 13.8421 12.645 13.8421 12.4737V10.0526ZM5.84211 6.68408H18.1579C18.3338 6.68408 18.4737 6.82396 18.4737 6.99987L18.8947 8.78947H5.10526L5.52632 6.99987C5.52632 6.82396 5.6662 6.68408 5.84211 6.68408Z" fill="currentColor" transform="scale(0.9)"/></svg></div>
+          <div class="card-title">Ô Tô</div>
+          <div class="card-desc">Xe tự lái và quản lý đội xe</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 3: Problem Space (28.57-42.86s) -->
+    <div id="scene-3" class="scene" data-start="28.57" data-duration="14.29" data-composition-id="scene-3">
+      <div class="tree-container">
+        <div class="tree-level">
+          <div class="actor-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4C16 2.89543 15.1046 2 14 2H10C8.89543 2 8 2.89543 8 4V14C8 15.1046 8.89543 16 10 16H14C15.1046 16 16 15.1046 16 14V4ZM4 14C4 12.8954 4.89543 12 6 12H7V14H6C5.44772 14 5 14.5523 5 15.1667V18H4V14ZM17 12C17.5523 12 18 12.4477 18 13V18H19V15.1667C19 14.5523 18.5523 14 18 14H17V12Z" fill="currentColor"/></svg></div>
+        </div>
+        <div class="connection-line"></div>
+        <div class="decision-label">QUYẾT ĐỊNH</div>
+        <div class="tree-level">
+          <div class="actor-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM12 6C9.79 6 8 7.79 8 10C8 12.21 9.79 14 12 14C14.21 14 16 12.21 16 10C16 7.79 14.21 6 12 6ZM12 12C10.9 12 10 11.1 10 10C10 8.9 10.9 8 12 8C13.1 8 14 8.9 14 10C14 11.1 13.1 12 12 12Z" fill="currentColor"/></svg></div>
+          <div class="actor-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C11.4477 2 11 2.44772 11 3V5C11 5.55228 11.4477 6 12 6C12.5523 6 13 5.55228 13 5V3C13 2.44772 12.5523 2 12 2ZM12 18C11.4477 18 11 18.4477 11 19C11 19.5523 11.4477 20 12 20C12.5523 20 13 19.5523 13 19C13 18.4477 12.5523 18 12 18ZM18 10C17.4477 10 17 10.4477 17 11C17 11.5523 17.4477 12 18 12C18.5523 12 19 11.5523 19 11C19 10.4477 18.5523 10 18 10ZM6 10C5.44772 10 5 10.4477 5 11C5 11.5523 5.44772 12 6 12C6.55228 12 7 11.5523 7 11C7 10.4477 6.55228 10 6 10ZM19.7071 4.29289C20.0976 4.68342 20.0976 5.31658 19.7071 5.70711L16.4142 9H19C19.5523 9 20 9.44772 20 10C20 10.5523 19.5523 11 19 11H15C14.4477 11 14 11.4477 14 12V15C14 15.5523 13.5523 16 13 16C12.4477 16 12 15.5523 12 15V12H11C10.4477 12 10 11.5523 10 11H6C5.44772 11 5 10.5523 5 10C5 9.44772 5.44772 9 6 9H9L5.70711 5.70711C5.31658 5.31658 5.31658 4.68342 5.70711 4.29289C6.09763 3.90237 6.73079 3.90237 7.12132 4.29289L10.5 7.67157V3C10.5 2.72386 10.7239 2.5 11 2.5C11.2761 2.5 11.5 2.72386 11.5 3V7.67157L14.8787 4.29289C15.2692 3.90237 15.9024 3.90237 16.2929 4.29289C16.6834 4.68342 16.6834 5.31658 16.2929 5.70711L13.5858 8.41421H11V13H13C13.5523 13 14 13.4477 14 14C14 14.5523 13.5523 15 13 15H11V17C11 17.5523 10.5523 18 10 18C9.44772 18 9 17.5523 9 17V15H7C6.44772 15 6 14.5523 6 14C6 13.4477 6.44772 13 7 13H9V11H7C6.44772 11 6 10.5523 6 10C6 9.44772 6.44772 9 7 9H11V7.67157L8.5 5.17157C8.11929 4.79086 8.11929 4.1577 8.5 3.77699C8.88071 3.39628 9.51387 3.39628 9.89458 3.77699L12 5.88242L14.1054 3.77699C14.4861 3.39628 15.1193 3.39628 15.4999 3.77699C15.8807 4.1577 15.8807 4.79086 15.5 5.17157L13 7.67157V11H15C15.5523 11 16 11.4477 16 12C16 12.5523 15.5523 13 15 13H13V11H15.5858L18.2929 8.29289C18.6834 7.90237 18.6834 7.26921 18.2929 6.87868C17.9024 6.48816 17.2692 6.48816 16.8787 6.87868L13.5 10.2574V13H15C15.5523 13 16 13.4477 16 14C16 14.5523 15.5523 15 15 15H13V13H15.5858L18.2929 10.2929C18.6834 9.90237 18.6834 9.26921 18.2929 8.87868C17.9024 8.48816 17.2692 8.48816 16.8787 8.87868L14.5 11.2574V19C14.5 19.5523 14.0523 20 13.5 20H10.5C9.94772 20 9.5 19.5523 9.5 19V11.2574L7.12132 8.87868C6.73079 8.48816 6.09763 8.48816 5.70711 8.87868C5.31658 9.26921 5.31658 9.90237 5.70711 10.2929L8.41421 13H6V15C6 15.5523 5.55228 16 5 16C4.44772 16 4 15.5523 4 15V11C4 10.4477 4.44772 10 5 10H8.41421L5.70711 7.29289C5.31658 6.90237 5.31658 6.26921 5.70711 5.87868C6.09763 5.48816 6.73079 5.48816 7.12132 5.87868L9.5 8.25736V3C9.5 2.72386 9.72386 2.5 10 2.5C10.2761 2.5 10.5 2.72386 10.5 3V8.25736L12.8787 5.87868C13.2692 5.48816 13.9024 5.48816 14.2929 5.87868C14.6834 6.26921 14.6834 6.90237 14.2929 7.29289L11.5858 10H13V14H11C10.4477 14 10 14.5523 10 15C10 15.5523 10.4477 16 11 16H13V14H11.5858L14.2929 11.2929C14.6834 10.9024 14.6834 10.2692 14.2929 9.87868C13.9024 9.48816 13.2692 9.48816 12.8787 9.87868L10.5 12.2574V17C10.5 17.5523 10.0523 18 9.5 18H6.5C5.94772 18 5.5 17.5523 5.5 17V12.2574L3.12132 9.87868C2.73079 9.48816 2.09763 9.48816 1.70711 9.87868C1.31658 10.2692 1.31658 10.9024 1.70711 11.2929L4.41421 14H2C1.44772 14 1 14.5523 1 15C1 15.5523 1.44772 16 2 16H4.41421L1.70711 18.7071C1.31658 19.0976 1.31658 19.7308 1.70711 20.1213C2.09763 20.512 2.73079 20.512 3.12132 20.1213L5.5 17.7426V19C5.5 19.5523 5.94772 20 6.5 20H9.5C10.0523 20 10.5 19.5523 10.5 19V17.7426L7.87868 15.1213C7.48816 14.7308 7.48816 14.0976 7.87868 13.7071C8.26921 13.3166 8.90237 13.3166 9.29289 13.7071L11.5858 15.9999H9V11H11.5858L8.87868 8.29289C8.48816 7.90237 8.48816 7.26921 8.87868 6.87868C9.26921 6.48816 9.90237 6.48816 10.2929 6.87868L12.5 9.08579L14.7071 6.87868C15.0976 6.48816 15.7308 6.48816 16.1213 6.87868C16.512 7.26921 16.512 7.90237 16.1213 8.29289L13.4142 11H15V13H13.4142L16.1213 15.7071C16.512 16.0976 16.512 16.7308 16.1213 17.1213C15.7308 17.512 15.0976 17.512 14.7071 17.1213L12.5 14.9142L10.2929 17.1213C9.90237 17.512 9.26921 17.512 8.87868 17.1213C8.48816 16.7308 8.48816 16.0976 8.87868 15.7071L11.5858 12.9999H13V17H11.5858L14.2929 19.7071C14.6834 20.0976 14.6834 20.7308 14.2929 21.1213C13.9024 21.512 13.2692 21.512 12.8787 21.1213L10.5 18.7426V21C10.5 21.2761 10.7239 21.5 11 21.5C11.2761 21.5 11.5 21.2761 11.5 21V18.7426L13.8787 16.364C14.2692 15.9735 14.2692 15.3403 13.8787 14.9497C13.4882 14.5592 12.855 14.5592 12.4645 14.9497L10.5 16.9142V11H12.4645L13.855 12.4047C14.2455 12.7952 14.2455 13.4284 13.855 13.8189C13.4645 14.2094 12.8313 14.2094 12.4408 13.8189L10.5 11.8743V7H12.4408L13.8313 8.40974C14.2218 8.79027 14.2218 9.42343 13.8313 9.81396C13.4408 10.2045 12.8076 10.2045 12.4171 9.81396L10.5 7.90082V3H12.4171L13.8076 4.39135C14.1981 4.78188 14.1981 5.41504 13.8076 5.80557C13.4171 6.1961 12.7839 6.1961 12.3934 5.80557L10.5 4.00001V6H12.3934L13.7839 7.39054C14.1744 7.78107 14.1744 8.41423 13.7839 8.80476C13.3934 9.19529 12.7602 9.19529 12.3697 8.80476L10.5 6.93398" fill="currentColor"/></svg></div>
+          <div class="actor-box"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 3L10.5 10H13.5L11 17.5L16.5 12H13.5L13 3Z" fill="currentColor"/></svg></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 4: Combination Power (42.86-57.14s) -->
+    <div id="scene-4" class="scene" data-start="42.86" data-duration="14.28" data-composition-id="scene-4">
+      <div class="venn-container">
+        <div class="venn-circle quantum"></div>
+        <div class="venn-circle ai"></div>
+        <div class="venn-overlap">QUANTUM + AI</div>
+      </div>
+      <div class="speed-meter">
+        <div class="speed-value">100x</div>
+      </div>
+    </div>
+
+    <!-- Scene 5: Limitations (57.14-71.43s) -->
+    <div id="scene-5" class="scene" data-start="57.14" data-duration="14.29" data-composition-id="scene-5">
+      <div class="warnings-container">
+        <div class="warning-card">
+          <div class="warning-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L1 21H23L12 2ZM12 6L19.53 19H4.47L12 6ZM11 10V14H13V10H11ZM11 16V18H13V16H11Z" fill="currentColor"/></svg></div>
+          <div class="warning-text">Nhiệt độ cực thấp cần thiết bị chuyên dụng</div>
+        </div>
+        <div class="warning-card">
+          <div class="warning-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L1 21H23L12 2ZM12 6L19.53 19H4.47L12 6ZM11 10V14H13V10H11ZM11 16V18H13V16H11Z" fill="currentColor"/></svg></div>
+          <div class="warning-text">Lỗi lượng tử có thể xảy ra ngẫu nhiên</div>
+        </div>
+        <div class="warning-card">
+          <div class="warning-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L1 21H23L12 2ZM12 6L19.53 19H4.47L12 6ZM11 10V14H13V10H11ZM11 16V18H13V16H11Z" fill="currentColor"/></svg></div>
+          <div class="warning-text">Khó mở rộng quy mô sản xuất</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 6: 3 Challenges (71.43-85.71s) -->
+    <div id="scene-6" class="scene" data-start="71.43" data-duration="14.28" data-composition-id="scene-6">
+      <div class="warnings-container">
+        <div class="warning-card">
+          <div class="warning-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L1 21H23L12 2ZM12 6L19.53 19H4.47L12 6ZM11 10V14H13V10H11ZM11 16V18H13V16H11Z" fill="currentColor"/></svg></div>
+          <div class="warning-text">1. Phần cứng nhạy cảm với nhiễu</div>
+        </div>
+        <div class="warning-card">
+          <div class="warning-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L1 21H23L12 2ZM12 6L19.53 19H4.47L12 6ZM11 10V14H13V10H11ZM11 16V18H13V16H11Z" fill="currentColor"/></svg></div>
+          <div class="warning-text">2. Thuật toán hữu ích còn ít</div>
+        </div>
+        <div class="warning-card">
+          <div class="warning-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L1 21H23L12 2ZM12 6L19.53 19H4.47L12 6ZM11 10V14H13V10H11ZM11 16V18H13V16H11Z" fill="currentColor"/></svg></div>
+          <div class="warning-text">3. Dữ liệu cần độ sạch cao</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 7: Future Signs (85.71-120s) -->
+    <div id="scene-7" class="scene" data-start="85.71" data-duration="34.29" data-composition-id="scene-7">
+      <div class="signs-container">
+        <div class="sign">
+          <div class="sign-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM15 10L13 12H11L9 10C7.9 10 7 10.9 7 12C7 13.1 7.9 14 9 14H15C16.1 14 17 13.1 17 12C17 10.9 16.1 10 15 10Z" fill="currentColor"/></svg></div>
+          <div class="sign-label">Bài toán nhỏ</div>
+        </div>
+        <div class="sign">
+          <div class="sign-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 21C9 21.55 9.45 22 10 22H14C14.55 22 15 21.55 15 21V20H9V21ZM12 2C8.14 2 5 5.14 5 9C5 11.38 6.19 13.47 8 14.74V17C8 17.55 8.45 18 9 18H15C15.55 18 16 17.55 16 17V14.74C17.81 13.47 19 11.38 19 9C19 5.14 15.86 2 12 2ZM14 13.7L13 14.4V16H11V14.4L10 13.7C8.97 12.96 8.5 11.63 8.5 9.9C8.5 7.03 10.04 5 12 5C13.96 5 15.5 7.03 15.5 9.9C15.5 11.63 15.03 12.96 14 13.7Z" fill="currentColor"/></svg></div>
+          <div class="sign-label">Đo kết quả</div>
+        </div>
+        <div class="sign">
+          <div class="sign-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM11 19.93C7.05 19.44 4 16.08 4 12C4 11.38 4.08 10.79 4.21 10.22L9 15V16C9 17.1 9.9 18 11 18V19.93ZM17.9 17.39C17.64 16.58 16.9 16 16 16H15V13C15 12.45 14.55 12 14 12H8V10H10C10.55 10 11 9.55 11 9V7H13C14.1 7 15 6.1 15 5V4.59C17.93 5.78 20 8.65 20 12C20 14.08 19.2 15.97 17.9 17.39Z" fill="currentColor"/></svg></div>
+          <div class="sign-label">Mở rộng</div>
+        </div>
+      </div>
+      <div class="converge-center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 12L12 22L22 12L12 2ZM12 4.83L19.17 12L12 19.17L4.83 12L12 4.83ZM7.41 11L10 13.59L13.59 10L16.59 13L12 17.59L7.41 13L7.41 11Z" fill="currentColor"/></svg></div>
+      <div class="final-text">TƯƠNG LAI CỦA CHIP</div>
+    </div>
+  </div>
+
+  <script>
+    // Seeded PRNG for deterministic renders
+    function mulberry32(a) {
+      let t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+    const random = mulberry32(42);
+
+    // Register timelines for HyperFrames
+    window.__timelines = window.__timelines || {};
+
+    // Scene 1: Hero Title (0-14.28s)
+    window.__timelines['scene-1'] = gsap.timeline()
+      .fromTo('#scene-1 .quantum-glow', { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 1.5, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-1 .title', { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.5, ease: 'power2.out', immediateRender: false }, '-=1')
+      .fromTo('#scene-1 .subtitle', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    // Scene 2: Use Case Grid (14.28-28.57s)
+    window.__timelines['scene-2'] = gsap.timeline()
+      .fromTo('#scene-2 .grid-container', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-2 .grid-card', { opacity: 0, y: 20 }, { opacity: 1, y: 0, stagger: 0.15, duration: 1, ease: 'power2.out', immediateRender: false }, '-=1');
+
+    // Scene 3: Problem Space (28.57-42.86s)
+    window.__timelines['scene-3'] = gsap.timeline()
+      .fromTo('#scene-3 .tree-container', { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 1.5, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-3 .actor-box', { opacity: 0, scale: 0 }, { opacity: 1, scale: 1, stagger: 0.2, duration: 1, ease: 'back.out(1.7)', immediateRender: false }, '-=1')
+      .fromTo('#scene-3 .connection-line', { opacity: 0, height: 0 }, { opacity: 1, height: 'auto', duration: 1, ease: 'power2.out', immediateRender: false }, '-=0.5')
+      .fromTo('#scene-3 .decision-label', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5, immediateRender: false }, '-=0.5');
+
+    // Scene 4: Combination Power (42.86-57.14s)
+    window.__timelines['scene-4'] = gsap.timeline()
+      .fromTo('#scene-4 .venn-circle', { opacity: 0, scale: 0 }, { opacity: 1, scale: 1, stagger: 0.3, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-4 .venn-overlap', { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 1, ease: 'power2.out', immediateRender: false }, '-=1')
+      .fromTo('#scene-4 .speed-meter', { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 1, ease: 'back.out(1.7)', immediateRender: false }, '-=0.5')
+      .fromTo('#scene-4 .speed-value', { opacity: 0, scale: 0 }, { opacity: 1, scale: 1, duration: 0.5, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    // Scene 5: Limitations (57.14-71.43s)
+    window.__timelines['scene-5'] = gsap.timeline()
+      .fromTo('#scene-5 .warnings-container', { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-5 .warning-card', { opacity: 0, x: -50 }, { opacity: 1, x: 0, stagger: 0.2, duration: 1, ease: 'power2.out', immediateRender: false }, '-=1');
+
+    // Scene 6: 3 Challenges (71.43-85.71s)
+    window.__timelines['scene-6'] = gsap.timeline()
+      .fromTo('#scene-6 .warnings-container', { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-6 .warning-card', { opacity: 0, x: -50 }, { opacity: 1, x: 0, stagger: 0.2, duration: 1, ease: 'power2.out', immediateRender: false }, '-=1');
+
+    // Scene 7: Future Signs (85.71-120s)
+    window.__timelines['scene-7'] = gsap.timeline()
+      .fromTo('#scene-7 .signs-container', { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-7 .sign', { opacity: 0, scale: 0 }, { opacity: 1, scale: 1, stagger: 0.2, duration: 1, ease: 'back.out(1.7)', immediateRender: false }, '-=1')
+      .fromTo('#scene-7 .converge-center', { opacity: 0, scale: 0 }, { opacity: 1, scale: 1, duration: 1, ease: 'bounce.out', immediateRender: false }, '-=0.5')
+      .fromTo('#scene-7 .final-text', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1.5, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    // Register root timeline
+    const mainTl = gsap.timeline();
+    mainTl.set('#scene-1', { display: 'flex' }, 0)
+      .add(window.__timelines['scene-1'], 0)
+      .set('#scene-1', { display: 'none' }, 14.28)
+      .set('#scene-2', { display: 'flex' }, 14.28)
+      .add(window.__timelines['scene-2'], 14.28)
+      .set('#scene-2', { display: 'none' }, 28.57)
+      .set('#scene-3', { display: 'flex' }, 28.57)
+      .add(window.__timelines['scene-3'], 28.57)
+      .set('#scene-3', { display: 'none' }, 42.86)
+      .set('#scene-4', { display: 'flex' }, 42.86)
+      .add(window.__timelines['scene-4'], 42.86)
+      .set('#scene-4', { display: 'none' }, 57.14)
+      .set('#scene-5', { display: 'flex' }, 57.14)
+      .add(window.__timelines['scene-5'], 57.14)
+      .set('#scene-5', { display: 'none' }, 71.43)
+      .set('#scene-6', { display: 'flex' }, 71.43)
+      .add(window.__timelines['scene-6'], 71.43)
+      .set('#scene-6', { display: 'none' }, 85.71)
+      .set('#scene-7', { display: 'flex' }, 85.71)
+      .add(window.__timelines['scene-7'], 85.71)
+      .to('#scene-7 .final-text', { duration: 34.29, ease: 'none' }, 85.71);
+    window.__timelines['quantum-ai-chips-2026'] = mainTl;
+  </script>
+</body>
+</html>

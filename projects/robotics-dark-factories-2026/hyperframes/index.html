@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nha May Robot 2026 - HyperFrames</title>
+  <script src="assets/gsap.min.js"></script>
+  <style>
+    @import url('assets/Inter.css');
+    @import url('assets/JetBrainsMono.css');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* Root composition wrapper */
+    #root-composition {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      background: #07110D;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Scene containers */
+    .scene {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .scene.active { display: flex; }
+
+    /* Scene 1: Hero Title - Text Card */
+    #scene-1 {
+      display: none;
+      flex-direction: column;
+      background: radial-gradient(ellipse at center, #0a1610 0%, #07110D 100%);
+    }
+    #scene-1::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920"><defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="%23111827" stroke-width="0.5" opacity="0.3"/></pattern></defs><rect width="100%" height="100%" fill="url(%23grid)"/></svg>');
+      opacity: 0.5;
+    }
+    #scene-1 .title {
+      font-size: 84px;
+      font-weight: 800;
+      color: #ECFDF5;
+      text-align: center;
+      line-height: 1.1;
+      letter-spacing: -2px;
+      transform: scale(0.8);
+            max-width: 90%;
+    }
+    #scene-1 .subtitle {
+      font-size: 32px;
+      color: #A7F3D0;
+      text-align: center;
+      margin-top: 20px;
+            font-weight: 300;
+    }
+    #scene-1 .spotlight {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(236,253,245,0.15) 0%, transparent 70%);
+      border-radius: 50%;
+            pointer-events: none;
+    }
+
+    /* Scene 2: Sensor HUD */
+    #scene-2 {
+      display: none;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    }
+    #scene-2 .hud-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 30px;
+      width: 90%;
+      height: 60%;
+    }
+    #scene-2 .hud-panel {
+      background: rgba(0, 255, 255, 0.05);
+      border: 1px solid rgba(0, 255, 255, 0.2);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 15px;
+    }
+    #scene-2 .hud-label {
+      font-size: 22px;
+      color: #00FFFF;
+      font-family: 'JetBrains Mono', monospace;
+      margin-bottom: 5px;
+    }
+    #scene-2 .hud-value {
+      font-size: 40px;
+      color: #ECFDF5;
+      font-weight: 700;
+    }
+    #scene-2 .camera-icon {
+      width: 80px;
+      height: 80px;
+      color: #00FFFF;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #scene-2 .camera-icon svg {
+      width: 64px;
+      height: 64px;
+    }
+
+    /* Scene 3: Predictive Chart */
+    #scene-3 {
+      display: none;
+      background: linear-gradient(180deg, #07110D 0%, #0f172a 100%);
+    }
+    #scene-3 .dashboard {
+      width: 90%;
+      height: 70%;
+      background: rgba(30, 41, 59, 0.8);
+      border-radius: 15px;
+      border: 1px solid rgba(14, 165, 233, 0.3);
+      display: flex;
+      flex-direction: column;
+      padding: 25px;
+    }
+    #scene-3 .chart-title {
+      font-size: 48px;
+      color: #ECFDF5;
+      margin-bottom: 20px;
+      text-align: center;
+      font-weight: 700;
+    }
+    #scene-3 .chart-container {
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
+      padding: 20px 0;
+      gap: 10px;
+      position: relative;
+    }
+    #scene-3 .chart-bar {
+      width: 40px;
+      background: linear-gradient(to top, #06B6D4, rgba(6, 182, 212, 0.5));
+      border-radius: 4px 4px 0 0;
+      position: relative;
+      opacity: 0;
+    }
+    #scene-3 .chart-bar::after {
+      content: attr(data-label);
+      position: absolute;
+      top: -25px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ECFDF5;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    #scene-3 .bar-1 { height: 20%; }
+    #scene-3 .bar-2 { height: 45%; }
+    #scene-3 .bar-3 { height: 60%; }
+    #scene-3 .bar-4 { height: 80%; }
+    #scene-3 .bar-5 { height: 55%; }
+    #scene-3 .bar-6 { height: 30%; }
+    #scene-3 .threshold-line {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: #EF4444;
+      z-index: 10;
+    }
+    #scene-3 .threshold-label {
+      position: absolute;
+      top: 52%;
+      right: 10px;
+      color: #EF4444;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    #scene-3 .timeline {
+      height: 30px;
+      position: relative;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 20px;
+    }
+    #scene-3 .timeline-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 8px;
+      background: linear-gradient(to top, #06B6D4, rgba(6, 182, 212, 0.3));
+      width: 0%;
+    }
+    #scene-3 .timeline-marker {
+      position: absolute;
+      width: 2px;
+      height: 100%;
+      background: #ECFDF5;
+      left: 70%;
+    }
+
+    /* Scene 4: Human Transition */
+    #scene-4 {
+      display: none;
+      background: linear-gradient(90deg, #07110D 0%, #0f172a 50%, #07110D 100%);
+      display: flex;
+    }
+    #scene-4 .left-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+    #scene-4 .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+    #scene-4 .human-icon {
+      width: 140px;
+      height: 140px;
+      color: #ECFDF5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #scene-4 .human-icon svg {
+      width: 100px;
+      height: 100px;
+    }
+    #scene-4 .robot-icon {
+      width: 140px;
+      height: 140px;
+      color: #06B6D4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #scene-4 .robot-icon svg {
+      width: 100px;
+      height: 100px;
+    }
+    #scene-4 .transition-arrow {
+      font-size: 80px;
+      color: #ECFDF5;
+          }
+    #scene-4 .label {
+      font-size: 28px;
+      color: #ECFDF5;
+      text-align: center;
+      margin-top: 20px;
+          }
+
+    /* Scene 5: Risk Visualization */
+    #scene-5 {
+      display: none;
+      background: radial-gradient(ellipse at center, #1e293b 0%, #07110D 100%);
+    }
+    #scene-5 .network {
+      position: relative;
+      width: 80%;
+      height: 70%;
+          }
+    #scene-5 .node {
+      position: absolute;
+      width: 90px;
+      height: 90px;
+      background: rgba(6, 182, 212, 0.2);
+      border: 3px solid #06B6D4;
+      border-radius: 50%;
+      box-shadow: 0 0 30px #06B6D4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ECFDF5;
+      font-size: 16px;
+      font-weight: 700;
+      text-align: center;
+    }
+    #scene-5 .connection {
+      position: absolute;
+      height: 4px;
+      background: linear-gradient(90deg, #06B6D4, rgba(6, 182, 212, 0.3));
+    }
+    #scene-5 .attack-pulse {
+      position: absolute;
+      width: 250px;
+      height: 250px;
+      background: radial-gradient(circle, rgba(239, 68, 68, 0.5) 0%, transparent 70%);
+      border: 2px dashed #EF4444;
+      border-radius: 50%;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #EF4444;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    /* Scene 6: Safety Layers */
+    #scene-6 {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 60px;
+      padding: 120px 60px;
+    }
+    #scene-6 .shields {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 60px;
+      width: 100%;
+    }
+    #scene-6 .shield {
+      width: 280px;
+      height: 280px;
+      border: 4px solid;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #scene-6 .shield-1 { border-color: #ECFDF5; background: rgba(236, 253, 245, 0.12); }
+    #scene-6 .shield-2 { border-color: #06B6D4; background: rgba(6, 182, 212, 0.12); }
+    #scene-6 .shield-3 { border-color: #A7F3D0; background: rgba(167, 243, 208, 0.12); }
+    #scene-6 .shield-label {
+      font-size: 32px;
+      color: #ECFDF5 !important;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    /* Scene 7: Future Vision */
+    #scene-7 {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 80px;
+      padding: 140px 60px;
+    }
+    #scene-7 .content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 60px;
+      width: 100%;
+    }
+    #scene-7 .team-icon {
+      width: 220px;
+      height: 220px;
+      color: #A7F3D0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(167, 243, 208, 0.15);
+      border: 4px solid rgba(167, 243, 208, 0.5);
+      border-radius: 50%;
+    }
+    #scene-7 .team-icon svg {
+      width: 130px;
+      height: 130px;
+    }
+    #scene-7 .factory-icon {
+      width: 220px;
+      height: 220px;
+      color: #06B6D4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(6, 182, 212, 0.15);
+      border: 4px solid rgba(6, 182, 212, 0.5);
+      border-radius: 50%;
+    }
+    #scene-7 .factory-icon svg {
+      width: 130px;
+      height: 130px;
+    }
+    #scene-7 .vision-text {
+      font-size: 64px;
+      color: #ECFDF5;
+      text-align: center;
+      font-weight: 800;
+      line-height: 1.3;
+      letter-spacing: 2px;
+    }
+
+    /* Audio elements - HyperFrames managed */
+    audio {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- Root composition wrapper with required HyperFrames attributes -->
+  <div id="root-composition"
+       data-composition-id="robotics-dark-factories-2026"
+       data-start="0"
+       data-width="1080"
+       data-height="1920"
+       data-duration="120"
+       data-fps="30">
+
+    <!-- Audio elements with data attributes for HyperFrames -->
+    <!-- BGM removed to prevent Meta copyright auto-mute; voice-only mix -->
+    <!-- <audio id="bg-music" src="assets/bg_music_1.mp3" data-start="0" data-duration="120" data-volume="0.3"></audio> -->
+    <audio id="narration" src="assets/narration.mp3" data-start="0" data-duration="120"></audio>
+
+    <!-- Scene 1: Hero Title (0-17.14s) -->
+    <div id="scene-1" class="scene" data-start="0" data-duration="17.14" data-composition-id="scene-1">
+      <div class="spotlight"></div>
+      <div class="title">NHÀ MÁY ROBOT THÔNG MINH</div>
+      <div class="subtitle">Cách Mạng Công Nghiệp 5.0</div>
+    </div>
+
+    <!-- Scene 2: Sensor HUD (17.14-34.29s) -->
+    <div id="scene-2" class="scene" data-start="17.14" data-duration="17.15" data-composition-id="scene-2">
+      <div class="hud-container">
+        <div class="hud-panel"><div class="camera-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-8 12a5 5 0 110-10 5 5 0 010 10z" fill="currentColor"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><div class="hud-label">CAMERA</div><div class="hud-value">1080p</div></div>
+        <div class="hud-panel"><div class="camera-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12h3l2-7 4 14 3-9 2 2h4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="hud-label">VIBRATION</div><div class="hud-value">0.01mm</div></div>
+        <div class="hud-panel"><div class="camera-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 14.76V5a2 2 0 10-4 0v9.76a4 4 0 104 0z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="hud-label">TEMPERATURE</div><div class="hud-value">24.5°C</div></div>
+        <div class="hud-panel"><div class="camera-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div><div class="hud-label">PRESSURE</div><div class="hud-value">1.0atm</div></div>
+        <div class="hud-panel"><div class="camera-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3s6 6.5 6 10.5a6 6 0 11-12 0C6 9.5 12 3 12 3z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg></div><div class="hud-label">HUMIDITY</div><div class="hud-value">45%</div></div>
+        <div class="hud-panel"><div class="camera-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor"/></svg></div><div class="hud-label">POWER</div><div class="hud-value">100%</div></div>
+      </div>
+    </div>
+
+    <!-- Scene 3: Predictive Chart (34.29-51.43s) -->
+    <div id="scene-3" class="scene" data-start="34.29" data-duration="17.14" data-composition-id="scene-3">
+      <div class="dashboard">
+        <div class="chart-title">DỰ BÁO LỖI SẮP XẢY RA</div>
+        <div class="chart-container">
+          <div class="threshold-line"></div>
+          <div class="threshold-label">Ngưỡng lỗi</div>
+          <div class="chart-bar bar-1" data-label="T1"></div>
+          <div class="chart-bar bar-2" data-label="T2"></div>
+          <div class="chart-bar bar-3" data-label="T3"></div>
+          <div class="chart-bar bar-4" data-label="T4"></div>
+          <div class="chart-bar bar-5" data-label="T5"></div>
+          <div class="chart-bar bar-6" data-label="T6"></div>
+        </div>
+        <div class="timeline">
+          <div class="timeline-bar"></div>
+          <div class="timeline-marker"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 4: Human Transition (51.43-68.57s) -->
+    <div id="scene-4" class="scene" data-start="51.43" data-duration="17.14" data-composition-id="scene-4">
+      <div class="left-panel">
+        <div class="human-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="currentColor"/></svg></div>
+        <div class="label">CON NGƯỜI</div>
+      </div>
+      <div class="transition-arrow">→</div>
+      <div class="right-panel">
+        <div class="robot-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C11.45 2 11 2.45 11 3V4H7C5.9 4 5 4.9 5 6V18C5 19.1 5.9 20 7 20H17C18.1 20 19 19.1 19 18V6C19 4.9 18.1 4 17 4H13V3C13 2.45 12.55 2 12 2ZM9 9H11V11H9V9ZM13 9H15V11H13V9ZM7.5 14H16.5C16.78 14 17 14.22 17 14.5C17 14.78 16.78 15 16.5 15H7.5C7.22 15 7 14.78 7 14.5C7 14.22 7.22 14 7.5 14Z" fill="currentColor"/></svg></div>
+        <div class="label">ROBOT</div>
+      </div>
+    </div>
+
+    <!-- Scene 5: Risk Visualization (68.57-85.71s) -->
+    <div id="scene-5" class="scene" data-start="68.57" data-duration="17.14" data-composition-id="scene-5">
+      <div class="network">
+        <div class="node" style="top: 15%; left: 15%;">Robot<br>Arm</div>
+        <div class="node" style="top: 35%; left: 65%;">AGV<br>Fleet</div>
+        <div class="node" style="top: 60%; left: 20%;">IoT<br>Sensor</div>
+        <div class="node" style="top: 80%; left: 60%;">Cloud<br>Hub</div>
+        <div class="connection" style="top: 22%; left: 25%; width: 220px; transform: rotate(25deg);"></div>
+        <div class="connection" style="top: 48%; left: 30%; width: 200px; transform: rotate(-30deg);"></div>
+        <div class="connection" style="top: 72%; left: 30%; width: 220px; transform: rotate(25deg);"></div>
+        <div class="attack-pulse" style="top: 30%; left: 20%;">RỦI RO CYBER</div>
+      </div>
+    </div>
+
+    <!-- Scene 6: Safety Layers (85.71-102.86s) -->
+    <div id="scene-6" class="scene" data-start="85.71" data-duration="17.15" data-composition-id="scene-6">
+      <div class="shields">
+        <div class="shield shield-1"><div class="shield-label">AI<br>Monitor</div></div>
+        <div class="shield shield-2"><div class="shield-label">Predictive<br>Maintenance</div></div>
+        <div class="shield shield-3"><div class="shield-label">Auto<br>Shutdown</div></div>
+      </div>
+    </div>
+
+    <!-- Scene 7: Future Vision (102.86-120s) -->
+    <div id="scene-7" class="scene" data-start="102.86" data-duration="17.14" data-composition-id="scene-7">
+      <div class="content">
+        <div class="team-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 11C17.66 11 18.99 9.66 18.99 8C18.99 6.34 17.66 5 16 5C14.34 5 13 6.34 13 8C13 9.66 14.34 11 16 11ZM8 11C9.66 11 10.99 9.66 10.99 8C10.99 6.34 9.66 5 8 5C6.34 5 5 6.34 5 8C5 9.66 6.34 11 8 11ZM8 13C5.67 13 1 14.17 1 16.5V19H15V16.5C15 14.17 10.33 13 8 13ZM16 13C15.71 13 15.38 13.02 15.03 13.05C16.19 13.89 17 15.02 17 16.5V19H23V16.5C23 14.17 18.33 13 16 13Z" fill="currentColor"/></svg></div>
+        <div class="factory-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M22 22H2V10L10 15V10L18 15V2H22V22ZM12 9.95L4 5V8.05L12 13V9.95ZM20 4V13L14 9.25V6.15L20 4Z" fill="currentColor"/></svg></div>
+        <div class="vision-text">TƯƠNG LAI CỦA SẢN XUẤT</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Seeded PRNG for deterministic renders
+    function mulberry32(a) {
+      let t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+    const random = mulberry32(42);
+
+    // Register timelines for HyperFrames
+    window.__timelines = window.__timelines || {};
+
+    // Scene animations using GSAP
+    const tl = gsap.timeline();
+
+    // Scene 1: Hero Title (0-17.14s)
+    window.__timelines['scene-1'] = gsap.timeline()
+      .fromTo('#scene-1 .spotlight', { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 1.5, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-1 .title', { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.5, ease: 'power2.out', immediateRender: false }, '-=1')
+      .fromTo('#scene-1 .subtitle', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    // Scene 2: Sensor HUD (17.14-34.29s)
+    window.__timelines['scene-2'] = gsap.timeline()
+      .fromTo('#scene-2 .hud-container', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-2 .hud-panel', { opacity: 0, y: 20 }, { opacity: 1, y: 0, stagger: 0.1, duration: 1, ease: 'power2.out', immediateRender: false }, '-=1');
+
+    // Scene 3: Predictive Chart (34.29-51.43s)
+    window.__timelines['scene-3'] = gsap.timeline()
+      .fromTo('#scene-3 .dashboard', { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 1.5, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-3 .chart-bar', { opacity: 0, scaleY: 0, transformOrigin: 'bottom center' }, { opacity: 1, scaleY: 1, stagger: 0.15, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.8')
+      .to('#scene-3 .timeline-bar', { width: '70%', duration: 2, ease: 'power2.inOut' }, '-=1');
+
+    // Scene 4: Human Transition (51.43-68.57s)
+    window.__timelines['scene-4'] = gsap.timeline()
+      .fromTo('#scene-4 .human-icon', { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 1, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-4 .transition-arrow', { opacity: 0, scale: 0 }, { opacity: 1, scale: 1, duration: 0.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-4 .robot-icon', { opacity: 0, x: 50 }, { opacity: 1, x: 0, duration: 1, ease: 'power2.out', immediateRender: false }, '-=0.5')
+      .fromTo('#scene-4 .label', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.1, immediateRender: false }, '-=0.5');
+
+    // Scene 5: Risk Visualization (68.57-85.71s)
+    window.__timelines['scene-5'] = gsap.timeline()
+      .fromTo('#scene-5 .node', { opacity: 0, scale: 0 }, { opacity: 1, scale: 1, stagger: 0.2, duration: 1, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-5 .connection', { opacity: 0, scaleX: 0, transformOrigin: 'left center' }, { opacity: 1, scaleX: 1, stagger: 0.1, duration: 1, immediateRender: false }, '-=0.5')
+      .fromTo('#scene-5 .attack-pulse', { opacity: 0, scale: 0.3 }, { opacity: 0.8, scale: 1.2, duration: 2, ease: 'power2.out', repeat: 2, yoyo: true, immediateRender: false }, '-=0.5');
+
+    // Scene 6: Safety Layers (85.71-102.86s)
+    window.__timelines['scene-6'] = gsap.timeline()
+      .fromTo('#scene-6 .shields', { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false })
+      .fromTo('#scene-6 .shield', { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, stagger: 0.3, duration: 1, ease: 'back.out(1.7)', immediateRender: false }, '-=1');
+
+    // Scene 7: Future Vision (102.86-120s)
+    window.__timelines['scene-7'] = gsap.timeline()
+      .fromTo('#scene-7 .team-icon', { opacity: 0, y: -50 }, { opacity: 1, y: 0, duration: 1, ease: 'bounce.out', immediateRender: false })
+      .fromTo('#scene-7 .factory-icon', { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1, ease: 'bounce.out', immediateRender: false }, '-=0.5')
+      .fromTo('#scene-7 .vision-text', { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 1.5, ease: 'back.out(1.7)', immediateRender: false }, '-=0.5');
+
+    // Register root timeline
+    const mainTl = gsap.timeline();
+    mainTl.set('#scene-1', { display: 'flex' }, 0)
+      .add(window.__timelines['scene-1'], 0)
+      .set('#scene-1', { display: 'none' }, 17.14)
+      .set('#scene-2', { display: 'flex' }, 17.14)
+      .add(window.__timelines['scene-2'], 17.14)
+      .set('#scene-2', { display: 'none' }, 34.29)
+      .set('#scene-3', { display: 'flex' }, 34.29)
+      .add(window.__timelines['scene-3'], 34.29)
+      .set('#scene-3', { display: 'none' }, 51.43)
+      .set('#scene-4', { display: 'flex' }, 51.43)
+      .add(window.__timelines['scene-4'], 51.43)
+      .set('#scene-4', { display: 'none' }, 68.57)
+      .set('#scene-5', { display: 'flex' }, 68.57)
+      .add(window.__timelines['scene-5'], 68.57)
+      .set('#scene-5', { display: 'none' }, 85.71)
+      .set('#scene-6', { display: 'flex' }, 85.71)
+      .add(window.__timelines['scene-6'], 85.71)
+      .set('#scene-6', { display: 'none' }, 102.86)
+      .set('#scene-7', { display: 'flex' }, 102.86)
+      .add(window.__timelines['scene-7'], 102.86)
+      .set({}, {}, 120); // pad to full composition duration
+    window.__timelines['robotics-dark-factories-2026'] = mainTl;
+  </script>
+</body>
+</html>
