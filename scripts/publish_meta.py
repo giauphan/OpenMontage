@@ -71,9 +71,11 @@ def main():
         title = meta["title"]
         caption = meta.get("description", title)
 
-        # Dynamic FB slot
+        # Dynamic FB slot; FB requires >=10min in the future, roll to next day if passed
         slot_time = slot_times[idx % len(slot_times)]
         slot = datetime.combine(target_date, slot_time, tz)
+        if slot <= now + timedelta(minutes=15):
+            slot += timedelta(days=1)
 
         # FB: 120s vertical — SCHEDULED
         fb_path = ROOT / meta["fb_video"]
