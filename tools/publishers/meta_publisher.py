@@ -126,8 +126,16 @@ class MetaPublisher(BaseTool):
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.load(resp)
 
-    def _upload_facebook_video(self, page_token: str, page_id: str, video_path: Path, caption: str) -> str:
-        """Upload video to Facebook Page."""
+    def _upload_facebook_video(
+        self,
+        page_token: str,
+        page_id: str,
+        video_path: Path,
+        caption: str,
+        scheduled_publish_time: int | None = None,
+    ) -> str:
+        """Upload video to Facebook Page. If scheduled_publish_time (unix epoch) is
+        given, the video is created unpublished and goes live at that time."""
         import requests
 
         url = f"{self.GRAPH_URL}/{page_id}/videos"
@@ -139,6 +147,9 @@ class MetaPublisher(BaseTool):
                 "access_token": page_token,
                 "description": caption,
             }
+            if scheduled_publish_time:
+                data["published"] = "false"
+                data["scheduled_publish_time"] = str(scheduled_publish_time)
 
             response = requests.post(url, data=data, files=files, timeout=300)
             resp_data = response.json()
@@ -294,12 +305,15 @@ class MetaPublisher(BaseTool):
                 ig_account_id = page_id
 
             # 2. Upload to Facebook
+            scheduled_epoch = inputs.get("scheduled_publish_time")
             if post_to_fb:
-                fb_id = self._upload_facebook_video(page_token, page_id, video_path, caption)
+                fb_id = self._upload_facebook_video(
+                    page_token, page_id, video_path, caption, scheduled_publish_time=scheduled_epoch
+                )
                 if fb_id:
                     publish_entries.append({
                         "platform": "facebook",
-                        "status": "published",
+                        "status": "scheduled" if scheduled_epoch else "published",
                         "video_id": fb_id,
                         "url": f"https://facebook.com/{page_id}/videos/{fb_id}",
                         "timestamp": timestamp,

@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""
-Batch publish 3 topics to all platforms.
-Usage: python publish_all_topics.py
-"""
-import json
-from pathlib import Path
-from tools.publishers.youtube_publisher import YoutubePublisher
-from tools.publishers.meta_publisher import MetaPublisher
-from tools.publishers.tiktok_publisher import TiktokPublisher
+raise SystemExit("publish_all_topics.py is disabled; use scripts/schedule_youtube_today.py and Firebase-guarded slot publishers.")
 
 TOPICS = [
     {
@@ -15,19 +7,19 @@ TOPICS = [
         'title': 'Cuộc Chiến Chống AI Slop 2026',
         'description': 'YouTube vừa xóa 35 triệu tài khoản bot trong một đợt quét tự động lớn. Các nền tảng mạng xã hội đang siết chặt nội dung AI slop để bảo vệ người dùng và hệ sinh thái sáng tạo.',
         'yt_long': 'projects/newsnow-2026-08-09/renders/final_full_vi_16x9.mp4',
-        'yt_shorts': 'projects/newsnow-2026-08-09/renders/final_full_vi_reels.mp4',
-        'ig_reels': 'projects/newsnow-2026-08-09/renders/final_full_vi_reels.mp4',
+        'yt_shorts': 'projects/newsnow-2026-08-09/renders/final_reels_vi_9x16.mp4',
+        'ig_reels': 'projects/newsnow-2026-08-09/renders/final_reels_vi_9x16.mp4',
         'fb_reels': 'projects/newsnow-2026-08-09/renders/final_full_vi_9x16.mp4',
         'tiktok': 'projects/newsnow-2026-08-09/renders/final_full_vi_9x16.mp4',
-        'schedule': '08:00 AM',
+        'schedule': '07:00 AM',
     },
     {
         'id': 'topic2',
         'title': 'Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026',
         'description': 'Agentic AI đang thay đổi cách doanh nghiệp vận hành. Khám phá cách các hệ thống tự động hóa toàn bộ quy trình từ phát triển đến vận hành.',
         'yt_long': 'projects/topic2-agentic-ai/renders/final_full_vi_16x9.mp4',
-        'yt_shorts': 'projects/topic2-agentic-ai/renders/final_full_vi_reels.mp4',
-        'ig_reels': 'projects/topic2-agentic-ai/renders/final_full_vi_reels.mp4',
+        'yt_shorts': 'projects/topic2-agentic-ai/renders/final_reels_vi_9x16.mp4',
+        'ig_reels': 'projects/topic2-agentic-ai/renders/final_reels_vi_9x16.mp4',
         'fb_reels': 'projects/topic2-agentic-ai/renders/final_full_vi_9x16.mp4',
         'tiktok': 'projects/topic2-agentic-ai/renders/final_full_vi_9x16.mp4',
         'schedule': '12:00 PM',
@@ -37,8 +29,8 @@ TOPICS = [
         'title': 'Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất',
         'description': 'Các phương pháp mới nhất để bảo vệ dữ liệu cá nhân và phòng chống tấn công mạng trong kỷ nguyên số. Hướng dẫn chi tiết cho người dùng và doanh nghiệp.',
         'yt_long': 'projects/topic3-cyber-defense/renders/final_full_vi_16x9.mp4',
-        'yt_shorts': 'projects/topic3-cyber-defense/renders/final_full_vi_reels.mp4',
-        'ig_reels': 'projects/topic3-cyber-defense/renders/final_full_vi_reels.mp4',
+        'yt_shorts': 'projects/topic3-cyber-defense/renders/final_reels_vi_9x16.mp4',
+        'ig_reels': 'projects/topic3-cyber-defense/renders/final_reels_vi_9x16.mp4',
         'fb_reels': 'projects/topic3-cyber-defense/renders/final_full_vi_9x16.mp4',
         'tiktok': 'projects/topic3-cyber-defense/renders/final_full_vi_9x16.mp4',
         'schedule': '20:00 PM',
@@ -98,33 +90,9 @@ def publish_topic(topic):
         print(f"  CRITICAL ERROR: {e}")
         results['instagram'] = False
 
-    # Facebook Reels 9:16 Full
-    print("\n[4/5] Facebook Reels (9:16 Full)...")
-    try:
-        # page_id not verified for new token, but attempt anyway
-        res = MetaPublisher().execute({
-            'video_path': topic['fb_reels'],
-            'page_id': '100083515437898',
-            'caption': f"{title} #TechNews #Vietnam #OpenMontage",
-            'post_to_facebook': True,
-            'post_to_instagram': False,
-        })
-        results['facebook'] = res.success
-        if res.error:
-            print(f"  ERROR: {res.error}")
-    except Exception as e:
-        print(f"  CRITICAL ERROR: {e}")
-        results['facebook'] = False
-
-    # TikTok 9:16 Full
-    print("\n[5/5] TikTok (9:16 Full)...")
-    res = TiktokPublisher().execute({
-        'video_path': topic['tiktok'],
-        'caption': f"{title} #TechNews #Vietnam #OpenMontage",
-    })
-    results['tiktok'] = res.success
-    if res.error:
-        print(f"  ERROR: {res.error}")
+    # Facebook and TikTok held by current publishing policy.
+    results['facebook'] = 'held'
+    results['tiktok'] = 'held'
 
     print(f"\n{'='*60}")
     print(f"COMPLETED: {title}")
@@ -136,7 +104,8 @@ def publish_topic(topic):
     return results
 
 if __name__ == '__main__':
-    print("Starting batch publish of 3 topics...")
+    print("Batch publisher is disabled; use scripts/publish_today.py for scheduled uploads.")
+    raise SystemExit(1)
     all_results = {}
     for topic in TOPICS:
         all_results[topic['id']] = publish_topic(topic)

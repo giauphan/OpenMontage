@@ -90,6 +90,10 @@ class YoutubePublisher(BaseTool):
                 "default": "28",
             },
             "thumbnail_path": {"type": "string", "description": "Optional custom thumbnail image path."},
+            "publish_at": {
+                "type": "string",
+                "description": "Optional RFC3339 UTC publish time. If set, video is uploaded private and scheduled.",
+            },
             "token_storage_path": {
                 "type": "string",
                 "description": "Optional path to store OAuth token.json. Defaults to '~/.openmontage/youtube_token.json'.",
@@ -175,6 +179,9 @@ class YoutubePublisher(BaseTool):
         description = inputs.get("description", "")
         tags = inputs.get("tags", [])
         privacy_status = inputs.get("privacy_status", "unlisted")
+        publish_at = inputs.get("publish_at")
+        if publish_at:
+            privacy_status = "private"
         category_id = inputs.get("category_id", "28")
 
         try:
@@ -194,6 +201,8 @@ class YoutubePublisher(BaseTool):
                     "selfDeclaredMadeForKids": False,
                 },
             }
+            if publish_at:
+                body["status"]["publishAt"] = publish_at
 
             media = MediaFileUpload(
                 str(video_path),
@@ -239,6 +248,7 @@ class YoutubePublisher(BaseTool):
                 "metadata_used": {
                     "title": title,
                     "description": description,
+                    "publish_at": publish_at,
                 },
             }
 

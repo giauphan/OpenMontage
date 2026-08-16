@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+import fcntl
+import sys
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from tools.publish_store import PublishStore, existing_record_summary
+from tools.publishers.meta_publisher import MetaPublisher
+from tools.publishers.youtube_publisher import YoutubePublisher
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCK_PATH = ROOT / "publish_state.lock"
+LOCAL_TZ = ZoneInfo("Asia/Jakarta")
+PLATFORM_ACCOUNTS = {
+    "youtube": "primary",
+    "instagram": "17841434265610775",
+}
+
+JOBS = {
+    "topic1-short": {
+        "topic": "topic1",
+        "kind": "short",
+        "platform": "youtube",
+        "title": "Cuộc Chiến Chống AI Slop 2026 #Shorts",
+        "description": "YouTube vừa xóa 35 triệu tài khoản bot trong một đợt quét tự động lớn.",
+        "path": "projects/newsnow-2026-08-09/renders/final_full_vi_9x16.mp4",
+    },
+    "topic1-instagram": {
+        "topic": "topic1",
+        "kind": "reels",
+        "platform": "instagram",
+        "title": "Cuộc Chiến Chống AI Slop 2026",
+        "description": "Cuộc chiến chống AI slop 2026.",
+        "path": "projects/newsnow-2026-08-09/renders/final_reels_vi_9x16.mp4",
+    },
+    "topic2-short": {
+        "topic": "topic2",
+        "kind": "short",
+        "platform": "youtube",
+        "title": "Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026 #Shorts",
+        "description": "Agentic AI đang thay đổi cách doanh nghiệp vận hành.",
+        "path": "projects/topic2-agentic-ai/renders/final_full_vi_9x16.mp4",
+    },
+    "topic2-instagram": {
+        "topic": "topic2",
+        "kind": "reels",
+        "platform": "instagram",
+        "title": "Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026",
+        "description": "Kỷ nguyên Agentic AI 2026.",
+        "path": "projects/topic2-agentic-ai/renders/final_reels_vi_9x16.mp4",
+    },
+    "topic3-short": {
+        "topic": "topic3",
+        "kind": "short",
+        "platform": "youtube",
+        "title": "Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất #Shorts",
+        "description": "Các phương pháp mới nhất để bảo vệ dữ liệu cá nhân trong kỷ nguyên số.",
+        "path": "projects/topic3-cyber-defense/renders/final_full_vi_9x16.mp4",
+    },
+    "topic3-instagram": {
+        "topic": "topic3",
+        "kind": "reels",
+        "platform": "instagram",
+        "title": "Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất",
+        "description": "Bảo vệ dữ liệu cá nhân 2026.",
+        "path": "projects/topic3-cyber-defense/renders/final_reels_vi_9x16.mp4",
+    },
+}
+
+
+def publish(job):
+    path = ROOT / job["path"]
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    if job["platform"] == "youtube":
+        return YoutubePublisher().execute({
+            "video_path": str(path),
+            "title": job["title"][:100],
+            "description": job["description"],
+            "privacy_status": "public",
+            "category_id": "28",
+        })
+    return MetaPublisher().execute({
+        "video_path": str(path),
+        "page_id": "17841434265610775",
+        "caption": f'{job["title"]} #TechNews #Vietnam #OpenMontage',
+        "post_to_facebook": False,
+        "post_to_instagram": True,
+    })
+
+
+def run(job_name):
+    if job_name not in JOBS:
+        raise SystemExit(f"Unknown job: {job_name}")
+    job = JOBS[job_name]
+    now = datetime.now(LOCAL_TZ)
+    date = now.date().isoformat()
+    lock_file = LOCK_PATH.open("a+")
+    fcntl.flock(lock_file, fcntl.LOCK_EX)
+    try:
+        store = PublishStore()
+        asset_path = ROOT / job["path"]
+        if not asset_path.is_file():
+            raise FileNotFoundError(asset_path)
+        key, claimed, existing = store.claim(
+            date=date,
+            topic=job["topic"],
+            platform=job["platform"],
+            account=PLATFORM_ACCOUNTS[job["platform"]],
+            kind=job["kind"],
+            status="uploading",
+            job=job_name,
+            title=job["title"],
+            asset_path=asset_path,
+        )
+        if not claimed:
+            print(f"SKIP {date} {job_name}: {existing_record_summary(existing)}")
+            return
+        try:
+            result = publish(job)
+            if not result.success:
+                raise RuntimeError(result.error or f"{job_name} failed")
+            data = result.data or {}
+            store.mark_published(
+                key,
+                video_id=data.get("video_id"),
+                video_url=data.get("video_url"),
+                platform_id=data.get("instagram_media_id"),
+                published_at=now.isoformat(),
+            )
+            print(f"OK {date} {job_name} {data.get('video_url') or data.get('instagram_media_id') or ''}")
+        except Exception as exc:
+            store.mark_failed(key, str(exc))
+            raise
+    finally:
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        raise SystemExit(f"Usage: {Path(sys.argv[0]).name} JOB; jobs: {', '.join(JOBS)}")
+    run(sys.argv[1])
