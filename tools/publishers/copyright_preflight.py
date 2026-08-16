@@ -35,7 +35,7 @@ class CopyrightPreflight(BaseTool):
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
-    runtime = ToolRuntime.CLI
+    runtime = ToolRuntime.LOCAL
 
     dependencies = [
         "command:ffprobe",
