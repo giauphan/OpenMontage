@@ -8,20 +8,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     PUPPETEER_SKIP_DOWNLOAD=1 \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     NODE_PATH=/app/node_modules
 
-# System deps: python, ffmpeg, and Chrome runtime libraries for HyperFrames render
+# System deps: python, ffmpeg, and Chromium (multi-arch) for HyperFrames render
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-pip python3-venv \
       ffmpeg \
-      ca-certificates wget gnupg fonts-liberation \
-      libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
-      libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
-      libpango-1.0-0 libcairo2 libatspi2.0-0 \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+      chromium \
+      ca-certificates fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
