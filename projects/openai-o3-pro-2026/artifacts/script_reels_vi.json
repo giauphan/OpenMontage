@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "project_id": "openai-o3-pro-2026",
+  "title": "OpenAI o3-Pro: Kỷ Nguyên AI Biết Suy Nghĩ (Reels 60s)",
+  "language": "vi",
+  "target_duration_seconds": 60,
+  "sections": [
+    {
+      "id": "s1",
+      "duration": 10,
+      "start_seconds": 0,
+      "end_seconds": 10,
+      "text": "OpenAI vừa chính thức trình làng o3-Pro, đánh dấu sự chuyển dịch sang kỷ nguyên AI tự suy luận trước khi trả lời."
+    },
+    {
+      "id": "s2",
+      "duration": 14,
+      "start_seconds": 10,
+      "end_seconds": 24,
+      "text": "Thay vì chỉ dự đoán từ cực nhanh, o3-Pro áp dụng Test-Time Compute: dành thời gian suy nghĩ, tự kiểm tra và sửa lỗi trước khi chốt đáp án."
+    },
+    {
+      "id": "s3",
+      "duration": 12,
+      "start_seconds": 24,
+      "end_seconds": 36,
+      "text": "Trên bài kiểm tra trình độ tiến sĩ GPQA, o3-Pro đạt kỷ lục tám mươi bảy phẩy bảy phần trăm, giải quyết những bài toán mà GPT-4o bó tay."
+    },
+    {
+      "id": "s4",
+      "duration": 14,
+      "start_seconds": 36,
+      "end_seconds": 50,
+      "text": "Chiến lược tối ưu cho doanh nghiệp là mô hình lai: dùng GPT-4o cho tác vụ hàng ngày và kích hoạt o3-Pro cho các bài toán chiến lược."
+    },
+    {
+      "id": "s5",
+      "duration": 10,
+      "start_seconds": 50,
+      "end_seconds": 60,
+      "text": "Kỷ nguyên AI suy luận đã bắt đầu. Hãy bấm đăng ký kênh để cập nhật những phân tích công nghệ mới nhất."
+    }
+  ]
+}
