@@ -1,0 +1,16 @@
+# OpenMontage publishing crontab template
+#
+# Usage:
+#   1. Edit PATH_TO_OPENMONTAGE to match your server directory.
+#   2. Install into crontab:
+#        crontab deploy/openmontage.cron
+#
+# Times are in UTC (01:00 UTC = 08:00 WIB / Jakarta time).
+
+PATH_TO_OPENMONTAGE=/home/genro68/OpenMontage
+
+# 08:00 WIB — Schedule YouTube Shorts for active projects
+0 1 * * * cd PATH_TO_OPENMONTAGE && ./scripts/run_youtube_schedule.sh >> logs/cron_yt.log 2>&1
+
+# 08:30 WIB — Schedule Meta (FB Reels + IG immediate) for active projects
+30 1 * * * cd PATH_TO_OPENMONTAGE && ./scripts/run_meta_publish.sh >> logs/cron_meta.log 2>&1

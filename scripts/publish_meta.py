@@ -1,31 +1,25 @@
 #!/usr/bin/env python3
 """Publish FB (scheduled) + IG (immediate) for given projects.
 
-Usage: python3 scripts/publish_meta.py <project_id> [<project_id> ...]
+Usage:
+  python3 scripts/publish_meta.py <project_id> [<project_id> ...]
+  python3 scripts/publish_meta.py --date 2026-08-17 <project_id> [...]
 """
+import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from publish_config import fb_slot_times, load_config
 from tools.publish_store import PublishStore, publish_key
 from tools.publishers.meta_publisher import MetaPublisher
 
 ROOT = Path(__file__).resolve().parents[1]
-LOCAL_TZ = ZoneInfo("Asia/Jakarta")
-FB_PAGE_ID = "1183103681563663"
-IG_ACCOUNT_ID = "17841434265610775"
-
-# Schedule slots for tomorrow (WIB) — 2h apart
-FB_SLOTS = {
-    "quantum-ai-chips-2026": datetime(2026, 8, 16, 12, 0, tzinfo=LOCAL_TZ),  # 12:00 WIB
-    "robotics-dark-factories-2026": datetime(2026, 8, 16, 14, 0, tzinfo=LOCAL_TZ),  # 14:00 WIB
-}
 
 
 def claim_or_skip(store, date, pid, meta, platform, account, kind, title, asset, scheduled_for=None):
-    """Claim in Firestore. Returns key if we should proceed, else None."""
     key, claimed, existing = store.claim(
         date=date,
         topic=pid,
@@ -50,31 +44,51 @@ def claim_or_skip(store, date, pid, meta, platform, account, kind, title, asset,
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Publish scheduled FB and immediate IG for projects")
+    parser.add_argument("--date", help="Target date YYYY-MM-DD (defaults to today/tomorrow)")
+    parser.add_argument("projects", nargs="+", help="Project folder names under projects/")
+    args = parser.parse_args()
+
+    cfg = load_config()
+    tz = ZoneInfo(cfg["timezone"])
+    fb_page_id = cfg["meta"]["page_id"]
+    ig_account_id = cfg["meta"]["ig_account_id"]
+    slot_times = fb_slot_times(cfg)
+
+    now = datetime.now(tz)
+    target_date = datetime.fromisoformat(args.date).date() if args.date else now.date()
+
     store = PublishStore()
     publisher = MetaPublisher()
-    date = datetime.now(LOCAL_TZ).date().isoformat()
 
-    for proj in sys.argv[1:]:
-        meta = json.loads((ROOT / "projects" / proj / "publish_metadata.json").read_text())
+    for idx, proj in enumerate(args.projects):
+        meta_path = ROOT / "projects" / proj / "publish_metadata.json"
+        if not meta_path.is_file():
+            print(f"ERROR: missing {meta_path}")
+            continue
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
         pid = meta["id"]
         title = meta["title"]
         caption = meta.get("description", title)
 
-        # FB: 120s vertical (final_full_vi_9x16.mp4) — SCHEDULED
+        # Dynamic FB slot
+        slot_time = slot_times[idx % len(slot_times)]
+        slot = datetime.combine(target_date, slot_time, tz)
+
+        # FB: 120s vertical — SCHEDULED
         fb_path = ROOT / meta["fb_video"]
         if not fb_path.is_file():
             print(f"MISSING FB asset: {fb_path}")
         else:
-            slot = FB_SLOTS[pid]
             fb_key = claim_or_skip(
-                store, date, pid, meta, "facebook", FB_PAGE_ID, "page_video",
+                store, target_date.isoformat(), pid, meta, "facebook", fb_page_id, "page_video",
                 title, fb_path, scheduled_for=slot.isoformat(),
             )
             if fb_key:
                 result = publisher.execute({
                     "video_path": str(fb_path),
                     "caption": caption[:2000],
-                    "page_id": FB_PAGE_ID,
+                    "page_id": fb_page_id,
                     "post_to_facebook": True,
                     "post_to_instagram": False,
                     "scheduled_publish_time": int(slot.timestamp()),
@@ -84,7 +98,7 @@ def main():
                     store.mark_scheduled(
                         fb_key,
                         video_id=data.get("facebook_post_id"),
-                        video_url=f"https://facebook.com/{FB_PAGE_ID}/videos/{data.get('facebook_post_id')}",
+                        video_url=f"https://facebook.com/{fb_page_id}/videos/{data.get('facebook_post_id')}",
                         scheduled_for=slot.isoformat(),
                     )
                     print(f"FB scheduled {pid}: {data.get('facebook_post_id')} -> {slot.isoformat()}")
@@ -92,20 +106,20 @@ def main():
                     store.mark_failed(fb_key, str(result.error))
                     print(f"FB FAILED {pid}: {result.error}")
 
-        # IG: 60s vertical (final_reels_vi_9x16.mp4) — IMMEDIATE
+        # IG: 60s vertical — IMMEDIATE
         ig_path = ROOT / meta["ig_reels"]
         if not ig_path.is_file():
             print(f"MISSING IG asset: {ig_path}")
             continue
 
         ig_key = claim_or_skip(
-            store, date, pid, meta, "instagram", IG_ACCOUNT_ID, "reels", title, ig_path,
+            store, target_date.isoformat(), pid, meta, "instagram", ig_account_id, "reels", title, ig_path,
         )
         if ig_key:
             result = publisher.execute({
                 "video_path": str(ig_path),
                 "caption": caption[:2000],
-                "page_id": FB_PAGE_ID,
+                "page_id": fb_page_id,
                 "post_to_facebook": False,
                 "post_to_instagram": True,
             })

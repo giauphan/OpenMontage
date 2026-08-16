@@ -1,0 +1,7 @@
+# OpenMontage - Publishing Dependencies
+# Install alongside requirements.txt when using the publish flow.
+boto3>=1.34            # Cloudflare R2 temp hosting for Instagram Reels
+google-api-python-client>=2.100   # YouTube Data API v3
+google-auth-oauthlib>=1.2         # YouTube OAuth installed-app flow
+google-auth>=2.0                  # Firestore service-account auth (PublishStore)
+requests>=2.31                    # Meta Graph API calls

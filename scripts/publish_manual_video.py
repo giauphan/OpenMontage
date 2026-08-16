@@ -12,9 +12,15 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from publish_config import load_config
 from tools.publish_store import PublishStore, publish_key
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
+
+_CFG = load_config()
+FB_PAGE_ID = _CFG["meta"]["page_id"]
+IG_ACCOUNT_ID = _CFG["meta"]["ig_account_id"]
+YT_ACCOUNT = _CFG["youtube"]["account"]
 
 
 def load_metadata(project_dir: Path) -> dict:
@@ -53,7 +59,7 @@ def publish_batch(
     platforms = [
         {
             "platform": "youtube",
-            "account": "primary",
+            "account": YT_ACCOUNT,
             "kind": "short",
             "title": metadata["title"],
             "description": metadata["description"],
@@ -62,7 +68,7 @@ def publish_batch(
         },
         {
             "platform": "instagram",
-            "account": "17841434265610775",
+            "account": IG_ACCOUNT_ID,
             "kind": "reels",
             "title": metadata["title"],
             "description": metadata["description"],
@@ -71,7 +77,7 @@ def publish_batch(
         },
         {
             "platform": "facebook",
-            "account": "1183103681563663",
+            "account": FB_PAGE_ID,
             "kind": "page_video",
             "title": metadata["title"],
             "description": metadata["description"],
@@ -159,7 +165,7 @@ def publish_batch(
                 "video_path": video_path,
                 "title": title,
                 "caption": description,
-                "page_id": "1183103681563663",
+                "page_id": FB_PAGE_ID,
                 "post_to_facebook": platform == "facebook",
                 "post_to_instagram": platform == "instagram",
             }

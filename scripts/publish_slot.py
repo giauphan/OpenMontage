@@ -5,16 +5,19 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from publish_config import load_config
 from tools.publish_store import PublishStore, existing_record_summary
 from tools.publishers.meta_publisher import MetaPublisher
 from tools.publishers.youtube_publisher import YoutubePublisher
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = ROOT / "publish_state.lock"
-LOCAL_TZ = ZoneInfo("Asia/Jakarta")
+_CFG = load_config()
+LOCAL_TZ = ZoneInfo(_CFG["timezone"])
+IG_ACCOUNT_ID = _CFG["meta"]["ig_account_id"]
 PLATFORM_ACCOUNTS = {
-    "youtube": "primary",
-    "instagram": "17841434265610775",
+    "youtube": _CFG["youtube"]["account"],
+    "instagram": IG_ACCOUNT_ID,
 }
 
 JOBS = {
@@ -83,7 +86,7 @@ def publish(job):
         })
     return MetaPublisher().execute({
         "video_path": str(path),
-        "page_id": "17841434265610775",
+        "page_id": IG_ACCOUNT_ID,
         "caption": f'{job["title"]} #TechNews #Vietnam #OpenMontage',
         "post_to_facebook": False,
         "post_to_instagram": True,
