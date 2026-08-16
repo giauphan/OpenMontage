@@ -23,4 +23,4 @@ Tuy nhiên, bài toán vận hành cũng đi kèm những thách thức không n
 Chiến lược thông minh nhất cho các tổ chức hiện nay là triển khai mô hình lai. Hãy sử dụng GPT-4o cho các tác vụ hàng ngày cần tốc độ và chi phí thấp, và chỉ kích hoạt o3-Pro cho những bài toán chiến lược quan trọng, nơi độ chính xác tuyệt đối là ưu tiên hàng đầu.
 
 ### Scene 7 (1:46 - 2:00)
-Kỷ nguyên AI suy luận đã chính thức bắt đầu và đang thay đổi cuộc chơi công nghệ. Hãy bấm đăng ký kênh OpenMontage ngay hôm nay để không bỏ lỡ những phân tích chuyên sâu tiếp theo.
+Kỷ nguyên AI suy luận đã chính thức bắt đầu và đang thay đổi cuộc chơi công nghệ. Hãy bấm đăng ký kênh ngay hôm nay để không bỏ lỡ những phân tích chuyên sâu tiếp theo.
