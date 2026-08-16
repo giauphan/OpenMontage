@@ -37,7 +37,9 @@ remotion-composer/node_modules/
 remotion-composer/out/
 
 # Local tooling state
-.claude/
+.claude/task/
+.claude/worktrees/
+.claude/settings.local.json
 .codeatlas/
 .backlot/
 .idea/

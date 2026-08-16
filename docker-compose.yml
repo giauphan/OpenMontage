@@ -1,5 +1,5 @@
 services:
-  # Base worker for render / manual script tasks
+  # Base worker for render / NewsNow pipeline / manual tasks
   worker:
     build:
       context: .
@@ -12,6 +12,9 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      # Mount user's local Claude CLI login session (~/.claude.json / credentials)
+      - ~/.claude.json:/root/.claude.json:ro
+      - ~/.claude:/root/.claude
     stdin_open: true
     tty: true
 

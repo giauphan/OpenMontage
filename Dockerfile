@@ -29,6 +29,10 @@ RUN pip3 install -r requirements.txt -r requirements-publish.txt edge-tts>=7.2
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
+# Claude Code CLI — drives the news selection / research pipeline
+# (lib/claude_news_selector.py shells out to `claude --print`)
+RUN npm install -g @anthropic-ai/claude-code
+
 # Project source
 COPY . .
 
