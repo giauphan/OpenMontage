@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenAI o3-Pro Launch 2026 - HyperFrames</title>
+  <script src="assets/gsap.min.js"></script>
+  <style>
+    @import url('assets/Inter.css');
+    @import url('assets/JetBrainsMono.css');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    #root-composition {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      background: #020617;
+      font-family: 'Inter', sans-serif;
+    }
+
+    #root-composition::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 30% 70%, rgba(251, 191, 36, 0.1) 0%, transparent 60%),
+        radial-gradient(ellipse at 70% 30%, rgba(59, 130, 246, 0.1) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    audio { display: none; }
+
+    .scene {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-direction: column;
+      padding: 60px;
+    }
+
+    .title-hero {
+      font-size: 80px;
+      font-weight: 900;
+      color: #F8FAFC;
+      text-align: center;
+      line-height: 1.1;
+      letter-spacing: -2px;
+      max-width: 90%;
+    }
+
+    .subtitle-hero {
+      font-size: 36px;
+      color: #FBBF24;
+      text-align: center;
+      margin-top: 24px;
+      font-weight: 400;
+    }
+
+    .badge-year {
+      position: absolute;
+      top: 60px;
+      right: 60px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 28px;
+      color: #94A3B8;
+      border: 1px solid #334155;
+      padding: 8px 16px;
+      border-radius: 8px;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    .grid-card {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid #1E293B;
+      border-radius: 16px;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card-title {
+      font-size: 32px;
+      font-weight: 700;
+      color: #F8FAFC;
+    }
+
+    .card-desc {
+      font-size: 22px;
+      color: #94A3B8;
+      line-height: 1.4;
+    }
+
+    .metric-big {
+      font-size: 140px;
+      font-weight: 900;
+      color: #FBBF24;
+      line-height: 1;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .metric-label {
+      font-size: 32px;
+      color: #CBD5E1;
+      text-align: center;
+      margin-top: 16px;
+    }
+
+    .warning-box {
+      background: rgba(180, 83, 9, 0.15);
+      border: 1px solid #B45309;
+      border-radius: 16px;
+      padding: 28px 36px;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    .warning-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #FBBF24;
+      margin-bottom: 8px;
+    }
+
+    .warning-desc {
+      font-size: 22px;
+      color: #E2E8F0;
+    }
+
+    .flow-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      background: #0F172A;
+      border: 1px solid #1E293B;
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 20px;
+    }
+
+    .flow-label {
+      font-size: 26px;
+      font-weight: 700;
+      color: #F8FAFC;
+    }
+
+    .flow-target {
+      font-size: 24px;
+      color: #60A5FA;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div id="root-composition"
+       data-composition-id="openai-o3-pro-2026"
+       data-start="0"
+       data-width="1080"
+       data-height="1920"
+       data-duration="120">
+
+    <audio id="narration" src="assets/narration.mp3" data-start="0" data-duration="120"></audio>
+
+    <!-- Scene 1: Hero (0-16s) -->
+    <div id="scene-1" class="scene" data-start="0" data-duration="16" data-composition-id="scene-1">
+      <div class="badge-year">2026</div>
+      <div class="title-hero">OPENAI o3-PRO</div>
+      <div class="subtitle-hero">Kỷ Nguyên AI Tự Suy Luận</div>
+    </div>
+
+    <!-- Scene 2: Test-Time Compute (16-34s) -->
+    <div id="scene-2" class="scene" data-start="16" data-duration="18" data-composition-id="scene-2">
+      <div class="title-hero" style="font-size: 56px; margin-bottom: 40px;">TEST-TIME COMPUTE</div>
+      <div class="card-grid">
+        <div class="grid-card">
+          <div class="card-title" style="color: #64748B;">Mô Hình Cũ</div>
+          <div class="card-desc">Dự đoán từ tiếp theo cực nhanh, dễ mắc lỗi suy luận.</div>
+        </div>
+        <div class="grid-card" style="border-color: #FBBF24;">
+          <div class="card-title" style="color: #FBBF24;">o3-Pro</div>
+          <div class="card-desc">Dành thời gian 'suy nghĩ', tự kiểm tra và sửa lỗi trước khi trả lời.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 3: GPQA Benchmark (34-52s) -->
+    <div id="scene-3" class="scene" data-start="34" data-duration="18" data-composition-id="scene-3">
+      <div class="title-hero" style="font-size: 48px; margin-bottom: 24px;">BÀI KIỂM TRA GPQA</div>
+      <div class="metric-big">87.7%</div>
+      <div class="metric-label">Trình độ Tiến sĩ — Kỷ lục thế giới mới</div>
+    </div>
+
+    <!-- Scene 4: Enterprise Applications (52-70s) -->
+    <div id="scene-4" class="scene" data-start="52" data-duration="18" data-composition-id="scene-4">
+      <div class="title-hero" style="font-size: 48px; margin-bottom: 40px;">ỨNG DỤNG DOANH NGHIỆP</div>
+      <div class="card-grid">
+        <div class="grid-card">
+          <div class="card-title">Phân Tích Dữ Liệu</div>
+          <div class="card-desc">Xử lý bộ dữ liệu phức tạp, phát hiện mẫu ẩn.</div>
+        </div>
+        <div class="grid-card">
+          <div class="card-title">Kiến Trúc Phần Mềm</div>
+          <div class="card-desc">Thiết kế hệ thống quy mô lớn, tối ưu hóa code.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 5: Trade-offs (70-88s) -->
+    <div id="scene-5" class="scene" data-start="70" data-duration="18" data-composition-id="scene-5">
+      <div class="title-hero" style="font-size: 48px; margin-bottom: 40px;">THÁCH THỨC VẬN HÀNH</div>
+      <div style="width: 100%; max-width: 960px;">
+        <div class="warning-box">
+          <div class="warning-title">Chi Phí API Cao Hơn</div>
+          <div class="warning-desc">Tiêu tốn nhiều tài nguyên tính toán cho mỗi chuỗi suy luận.</div>
+        </div>
+        <div class="warning-box">
+          <div class="warning-title">Độ Trễ Phản Hồi Thêm Nhiều Giây</div>
+          <div class="warning-desc">Cần thời gian tính toán trước khi trả kết quả cuối cùng.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 6: Hybrid Strategy (88-106s) -->
+    <div id="scene-6" class="scene" data-start="88" data-duration="18" data-composition-id="scene-6">
+      <div class="title-hero" style="font-size: 48px; margin-bottom: 40px;">CHIẾN LƯỢC MÔ HÌNH LAI</div>
+      <div style="width: 100%; max-width: 960px;">
+        <div class="flow-row">
+          <div class="flow-label">Tác vụ hàng ngày / Tóm tắt</div>
+          <div class="flow-target">GPT-4o</div>
+        </div>
+        <div class="flow-row" style="border-color: #FBBF24;">
+          <div class="flow-label">Bài toán chiến lược / Chính xác tuyệt đối</div>
+          <div class="flow-target" style="color: #FBBF24;">o3-Pro</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 7: Conclusion (106-120s) -->
+    <div id="scene-7" class="scene" data-start="106" data-duration="14" data-composition-id="scene-7">
+      <div class="title-hero" style="font-size: 56px;">KỶ NGUYÊN AI SUY LUẬN</div>
+      <div class="subtitle-hero" style="margin-top: 32px;">Cập nhật tin tức mới nhất tại OpenMontage</div>
+    </div>
+  </div>
+
+  <script>
+    function mulberry32(a) {
+      let t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+    const random = mulberry32(42);
+
+    window.__timelines = window.__timelines || {};
+
+    window.__timelines['scene-1'] = gsap.timeline()
+      .fromTo('#scene-1 .title-hero', { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 1.2, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-1 .subtitle-hero', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.4');
+
+    window.__timelines['scene-2'] = gsap.timeline()
+      .fromTo('#scene-2 .title-hero', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-2 .grid-card', { opacity: 0, y: 30 }, { opacity: 1, y: 0, stagger: 0.2, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    window.__timelines['scene-3'] = gsap.timeline()
+      .fromTo('#scene-3 .title-hero', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-3 .metric-big', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 1.2, ease: 'back.out(1.7)', immediateRender: false }, '-=0.5')
+      .fromTo('#scene-3 .metric-label', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.4');
+
+    window.__timelines['scene-4'] = gsap.timeline()
+      .fromTo('#scene-4 .title-hero', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-4 .grid-card', { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, stagger: 0.2, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    window.__timelines['scene-5'] = gsap.timeline()
+      .fromTo('#scene-5 .title-hero', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-5 .warning-box', { opacity: 0, x: -40 }, { opacity: 1, x: 0, stagger: 0.25, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    window.__timelines['scene-6'] = gsap.timeline()
+      .fromTo('#scene-6 .title-hero', { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 1, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-6 .flow-row', { opacity: 0, y: 30 }, { opacity: 1, y: 0, stagger: 0.2, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.5');
+
+    window.__timelines['scene-7'] = gsap.timeline()
+      .fromTo('#scene-7 .title-hero', { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 1.2, ease: 'power2.out', immediateRender: false })
+      .fromTo('#scene-7 .subtitle-hero', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out', immediateRender: false }, '-=0.4');
+
+    const mainTl = gsap.timeline();
+    mainTl.set('#scene-1', { display: 'flex' }, 0)
+      .add(window.__timelines['scene-1'], 0)
+      .set('#scene-1', { display: 'none' }, 16)
+      .set('#scene-2', { display: 'flex' }, 16)
+      .add(window.__timelines['scene-2'], 16)
+      .set('#scene-2', { display: 'none' }, 34)
+      .set('#scene-3', { display: 'flex' }, 34)
+      .add(window.__timelines['scene-3'], 34)
+      .set('#scene-3', { display: 'none' }, 52)
+      .set('#scene-4', { display: 'flex' }, 52)
+      .add(window.__timelines['scene-4'], 52)
+      .set('#scene-4', { display: 'none' }, 70)
+      .set('#scene-5', { display: 'flex' }, 70)
+      .add(window.__timelines['scene-5'], 70)
+      .set('#scene-5', { display: 'none' }, 88)
+      .set('#scene-6', { display: 'flex' }, 88)
+      .add(window.__timelines['scene-6'], 88)
+      .set('#scene-6', { display: 'none' }, 106)
+      .set('#scene-7', { display: 'flex' }, 106)
+      .add(window.__timelines['scene-7'], 106)
+      .to('#scene-7 .subtitle-hero', { duration: 14, ease: 'none' }, 106);
+
+    window.__timelines['openai-o3-pro-2026'] = mainTl;
+  </script>
+</body>
+</html>

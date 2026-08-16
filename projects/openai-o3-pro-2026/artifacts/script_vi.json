@@ -1,0 +1,117 @@
+{
+  "version": "1.0",
+  "project_id": "openai-o3-pro-2026",
+  "title": "OpenAI o3-Pro: Kỷ Nguyên AI Biết Suy Nghĩ Trước Khi Trả Lời",
+  "language": "vi",
+  "target_duration_seconds": 120,
+  "pacing_words_per_second": 2.5,
+  "voice_performance": {
+    "performance_intent": "Deep, authoritative technology narrator with measured pacing and curious hook.",
+    "pacing_profile": "documentary_news",
+    "energy_curve": "curious hook -> structured breakdown -> intense technical focus -> inspiring conclusion",
+    "pause_policy": "Explicit pauses after setup statements and before technical reveals."
+  },
+  "sections": [
+    {
+      "id": "s1",
+      "duration": 16,
+      "start_seconds": 0,
+      "end_seconds": 16,
+      "text": "Năm hai nghìn không trăm hai mươi sáu, OpenAI vừa chính thức trình làng o ba Pro. Đây không chỉ là một mô hình AI mới, mà là cột mốc đánh dấu sự chuyển dịch sang kỷ nguyên AI tự suy luận.",
+      "narrative_role": "introduce_subject",
+      "delivery_cues": {
+        "pace": "measured",
+        "energy": "curious_authority",
+        "emphasis_words": ["o ba Pro", "tự suy luận"],
+        "pause_after_seconds": 0.4
+      }
+    },
+    {
+      "id": "s2",
+      "duration": 18,
+      "start_seconds": 16,
+      "end_seconds": 34,
+      "text": "Khác với các mô hình trước đây vốn dự đoán từ tiếp theo cực nhanh, o ba Pro áp dụng cơ chế Test Time Compute. Nó dành thời gian 'suy nghĩ', tự kiểm tra và sửa lỗi trước khi đưa ra câu trả lời cuối cùng.",
+      "narrative_role": "explain_mechanism",
+      "delivery_cues": {
+        "pace": "technical_clear",
+        "energy": "focused",
+        "emphasis_words": ["Test Time Compute", "suy nghĩ"],
+        "pause_after_seconds": 0.3
+      }
+    },
+    {
+      "id": "s3",
+      "duration": 18,
+      "start_seconds": 34,
+      "end_seconds": 52,
+      "text": "Trên bài kiểm tra trình độ tiến sĩ G P Q A, o ba Pro đạt điểm số kỷ lục tám mươi bảy phẩy bảy phần trăm. Nó giải quyết các bài toán lập trình và toán học phức tạp mà GPT bốn o hoàn toàn bó tay.",
+      "narrative_role": "deliver_insight",
+      "delivery_cues": {
+        "pace": "deliberate",
+        "energy": "impressed",
+        "emphasis_words": ["tám mươi bảy phẩy bảy phần trăm", "bó tay"],
+        "pause_after_seconds": 0.3
+      }
+    },
+    {
+      "id": "s4",
+      "duration": 18,
+      "start_seconds": 52,
+      "end_seconds": 70,
+      "text": "Điều này có ý nghĩa gì đối với doanh nghiệp? Thay vì chỉ hỗ trợ viết email hay tóm tắt văn bản, o ba Pro có thể đảm nhận các quy trình phân tích dữ liệu và thiết kế kiến trúc phần mềm phức tạp.",
+      "narrative_role": "address_concern",
+      "delivery_cues": {
+        "pace": "conversational",
+        "energy": "engaging",
+        "emphasis_words": ["doanh nghiệp", "kiến trúc phần mềm"],
+        "pause_after_seconds": 0.4
+      }
+    },
+    {
+      "id": "s5",
+      "duration": 18,
+      "start_seconds": 70,
+      "end_seconds": 88,
+      "text": "Tuy nhiên, thách thức nằm ở chi phí và thời gian phản hồi. Vì sử dụng nhiều tài nguyên tính toán hơn cho mỗi câu hỏi, o ba Pro có chi phí A P I cao hơn và độ trễ phản hồi lớn hơn.",
+      "narrative_role": "warn_risk",
+      "delivery_cues": {
+        "pace": "cautious",
+        "energy": "serious",
+        "emphasis_words": ["chi phí", "độ trễ"],
+        "pause_after_seconds": 0.3
+      }
+    },
+    {
+      "id": "s6",
+      "duration": 18,
+      "start_seconds": 88,
+      "end_seconds": 106,
+      "text": "Chiến lược thông minh cho các công ty là mô hình lai: dùng GPT bốn o cho các tác vụ hàng ngày, và chỉ kích hoạt o ba Pro cho những bài toán chiến lược cần độ chính xác tuyệt đối.",
+      "narrative_role": "provide_solution",
+      "delivery_cues": {
+        "pace": "structured",
+        "energy": "confident",
+        "emphasis_words": ["mô hình lai", "tuyệt đối"],
+        "pause_after_seconds": 0.4
+      }
+    },
+    {
+      "id": "s7",
+      "duration": 14,
+      "start_seconds": 106,
+      "end_seconds": 120,
+      "text": "Kỷ nguyên AI suy luận đã chính thức bắt đầu. Hãy đăng ký kênh để tiếp tục cập nhật những bước tiến công nghệ mới nhất cùng OpenMontage.",
+      "narrative_role": "close_vision",
+      "delivery_cues": {
+        "pace": "inspiring",
+        "energy": "warm_closing",
+        "emphasis_words": ["chính thức bắt đầu", "OpenMontage"],
+        "pause_after_seconds": 0.5
+      }
+    }
+  ],
+  "total_words": 195,
+  "estimated_speech_duration": 120,
+  "notes": "195 words optimized for 120s vertical news timeline with clear Vietnamese TTS pronunciation."
+}

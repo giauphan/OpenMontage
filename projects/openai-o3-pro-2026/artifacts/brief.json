@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "topic": "openai-o3-pro-2026",
+  "title": "OpenAI o3-Pro: Kỷ Nguyên AI Biết Suy Nghĩ Trước Khi Trả Lời",
+  "description": "Năm 2026, OpenAI chính thức trình làng o3-Pro, cột mốc đánh dấu sự chuyển dịch sang kỷ nguyên AI tự suy luận. Áp dụng cơ chế Test Time Compute, o3-Pro dành thời gian 'suy nghĩ', tự kiểm tra và sửa lỗi trước khi trả lời. Đạt 87.7% trên bài kiểm tra tiến sĩ GPQA, o3-Pro giải quyết các bài toán lập trình và toán học phức tạp mà GPT-4o bó tay. Đối với doanh nghiệp, o3-Pro có thể đảm nhận phân tích dữ liệu và thiết kế kiến trúc phần mềm phức tạp. Thách thức lớn nhất là chi phí API cao hơn và độ trễ phản hồi lớn hơn. Chiến lược tối ưu cho các công ty là mô hình lai: dùng GPT-4o cho tác vụ hàng ngày và kích hoạt o3-Pro cho những bài toán chiến lược cần độ chính xác tuyệt đối.",
+  "target_duration_seconds": 120,
+  "target_audience": "Tech leaders, software engineers, CTOs, AI enthusiasts",
+  "target_platform": "youtube",
+  "tone": "authoritative, deep, insightful, forward-looking",
+  "narrative_structure": "opportunity_challenge",
+  "visual_approach": "Neural lattice background, thinking loop animation, GPQA benchmark bar chart, enterprise task grid, cost-latency gauges, hybrid router flow diagram",
+  "core_message": "o3-Pro introduces test-time reasoning to AI, making high-stakes strategic problem solving achievable via a hybrid model strategy.",
+  "cta": "Reasoning AI is here. Subscribe to OpenMontage for key tech insights.",
+  "language": "vi",
+  "render_runtime": "hyperframes",
+  "pipeline": "animated-explainer"
+}

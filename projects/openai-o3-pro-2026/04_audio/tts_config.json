@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "project_id": "openai-o3-pro-2026",
+  "tts_provider": "auto",
+  "voice": "vi-VN-Neural2-A",
+  "alternative_voice": "eleven_multilingual_v2",
+  "language_code": "vi-VN",
+  "output_dir": "04_audio",
+  "audio_format": "wav",
+  "sample_rate": 24000,
+  "prompt_override_file": "tts_prompt_base.txt",
+  "spoken_script_file": "script_spoken.md",
+  "speed_factor": 1.0,
+  "pitch_factor": 1.0,
+  "pronunciation_file": "pronunciation_notes.md"
+}
