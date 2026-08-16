@@ -2,9 +2,17 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-set -a
-. ./.env
-set +a
+if [ -f .env ]; then
+  set -a; . ./.env; set +a
+fi
 export PYTHONPATH="$ROOT"
-PY="${OPENMONTAGE_PYTHON:-$ROOT/venv/bin/python3}"
+
+if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
+  PY="$OPENMONTAGE_PYTHON"
+elif [ -x "$ROOT/venv/bin/python3" ]; then
+  PY="$ROOT/venv/bin/python3"
+else
+  PY="$(command -v python3)"
+fi
+
 exec "$PY" scripts/publish_slot.py "$1"

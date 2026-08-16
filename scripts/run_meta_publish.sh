@@ -4,12 +4,18 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-set -a
-. ./.env
-set +a
+if [ -f .env ]; then
+  set -a; . ./.env; set +a
+fi
 export PYTHONPATH="$ROOT"
-PY="${OPENMONTAGE_PYTHON:-$ROOT/venv/bin/python3}"
 
-# Read active_projects array from config JSON
+if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
+  PY="$OPENMONTAGE_PYTHON"
+elif [ -x "$ROOT/venv/bin/python3" ]; then
+  PY="$ROOT/venv/bin/python3"
+else
+  PY="$(command -v python3)"
+fi
+
 PROJECTS=$("$PY" -c "import json;print(' '.join(json.load(open('config/publish_schedule.json'))['active_projects']))")
 exec "$PY" scripts/publish_meta.py $PROJECTS
