@@ -101,3 +101,5 @@ venv/
 .claude/settings.json
 .codeatlas/
 *.json
+!package.json
+!package-lock.json

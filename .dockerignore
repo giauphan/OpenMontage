@@ -1,0 +1,46 @@
+# Build context exclusions — keep image small and free of secrets
+.git
+.gitignore
+
+# Secrets — mounted at runtime, never baked into the image
+.env
+.env.local
+*.env
+!.env.example
+.youtube-token.json
+gcp-*.json
+*-service-account.json
+service-account*.json
+service_account*.json
+credentials/
+
+# Generated / regenerable
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Large media — mounted as volumes at runtime
+projects/
+output/
+pipeline/
+renders/
+corpus/
+music_library/
+remotion-composer/node_modules/
+remotion-composer/out/
+
+# Local tooling state
+.claude/
+.codeatlas/
+.backlot/
+.idea/
+.vscode/
+internal/
+scratch/

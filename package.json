@@ -1,0 +1,12 @@
+{
+  "name": "openmontage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenMontage video creation & automated publishing pipeline",
+  "scripts": {
+    "render": "hyperframes render"
+  },
+  "dependencies": {
+    "hyperframes": "^0.7.108"
+  }
+}

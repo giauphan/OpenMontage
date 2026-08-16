@@ -1,0 +1,40 @@
+services:
+  # Base worker for render / manual script tasks
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: openmontage:latest
+    container_name: openmontage_worker
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/app
+      - /app/node_modules
+    stdin_open: true
+    tty: true
+
+  # Daily publish scheduler (YouTube 01:00 UTC / Meta 01:30 UTC)
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: openmontage:latest
+    container_name: openmontage_scheduler
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./projects:/app/projects
+      - ./config:/app/config
+      - ./credentials:/app/credentials:ro
+    command: >
+      bash -c "
+        apt-get update && apt-get install -y cron &&
+        cp deploy/openmontage.cron /etc/cron.d/openmontage-cron &&
+        chmod 0644 /etc/cron.d/openmontage-cron &&
+        crontab /etc/cron.d/openmontage-cron &&
+        cron -f
+      "
+    restart: unless-stopped
