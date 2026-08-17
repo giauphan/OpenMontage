@@ -15,6 +15,8 @@ services:
       # Mount user's local Claude CLI login session (~/.claude.json / credentials)
       - ~/.claude.json:/root/.claude.json:ro
       - ~/.claude:/root/.claude
+    environment:
+      - PYTHONPATH=/app
     stdin_open: true
     tty: true
 
@@ -28,6 +30,8 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      - PYTHONPATH=/app
     volumes:
       - ./projects:/app/projects
       - ./config:/app/config

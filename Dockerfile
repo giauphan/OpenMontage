@@ -35,5 +35,6 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # Project source
 COPY . .
+ENV PYTHONPATH=/app
 
 CMD ["bash"]
