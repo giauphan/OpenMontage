@@ -9,6 +9,9 @@
 
 PATH_TO_OPENMONTAGE=/home/genro68/OpenMontage
 
+# 07:00 WIB — AI generates daily news video (topic selection → render → update active_projects)
+0 0 * * * cd PATH_TO_OPENMONTAGE && ./scripts/run_daily_news_pipeline.sh >> logs/cron_news.log 2>&1
+
 # 08:00 WIB — Schedule YouTube Shorts for active projects
 0 1 * * * cd PATH_TO_OPENMONTAGE && ./scripts/run_youtube_schedule.sh >> logs/cron_yt.log 2>&1
 
