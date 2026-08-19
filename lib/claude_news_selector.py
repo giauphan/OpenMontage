@@ -40,10 +40,11 @@ class ClaudeNewsSelector:
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex
+        clean_env = "env -u ANTHROPIC_MODEL -u ANTHROPIC_DEFAULT_SONNET_MODEL -u ANTHROPIC_DEFAULT_OPUS_MODEL -u ANTHROPIC_DEFAULT_FABLE_MODEL -u ANTHROPIC_DEFAULT_HAIKU_MODEL -u CLAUDECODE"
         if os.geteuid() == 0:
-            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"claude --print {shlex.quote(prompt)}"]
+            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"{clean_env} claude --print {shlex.quote(prompt)}"]
         else:
-            cmd = [self.cli_path, "--print", prompt]
+            cmd = ["bash", "-c", f"{clean_env} {self.cli_path} --print {shlex.quote(prompt)}"]
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL
