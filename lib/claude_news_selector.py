@@ -40,11 +40,10 @@ class ClaudeNewsSelector:
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex
-        clean_env = "env -u ANTHROPIC_MODEL -u ANTHROPIC_DEFAULT_SONNET_MODEL -u ANTHROPIC_DEFAULT_OPUS_MODEL -u ANTHROPIC_DEFAULT_FABLE_MODEL -u ANTHROPIC_DEFAULT_HAIKU_MODEL -u CLAUDECODE"
         if os.geteuid() == 0:
-            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"{clean_env} claude --print {shlex.quote(prompt)}"]
+            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"claude -p {shlex.quote(prompt)}"]
         else:
-            cmd = ["bash", "-c", f"{clean_env} {self.cli_path} --print {shlex.quote(prompt)}"]
+            cmd = ["bash", "-c", f"{self.cli_path} -p {shlex.quote(prompt)}"]
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL
@@ -59,6 +58,13 @@ class ClaudeNewsSelector:
                 logger.error("Unexpected markdown wrapper in JSON output.")
                 return None
 
+            idx = output.find('{')
+            if idx != -1:
+                try:
+                    obj, _ = json.JSONDecoder().raw_decode(output[idx:])
+                    return obj
+                except Exception as ex:
+                    logger.warning(f"raw_decode failed: {ex}")
             return json.loads(output)
         except subprocess.TimeoutExpired as e:
             logger.error(f"CLI timeout. stdout: {e.stdout} stderr: {e.stderr}")
@@ -126,62 +132,107 @@ class ClaudeNewsSelector:
                 "body": c.get("body", "")[:MAX_BODY_CHARS],
                 "score": c.get("scoring", {}).get("total_score", 0)
             })
-
         return f"""You are a senior news producer for OpenMontage. Select the best candidate for short-form video.
-        Output ONLY valid JSON, no markdown fencing, no preamble.
+Output ONLY valid JSON object. No markdown, no preamble, no commentary.
 
-        Required structure:
+Requirements for research_draft:
+- existing_content: Array of 3 items minimum
+- data_points: Array of 3 items minimum
+- common_questions: Array of 3 items minimum
+- angles_discovered: Array of 3 items minimum
+- sources: Array of items using canonical_url from input candidates
+
+JSON Schema:
+{{
+  "selected_candidate_id": "candidate_id matching input",
+  "selection_rationale": "brief reasoning",
+  "research_draft": {{
+    "landscape": {{
+      "existing_content": [
         {{
-          "selected_candidate_id": "must belong to candidate_id in inputs",
-          "selection_rationale": "reasoning",
-          "research_draft": {{
-            "landscape": {{
-              "existing_content": [
-                {{
-                  "title": "title string",
-                  "url": "canonical_url from candidates",
-                  "source": "youtube|blog|tiktok|news",
-                  "angle": "narrative approach",
-                  "what_it_covers": "summary of coverage"
-                }}
-              ],
-              "saturated_angles": ["string"],
-              "underserved_gaps": ["string"]
-            }},
-            "data_points": [
-              {{
-                "claim": "specific fact or data point",
-                "source_url": "canonical_url from candidates",
-                "source_name": "publisher name",
-                "credibility": "primary_source|secondary_source|anecdotal"
-              }}
-            ],
-            "audience_insights": {{
-              "common_questions": ["string (min 3)"],
-              "misconceptions": [
-                {{
-                  "myth": "common myth",
-                  "reality": "actual fact"
-                }}
-              ],
-              "knowledge_level": "beginner|intermediate|advanced"
-            }},
-            "angles_discovered": [
-              {{
-                "name": "short angle title",
-                "hook": "one-sentence hook",
-                "type": "trending|evergreen|contrarian|narrative|data_driven",
-                "why_now": "why compelling right now"
-              }}
-            ],
-            "sources": [
-              {{
-                "url": "canonical_url from candidates",
-                "title": "article title",
-                "used_for": "section or claim supported"
-              }}
-            ]
-          }}
+          "title": "string",
+          "url": "canonical_url from candidates",
+          "source": "youtube|blog|tiktok|news",
+          "angle": "string",
+          "what_it_covers": "string"
+        }},
+        {{
+          "title": "string 2",
+          "url": "canonical_url from candidates",
+          "source": "news",
+          "angle": "string",
+          "what_it_covers": "string"
+        }},
+        {{
+          "title": "string 3",
+          "url": "canonical_url from candidates",
+          "source": "blog",
+          "angle": "string",
+          "what_it_covers": "string"
         }}
-        Input candidates:
-        {json.dumps(clean_candidates)}"""
+      ],
+      "saturated_angles": ["string"],
+      "underserved_gaps": ["string"]
+    }},
+    "data_points": [
+      {{
+        "claim": "fact 1",
+        "source_url": "canonical_url from candidates",
+        "source_name": "publisher name",
+        "credibility": "primary_source|secondary_source|anecdotal"
+      }},
+      {{
+        "claim": "fact 2",
+        "source_url": "canonical_url from candidates",
+        "source_name": "publisher name",
+        "credibility": "primary_source|secondary_source|anecdotal"
+      }},
+      {{
+        "claim": "fact 3",
+        "source_url": "canonical_url from candidates",
+        "source_name": "publisher name",
+        "credibility": "primary_source|secondary_source|anecdotal"
+      }}
+    ],
+    "audience_insights": {{
+      "common_questions": ["question 1", "question 2", "question 3"],
+      "misconceptions": [
+        {{
+          "myth": "string",
+          "reality": "string"
+        }}
+      ],
+      "knowledge_level": "intermediate"
+    }},
+    "angles_discovered": [
+      {{
+        "name": "angle 1",
+        "hook": "one sentence hook",
+        "type": "trending",
+        "why_now": "string"
+      }},
+      {{
+        "name": "angle 2",
+        "hook": "one sentence hook",
+        "type": "data_driven",
+        "why_now": "string"
+      }},
+      {{
+        "name": "angle 3",
+        "hook": "one sentence hook",
+        "type": "contrarian",
+        "why_now": "string"
+      }}
+    ],
+    "sources": [
+      {{
+        "url": "canonical_url from candidates",
+        "title": "article title",
+        "used_for": "claim 1"
+      }}
+    ]
+  }}
+}}
+
+Input candidates:
+{json.dumps(clean_candidates)}"""

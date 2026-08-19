@@ -59,7 +59,7 @@ PROJECT_ID=$(
   "$PY" -c "
 import json
 from pathlib import Path
-checkpoints = list(Path('projects').rglob('checkpoint.json'))
+checkpoints = list(Path('projects').rglob('checkpoint*.json'))
 if not checkpoints:
     raise RuntimeError('No checkpoint.json found in projects/')
 latest = max(checkpoints, key=lambda p: p.stat().st_mtime)

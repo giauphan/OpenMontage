@@ -99,9 +99,11 @@ def run_produce(args: argparse.Namespace) -> None:
 
     logger.info("Initializing OpenMontage project...")
     project_id = candidate["candidate_id"]
+    pipeline_dir = Path("projects") / project_id
     init_project(project_id, title=research_brief["topic"], pipeline_type="animated-explainer")
 
     write_checkpoint(
+        Path("projects"),
         project_id=project_id,
         stage="research",
         status="completed",
