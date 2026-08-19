@@ -39,7 +39,11 @@ class ClaudeNewsSelector:
         return self._validate_output(result, top_candidates)
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
-        cmd = [self.cli_path, "--print", "--dangerously-skip-permissions", prompt]
+        import os, shlex
+        if os.geteuid() == 0:
+            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"claude --print {shlex.quote(prompt)}"]
+        else:
+            cmd = [self.cli_path, "--print", prompt]
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL

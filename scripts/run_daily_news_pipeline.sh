@@ -79,17 +79,27 @@ echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_L
 DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 
 set +e
-env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
-    -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-  claude -p --dangerously-skip-permissions \
-    --output-format json \
-    "Run OpenMontage directors pipeline for projects/$PROJECT_ID. \
-     Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute \
-     Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. \
-     Generate both hyperframes/index.html (120s full) and \
-     hyperframes_reels/index.html (60s Reels cutdown) under \
-     projects/$PROJECT_ID/. Do not ask for confirmation between stages." \
-    > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Generate both hyperframes/index.html (120s full) and hyperframes_reels/index.html (60s Reels cutdown) under projects/$PROJECT_ID/. Do not ask for confirmation between stages."
+
+if [ "$(id -u)" -eq 0 ]; then
+  su node -s /bin/bash -c "
+    export PATH=\"$PATH\"
+    export PYTHONPATH=\"$PYTHONPATH\"
+    cd \"$ROOT\"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
+        -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
+      claude -p --dangerously-skip-permissions \
+        --output-format json \
+        \"$PROMPT_STR\"
+  " > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+else
+  env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
+      -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
+    claude -p --dangerously-skip-permissions \
+      --output-format json \
+      "$PROMPT_STR" \
+      > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+fi
 CLAUDE_EXIT=$?
 set -e
 
