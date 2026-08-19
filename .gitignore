@@ -103,3 +103,4 @@ venv/
 *.json
 !package.json
 !package-lock.json
+logs
