@@ -39,10 +39,10 @@ class ClaudeNewsSelector:
         return self._validate_output(result, top_candidates)
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
-        cmd = [self.cli_path, "--print", prompt]
+        cmd = [self.cli_path, "--print", "--dangerously-skip-permissions", prompt]
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True
+                cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL
             )
             output = proc.stdout.strip()
             if len(output) > MAX_OUTPUT_CHARS:
@@ -55,8 +55,8 @@ class ClaudeNewsSelector:
                 return None
 
             return json.loads(output)
-        except subprocess.TimeoutExpired:
-            logger.error("CLI timeout.")
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"CLI timeout. stdout: {e.stdout} stderr: {e.stderr}")
             return None
         except subprocess.CalledProcessError as e:
             logger.error(f"CLI error: {e.stderr[:200]}")
