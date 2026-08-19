@@ -68,6 +68,10 @@ print(checkpoint['project_id'])
   "
 )
 
+if [ -n "$PROJECT_ID" ] && [ -d "projects/$PROJECT_ID" ]; then
+  chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
+fi
+
 echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
 
 # Step 2.5: Run Directors pipeline via Claude CLI (unattended, logged) (P2)
