@@ -36,6 +36,7 @@ services:
       - ./projects:/app/projects
       - ./config:/app/config
       - ./credentials:/app/credentials:ro
+      - ./deploy:/app/deploy:ro
       - ./logs:/app/logs
       - ~/.claude.json:/root/.claude.json:ro
       - ~/.claude:/root/.claude
