@@ -11,7 +11,7 @@ if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
-export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
+export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
 export PYTHONPATH="$ROOT"
 
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
