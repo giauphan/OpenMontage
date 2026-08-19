@@ -102,6 +102,11 @@ def run_produce(args: argparse.Namespace) -> None:
     pipeline_dir = Path("projects") / project_id
     init_project(project_id, title=research_brief["topic"], pipeline_type="animated-explainer")
 
+    brief_path = pipeline_dir / "artifacts" / "research_brief.json"
+    brief_path.parent.mkdir(parents=True, exist_ok=True)
+    with brief_path.open("w", encoding="utf-8") as f:
+        json.dump(research_brief, f, indent=2)
+
     write_checkpoint(
         Path("projects"),
         project_id=project_id,
