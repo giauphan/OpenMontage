@@ -39,7 +39,7 @@ class ClaudeNewsSelector:
         return self._validate_output(result, top_candidates)
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
-        import os, shlex
+        import os, shlex, re
         if os.geteuid() == 0:
             cmd = ["su", "node", "-s", "/bin/bash", "-c", f"claude -p {shlex.quote(prompt)}"]
         else:
@@ -49,35 +49,34 @@ class ClaudeNewsSelector:
                 cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL
             )
             output = proc.stdout.strip()
-            if len(output) > MAX_OUTPUT_CHARS:
-                logger.error("CLI output exceeded max size limit.")
-                return None
-
-            # Enforce strict raw JSON (do not silently strip markdown)
-            if output.startswith("```"):
-                logger.error("Unexpected markdown wrapper in JSON output.")
-                return None
-
-            idx = output.find('{')
-            if idx != -1:
+            if "```" in output:
+                match_code = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output, re.DOTALL)
+                if match_code:
+                    output = match_code.group(1)
+            idx = output.find("{")
+            last_idx = output.rfind("}")
+            if idx != -1 and last_idx > idx:
+                json_str = output[idx:last_idx+1]
+                json_str = re.sub(r",\s*([\}\]])", r"", json_str)
                 try:
-                    obj, _ = json.JSONDecoder().raw_decode(output[idx:])
+                    return json.loads(json_str)
+                except Exception:
+                    pass
+                try:
+                    obj, _ = json.JSONDecoder().raw_decode(json_str)
                     return obj
                 except Exception as ex:
                     logger.warning(f"raw_decode failed: {ex}")
             return json.loads(output)
         except subprocess.TimeoutExpired as e:
             logger.error(f"CLI timeout. stdout: {e.stdout} stderr: {e.stderr}")
-            return None
         except subprocess.CalledProcessError as e:
             logger.error(f"CLI error: {e.stderr[:200]}")
-            return None
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return None
         except Exception as e:
             logger.error(f"Unexpected error in _run_claude: {e}")
-            return None
+        return None
 
     def _validate_output(self, parsed: Dict[str, Any], candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         required = ["selected_candidate_id", "selection_rationale", "research_draft"]
