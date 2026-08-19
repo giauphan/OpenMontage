@@ -36,10 +36,13 @@ services:
       - ./projects:/app/projects
       - ./config:/app/config
       - ./credentials:/app/credentials:ro
+      - ./logs:/app/logs
+      - ~/.claude.json:/root/.claude.json:ro
+      - ~/.claude:/root/.claude
     command: >
       bash -c "
         apt-get update && apt-get install -y cron &&
-        cp deploy/openmontage.cron /etc/cron.d/openmontage-cron &&
+        sed 's|PATH_TO_OPENMONTAGE=/home/genro68/OpenMontage|PATH_TO_OPENMONTAGE=/app|g' deploy/openmontage.cron > /etc/cron.d/openmontage-cron &&
         chmod 0644 /etc/cron.d/openmontage-cron &&
         crontab /etc/cron.d/openmontage-cron &&
         cron -f

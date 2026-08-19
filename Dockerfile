@@ -11,11 +11,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     NODE_PATH=/app/node_modules
 
-# System deps: python, ffmpeg, and Chromium (multi-arch) for HyperFrames render
+# System deps: python, ffmpeg, chromium (multi-arch), curl, and jq
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-pip python3-venv \
       ffmpeg \
       chromium \
+      curl jq \
       ca-certificates fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
