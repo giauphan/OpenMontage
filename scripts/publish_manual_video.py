@@ -31,6 +31,21 @@ def load_metadata(project_dir: Path) -> dict:
         return json.load(f)
 
 
+def resolve_video_path(raw: str, project_dir: Path, root: Path) -> Path:
+    """Resolve a metadata video path.
+
+    - Absolute paths are used as-is.
+    - Repo-prefixed paths (``projects/...``) resolve against the repo root.
+    - Anything else resolves against the project directory.
+    """
+    p = Path(raw)
+    if p.is_absolute():
+        return p
+    if p.parts and p.parts[0] == "projects":
+        return (root / p).resolve()
+    return (project_dir / p).resolve()
+
+
 def enforce_batch_gap(last_publish_time: str | None) -> None:
     """Enforce at least 2 hours between publishing batches."""
     if not last_publish_time:
@@ -46,49 +61,45 @@ def enforce_batch_gap(last_publish_time: str | None) -> None:
 
 def publish_batch(
     metadata: dict,
-    store: PublishStore,
+    project_dir: Path,
+    store: PublishStore | None,
     dry_run: bool = False,
     retry_failed: bool = False,
     only_platform: str | None = None,
 ) -> dict:
-    """Publish one topic to all four platforms with Firebase guards."""
+    """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
     root = Path(__file__).resolve().parents[1]
 
-    # Platform configs (long 16:9 flow removed — all platforms use 120s 9:16 except Instagram)
+    # Metadata contract: each platform maps to one explicit video field and kind.
+    platform_contract = [
+        ("youtube", YT_ACCOUNT, "short", "yt_shorts"),
+        ("instagram", IG_ACCOUNT_ID, "reels", "ig_reels"),
+        ("facebook", FB_PAGE_ID, "page_video", "fb_video"),
+    ]
+    if "fb_video" not in metadata and "fb_reels" in metadata:
+        metadata = {**metadata, "fb_video": metadata["fb_reels"]}
+    missing = [field for _, _, _, field in platform_contract if field not in metadata]
+    if missing:
+        raise KeyError(f"publish_metadata.json missing platform video fields: {', '.join(missing)}")
     platforms = [
         {
-            "platform": "youtube",
-            "account": YT_ACCOUNT,
-            "kind": "short",
+            "platform": platform,
+            "account": account,
+            "kind": kind,
             "title": metadata["title"],
             "description": metadata["description"],
-            "video_path": metadata["yt_shorts"],
+            "video_path": metadata[field],
             "publish_at": None,
-        },
-        {
-            "platform": "instagram",
-            "account": IG_ACCOUNT_ID,
-            "kind": "reels",
-            "title": metadata["title"],
-            "description": metadata["description"],
-            "video_path": metadata["ig_reels"],
-            "publish_at": None,
-        },
-        {
-            "platform": "facebook",
-            "account": FB_PAGE_ID,
-            "kind": "page_video",
-            "title": metadata["title"],
-            "description": metadata["description"],
-            "video_path": metadata["fb_video"],
-            "publish_at": None,
-        },
+        }
+        for platform, account, kind, field in platform_contract
     ]
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if only_platform:
         platforms = [cfg for cfg in platforms if cfg["platform"] == only_platform]
+    if not platforms:
+        raise ValueError(f"No platform configured for {only_platform}")
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     for cfg in platforms:
         platform = cfg["platform"]
@@ -96,10 +107,26 @@ def publish_batch(
         kind = cfg["kind"]
         title = cfg["title"]
         description = cfg["description"]
-        video_path = root / cfg["video_path"]
+        video_path = resolve_video_path(cfg["video_path"], project_dir, root)
         publish_at = cfg["publish_at"]
 
         # Step 1: Claim in Firebase before upload
+        if dry_run:
+            key = publish_key(today, metadata["id"], platform, kind)
+            exists = video_path.exists()
+            print(
+                f"[DRY RUN] {platform}/{kind}: would upload "
+                f"{video_path} ({'found' if exists else 'MISSING'})"
+            )
+            results["platforms"][f"{platform}/{kind}"] = {
+                "status": "dry_run",
+                "video_path": str(video_path),
+                "video_exists": exists,
+            }
+            if not exists:
+                results["errors"].append(f"{platform}/{kind} video not found: {video_path}")
+            continue
+
         key, claimed, existing = store.claim(
             date=today,
             topic=metadata["id"],
@@ -250,16 +277,20 @@ def main():
     # Enforce batch gap
     enforce_batch_gap(args.last_publish)
 
-    # Initialize Firebase store
-    try:
-        store = PublishStore()
-    except Exception as e:
-        print(f"Error initializing Firebase store: {e}")
-        sys.exit(1)
+    # Dry runs must not initialize or mutate Firebase.
+    if args.dry_run:
+        store = None
+    else:
+        try:
+            store = PublishStore()
+        except Exception as e:
+            print(f"Error initializing Firebase store: {e}")
+            sys.exit(1)
 
     # Publish batch
     results = publish_batch(
         metadata,
+        project_path,
         store,
         dry_run=args.dry_run,
         retry_failed=args.retry_failed,
@@ -281,6 +312,9 @@ def main():
         elif status_str == "skipped":
             reason = status.get("reason", "unknown")
             print(f"⏭️  {platform_kind}: SKIPPED ({reason})")
+        elif status_str == "dry_run":
+            state = "found" if status.get("video_exists") else "MISSING"
+            print(f"✅ {platform_kind}: DRY RUN ({state})")
         else:
             print(f"❌ {platform_kind}: {status_str}")
             if "error" in status:
@@ -291,14 +325,22 @@ def main():
         for err in results["errors"]:
             print(f"- {err}")
 
-    # Return success if at least one platform published
+    # Dry-run validation succeeds only when every selected asset exists.
+    if args.dry_run:
+        failed_checks = sum(1 for s in results["platforms"].values() if not s.get("video_exists"))
+        if failed_checks:
+            print(f"\n❌ Dry run failed: {failed_checks} video asset(s) missing")
+            return 1
+        print(f"\n✅ Dry run completed for {len(results['platforms'])} platform uploads")
+        return 0
+
+    # Return success if at least one platform published.
     published_count = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
     if published_count > 0:
         print(f"\n✅ Batch completed with {published_count} successful uploads")
         return 0
-    else:
-        print("\n❌ Batch failed: no platforms published")
-        return 1
+    print("\n❌ Batch failed: no platforms published")
+    return 1
 
 
 if __name__ == "__main__":

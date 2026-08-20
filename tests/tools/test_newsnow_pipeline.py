@@ -15,6 +15,7 @@ from lib.claude_news_selector import ClaudeNewsSelector
 from lib.news_research_bridge import NewsResearchBridge
 from lib.news_scoring import NewsCandidateScorer
 from tools.news.newsnow_adapter import NewsNowAdapter
+from tools.news import newsnow_feed
 
 
 URLS = [f"https://example.com/{number}" for number in range(1, 6)]
@@ -148,3 +149,59 @@ def test_bridge_fails_closed_when_evidence_is_insufficient():
 
     with pytest.raises(ValueError, match="at least 5 unique sources"):
         bridge.build_brief(candidate(1), incomplete)
+
+
+def _newsnow_payload(source: str, count: int) -> dict:
+    return {
+        "status": "success",
+        "id": source,
+        "updatedTime": 1787237127958,
+        "items": [
+            {"url": f"https://{source}.example/{number}", "title": f"{source} story {number}", "id": str(number), "extra": {"info": "100 points"}}
+            for number in range(count)
+        ],
+    }
+
+
+def test_feed_converter_normalizes_and_dedupes(monkeypatch):
+    payloads = {
+        "hackernews": _newsnow_payload("hackernews", 2),
+        "github": _newsnow_payload("github", 2),
+        "producthunt": _newsnow_payload("producthunt", 0),
+    }
+    # Inject a cross-source duplicate URL to verify dedupe.
+    payloads["github"]["items"][0]["url"] = payloads["hackernews"]["items"][0]["url"]
+
+    def fake_urlopen(request, timeout=0):
+        source = request.full_url.split("id=")[1]
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(payloads[source]).encode()
+
+        return _Response()
+
+    monkeypatch.setattr(newsnow_feed, "urlopen", fake_urlopen)
+    items = newsnow_feed.fetch_feed("http://127.0.0.1:4444")
+
+    urls = [item["url"] for item in items]
+    assert len(urls) == len(set(urls))
+    for item in items:
+        assert item["id"] and item["url"] and item["title"] and item["published_at"]
+        assert item["published_at"].endswith("+00:00")
+    candidates, diagnostics = NewsNowAdapter().ingest_and_normalize(items)
+    assert diagnostics == []
+    assert len(candidates) == len(items)
+
+
+def test_feed_write_requires_minimum(monkeypatch, tmp_path):
+    monkeypatch.setattr(newsnow_feed, "fetch_feed", lambda url, *a, **k: [{"id": "1"}])
+    with pytest.raises(RuntimeError, match="need at least 3"):
+        newsnow_feed.write_feed("http://127.0.0.1:4444", tmp_path / "feed.json", minimum=3)
+

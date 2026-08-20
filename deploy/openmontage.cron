@@ -7,5 +7,5 @@ PATH_TO_OPENMONTAGE=/app
 # 00:00 UTC (07:00 WIB) — Auto-select trending topic, generate Vietnamese video & publish metadata
 0 0 * * * cd /app && ./scripts/run_daily_news_pipeline.sh >> logs/cron_pipeline.log 2>&1
 
-# 01:00 UTC (08:00 WIB) — Auto-publish generated active project to YouTube, Instagram & Facebook
-0 1 * * * cd /app && python3 scripts/publish_manual_video.py "projects/$(jq -r '.active_projects[0]' config/publish_schedule.json)" >> logs/cron_publish.log 2>&1
+# 01:00 UTC (08:00 WIB) — Auto-publish all active projects to YouTube, Instagram & Facebook
+0 1 * * * cd /app && python3 scripts/publish_active_projects.py >> logs/cron_publish.log 2>&1

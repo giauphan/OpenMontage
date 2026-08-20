@@ -22,57 +22,33 @@ else
   PY="$(command -v python3)"
 fi
 
-# Step 0: Fetch fresh feed with stale fallback (P3)
+# Step 0: Fetch current NewsNow sources with stale fallback.
 FEED_STALE=0
-NEWSNOW_URL="${NEWSNOW_API_URL:-}"
-if [ -n "$NEWSNOW_URL" ]; then
-  echo "[$(date -u +%FT%TZ)] Fetching fresh NewsNow feed..."
-  if curl -sS -f --connect-timeout 10 --max-time 30 "$NEWSNOW_URL" -o "data/newsnow_feed.json.tmp"; then
-    if jq empty "data/newsnow_feed.json.tmp" 2>/dev/null; then
-      mv "data/newsnow_feed.json.tmp" "data/newsnow_feed.json"
-      echo "[$(date -u +%FT%TZ)] Fresh feed saved to data/newsnow_feed.json"
-    else
-      echo "[$(date -u +%FT%TZ)] WARN: Received invalid JSON from NewsNow API. Using stale fallback."
-      rm -f "data/newsnow_feed.json.tmp"
-      FEED_STALE=1
-    fi
-  else
-    echo "[$(date -u +%FT%TZ)] WARN: Failed to fetch NewsNow API feed. Using stale fallback."
-    rm -f "data/newsnow_feed.json.tmp"
-    FEED_STALE=1
-  fi
-else
-  if [ -f "data/newsnow_feed.json" ]; then
-    echo "[$(date -u +%FT%TZ)] NEWSNOW_API_URL not set; using existing data/newsnow_feed.json"
-    FEED_STALE=1
-  else
-    echo "[$(date -u +%FT%TZ)] ERROR: No news feed available at data/newsnow_feed.json and NEWSNOW_API_URL not set."
+NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
+if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 3; then
+  if [ ! -f data/newsnow_feed.json ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: NewsNow fetch failed and no prior feed exists."
     exit 1
   fi
+  FEED_STALE=1
+  echo "[$(date -u +%FT%TZ)] WARN: NewsNow fetch failed; using existing feed."
 fi
 
-# Step 1: Run NewsNow pipeline to select topic and generate research brief (P1 fix: remove invalid --output arg)
-"$PY" tools/news/news_pipeline_cli.py produce --input "data/newsnow_feed.json"
-
-# Step 2: Extract latest selected project ID from checkpoint (P1)
-PROJECT_ID=$(
-  "$PY" -c "
-import json
-from pathlib import Path
-checkpoints = list(Path('projects').rglob('checkpoint*.json'))
-if not checkpoints:
-    raise RuntimeError('No checkpoint.json found in projects/')
-latest = max(checkpoints, key=lambda p: p.stat().st_mtime)
-checkpoint = json.loads(latest.read_text())
-print(checkpoint['project_id'])
-  "
-)
-
-if [ -n "$PROJECT_ID" ] && [ -d "projects/$PROJECT_ID" ]; then
-  chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
+# Step 1: Select and initialize exactly three distinct current topics.
+PRODUCE_LOG="$ROOT/logs/news_produce_$(date -u +%Y%m%dT%H%M%SZ).log"
+"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 3 2>&1 | tee "$PRODUCE_LOG"
+mapfile -t PROJECT_IDS < <(grep '^PROJECT_ID=' "$PRODUCE_LOG" | cut -d= -f2)
+if [ "${#PROJECT_IDS[@]}" -ne 3 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Expected three initialized projects, got ${#PROJECT_IDS[@]}."
+  exit 1
 fi
 
-echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
+for PROJECT_ID in "${PROJECT_IDS[@]}"; do
+  cd "$ROOT"
+  if [ -d "projects/$PROJECT_ID" ]; then
+    chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
+  fi
+  echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
 
 # Step 2.5: Run Directors pipeline via Claude CLI (unattended, logged) (P2)
 DIRECTORS_LOG="$ROOT/logs/directors_${PROJECT_ID}_$(date -u +%Y%m%dT%H%M%SZ).log"
@@ -83,7 +59,7 @@ echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_L
 DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 
 set +e
-PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Generate both hyperframes/index.html (120s full) and hyperframes_reels/index.html (60s Reels cutdown) under projects/$PROJECT_ID/. Do not ask for confirmation between stages."
+PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. Let content determine duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Do not ask for confirmation between stages."
 
 if [ "$(id -u)" -eq 0 ]; then
   su node -s /bin/bash -c "
@@ -146,30 +122,47 @@ cd "$ROOT/projects/$PROJECT_ID"
 mkdir -p renders
 
 FULL_COMP=""
-if [ -f "hyperframes/index.html" ]; then
-  FULL_COMP="hyperframes/index.html"
-elif [ -f "Hyperframes/index.html" ]; then
-  FULL_COMP="Hyperframes/index.html"
+if [ -d "hyperframes" ]; then
+  FULL_COMP="hyperframes"
+elif [ -d "Hyperframes" ]; then
+  FULL_COMP="Hyperframes"
 fi
 
 REELS_COMP=""
-if [ -f "hyperframes_reels/index.html" ]; then
-  REELS_COMP="hyperframes_reels/index.html"
-elif [ -f "Hyperframes_reels/index.html" ]; then
-  REELS_COMP="Hyperframes_reels/index.html"
+if [ -d "hyperframes_reels" ]; then
+  REELS_COMP="hyperframes_reels"
+elif [ -d "Hyperframes_reels" ]; then
+  REELS_COMP="Hyperframes_reels"
 fi
 
 if [ -n "$FULL_COMP" ] && [ ! -f "renders/final_full_vi_9x16.mp4" ]; then
-  hyperframes render --composition "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
+  hyperframes render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
 fi
 if [ -n "$REELS_COMP" ] && [ ! -f "renders/final_reels_vi_9x16.mp4" ]; then
-  hyperframes render --composition "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
+  hyperframes render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
 fi
 
-# Sanity check rendered outputs
-if [ ! -s "renders/final_full_vi_9x16.mp4" ] && [ ! -s "renders/final_reels_vi_9x16.mp4" ]; then
-  echo "[$(date -u +%FT%TZ)] WARN: Neither renders/final_full_vi_9x16.mp4 nor renders/final_reels_vi_9x16.mp4 was generated/non-empty!"
-fi
+# Both required outputs must exist, exceed 30s, and carry an audio stream.
+require_video() {
+  local path="$1"
+  if [ ! -s "$path" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: $path missing or empty for $PROJECT_ID"
+    exit 1
+  fi
+  local dur
+  dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$path" 2>/dev/null || echo 0)
+  if ! awk "BEGIN{exit !($dur > 30)}"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: $path duration ${dur}s not > 30s for $PROJECT_ID"
+    exit 1
+  fi
+  if [ -z "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$path" 2>/dev/null)" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: $path has no audio stream for $PROJECT_ID"
+    exit 1
+  fi
+}
+require_video "renders/final_full_vi_9x16.mp4"
+require_video "renders/final_reels_vi_9x16.mp4"
+
 if [ "$FEED_STALE" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] NOTICE: Render completed using STALE feed data."
 fi
@@ -182,30 +175,37 @@ if [ -f "artifacts/research_brief.json" ]; then
   SUMMARY=$(jq -r '.summary // ""' artifacts/research_brief.json 2>/dev/null || echo "")
 fi
 
-cat > "publish_metadata.json" <<EOF
-{
-  "id": "$PROJECT_ID",
-  "title": "${TITLE:-News Video}",
-  "description": "${SUMMARY:-AI generated news breakdown}",
-  "yt_shorts": "renders/final_full_vi_9x16.mp4",
-  "fb_reels": "renders/final_full_vi_9x16.mp4",
-  "ig_reels": "renders/final_reels_vi_9x16.mp4",
-  "feed_stale": $((FEED_STALE))
-}
-EOF
+jq -n \
+  --arg id "$PROJECT_ID" \
+  --arg title "${TITLE:-News Video}" \
+  --arg description "${SUMMARY:-AI generated news breakdown}" \
+  --argjson feed_stale "$FEED_STALE" \
+  '{
+    id: $id,
+    topic: $title,
+    title: $title,
+    description: $description,
+    yt_shorts: "renders/final_full_vi_9x16.mp4",
+    fb_video: "renders/final_full_vi_9x16.mp4",
+    ig_reels: "renders/final_reels_vi_9x16.mp4",
+    feed_stale: $feed_stale
+  }' > publish_metadata.json
 
-# Step 5: Update publish_schedule.json with new active project
+# Step 4.5: Run copyright preflight (if files exist)
+if [ -f "renders/final_full_vi_9x16.mp4" ]; then
+  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_full_vi_9x16.mp4" || true
+fi
+if [ -f "renders/final_reels_vi_9x16.mp4" ]; then
+  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_reels_vi_9x16.mp4" || true
+fi
+
+done
+
+# Step 5: Atomically activate all three projects.
 cd "$ROOT"
+PROJECT_JSON=$(printf '%s\n' "${PROJECT_IDS[@]}" | jq -R . | jq -s .)
 TMP=$(mktemp)
-jq --arg proj "$PROJECT_ID" '.active_projects |= [$proj]' config/publish_schedule.json > "$TMP"
+jq --argjson projects "$PROJECT_JSON" '.active_projects = $projects' config/publish_schedule.json > "$TMP"
 mv "$TMP" config/publish_schedule.json
 
-# Step 6: Run copyright preflight (if files exist)
-if [ -f "projects/$PROJECT_ID/renders/final_full_vi_9x16.mp4" ]; then
-  "$PY" scripts/check_copyright.py "projects/$PROJECT_ID/renders/final_full_vi_9x16.mp4" || true
-fi
-if [ -f "projects/$PROJECT_ID/renders/final_reels_vi_9x16.mp4" ]; then
-  "$PY" scripts/check_copyright.py "projects/$PROJECT_ID/renders/final_reels_vi_9x16.mp4" || true
-fi
-
-echo "Daily pipeline completed: $PROJECT_ID (Feed stale: $FEED_STALE)"
+echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE)"
