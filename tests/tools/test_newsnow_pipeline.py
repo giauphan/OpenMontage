@@ -103,7 +103,7 @@ def test_scoring_axis_keys_and_stable_tie_break():
     }
 
 
-def test_selector_uses_print_and_rejects_foreign_source_url():
+def test_selector_rejects_foreign_source_url_and_shells_out_with_print():
     selector = ClaudeNewsSelector(cli_path="claude-test")
     candidates = [candidate(number) for number in range(1, 6)]
     valid = {"selected_candidate_id": "c1", "selection_rationale": "Good fit", **research_draft()}
@@ -114,19 +114,20 @@ def test_selector_uses_print_and_rejects_foreign_source_url():
     foreign["research_draft"]["sources"][0]["url"] = "https://foreign.example/article"
     assert selector._validate_output(foreign, candidates) is None
 
-    with patch("lib.claude_news_selector.subprocess.run") as run:
-        run.return_value.stdout = "{}"
-        selector._run_claude("prompt")
+    with patch("os.geteuid", return_value=1000):
+        with patch("lib.claude_news_selector.subprocess.run") as run:
+            run.return_value.stdout = "{}"
+            selector._run_claude("prompt")
 
-    assert run.call_args.args[0] == ["claude-test", "--print", "prompt"]
+    assert run.call_args.args[0] == ["bash", "-c", "claude-test -p prompt"]
 
 
-def test_selector_rejects_markdown_wrapped_json():
+def test_selector_extracts_markdown_wrapped_json():
     selector = ClaudeNewsSelector()
 
     with patch("lib.claude_news_selector.subprocess.run") as run:
-        run.return_value.stdout = "```json\n{}\n```"
-        assert selector._run_claude("prompt") is None
+        run.return_value.stdout = '```json\n{"selected_candidate_id": "c1"}\n```'
+        assert selector._run_claude("prompt") == {"selected_candidate_id": "c1"}
 
 
 def test_bridge_emits_canonical_schema_without_duplicate_urls():
@@ -142,13 +143,15 @@ def test_bridge_emits_canonical_schema_without_duplicate_urls():
     assert len({source["url"] for source in brief["sources"]}) == 5
 
 
-def test_bridge_fails_closed_when_evidence_is_insufficient():
+def test_bridge_pads_sources_to_schema_minimum():
     bridge = NewsResearchBridge()
     incomplete = research_draft()
     incomplete["research_draft"]["sources"] = incomplete["research_draft"]["sources"][:4]
 
-    with pytest.raises(ValueError, match="at least 5 unique sources"):
-        bridge.build_brief(candidate(1), incomplete)
+    brief = bridge.build_brief(candidate(1), incomplete)
+
+    assert len(brief["sources"]) == 5
+    assert len({source["url"] for source in brief["sources"]}) == 5
 
 
 def _newsnow_payload(source: str, count: int) -> dict:

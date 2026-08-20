@@ -23,8 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Python deps (layer-cached before source copy)
-COPY requirements.txt requirements-publish.txt ./
-RUN pip3 install -r requirements.txt -r requirements-publish.txt edge-tts>=7.2
+COPY requirements.txt requirements-publish.txt requirements-dev.txt ./
+RUN pip3 install -r requirements.txt -r requirements-publish.txt -r requirements-dev.txt edge-tts>=7.2
 
 # Node deps (HyperFrames CLI)
 COPY package.json package-lock.json* ./
