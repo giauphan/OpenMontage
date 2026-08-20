@@ -23,7 +23,7 @@ services:
     stdin_open: true
     tty: true
 
-  # Daily publish scheduler (YouTube 01:00 UTC / Meta 01:30 UTC)
+  # Daily publish scheduler (YouTube / Meta / NewsNow automated pipeline)
   scheduler:
     build:
       context: .
@@ -37,19 +37,16 @@ services:
     environment:
       - PYTHONPATH=/app
     volumes:
-      - ./projects:/app/projects
-      - ./config:/app/config
-      - ./credentials:/app/credentials:ro
-      - ./deploy:/app/deploy:ro
-      - ./logs:/app/logs
+      - .:/app
+      - /app/node_modules
       - ~/.claude.json:/root/.claude.json:ro
       - ~/.claude:/root/.claude
       - ~/.claude.json:/home/node/.claude.json:ro
       - ~/.claude:/home/node/.claude
     command: >
       bash -c "
-        apt-get update && apt-get install -y cron &&
-        sed 's|PATH_TO_OPENMONTAGE=/home/genro68/OpenMontage|PATH_TO_OPENMONTAGE=/app|g' deploy/openmontage.cron > /etc/cron.d/openmontage-cron &&
+        apt-get update && apt-get install -y cron jq &&
+        cp deploy/openmontage.cron /etc/cron.d/openmontage-cron &&
         chmod 0644 /etc/cron.d/openmontage-cron &&
         crontab /etc/cron.d/openmontage-cron &&
         cron -f
