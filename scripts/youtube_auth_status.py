@@ -43,8 +43,8 @@ def main():
             return 0
     flow = InstalledAppFlow.from_client_secrets_file(str(client_path()), [SCOPE])
     flow.redirect_uri = REDIRECT_URI
-    authorization_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
-    STATE_PATH.write_text(json.dumps({"state": flow.oauth2session.state, "code_verifier": flow.code_verifier}))
+    authorization_url, state = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
+    STATE_PATH.write_text(json.dumps({"state": state, "code_verifier": flow.code_verifier}))
     STATE_PATH.chmod(0o600)
     print("LOGIN_REQUIRED")
     print(f"REDIRECT_URI={REDIRECT_URI}")
