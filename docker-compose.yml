@@ -18,6 +18,7 @@ services:
       - ~/.claude:/root/.claude
       - ~/.claude.json:/home/node/.claude.json:ro
       - ~/.claude:/home/node/.claude
+      - ~/.openmontage:/root/.openmontage
     environment:
       - PYTHONPATH=/app
     stdin_open: true
@@ -43,6 +44,7 @@ services:
       - ~/.claude:/root/.claude
       - ~/.claude.json:/home/node/.claude.json:ro
       - ~/.claude:/home/node/.claude
+      - ~/.openmontage:/root/.openmontage
     command: >
       bash -c "
         apt-get update && apt-get install -y cron jq &&
