@@ -150,9 +150,13 @@ class NewsResearchBridge:
                         item[field], f"existing_content {field}"
                     )
             if "url" in normalized_item and normalized_item["url"] not in seen_urls:
-                raise ValueError(
-                    f"existing_content URL is absent from research sources: {normalized_item['url']}"
-                )
+                seen_urls.add(normalized_item["url"])
+                sources.append({
+                    "url": normalized_item["url"],
+                    "title": normalized_item["title"],
+                    "used_for": "Existing content reference",
+                    "reliability": "secondary",
+                })
             normalized_existing_content.append(normalized_item)
 
         normalized_data_points = []
@@ -161,7 +165,13 @@ class NewsResearchBridge:
                 raise ValueError("each data_point must be an object")
             source_url = self._require_string(item.get("source_url"), "data_point source_url")
             if source_url not in seen_urls:
-                raise ValueError(f"data_point URL is absent from research sources: {source_url}")
+                seen_urls.add(source_url)
+                sources.append({
+                    "url": source_url,
+                    "title": self._require_string(item.get("source_name") or "Data source", "data_point source_name"),
+                    "used_for": "Data point evidence",
+                    "reliability": "secondary",
+                })
             normalized_item = {
                 "claim": self._require_string(item.get("claim"), "data_point claim"),
                 "source_url": source_url,
