@@ -11,7 +11,7 @@ MAX_CANDIDATES = 10
 MAX_BODY_CHARS = 2000
 MAX_PROMPT_CHARS = 50000
 MAX_OUTPUT_CHARS = 100000
-TIMEOUT_SECONDS = 120
+TIMEOUT_SECONDS = 300
 
 class ClaudeNewsSelector:
     """Executes Claude CLI to perform semantic selection and research extraction."""
