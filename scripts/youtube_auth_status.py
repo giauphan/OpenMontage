@@ -41,10 +41,18 @@ def main():
         if token.get("refresh_token"):
             print(f"READY token={TOKEN_PATH}")
             return 0
+    if STATE_PATH.is_file():
+        pending = json.loads(STATE_PATH.read_text())
+        if pending.get("authorization_url"):
+            print("LOGIN_REQUIRED")
+            print(f"REDIRECT_URI={REDIRECT_URI}")
+            print(pending["authorization_url"])
+            return 2
+
     flow = InstalledAppFlow.from_client_secrets_file(str(client_path()), [SCOPE])
     flow.redirect_uri = REDIRECT_URI
     authorization_url, state = flow.authorization_url(access_type="offline")
-    STATE_PATH.write_text(json.dumps({"state": state, "code_verifier": flow.code_verifier}))
+    STATE_PATH.write_text(json.dumps({"state": state, "code_verifier": flow.code_verifier, "authorization_url": authorization_url}))
     STATE_PATH.chmod(0o600)
     print("LOGIN_REQUIRED")
     print(f"REDIRECT_URI={REDIRECT_URI}")
