@@ -40,7 +40,7 @@ class ClaudeNewsSelector:
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex, re
-        model = "claude-opus-5"
+        model = "model-medium-hight"
         env = os.environ.copy()
         env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
         env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
