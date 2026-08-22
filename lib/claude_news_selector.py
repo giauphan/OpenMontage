@@ -40,10 +40,11 @@ class ClaudeNewsSelector:
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex, re
+        model = "claude-opus-5"
         if os.geteuid() == 0:
-            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"claude -p {shlex.quote(prompt)}"]
+            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"claude -p {shlex.quote(prompt)} --model {model}"]
         else:
-            cmd = ["bash", "-c", f"{self.cli_path} -p {shlex.quote(prompt)}"]
+            cmd = ["bash", "-c", f"{self.cli_path} -p {shlex.quote(prompt)} --model {model}"]
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL
