@@ -118,16 +118,26 @@ def run_produce(args: argparse.Namespace) -> None:
 
     project_ids: List[str] = []
     used_ids: set[str] = set()
-    for _ in range(count):
+    max_attempts = max(count * 3, len(ranked))
+    attempts = 0
+    while len(project_ids) < count and attempts < max_attempts:
         pool = [c for c in ranked if c["candidate_id"] not in used_ids]
         if not pool:
             break
+        attempts += 1
         selection = selector.select_and_research(pool)
         if not selection:
-            logger.error("Claude selection failed or returned invalid data.")
-            sys.exit(1)
+            logger.warning(
+                "Claude returned invalid candidate-bound research; retrying selection "
+                f"(attempt {attempts}/{max_attempts})."
+            )
+            continue
 
         selected_id = selection["selected_candidate_id"]
+        if selected_id in used_ids:
+            logger.warning(f"Claude selected duplicate candidate {selected_id}; retrying selection.")
+            continue
+
         candidate = next(c for c in pool if c["candidate_id"] == selected_id)
         used_ids.add(selected_id)
 
@@ -141,6 +151,13 @@ def run_produce(args: argparse.Namespace) -> None:
             logger.error(f"Failed to initialize project: {e}")
             sys.exit(1)
         project_ids.append(project_id)
+
+    if len(project_ids) != count:
+        logger.error(
+            f"Initialized {len(project_ids)} of {count} requested project(s) after "
+            f"{attempts} selection attempts."
+        )
+        sys.exit(1)
 
     for pid in project_ids:
         print(f"PROJECT_ID={pid}")

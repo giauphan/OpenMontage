@@ -137,11 +137,12 @@ class ClaudeNewsSelector:
 Output ONLY valid JSON object. No markdown, no preamble, no commentary.
 
 Requirements for research_draft:
-- existing_content: Array of 3 items minimum
-- data_points: Array of 3 items minimum
+- existing_content: Array of 3 items minimum; every url must be copied verbatim from an input candidate URL
+- data_points: Array of 3 items minimum; every source_url must be copied verbatim from an input candidate URL
 - common_questions: Array of 3 items minimum
 - angles_discovered: Array of 3 items minimum
-- sources: Array of items using canonical_url from input candidates
+- sources: Array of items using only canonical_url or original_url copied verbatim from input candidates
+- Never invent, search for, or substitute any URL not present in the input candidates.
 
 JSON Schema:
 {{
