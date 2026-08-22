@@ -40,23 +40,8 @@ class ClaudeNewsSelector:
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex, re
-        model = "sonnet"
         env = os.environ.copy()
-        env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
-        env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
-        env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = model
-        env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = model
-        claude_cmd = " ".join(
-            [
-                f"ANTHROPIC_DEFAULT_OPUS_MODEL={shlex.quote(model)}",
-                f"ANTHROPIC_DEFAULT_SONNET_MODEL={shlex.quote(model)}",
-                f"ANTHROPIC_DEFAULT_FABLE_MODEL={shlex.quote(model)}",
-                f"ANTHROPIC_DEFAULT_HAIKU_MODEL={shlex.quote(model)}",
-                "claude",
-                "-p",
-                shlex.quote(prompt),
-            ]
-        )
+        claude_cmd = " ".join(["claude", "-p", shlex.quote(prompt)])
         if os.geteuid() == 0:
             cmd = ["su", "node", "-s", "/bin/bash", "-c", claude_cmd]
         else:
