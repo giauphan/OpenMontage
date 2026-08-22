@@ -41,13 +41,31 @@ class ClaudeNewsSelector:
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex, re
         model = "claude-opus-5"
+        env = os.environ.copy()
+        env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
+        env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
+        env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = model
+        env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = model
+        claude_cmd = " ".join(
+            [
+                f"ANTHROPIC_DEFAULT_OPUS_MODEL={shlex.quote(model)}",
+                f"ANTHROPIC_DEFAULT_SONNET_MODEL={shlex.quote(model)}",
+                f"ANTHROPIC_DEFAULT_FABLE_MODEL={shlex.quote(model)}",
+                f"ANTHROPIC_DEFAULT_HAIKU_MODEL={shlex.quote(model)}",
+                "claude",
+                "-p",
+                shlex.quote(prompt),
+                "--model",
+                shlex.quote(model),
+            ]
+        )
         if os.geteuid() == 0:
-            cmd = ["su", "node", "-s", "/bin/bash", "-c", f"claude -p {shlex.quote(prompt)} --model {model}"]
+            cmd = ["su", "node", "-s", "/bin/bash", "-c", claude_cmd]
         else:
-            cmd = ["bash", "-c", f"{self.cli_path} -p {shlex.quote(prompt)} --model {model}"]
+            cmd = ["bash", "-c", claude_cmd]
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL
+                cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS, check=True, stdin=subprocess.DEVNULL, env=env
             )
             output = proc.stdout.strip()
             if "```" in output:
