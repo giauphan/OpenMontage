@@ -155,6 +155,17 @@ materialize_hyperframes_assets() {
   local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
   local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
   local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+  find_vietnamese_font() {
+    local file="$1"
+    local candidate
+    for candidate in \
+      "$source_fonts/$file" \
+      "$ROOT"/projects/*/hyperframes/assets/"$file" \
+      "$ROOT"/projects/*/hyperframes_reels/assets/"$file"; do
+      [ -s "$candidate" ] && { printf '%s\n' "$candidate"; return 0; }
+    done
+    return 1
+  }
 
   mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
   if [ ! -s "$narration_text" ] && [ -s "$script_json" ]; then
@@ -195,6 +206,7 @@ materialize_hyperframes_assets() {
     [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ] && cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"
     [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ] && cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"
   done
+  python3 "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
 }
 materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
 

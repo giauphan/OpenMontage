@@ -138,6 +138,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ] && cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"
       [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ] && cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"
     done
+    python3 "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
   }
   materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
 
