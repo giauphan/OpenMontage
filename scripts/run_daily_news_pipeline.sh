@@ -178,8 +178,8 @@ materialize_hyperframes_assets() {
   }
 
   mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
-  if [ ! -s "$narration_text" ] && [ -s "$script_json" ]; then
-    jq -r 'if (.sections // null) then [.sections[]?.text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
+  if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
+    jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
   fi
   if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
     tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
