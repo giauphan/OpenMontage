@@ -8,7 +8,21 @@ if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
+  export PATH="$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin:$PATH"
+fi
 export PYTHONPATH="$ROOT"
+FFPROBE_BIN="$(command -v ffprobe || true)"
+if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
+HYPERFRAMES_BIN="$(command -v hyperframes || true)"
+if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
+[ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
+[ -n "$HYPERFRAMES_BIN" ] || { echo "ERROR: hyperframes CLI is required" >&2; exit 1; }
+export FFPROBE_BIN HYPERFRAMES_BIN
+
+auto_render_quality() {
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN"
+}
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
 elif [ -x "$ROOT/venv/bin/python3" ]; then
@@ -108,7 +122,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     fi
     local narration_duration=0
     if [ -s "$narration" ]; then
-      narration_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+      narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
     fi
     if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && awk "BEGIN{exit !($narration_duration <= 30)}"; then
       edge-tts --voice vi-VN-HoaiMyNeural --text "$(tr '\\n' ' ' < "$narration_text")" --write-media "$narration"
@@ -117,7 +131,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
       exit 1
     fi
-    narration_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+    narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
     if ! awk "BEGIN{exit !($narration_duration > 30)}"; then
       echo "[$(date -u +%FT%TZ)] ERROR: narration duration ${narration_duration}s <=30s for $PROJECT_ID"
       exit 1
@@ -126,7 +140,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       cp "$narration" "$project_root/assets/music-bg.mp3"
     fi
     local music_duration
-    music_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
+    music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
     if ! awk "BEGIN{exit !($music_duration > 30)}"; then
       cp "$narration" "$project_root/assets/music-bg.mp3"
     fi
@@ -152,27 +166,16 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   elif [ -d "Hyperframes_reels" ]; then REELS_COMP="Hyperframes_reels"
   fi
 
-  if [ -n "$FULL_COMP" ] && [ ! -f "renders/final_full_vi_9x16.mp4" ]; then
-    echo "[$(date -u +%FT%TZ)] render FULL $FULL_COMP"
-    hyperframes render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
+  if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html" ] || [ ! -f "$REELS_COMP/index.html" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID"
+    exit 1
   fi
-  if [ -n "$REELS_COMP" ] && [ ! -f "renders/final_reels_vi_9x16.mp4" ]; then
-    echo "[$(date -u +%FT%TZ)] render REELS $REELS_COMP"
-    hyperframes render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
-  fi
-
-  require_video() {
-    local path="$1"
-    if [ ! -s "$path" ]; then echo "[$(date -u +%FT%TZ)] ERROR: $path missing or empty"; exit 1; fi
-    local dur; dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$path" 2>/dev/null || echo 0)
-    if ! awk "BEGIN{exit !($dur > 30)}"; then echo "[$(date -u +%FT%TZ)] ERROR: $path duration ${dur}s <=30s"; exit 1; fi
-    if [ -z "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$path" 2>/dev/null)" ]; then
-      echo "[$(date -u +%FT%TZ)] ERROR: $path has no audio"; exit 1
-    fi
-    echo "[$(date -u +%FT%TZ)] render OK $path dur=${dur}s"
-  }
-  require_video "renders/final_full_vi_9x16.mp4"
-  require_video "renders/final_reels_vi_9x16.mp4"
+  rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+  echo "[$(date -u +%FT%TZ)] render FULL $FULL_COMP"
+  "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
+  echo "[$(date -u +%FT%TZ)] render REELS $REELS_COMP"
+  "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
+  auto_render_quality "$ROOT/projects/$PROJECT_ID"
 
   # Step 4: publish_metadata.json
   cd "$ROOT/projects/$PROJECT_ID"

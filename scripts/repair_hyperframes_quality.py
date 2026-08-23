@@ -24,6 +24,8 @@ VIETNAMESE_GLYPH_SENTINELS = "ĐđĂăÂâÊêÔôƠơƯưÁáÀàẢảÃãẠ�
 def patch_html(path: Path) -> None:
     html = path.read_text(encoding="utf-8")
     if "font-family: 'BeVietnamPro'" not in html:
+        if "<style>" not in html:
+            raise ValueError(f"{path}: missing style element for font binding")
         html = html.replace("<style>", "<style>\n    " + FONT_CSS, 1)
     html = re.sub(
         r"--font-heading:\s*[^;]+;",
@@ -36,7 +38,7 @@ def patch_html(path: Path) -> None:
         html,
     )
     html = re.sub(
-        r"(<audio\b(?=[^>]*\bid=[\"']narration[\"'])(?=[^>]*\bsrc=[\"'])[^>]*\bsrc=)[\"'][^\"']*[\"']",
+        r"(<audio\b(?=[^>]*\bid=[\"']narration[\"'])[^>]*\bsrc=)[\"'][^\"']*[\"']",
         r'\1"assets/narration.mp3"',
         html,
     )
@@ -46,10 +48,20 @@ def patch_html(path: Path) -> None:
 def validate_html(path: Path) -> list[str]:
     errors: list[str] = []
     html = path.read_text(encoding="utf-8")
-    if "BeVietnamPro" not in html:
-        errors.append(f"{path}: missing BeVietnamPro font binding")
-    if 'id="narration"' in html and 'src="assets/narration.mp3"' not in html:
-        errors.append(f"{path}: narration audio src is empty or wrong")
+    required_bindings = (
+        "font-family: 'BeVietnamPro'",
+        "--font-heading: 'BeVietnamPro', Arial, sans-serif;",
+        "--font-body: 'BeVietnamPro', Arial, sans-serif;",
+    )
+    for binding in required_bindings:
+        if binding not in html:
+            errors.append(f"{path}: missing {binding}")
+    narration_tags = re.findall(r"<audio\b[^>]*\bid=[\"']narration[\"'][^>]*>", html)
+    for tag in narration_tags:
+        if not re.search(r"\bsrc=[\"']assets/narration\.mp3[\"']", tag):
+            errors.append(f"{path}: narration audio src is empty or wrong")
+    if "#app" not in html or "overflow: hidden" not in html:
+        errors.append(f"{path}: missing viewport clipping guard")
     if VIETNAMESE_GLYPH_SENTINELS and not any(ch in html for ch in VIETNAMESE_GLYPH_SENTINELS):
         errors.append(f"{path}: no Vietnamese diacritic text found for glyph smoke validation")
     return errors
@@ -63,6 +75,7 @@ def main() -> int:
     project_dir = args.project_dir
     errors: list[str] = []
     for composition in ("hyperframes", "hyperframes_reels"):
+        composition_errors: list[str] = []
         composition_dir = project_dir / composition
         index = composition_dir / "index.html"
         assets = composition_dir / "assets"
@@ -70,13 +83,20 @@ def main() -> int:
             errors.append(f"{index}: missing composition index")
             continue
         for font in REQUIRED_FONTS:
-            if not (assets / font).is_file():
-                errors.append(f"{assets / font}: missing Vietnamese font asset")
-        if not (assets / "narration.mp3").is_file():
-            errors.append(f"{assets / 'narration.mp3'}: missing narration audio asset")
-        if not errors:
-            patch_html(index)
-            errors.extend(validate_html(index))
+            font_path = assets / font
+            if not font_path.is_file() or font_path.stat().st_size == 0:
+                composition_errors.append(f"{font_path}: missing or empty Vietnamese font asset")
+        narration = assets / "narration.mp3"
+        if not narration.is_file() or narration.stat().st_size == 0:
+            composition_errors.append(f"{narration}: missing or empty narration audio asset")
+        if not composition_errors:
+            try:
+                patch_html(index)
+            except ValueError as exc:
+                composition_errors.append(str(exc))
+            else:
+                composition_errors.extend(validate_html(index))
+        errors.extend(composition_errors)
 
     if errors:
         for error in errors:
