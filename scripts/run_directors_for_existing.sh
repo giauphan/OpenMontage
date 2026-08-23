@@ -86,9 +86,55 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
 
   # Step 3: Render
   cd "$ROOT/projects/$PROJECT_ID"
+  chmod -R 777 . 2>/dev/null || true
   mkdir -p renders
 
+  materialize_hyperframes_assets() {
+    local project_root="$1"
+    local narration="$project_root/assets/narration.mp3"
+    local narration_text="$project_root/artifacts/narration_vi_text.txt"
+    local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
+    local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+    local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+
+    mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+    local narration_duration=0
+    if [ -s "$narration" ]; then
+      narration_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+    fi
+    if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && awk "BEGIN{exit !($narration_duration <= 30)}"; then
+      edge-tts --voice vi-VN-HoaiMyNeural --text "$(tr '\\n' ' ' < "$narration_text")" --write-media "$narration"
+    fi
+    if [ ! -s "$narration" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
+      exit 1
+    fi
+    narration_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+    if ! awk "BEGIN{exit !($narration_duration > 30)}"; then
+      echo "[$(date -u +%FT%TZ)] ERROR: narration duration ${narration_duration}s <=30s for $PROJECT_ID"
+      exit 1
+    fi
+    if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
+      cp "$narration" "$project_root/assets/music-bg.mp3"
+    fi
+    local music_duration
+    music_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
+    if ! awk "BEGIN{exit !($music_duration > 30)}"; then
+      cp "$narration" "$project_root/assets/music-bg.mp3"
+    fi
+    for composition in hyperframes hyperframes_reels; do
+      local target="$project_root/$composition/assets"
+      cp "$narration" "$target/narration.mp3"
+      cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
+      [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ] && cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf" || cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"
+      [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ] && cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"
+      [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ] && cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"
+    done
+  }
+  materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
+
   FULL_COMP=""
+
   if [ -d "hyperframes" ]; then FULL_COMP="hyperframes"
   elif [ -d "Hyperframes" ]; then FULL_COMP="Hyperframes"
   fi
