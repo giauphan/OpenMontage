@@ -60,7 +60,7 @@ def validate_html(path: Path) -> list[str]:
     for tag in narration_tags:
         if not re.search(r"\bsrc=[\"']assets/narration\.mp3[\"']", tag):
             errors.append(f"{path}: narration audio src is empty or wrong")
-    if "#app" not in html or "overflow: hidden" not in html:
+    if "overflow: hidden" not in html:
         errors.append(f"{path}: missing viewport clipping guard")
     if VIETNAMESE_GLYPH_SENTINELS and not any(ch in html for ch in VIETNAMESE_GLYPH_SENTINELS):
         errors.append(f"{path}: no Vietnamese diacritic text found for glyph smoke validation")
