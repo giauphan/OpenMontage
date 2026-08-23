@@ -59,31 +59,53 @@ echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_L
 DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 
 set +e
+DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. Let content determine duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Do not ask for confirmation between stages."
+DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
+DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
+DIRECTOR_ARTIFACTS_READY=0
+if [ -s "$DIRECTOR_FULL_INDEX" ] && [ -s "$DIRECTOR_REELS_INDEX" ]; then
+  DIRECTOR_ARTIFACTS_READY=1
+fi
 
-if [ "$(id -u)" -eq 0 ]; then
-  su node -s /bin/bash -c "
-    export PATH=\"$PATH\"
-    export PYTHONPATH=\"$PYTHONPATH\"
-    cd \"$ROOT\"
+run_directors() {
+  if [ "$(id -u)" -eq 0 ]; then
+    su node -s /bin/bash -c "
+      export PATH=\"$PATH\"
+      export PYTHONPATH=\"$PYTHONPATH\"
+      cd \"$ROOT\"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
+          -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
+        timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
+          claude -p --dangerously-skip-permissions --output-format json \"$PROMPT_STR\"
+    "
+  else
     env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
         -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-      claude -p --dangerously-skip-permissions \
-        --output-format json \
-        \"$PROMPT_STR\"
-  " > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
-else
-  env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
-      -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-    claude -p --dangerously-skip-permissions \
-      --output-format json \
-      "$PROMPT_STR" \
-      > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+      timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
+        claude -p --dangerously-skip-permissions --output-format json \"$PROMPT_STR\"
+  fi
+}
+
+if ! command -v timeout >/dev/null 2>&1; then
+  echo "[$(date -u +%FT%TZ)] ERROR: timeout command is required for directors" >> "$DIRECTORS_LOG"
+  exit 1
 fi
+
+run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
 CLAUDE_EXIT=$?
+DIRECTOR_ARTIFACT_FALLBACK=0
+if [ "$CLAUDE_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
+  echo "[$(date -u +%FT%TZ)] WARN: directors timed out; using existing full and reels artifacts" >> "$DIRECTORS_LOG"
+  CLAUDE_EXIT=0
+  DIRECTOR_ARTIFACT_FALLBACK=1
+fi
+
 set -e
 
-if jq empty "$DIRECTORS_JSON" 2>/dev/null; then
+if [ "$DIRECTOR_ARTIFACT_FALLBACK" -eq 1 ]; then
+  :
+elif jq empty "$DIRECTORS_JSON" 2>/dev/null; then
   jq -r '"session_id=\(.session_id // "?") is_error=\(.is_error // "?") turns=\(.num_turns // "?") cost_usd=\(.total_cost_usd // "?")"' \
     "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   jq -r '.result // ""' "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
@@ -101,12 +123,13 @@ ELAPSED=$((END_TS - START_TS))
 if [ $CLAUDE_EXIT -eq 0 ]; then
   echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID exit=0 elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
-  # Check if composition files exist
+  # Both compositions are required by the render stage.
   HYPER_FULL=$(find "$ROOT/projects/$PROJECT_ID" -iwholename "*hyperframes/index.html" 2>/dev/null | head -n 1)
-  if [ -n "$HYPER_FULL" ] || [ -f "$ROOT/projects/$PROJECT_ID/hyperframes/index.html" ]; then
+  HYPER_REELS=$(find "$ROOT/projects/$PROJECT_ID" -iwholename "*hyperframes_reels/index.html" 2>/dev/null | head -n 1)
+  if [ -n "$HYPER_FULL" ] && [ -n "$HYPER_REELS" ]; then
     echo "[$(date -u +%FT%TZ)] artifacts OK" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   else
-    echo "[$(date -u +%FT%TZ)] WARN: claude exit=0 but expected index.html missing" \
+    echo "[$(date -u +%FT%TZ)] WARN: claude exit=0 but both composition files are required" \
       >> "$ROOT/logs/directors_${PROJECT_ID}.log"
     CLAUDE_EXIT=2
   fi
