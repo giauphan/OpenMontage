@@ -150,11 +150,19 @@ materialize_hyperframes_assets() {
   local project_root="$1"
   local narration="$project_root/assets/narration.mp3"
   local narration_text="$project_root/artifacts/narration_vi_text.txt"
+  local script_json="$project_root/artifacts/script_vi.json"
+  local script_spoken="$project_root/04_audio/script_spoken.md"
   local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
   local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
   local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 
   mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+  if [ ! -s "$narration_text" ] && [ -s "$script_json" ]; then
+    jq -r 'if (.sections // null) then [.sections[]?.text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
+  fi
+  if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
+    tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
+  fi
   local narration_duration=0
   if [ -s "$narration" ]; then
     narration_duration=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
