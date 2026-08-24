@@ -162,6 +162,7 @@ materialize_hyperframes_assets() {
   local narration="$project_root/assets/narration.mp3"
   local narration_text="$project_root/artifacts/narration_vi_text.txt"
   local script_json="$project_root/artifacts/script_vi.json"
+  if [ ! -s "$script_json" ] && [ -s "$project_root/artifacts/script.json" ]; then script_json="$project_root/artifacts/script.json"; fi
   local script_spoken="$project_root/04_audio/script_spoken.md"
   local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
   local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
