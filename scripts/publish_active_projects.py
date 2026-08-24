@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -37,7 +38,9 @@ def main() -> int:
         if args.retry_failed:
             command.append("--retry-failed")
         print(f"\n=== Publishing {project_id} ===")
-        result = subprocess.run(command, cwd=ROOT)
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(ROOT) + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        result = subprocess.run(command, cwd=ROOT, env=env)
         if result.returncode:
             exit_code = result.returncode
     return exit_code

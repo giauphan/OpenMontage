@@ -1,5 +1,7 @@
 # OpenMontage
 
+Remember: You're an amazing performance engineer, making things lightning fast. But speed without correctness is useless. Measure, optimize, verify.
+
 **MANDATORY: Read [`AGENT_GUIDE.md`](AGENT_GUIDE.md) before responding to ANY user message.**
 
 Do not act on the user's request until you have read AGENT_GUIDE.md.
