@@ -4,9 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+NARRATION_TAG = (
+    '<audio id="narration" src="assets/narration.mp3" '
+    'data-start="0" data-track-index="10" data-volume="1"></audio>'
+)
 
 FONT_CSS = """@font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
     @font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
@@ -21,7 +29,24 @@ REQUIRED_FONTS = (
 VIETNAMESE_GLYPH_SENTINELS = "ĐđĂăÂâÊêÔôƠơƯưÁáÀàẢảÃãẠạẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẾếỀềỂểỄễỆệỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỨứỪừỬửỮữỰựÝýỲỳỶỷỸỹỴỵ"
 
 
-def patch_html(path: Path) -> None:
+def probe_duration(path: Path) -> float:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return 0.0
+    result = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return 0.0
+    try:
+        return float(json.loads(result.stdout)["format"]["duration"])
+    except (KeyError, ValueError, json.JSONDecodeError):
+        return 0.0
+
+
+def patch_html(path: Path, narration_duration: float = 0.0) -> None:
     html = path.read_text(encoding="utf-8")
     if "font-family: 'BeVietnamPro'" not in html:
         if "<style>" not in html:
@@ -67,7 +92,43 @@ def patch_html(path: Path) -> None:
         r'\1"assets/narration.mp3"',
         html,
     )
+    if not re.search(r"<audio\b[^>]*\bid=[\"']narration[\"']", html):
+        root_open = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+        if not root_open:
+            raise ValueError(f"{path}: missing composition root for narration audio binding")
+        html = html[:root_open.end()] + "\n    " + NARRATION_TAG + html[root_open.end():]
+    if narration_duration and narration_duration > 0:
+        html = align_timeline(path, html, narration_duration)
     path.write_text(html, encoding="utf-8")
+
+
+def align_timeline(path: Path, html: str, narration_duration: float) -> str:
+    """Scale composition timings so the visual timeline matches the narration length."""
+    root_open = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+    if not root_open:
+        raise ValueError(f"{path}: missing composition root for timeline alignment")
+    root_duration_match = re.search(r"\bdata-duration=[\"']([0-9.]+)[\"']", root_open.group(0))
+    if not root_duration_match:
+        raise ValueError(f"{path}: composition root has no data-duration")
+    root_duration = float(root_duration_match.group(1))
+    target = round(narration_duration, 2)
+    if root_duration <= 0 or abs(root_duration - target) <= 1.0:
+        return html
+    scale = target / root_duration
+
+    def scale_attr(match: re.Match[str]) -> str:
+        value = float(match.group(2))
+        return f'{match.group(1)}="{round(value * scale, 3)}"'
+
+    head = html[:root_open.start()]
+    body = html[root_open.start():]
+    body = re.sub(r"\b(data-start|data-duration)=[\"']([0-9.]+)[\"']", scale_attr, body)
+    body = re.sub(
+        r"(const\s+totalDuration\s*=\s*)[0-9.]+",
+        lambda m: f"{m.group(1)}{target}",
+        body,
+    )
+    return head + body
 
 
 def validate_html(path: Path) -> list[str]:
@@ -82,6 +143,8 @@ def validate_html(path: Path) -> list[str]:
         if binding not in html:
             errors.append(f"{path}: missing {binding}")
     narration_tags = re.findall(r"<audio\b[^>]*\bid=[\"']narration[\"'][^>]*>", html)
+    if not narration_tags:
+        errors.append(f"{path}: no narration audio element bound in composition")
     for tag in narration_tags:
         if not re.search(r"\bsrc=[\"']assets/narration\.mp3[\"']", tag):
             errors.append(f"{path}: narration audio src is empty or wrong")
@@ -114,9 +177,12 @@ def main() -> int:
         narration = assets / "narration.mp3"
         if not narration.is_file() or narration.stat().st_size == 0:
             composition_errors.append(f"{narration}: missing or empty narration audio asset")
+        narration_duration = 0.0
+        if narration.is_file() and narration.stat().st_size > 0:
+            narration_duration = probe_duration(narration)
         if not composition_errors:
             try:
-                patch_html(index)
+                patch_html(index, narration_duration)
             except ValueError as exc:
                 composition_errors.append(str(exc))
             else:
