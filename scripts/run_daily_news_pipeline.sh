@@ -177,7 +177,7 @@ materialize_hyperframes_assets() {
     return 1
   }
 
-  mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+  mkdir -p "$project_root/artifacts" "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
   if [ ! -s "$narration" ] && [ -s "$project_root/assets/voice/narration.mp3" ]; then
     cp "$project_root/assets/voice/narration.mp3" "$narration"
   fi
