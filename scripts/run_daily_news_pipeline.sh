@@ -178,6 +178,9 @@ materialize_hyperframes_assets() {
   }
 
   mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+  if [ ! -s "$narration" ] && [ -s "$project_root/assets/voice/narration.mp3" ]; then
+    cp "$project_root/assets/voice/narration.mp3" "$narration"
+  fi
   if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
     jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
   fi
@@ -242,6 +245,9 @@ rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
 "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN"
+for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
+  [ -s "$render" ] || { echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render" >&2; exit 1; }
+done
 
 if [ "$FEED_STALE" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] NOTICE: Render completed using STALE feed data."

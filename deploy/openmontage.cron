@@ -9,3 +9,5 @@ PATH_TO_OPENMONTAGE=/app
 
 # 01:00 UTC (08:00 WIB) — Auto-publish all active projects to YouTube, Instagram & Facebook
 0 1 * * * cd /app && PYTHONPATH=/app python3 scripts/publish_active_projects.py >> logs/cron_publish.log 2>&1
+
+# Generated projects stay on server; do not commit projects/ to Git.

@@ -37,6 +37,31 @@ def patch_html(path: Path) -> None:
         "--font-body: 'BeVietnamPro', Arial, sans-serif;",
         html,
     )
+    if "--font-heading:" not in html or "--font-body:" not in html:
+        root_match = re.search(r":root\s*\{([^{}]*)\}", html)
+        if root_match:
+            declarations = root_match.group(1)
+            if "--font-heading:" not in declarations:
+                declarations += " --font-heading: 'BeVietnamPro', Arial, sans-serif;"
+            if "--font-body:" not in declarations:
+                declarations += " --font-body: 'BeVietnamPro', Arial, sans-serif;"
+            html = html[:root_match.start(1)] + declarations + html[root_match.end(1):]
+        elif "</style>" in html:
+            html = html.replace(
+                "</style>",
+                ":root { --font-heading: 'BeVietnamPro', Arial, sans-serif; --font-body: 'BeVietnamPro', Arial, sans-serif; }\n</style>",
+                1,
+            )
+        else:
+            raise ValueError(f"{path}: missing style element for font bindings")
+    if "overflow: hidden" not in html:
+        root_match = re.search(r"(#root|body|html)\s*\{[^{}]*\}", html)
+        if root_match:
+            rule = root_match.group(0)
+            rule = rule[:-1].rstrip() + " overflow: hidden; }"
+            html = html[:root_match.start()] + rule + html[root_match.end():]
+        else:
+            raise ValueError(f"{path}: missing viewport CSS rule for clipping guard")
     html = re.sub(
         r"(<audio\b(?=[^>]*\bid=[\"']narration[\"'])[^>]*\bsrc=)[\"'][^\"']*[\"']",
         r'\1"assets/narration.mp3"',

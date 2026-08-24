@@ -32,7 +32,14 @@ def number(value: object, default: float = 0.0) -> float:
         return default
 
 
-def validate_video(path: Path, narration: Path, ffprobe: str, min_duration: float, tolerance: float) -> list[str]:
+def validate_video(
+    path: Path,
+    narration: Path,
+    ffprobe: str,
+    min_duration: float,
+    tolerance: float,
+    expected_dimensions: tuple[int, int],
+) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
         return [f"{path}: missing or empty"]
@@ -54,10 +61,20 @@ def validate_video(path: Path, narration: Path, ffprobe: str, min_duration: floa
     if not audio:
         errors.append(f"{path}: no audio stream")
     if video:
-        width = int(video[0].get("width") or 0)
-        height = int(video[0].get("height") or 0)
-        if width <= 0 or height <= 0:
-            errors.append(f"{path}: invalid video dimensions {width}x{height}")
+        stream = video[0]
+        width = int(stream.get("width") or 0)
+        height = int(stream.get("height") or 0)
+        if (width, height) != expected_dimensions:
+            errors.append(
+                f"{path}: expected {expected_dimensions[0]}x{expected_dimensions[1]} video, got {width}x{height}"
+            )
+        if stream.get("codec_name") != "h264":
+            errors.append(f"{path}: expected h264 video, got {stream.get('codec_name')}")
+        frame_rate = stream.get("r_frame_rate")
+        if frame_rate not in {"30/1", "60/1"}:
+            errors.append(f"{path}: expected 30 or 60 fps, got {frame_rate}")
+    if audio and audio[0].get("codec_name") != "aac":
+        errors.append(f"{path}: expected aac audio, got {audio[0].get('codec_name')}")
     duration = number(rendered.get("format", {}).get("duration"))
     narration_duration = number(spoken.get("format", {}).get("duration"))
     if duration <= min_duration:
@@ -79,9 +96,29 @@ def main() -> int:
     parser.add_argument("--tolerance", type=float, default=3.0)
     args = parser.parse_args()
     narration = args.project_dir / "assets" / "narration.mp3"
+    if not narration.is_file() or narration.stat().st_size == 0:
+        narration = args.project_dir / "assets" / "voice" / "narration.mp3"
     errors: list[str] = []
-    errors.extend(validate_video(args.project_dir / "renders" / "final_full_vi_9x16.mp4", narration, args.ffprobe, args.min_duration, args.tolerance))
-    errors.extend(validate_video(args.project_dir / "renders" / "final_reels_vi_9x16.mp4", narration, args.ffprobe, args.min_duration, args.tolerance))
+    errors.extend(
+        validate_video(
+            args.project_dir / "renders" / "final_full_vi_9x16.mp4",
+            narration,
+            args.ffprobe,
+            args.min_duration,
+            args.tolerance,
+            (1920, 1080),
+        )
+    )
+    errors.extend(
+        validate_video(
+            args.project_dir / "renders" / "final_reels_vi_9x16.mp4",
+            narration,
+            args.ffprobe,
+            args.min_duration,
+            args.tolerance,
+            (1080, 1920),
+        )
+    )
     for error in errors:
         print(error, file=sys.stderr)
     return 1 if errors else 0

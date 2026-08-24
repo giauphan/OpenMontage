@@ -26,12 +26,14 @@ def main() -> int:
         return 1
 
     exit_code = 0
+    eligible_projects = 0
     for project_id in projects:
         project_dir = ROOT / "projects" / project_id
         metadata_path = project_dir / "publish_metadata.json"
         if not metadata_path.is_file():
             print(f"WARNING: skipping {project_id}: missing {metadata_path}")
             continue
+        eligible_projects += 1
         command = [sys.executable, str(PUBLISHER), str(project_dir)]
         if args.dry_run:
             command.append("--dry-run")
