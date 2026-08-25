@@ -26,7 +26,7 @@ def main():
         proj, kind, publish_at = spec.split(":", 2)
         meta = json.loads((ROOT / "projects" / proj / "publish_metadata.json").read_text())
         asset = ROOT / meta[ASSET_FIELD[kind]]
-        title = meta["title"] if kind == "long" else f"{meta['title']} #Shorts"
+        title = f"{meta['title']} #Shorts"
 
         key, claimed, existing = store.claim(
             date=date,

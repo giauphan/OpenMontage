@@ -11,6 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.narration_text import _FORBIDDEN_PATTERN as _MALFORMED_TEXT_PATTERN
+
 NARRATION_TAG = (
     '<audio id="narration" src="assets/narration.mp3" '
     'data-start="0" data-track-index="10" data-volume="1"></audio>'
@@ -152,6 +155,10 @@ def validate_html(path: Path) -> list[str]:
         errors.append(f"{path}: missing viewport clipping guard")
     if VIETNAMESE_GLYPH_SENTINELS and not any(ch in html for ch in VIETNAMESE_GLYPH_SENTINELS):
         errors.append(f"{path}: no Vietnamese diacritic text found for glyph smoke validation")
+    malformed = sorted(set(_MALFORMED_TEXT_PATTERN.findall(html)))
+    if malformed:
+        codes = ", ".join(f"U+{ord(ch):04X}" for ch in malformed)
+        errors.append(f"{path}: composition text contains unrenderable characters: {codes}")
     return errors
 
 

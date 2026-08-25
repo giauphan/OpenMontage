@@ -14,6 +14,7 @@ from pathlib import Path
 
 from publish_config import load_config
 from tools.publish_store import PublishStore, publish_key
+from tools.publishers.platform_routes import PLATFORM_ROUTES
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
 
@@ -71,11 +72,14 @@ def publish_batch(
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
     root = Path(__file__).resolve().parents[1]
 
-    # Metadata contract: each platform maps to one explicit video field and kind.
+    # Metadata contract: the shared route table owns platform -> field/kind mapping.
     platform_contract = [
-        ("youtube", YT_ACCOUNT, "short", "yt_shorts"),
-        ("instagram", IG_ACCOUNT_ID, "reels", "ig_reels"),
-        ("facebook", FB_PAGE_ID, "page_video", "fb_video"),
+        (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
+        for platform, account in (
+            ("youtube", YT_ACCOUNT),
+            ("instagram", IG_ACCOUNT_ID),
+            ("facebook", FB_PAGE_ID),
+        )
     ]
     if "fb_video" not in metadata and "fb_reels" in metadata:
         metadata = {**metadata, "fb_video": metadata["fb_reels"]}

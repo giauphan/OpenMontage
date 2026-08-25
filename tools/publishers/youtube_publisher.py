@@ -157,6 +157,13 @@ class YoutubePublisher(BaseTool):
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
+        from tools.publishers.platform_routes import ensure_vertical
+
+        try:
+            ensure_vertical(video_path)
+        except ValueError as geom_err:
+            return ToolResult(success=False, error=str(geom_err))
+
         secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
         if not secret_file_str:
             return ToolResult(

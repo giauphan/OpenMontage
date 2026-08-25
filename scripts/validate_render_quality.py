@@ -106,7 +106,7 @@ def main() -> int:
             args.ffprobe,
             args.min_duration,
             args.tolerance,
-            (1920, 1080),
+            (1080, 1920),
         )
     )
     errors.extend(

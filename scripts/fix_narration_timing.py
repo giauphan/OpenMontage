@@ -21,6 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tools.narration_text import prepare_narration
+
 CONTAMINATION = [
     "raining", "rainy", "sunny weather", "shopping list", "breakfast",
     "bananas", "oranges", "the store", "gym", "TypeScript", "PostgreSQL",
@@ -69,7 +71,7 @@ def probe_duration(path: Path) -> float:
         return -1.0
 
 def synth(voice, text, out: Path, rate: str):
-    args = ["edge-tts", "--voice", voice, "--text", text, "--write-media", str(out)]
+    args = ["edge-tts", "--voice", voice, "--text", prepare_narration(text), "--write-media", str(out)]
     if rate:
         args += ["--rate", rate]
     r = subprocess.run(args, capture_output=True, text=True)

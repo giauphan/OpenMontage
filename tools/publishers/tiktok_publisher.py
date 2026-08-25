@@ -165,6 +165,13 @@ class TiktokPublisher(BaseTool):
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
+        from tools.publishers.platform_routes import ensure_vertical
+
+        try:
+            ensure_vertical(video_path)
+        except ValueError as geom_err:
+            return ToolResult(success=False, error=str(geom_err))
+
         cookie_path_str = inputs.get("cookie_path", "~/.openmontage/tiktok_cookies.json")
         cookie_path = Path(cookie_path_str).expanduser()
 

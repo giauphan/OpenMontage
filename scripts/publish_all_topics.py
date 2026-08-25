@@ -6,7 +6,6 @@ TOPICS = [
         'id': 'topic1',
         'title': 'Cuộc Chiến Chống AI Slop 2026',
         'description': 'YouTube vừa xóa 35 triệu tài khoản bot trong một đợt quét tự động lớn. Các nền tảng mạng xã hội đang siết chặt nội dung AI slop để bảo vệ người dùng và hệ sinh thái sáng tạo.',
-        'yt_long': 'projects/newsnow-2026-08-09/renders/final_full_vi_16x9.mp4',
         'yt_shorts': 'projects/newsnow-2026-08-09/renders/final_reels_vi_9x16.mp4',
         'ig_reels': 'projects/newsnow-2026-08-09/renders/final_reels_vi_9x16.mp4',
         'fb_reels': 'projects/newsnow-2026-08-09/renders/final_full_vi_9x16.mp4',
@@ -17,7 +16,6 @@ TOPICS = [
         'id': 'topic2',
         'title': 'Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026',
         'description': 'Agentic AI đang thay đổi cách doanh nghiệp vận hành. Khám phá cách các hệ thống tự động hóa toàn bộ quy trình từ phát triển đến vận hành.',
-        'yt_long': 'projects/topic2-agentic-ai/renders/final_full_vi_16x9.mp4',
         'yt_shorts': 'projects/topic2-agentic-ai/renders/final_reels_vi_9x16.mp4',
         'ig_reels': 'projects/topic2-agentic-ai/renders/final_reels_vi_9x16.mp4',
         'fb_reels': 'projects/topic2-agentic-ai/renders/final_full_vi_9x16.mp4',
@@ -28,7 +26,6 @@ TOPICS = [
         'id': 'topic3',
         'title': 'Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất',
         'description': 'Các phương pháp mới nhất để bảo vệ dữ liệu cá nhân và phòng chống tấn công mạng trong kỷ nguyên số. Hướng dẫn chi tiết cho người dùng và doanh nghiệp.',
-        'yt_long': 'projects/topic3-cyber-defense/renders/final_full_vi_16x9.mp4',
         'yt_shorts': 'projects/topic3-cyber-defense/renders/final_reels_vi_9x16.mp4',
         'ig_reels': 'projects/topic3-cyber-defense/renders/final_reels_vi_9x16.mp4',
         'fb_reels': 'projects/topic3-cyber-defense/renders/final_full_vi_9x16.mp4',
@@ -46,21 +43,8 @@ def publish_topic(topic):
 
     results = {}
 
-    # YouTube Long-form 16:9
-    print("\n[1/5] YouTube Long-form (16:9)...")
-    res = YoutubePublisher().execute({
-        'video_path': topic['yt_long'],
-        'title': title[:100],
-        'description': topic['description'],
-        'privacy_status': 'public',
-        'category_id': '28',
-    })
-    results['youtube_long'] = res.success
-    if res.error:
-        print(f"  ERROR: {res.error}")
-
     # YouTube Shorts 9:16
-    print("\n[2/5] YouTube Shorts (9:16)...")
+    print("\n[1/5] YouTube Shorts (9:16)...")
     res = YoutubePublisher().execute({
         'video_path': topic['yt_shorts'],
         'title': f"{title} #Shorts"[:100],

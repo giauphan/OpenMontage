@@ -267,6 +267,13 @@ class MetaPublisher(BaseTool):
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
+        from tools.publishers.platform_routes import ensure_vertical
+
+        try:
+            ensure_vertical(video_path)
+        except ValueError as geom_err:
+            return ToolResult(success=False, error=str(geom_err))
+
         user_token = os.environ.get("TOKEN_FACEBOOK")
         if not user_token:
             return ToolResult(success=False, error="TOKEN_FACEBOOK environment variable not set.")
