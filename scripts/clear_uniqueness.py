@@ -52,7 +52,8 @@ def clear_uniqueness(store: PublishStore, topic: str, dry_run: bool = False) -> 
                 doc_name = doc["name"]
                 print(f"  FOUND uniqueness: {pub_key[:60]}")
                 if not dry_run:
-                    dr = store.session.delete(doc_name, timeout=30)
+                    doc_url = f"{store.documents_url.split('/projects/', 1)[0]}/{doc_name}"
+                    dr = store.session.delete(doc_url, timeout=30)
                     if dr.status_code == 200:
                         deleted += 1
                         print(f"  DELETED")
