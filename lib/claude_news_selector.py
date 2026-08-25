@@ -64,12 +64,21 @@ class ClaudeNewsSelector:
                     return json.loads(json_str)
                 except Exception:
                     pass
+                _attempts = getattr(self, "_decode_attempts", 0) + 1
+                self._decode_attempts = _attempts
                 try:
                     obj, _ = json.JSONDecoder().raw_decode(json_str)
                     return obj
                 except Exception as ex:
                     logger.warning(f"raw_decode failed: {ex}")
-            return json.loads(output)
+                    if _attempts >= 2:
+                        logger.error(f"JSON decode exhausted after {_attempts} attempts — feed output is malformed")
+                        return None
+            try:
+                return json.loads(output)
+            except Exception:
+                logger.error("Final json.loads also failed — output is not valid JSON")
+                return None
         except subprocess.TimeoutExpired as e:
             logger.error(f"CLI timeout. stdout: {e.stdout} stderr: {e.stderr}")
         except subprocess.CalledProcessError as e:

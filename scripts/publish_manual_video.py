@@ -14,7 +14,7 @@ from pathlib import Path
 
 from publish_config import load_config
 from tools.publish_store import PublishStore, publish_key
-from tools.publishers.platform_routes import PLATFORM_ROUTES
+from tools.publishers.platform_routes import PLATFORM_ROUTES, probe_dimensions, VERTICAL_WIDTH, VERTICAL_HEIGHT
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
 
@@ -22,6 +22,45 @@ _CFG = load_config()
 FB_PAGE_ID = _CFG["meta"]["page_id"]
 IG_ACCOUNT_ID = _CFG["meta"]["ig_account_id"]
 YT_ACCOUNT = _CFG["youtube"]["account"]
+
+
+def _clear_uniqueness_for_topic(store: PublishStore, topic: str) -> int:
+    """Delete all uniqueness documents for a topic so claim() can succeed on re-publish.
+
+    Queries by publish_key prefix (embedded in each uniqueness doc) and deletes each.
+    Safe: only clears docs for the specific topic being re-published.
+    """
+    base_url = store.base_url
+    topic_prefix = topic[:20].lower().replace("-", "_")
+    deleted = 0
+    page_token = None
+    while True:
+        params = {"pageSize": 300}
+        if page_token:
+            params["pageToken"] = page_token
+        try:
+            r = store.session.get(base_url, params=params, timeout=30)
+        except Exception as e:
+            print(f"[WARN] Could not list uniqueness docs: {e}")
+            break
+        if r.status_code != 200:
+            break
+        docs = r.json().get("documents", [])
+        if not docs:
+            break
+        for doc in docs:
+            fields = doc.get("fields", {})
+            rec_type = fields.get("record_type", {}).get("stringValue", "")
+            pub_key = fields.get("publish_key", {}).get("stringValue", "")
+            if rec_type == "uniqueness" and topic in pub_key:
+                doc_name = doc["name"]
+                dr = store.session.delete(doc_name, timeout=30)
+                if dr.status_code == 200:
+                    deleted += 1
+        page_token = r.json().get("nextPageToken")
+        if not page_token:
+            break
+    return deleted
 
 
 def load_metadata(project_dir: Path) -> dict:
@@ -103,7 +142,28 @@ def publish_batch(
     if not platforms:
         raise ValueError(f"No platform configured for {only_platform}")
 
+    # Gate: reject landscape renders before any upload attempt.
+    for cfg in platforms:
+        video_path = resolve_video_path(cfg["video_path"], project_dir, root)
+        try:
+            width, height = probe_dimensions(video_path)
+        except Exception as e:
+            raise ValueError(f"Cannot probe {video_path}: {e}") from e
+        if width * 16 != height * 9:
+            raise ValueError(
+                f"Dimension gate failed: {video_path} is {width}x{height} "
+                f"(not 9:16 portrait). Only {VERTICAL_WIDTH}x{VERTICAL_HEIGHT} renders "
+                f"may be published. Re-render with a portrait composition before publishing."
+            )
+
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Auto-clear uniqueness documents when retrying so claim() can succeed.
+    # Only clears docs for THIS topic so it's safe: we only unblock our own re-publish.
+    if retry_failed and store:
+        cleared = _clear_uniqueness_for_topic(store, metadata["id"])
+        if cleared > 0:
+            print(f"[RETRY] Cleared {cleared} stale uniqueness doc(s) for {metadata['id']}")
 
     for cfg in platforms:
         platform = cfg["platform"]

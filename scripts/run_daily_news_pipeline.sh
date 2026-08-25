@@ -112,6 +112,14 @@ if [ "$CLAUDE_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
   DIRECTOR_ARTIFACT_FALLBACK=1
 fi
 
+# Flatten any director-created subdirectory nesting so compositions land at canonical paths.
+for nested in "$PROJECT_DIR"/hyperframes/*/index.html; do
+  [ -f "$nested" ] && mv "$nested" "$PROJECT_DIR/hyperframes/index.html" && rmdir "$(dirname "$nested")" 2>/dev/null || true
+done
+for nested in "$PROJECT_DIR"/hyperframes_reels/*/index.html; do
+  [ -f "$nested" ] && mv "$nested" "$PROJECT_DIR/hyperframes_reels/index.html" && rmdir "$(dirname "$nested")" 2>/dev/null || true
+done
+
 set -e
 
 if [ "$DIRECTOR_ARTIFACT_FALLBACK" -eq 1 ]; then
@@ -134,15 +142,21 @@ ELAPSED=$((END_TS - START_TS))
 if [ $CLAUDE_EXIT -eq 0 ]; then
   echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID exit=0 elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
-  # Both compositions are required by the render stage.
-  HYPER_FULL=$(find "$ROOT/projects/$PROJECT_ID" -iwholename "*hyperframes/index.html" 2>/dev/null | head -n 1)
-  HYPER_REELS=$(find "$ROOT/projects/$PROJECT_ID" -iwholename "*hyperframes_reels/index.html" 2>/dev/null | head -n 1)
-  if [ -n "$HYPER_FULL" ] && [ -n "$HYPER_REELS" ]; then
+  # Hard gate: both compositions must exist at canonical paths before render.
+  HYPER_FULL="$PROJECT_DIR/hyperframes/index.html"
+  HYPER_REELS="$PROJECT_DIR/hyperframes_reels/index.html"
+  if [ -s "$HYPER_FULL" ] && [ -s "$HYPER_REELS" ]; then
     echo "[$(date -u +%FT%TZ)] artifacts OK" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   else
-    echo "[$(date -u +%FT%TZ)] WARN: claude exit=0 but both composition files are required" \
-      >> "$ROOT/logs/directors_${PROJECT_ID}.log"
-    CLAUDE_EXIT=2
+    if [ ! -s "$HYPER_FULL" ]; then
+      echo "[$(date -u +%FT%TZ)] FATAL type=no_full_composition PROJECT_ID=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+      echo "[$(date -u +%FT%TZ)] FATAL type=no_full_composition PROJECT_ID=$PROJECT_ID" >&2
+    fi
+    if [ ! -s "$HYPER_REELS" ]; then
+      echo "[$(date -u +%FT%TZ)] FATAL type=no_reels_composition PROJECT_ID=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+      echo "[$(date -u +%FT%TZ)] FATAL type=no_reels_composition PROJECT_ID=$PROJECT_ID" >&2
+    fi
+    exit 2
   fi
 else
   echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$CLAUDE_EXIT elapsed=${ELAPSED}s" \
