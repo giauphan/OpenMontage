@@ -31,6 +31,9 @@ REQUIRED_FONTS = (
 
 VIETNAMESE_GLYPH_SENTINELS = "ĐđĂăÂâÊêÔôƠơƯưÁáÀàẢảÃãẠạẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẾếỀềỂểỄễỆệỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỨứỪừỬửỮữỰựÝýỲỳỶỷỸỹỴỵ"
 
+PORTRAIT_WIDTH = 1080
+PORTRAIT_HEIGHT = 1920
+
 
 def probe_duration(path: Path) -> float:
     ffprobe = shutil.which("ffprobe")
@@ -134,9 +137,69 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     return head + body
 
 
+def declared_dimensions(html: str) -> dict[str, tuple[int, int]]:
+    """Collect every explicit canvas size declaration, keyed by its source."""
+    found: dict[str, tuple[int, int]] = {}
+
+    root_open = re.search(r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+    if root_open:
+        tag = root_open.group(0)
+        width = re.search(r"\bdata-width=[\"'](\d+)[\"']", tag)
+        height = re.search(r"\bdata-height=[\"'](\d+)[\"']", tag)
+        if width and height:
+            found["root data-width/data-height"] = (int(width.group(1)), int(height.group(1)))
+
+    viewport = re.search(
+        r"<meta\b[^>]*\bname=[\"']viewport[\"'][^>]*\bcontent=[\"']([^\"']+)[\"']",
+        html,
+    )
+    if viewport:
+        content = viewport.group(1)
+        width = re.search(r"\bwidth\s*=\s*(\d+)", content)
+        height = re.search(r"\bheight\s*=\s*(\d+)", content)
+        if width and height:
+            found["meta viewport"] = (int(width.group(1)), int(height.group(1)))
+
+    for rule in re.finditer(r"#root\s*\{([^{}]*)\}", html):
+        body = rule.group(1)
+        width = re.search(r"(?<![-\w])width\s*:\s*(\d+)px", body)
+        height = re.search(r"(?<![-\w])height\s*:\s*(\d+)px", body)
+        if width and height:
+            found["#root CSS"] = (int(width.group(1)), int(height.group(1)))
+            break
+
+    return found
+
+
+def validate_dimensions(path: Path, html: str) -> list[str]:
+    """Reject any composition that does not declare a true portrait canvas."""
+    expected = (PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+    found = declared_dimensions(html)
+    if not found:
+        return [
+            f"{path}: cannot determine canvas dimensions; declare "
+            f"{PORTRAIT_WIDTH}x{PORTRAIT_HEIGHT} on the composition root, meta viewport, and #root CSS"
+        ]
+
+    distinct = set(found.values())
+    if len(distinct) > 1:
+        detail = ", ".join(f"{source}={w}x{h}" for source, (w, h) in sorted(found.items()))
+        return [f"{path}: conflicting canvas dimensions ({detail})"]
+
+    width, height = distinct.pop()
+    if (width, height) != expected:
+        sources = ", ".join(sorted(found))
+        return [
+            f"{path}: expected {PORTRAIT_WIDTH}x{PORTRAIT_HEIGHT} portrait canvas, "
+            f"got {width}x{height} (declared by {sources})"
+        ]
+    return []
+
+
 def validate_html(path: Path) -> list[str]:
     errors: list[str] = []
     html = path.read_text(encoding="utf-8")
+    errors.extend(validate_dimensions(path, html))
     required_bindings = (
         "font-family: 'BeVietnamPro'",
         "--font-heading: 'BeVietnamPro', Arial, sans-serif;",

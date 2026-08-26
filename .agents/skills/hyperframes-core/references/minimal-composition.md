@@ -7,7 +7,7 @@ The smallest renderable HyperFrames composition — a standalone (top-level) roo
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=1920, height=1080" />
+    <meta name="viewport" content="width=1080, height=1920" />
     <title>Minimal HyperFrames Composition</title>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <style>
@@ -19,8 +19,8 @@ The smallest renderable HyperFrames composition — a standalone (top-level) roo
       }
       #root {
         position: relative;
-        width: 1920px;
-        height: 1080px;
+        width: 1080px;
+        height: 1920px;
         overflow: hidden;
       }
       .clip {
@@ -39,8 +39,8 @@ The smallest renderable HyperFrames composition — a standalone (top-level) roo
     <div
       id="root"
       data-composition-id="main"
-      data-width="1920"
-      data-height="1080"
+      data-width="1080"
+      data-height="1920"
       data-duration="5"
     >
       <section id="title-card" class="clip" data-start="0" data-duration="5" data-track-index="1">
