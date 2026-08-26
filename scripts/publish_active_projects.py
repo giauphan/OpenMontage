@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "publish_schedule.json"
 PUBLISHER = ROOT / "scripts" / "publish_manual_video.py"
+
+
+def deactivate_project(project_id: str) -> None:
+    """Remove a fully published project from the schedule and disk."""
+    schedule = json.loads(CONFIG.read_text(encoding="utf-8"))
+    active_projects = schedule.get("active_projects", [])
+    if project_id in active_projects:
+        schedule["active_projects"] = [item for item in active_projects if item != project_id]
+        temp_config = CONFIG.with_suffix(".json.tmp")
+        temp_config.write_text(
+            json.dumps(schedule, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temp_config.replace(CONFIG)
+        print(f"✓ Deactivated published project: {project_id}")
+
+    project_dir = ROOT / "projects" / project_id
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
+        print(f"✓ Removed published project directory: {project_dir}")
 
 
 def main() -> int:
@@ -45,6 +66,15 @@ def main() -> int:
         result = subprocess.run(command, cwd=ROOT, env=env)
         if result.returncode:
             exit_code = result.returncode
+        elif not args.dry_run:
+            # publish_manual_video.py returns zero only when every selected
+            # platform is published or already recorded as published. Never
+            # delete a project after a partial or failed batch.
+            try:
+                deactivate_project(project_id)
+            except Exception as cleanup_error:
+                print(f"ERROR: publish succeeded but cleanup failed for {project_id}: {cleanup_error}")
+                exit_code = 1
     return exit_code
 
 

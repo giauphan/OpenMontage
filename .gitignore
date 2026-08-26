@@ -104,3 +104,4 @@ venv/
 !package.json
 !package-lock.json
 logs
+.claude/worktrees/
