@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Gate 2: QA check for render-ready candidates."""
+"""Gate 2: QA check for render-ready candidates.
+
+Usage: check_qa.py [candidate_id ...]
+When candidate ids are given, only those are checked; otherwise the built-in
+default list is used.
+"""
 import subprocess
+import sys
 from pathlib import Path
 
 FP = "/usr/bin/ffprobe"
-PROJ = ["cand_2782966506bbb63c", "cand_60b047b0a308b9cf", "cand_c160b3afda23a02e"]
+DEFAULT_PROJ = ["cand_2782966506bbb63c", "cand_60b047b0a308b9cf", "cand_c160b3afda23a02e"]
+REELS_MAX_SECONDS = 60.0
+PROJ = sys.argv[1:] or DEFAULT_PROJ
 
 def dur(path):
     if not path.exists():
@@ -50,6 +58,16 @@ for pid in PROJ:
             all_pass = False
     except (ValueError, TypeError):
         print(f"  narration_render_gap=CANNOT_COMPUTE  FAIL")
+        all_pass = False
+
+    try:
+        reels_f = float(vd)
+        reels_ok = reels_f <= REELS_MAX_SECONDS
+        print(f"  reels_duration={reels_f:.3f}s  {'PASS' if reels_ok else 'FAIL'} (max={REELS_MAX_SECONDS:.0f}s)")
+        if not reels_ok:
+            all_pass = False
+    except (ValueError, TypeError):
+        print("  reels_duration=CANNOT_COMPUTE  FAIL")
         all_pass = False
 
     if not all(s.exists() and s.stat().st_size > 0 for s in [r_full, r_reels, narr]):

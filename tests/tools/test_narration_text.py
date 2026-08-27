@@ -17,6 +17,13 @@ def test_technical_terms_localized():
     assert "Ây Pi Ây" in out
 
 
+def test_ai_uses_single_vietnamese_pronunciation():
+    out = prepare_narration("Cuộc chiến AI đang thay đổi.")
+    assert "AI" not in out
+    assert "ây-ai" in out
+    assert "Ây Âi" not in out
+
+
 def test_multiword_wins_over_component():
     out = prepare_narration("REST API rất tiện.")
     # "REST API" maps as a unit, not "API" alone leaving "REST" behind.

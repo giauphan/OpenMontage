@@ -39,6 +39,7 @@ def validate_video(
     min_duration: float,
     tolerance: float,
     expected_dimensions: tuple[int, int],
+    max_duration: float | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -79,6 +80,8 @@ def validate_video(
     narration_duration = number(spoken.get("format", {}).get("duration"))
     if duration <= min_duration:
         errors.append(f"{path}: duration {duration:.2f}s is not greater than {min_duration:.2f}s")
+    if max_duration is not None and duration > max_duration:
+        errors.append(f"{path}: duration {duration:.2f}s exceeds {max_duration:.2f}s")
     if narration_duration <= 0:
         errors.append(f"{narration}: invalid duration {narration_duration:.2f}s")
     elif abs(duration - narration_duration) > tolerance:
@@ -94,10 +97,14 @@ def main() -> int:
     parser.add_argument("--ffprobe", default="ffprobe")
     parser.add_argument("--min-duration", type=float, default=30.0)
     parser.add_argument("--tolerance", type=float, default=3.0)
+    parser.add_argument("--reels-max-duration", type=float, default=None)
     args = parser.parse_args()
     narration = args.project_dir / "assets" / "narration.mp3"
     if not narration.is_file() or narration.stat().st_size == 0:
         narration = args.project_dir / "assets" / "voice" / "narration.mp3"
+    reels_narration = args.project_dir / "hyperframes_reels" / "assets" / "narration.mp3"
+    if not reels_narration.is_file() or reels_narration.stat().st_size == 0:
+        reels_narration = narration
     errors: list[str] = []
     errors.extend(
         validate_video(
@@ -112,11 +119,12 @@ def main() -> int:
     errors.extend(
         validate_video(
             args.project_dir / "renders" / "final_reels_vi_9x16.mp4",
-            narration,
+            reels_narration,
             args.ffprobe,
             args.min_duration,
             args.tolerance,
             (1080, 1920),
+            args.reels_max_duration,
         )
     )
     for error in errors:

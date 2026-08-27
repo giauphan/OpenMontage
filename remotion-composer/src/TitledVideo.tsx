@@ -16,7 +16,7 @@ import { resolveAsset } from "./lib/resolveAsset";
 // Loaded once at module scope so every render reuses the same font face.
 const { fontFamily } = loadFont("normal", {
   weights: ["400", "700", "900"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext", "vietnamese"],
 });
 
 export type TitledVideoProps = {

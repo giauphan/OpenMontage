@@ -37,7 +37,7 @@ import { resolveTheme, type ThemeConfig, DEFAULT_THEME } from "./Root";
 // Load Space Grotesk font for cinematic typography
 const { fontFamily } = loadFont("normal", {
   weights: ["400", "700"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext", "vietnamese"],
 });
 
 // ---------------------------------------------------------------------------
