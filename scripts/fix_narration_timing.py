@@ -21,6 +21,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 from tools.narration_text import prepare_narration
 
 CONTAMINATION = [
@@ -61,14 +64,29 @@ def find_contamination(text: str):
     return hits
 
 def probe_duration(path: Path) -> float:
+    ffprobe = shutil.which("ffprobe") or "ffprobe"
     r = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+        [ffprobe, "-v", "error", "-show_entries", "format=duration",
          "-of", "csv=p=0", str(path)],
         capture_output=True, text=True)
     try:
         return float(r.stdout.strip().splitlines()[-1])
     except Exception:
         return -1.0
+
+
+def hyperframes_command() -> list[str]:
+    """Resolve the HyperFrames CLI without assuming a container layout."""
+    cli = shutil.which("hyperframes")
+    if cli:
+        return [cli]
+    for candidate in (
+        ROOT / "node_modules" / "hyperframes" / "bin" / "hyperframes.mjs",
+        Path("/app/node_modules/hyperframes/bin/hyperframes.mjs"),
+    ):
+        if candidate.is_file():
+            return ["node", str(candidate)]
+    raise SystemExit("ERROR: hyperframes CLI not found (install it or add it to PATH)")
 
 def synth(voice, text, out: Path, rate: str):
     args = ["edge-tts", "--voice", voice, "--text", prepare_narration(text), "--write-media", str(out)]
@@ -137,16 +155,19 @@ def main():
             shutil.copy2(narration, d / "narration.mp3")
             warn(f"copied narration -> {comp}/assets/narration.mp3")
 
-    # Repair quality (fonts + audio src bindings).
-    repair_script = Path("/app/scripts/repair_hyperframes_quality.py")
-    if repair_script.is_file():
-        r = subprocess.run(["python3", str(repair_script), str(project)],
-                           capture_output=True, text=True)
-        warn("repair exit=" + str(r.returncode))
-        if r.returncode != 0:
-            warn(r.stdout[-500:])
-            warn(r.stderr[-500:])
-            raise SystemExit("ERROR: repair_hyperframes_quality failed")
+    # Repair quality (fonts + audio src bindings). This gate is mandatory:
+    # skipping it silently was how landscape/missing-font compositions reached
+    # the renderer.
+    repair_script = ROOT / "scripts" / "repair_hyperframes_quality.py"
+    if not repair_script.is_file():
+        raise SystemExit(f"ERROR: repair script not found at {repair_script}")
+    r = subprocess.run([sys.executable, str(repair_script), str(project)],
+                       capture_output=True, text=True)
+    warn("repair exit=" + str(r.returncode))
+    if r.returncode != 0:
+        warn(r.stdout[-500:])
+        warn(r.stderr[-500:])
+        raise SystemExit("ERROR: repair_hyperframes_quality failed")
 
     renders = project / "renders"
     renders.mkdir(exist_ok=True)
@@ -156,8 +177,7 @@ def main():
         out = renders / out_name
         out.unlink(missing_ok=True)
         r = subprocess.run(
-            ["node", "/app/node_modules/hyperframes/bin/hyperframes.mjs",
-             "render", str(comp_dir), "--output", str(out)],
+            hyperframes_command() + ["render", str(comp_dir), "--output", str(out)],
             capture_output=True, text=True)
         warn(f"render {comp}: exit={r.returncode} exists={out.exists()} size={out.stat().st_size if out.exists() else 0}")
         if r.returncode != 0:
@@ -168,10 +188,14 @@ def main():
     render("hyperframes", "final_full_vi_9x16.mp4")
     render("hyperframes_reels", "final_reels_vi_9x16.mp4")
 
-    qa = subprocess.run(
-        ["python3", "/app/scripts/validate_render_quality.py", str(project),
-         "--ffprobe", "/usr/bin/ffprobe"],
-        capture_output=True, text=True)
+    qa_command = [sys.executable, str(ROOT / "scripts" / "validate_render_quality.py"), str(project)]
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe:
+        qa_command += ["--ffprobe", ffprobe]
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        qa_command += ["--ffmpeg", ffmpeg]
+    qa = subprocess.run(qa_command, capture_output=True, text=True)
     warn("QA exit=" + str(qa.returncode))
     warn((qa.stdout or "")[-1200:])
     warn((qa.stderr or "")[-400:])

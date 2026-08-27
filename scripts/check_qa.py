@@ -1,59 +1,129 @@
 #!/usr/bin/env python3
-"""Gate 2: QA check for render-ready candidates."""
+"""Gate 2: QA check for render-ready candidates.
+
+Takes project directories (or a projects root) as arguments instead of
+hardcoding container paths and candidate IDs, so the same gate runs on a
+developer checkout, in CI, and on the publish host.
+
+Usage:
+  python3 scripts/check_qa.py projects/cand_abc projects/cand_def
+  python3 scripts/check_qa.py --projects-root projects
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
-FP = "/usr/bin/ffprobe"
-PROJ = ["cand_2782966506bbb63c", "cand_60b047b0a308b9cf", "cand_c160b3afda23a02e"]
+FULL_RENDER = "renders/final_full_vi_9x16.mp4"
+REELS_RENDER = "renders/final_reels_vi_9x16.mp4"
+NARRATION_CANDIDATES = ("assets/narration.mp3", "assets/voice/narration.mp3")
+DEFAULT_TOLERANCE = 3.0
 
-def dur(path):
-    if not path.exists():
-        return "MISSING"
-    r = subprocess.run([FP, "-v", "error", "-show_entries", "format=duration",
-                       "-of", "csv=p=0", str(path)], capture_output=True, text=True)
-    return (r.stdout.strip().splitlines() or ["?"])[-1]
 
-def info(path, stream="v:0"):
-    if not path.exists():
-        return "MISSING"
-    r = subprocess.run([FP, "-v", "error", "-select_streams", stream,
-                       "-show_entries", "stream=codec_name,width,height",
-                       "-of", "csv=p=0", str(path)], capture_output=True, text=True)
-    return (r.stdout.strip() or "?")
-
-all_pass = True
-for pid in PROJ:
-    p = Path(f"/app/projects/{pid}")
-    r_full = p / "renders/final_full_vi_9x16.mp4"
-    r_reels = p / "renders/final_reels_vi_9x16.mp4"
-    narr = p / "assets/narration.mp3"
-
-    nd = dur(narr)
-    rd = dur(r_full)
-    vd = dur(r_reels)
-
-    vc = info(r_full, "v:0")
-    ac = info(r_full, "a:0")
-    sz = r_full.stat().st_size if r_full.exists() else 0
-
-    print(f"=== {pid} ===")
-    print(f"  narration={nd}s  full_render={rd}s  reels_render={vd}s")
-    print(f"  full_video={vc}  full_audio={ac}  full_size={sz}")
-
+def duration(path: Path, ffprobe: str) -> float | None:
+    if not path.is_file() or path.stat().st_size == 0:
+        return None
+    result = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        return None
     try:
-        narr_f = float(nd)
-        render_f = float(rd)
-        diff = abs(narr_f - render_f)
-        ok = diff <= 3.0
-        print(f"  narration_render_gap={diff:.3f}s  {'PASS' if ok else 'FAIL'} (tolerance=3.0s)")
-        if not ok:
-            all_pass = False
-    except (ValueError, TypeError):
-        print(f"  narration_render_gap=CANNOT_COMPUTE  FAIL")
-        all_pass = False
+        return float(lines[-1])
+    except ValueError:
+        return None
 
-    if not all(s.exists() and s.stat().st_size > 0 for s in [r_full, r_reels, narr]):
-        print(f"  MISSING_FILES  FAIL")
-        all_pass = False
 
-print(f"\nGATE2={'PASS' if all_pass else 'FAIL'}")
+def stream_info(path: Path, ffprobe: str, selector: str) -> str:
+    if not path.is_file():
+        return "MISSING"
+    result = subprocess.run(
+        [ffprobe, "-v", "error", "-select_streams", selector,
+         "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", str(path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() or "?"
+
+
+def narration_path(project: Path) -> Path:
+    for candidate in NARRATION_CANDIDATES:
+        path = project / candidate
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+    return project / NARRATION_CANDIDATES[0]
+
+
+def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
+    full = project / FULL_RENDER
+    reels = project / REELS_RENDER
+    narration = narration_path(project)
+
+    narration_seconds = duration(narration, ffprobe)
+    full_seconds = duration(full, ffprobe)
+    reels_seconds = duration(reels, ffprobe)
+
+    print(f"=== {project.name} ===")
+    print(f"  narration={narration_seconds}  full_render={full_seconds}  reels_render={reels_seconds}")
+    print(f"  full_video={stream_info(full, ffprobe, 'v:0')}  full_audio={stream_info(full, ffprobe, 'a:0')}")
+
+    passed = True
+    for label, path in (("narration", narration), ("full render", full), ("reels render", reels)):
+        if not path.is_file() or path.stat().st_size == 0:
+            print(f"  MISSING_FILE {label}: {path}  FAIL")
+            passed = False
+
+    if narration_seconds is None or full_seconds is None:
+        print("  narration_render_gap=CANNOT_COMPUTE  FAIL")
+        return False
+
+    gap = abs(narration_seconds - full_seconds)
+    ok = gap <= tolerance
+    print(f"  narration_render_gap={gap:.3f}s  {'PASS' if ok else 'FAIL'} (tolerance={tolerance})")
+    return passed and ok
+
+
+def resolve_projects(args: argparse.Namespace) -> list[Path]:
+    if args.projects:
+        return [Path(item) for item in args.projects]
+    root = Path(args.projects_root)
+    return sorted(path for path in root.iterdir() if path.is_dir()) if root.is_dir() else []
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("projects", nargs="*", help="Project directories to check")
+    parser.add_argument("--projects-root", default="projects",
+                        help="Scan every subdirectory of this root when no projects are given")
+    parser.add_argument("--ffprobe", default=None)
+    parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
+    args = parser.parse_args()
+
+    ffprobe = args.ffprobe or shutil.which("ffprobe")
+    if not ffprobe:
+        print("GATE2=FAIL (ffprobe not found)")
+        return 1
+
+    projects = resolve_projects(args)
+    if not projects:
+        print("GATE2=FAIL (no projects to check)")
+        return 1
+
+    all_pass = all(check_project(project, ffprobe, args.tolerance) for project in projects)
+    print(f"\nGATE2={'PASS' if all_pass else 'FAIL'}")
+    return 0 if all_pass else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

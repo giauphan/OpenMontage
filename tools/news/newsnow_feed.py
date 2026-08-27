@@ -12,10 +12,16 @@ from urllib.request import Request, urlopen
 DEFAULT_SOURCES = ("hackernews", "github", "producthunt")
 
 
-def _published_at(payload: dict[str, Any]) -> str:
-    updated = payload.get("updatedTime")
-    if isinstance(updated, (int, float)):
-        return datetime.fromtimestamp(updated / 1000, timezone.utc).isoformat()
+def _published_at(raw_item: dict[str, Any], payload: dict[str, Any]) -> str:
+    """Return an item publication time without mistaking feed refresh time for it."""
+    for field in ("published_at", "publishedAt", "pubDate", "date"):
+        value = raw_item.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    # NewsNow's ``updatedTime`` describes when the source feed was refreshed,
+    # not when each article was published. Treating it as article metadata can
+    # make every current item stale when a source has not refreshed recently.
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -34,12 +40,12 @@ def fetch_feed(base_url: str, sources: tuple[str, ...] = DEFAULT_SOURCES) -> lis
             payload = json.load(response)
         if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
             continue
-        published_at = _published_at(payload)
         for raw in payload["items"]:
             if not isinstance(raw, dict):
                 continue
             url = str(raw.get("url") or "").strip()
             title = str(raw.get("title") or "").strip()
+            published_at = _published_at(raw, payload)
             if not url or not title:
                 continue
             key = url.lower().rstrip("/")

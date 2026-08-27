@@ -14,15 +14,8 @@ fi
 export PYTHONPATH="$ROOT"
 FFPROBE_BIN="$(command -v ffprobe || true)"
 if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
-HYPERFRAMES_BIN="$(command -v hyperframes || true)"
-if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
-[ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
-[ -n "$HYPERFRAMES_BIN" ] || { echo "ERROR: hyperframes CLI is required" >&2; exit 1; }
-export FFPROBE_BIN HYPERFRAMES_BIN
-
-auto_render_quality() {
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN"
-}
+FFMPEG_BIN="$(command -v ffmpeg || true)"
+if [ -z "$FFMPEG_BIN" ] && [ -x "$HOME/.local/bin/ffmpeg" ]; then FFMPEG_BIN="$HOME/.local/bin/ffmpeg"; fi
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
 elif [ -x "$ROOT/venv/bin/python3" ]; then
@@ -30,6 +23,18 @@ elif [ -x "$ROOT/venv/bin/python3" ]; then
 else
   PY="$(command -v python3)"
 fi
+HYPERFRAMES_BIN="$(command -v hyperframes || true)"
+if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
+[ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
+[ -n "$FFMPEG_BIN" ] || { echo "ERROR: ffmpeg is required for content QA" >&2; exit 1; }
+[ -n "$HYPERFRAMES_BIN" ] || { echo "ERROR: hyperframes CLI is required" >&2; exit 1; }
+export FFPROBE_BIN FFMPEG_BIN HYPERFRAMES_BIN
+
+auto_render_quality() {
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN"
+}
+DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
+command -v timeout >/dev/null 2>&1 || { echo "ERROR: timeout command is required for directors" >&2; exit 1; }
 
 PROJECT_IDS=("$@")
 if [ "${#PROJECT_IDS[@]}" -eq 0 ]; then
@@ -61,14 +66,16 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       cd \"$ROOT\"
       env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
           -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-        claude -p --dangerously-skip-permissions \
+        timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
+          claude -p --dangerously-skip-permissions \
           --output-format json \
           \"$PROMPT_STR\"
     " > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   else
     env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
         -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-      claude -p --dangerously-skip-permissions \
+      timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
+        claude -p --dangerously-skip-permissions \
         --output-format json \
         "$PROMPT_STR" \
         > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
@@ -139,20 +146,26 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       exit 1
     fi
     if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
-      cp "$narration" "$project_root/assets/music-bg.mp3"
+      echo "[$(date -u +%FT%TZ)] ERROR: background music asset missing for $PROJECT_ID" >&2
+      exit 1
     fi
     local music_duration
     music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
     if ! awk "BEGIN{exit !($music_duration > 30)}"; then
-      cp "$narration" "$project_root/assets/music-bg.mp3"
+      echo "[$(date -u +%FT%TZ)] ERROR: background music duration ${music_duration}s <=30s for $PROJECT_ID" >&2
+      exit 1
+    fi
+    if cmp -s "$narration" "$project_root/assets/music-bg.mp3"; then
+      echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID" >&2
+      exit 1
     fi
     for composition in hyperframes hyperframes_reels; do
       local target="$project_root/$composition/assets"
       cp "$narration" "$target/narration.mp3"
       cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
-      [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ] && cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf" || cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"
-      [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ] && cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"
-      [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ] && cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"
+      if [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ]; then cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf"; else cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"; fi
+      if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
+      if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
     done
     python3 "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
   }
