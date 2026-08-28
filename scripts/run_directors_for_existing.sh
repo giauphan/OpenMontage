@@ -256,7 +256,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     --arg id "$PROJECT_ID" \
     --arg title "$TITLE" \
     --arg description "$DESCRIPTION" \
-    --argjson feed_stale "${FEED_STALE:-0}" \
+    --argjson feed_stale true \
     '{
       id: $id,
       topic: $title,
