@@ -118,7 +118,11 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         raise ValueError(f"{path}: composition root has no data-duration")
     root_duration = float(root_duration_match.group(1))
     target = round(narration_duration, 2)
-    if root_duration <= 0 or abs(root_duration - target) <= 1.0:
+    if root_duration <= 0:
+        raise ValueError(f"{path}: composition root has a non-positive data-duration")
+    # Keep visual and narration timelines exactly aligned. A tolerance here can
+    # leave a dead tail that the post-render duration gate correctly rejects.
+    if abs(root_duration - target) < 0.01:
         return html
     scale = target / root_duration
 
@@ -160,13 +164,12 @@ def declared_dimensions(html: str) -> dict[str, tuple[int, int]]:
         if width and height:
             found["meta viewport"] = (int(width.group(1)), int(height.group(1)))
 
-    for rule in re.finditer(r"#root\s*\{([^{}]*)\}", html):
+    for index, rule in enumerate(re.finditer(r"#root\s*\{([^{}]*)\}", html), start=1):
         body = rule.group(1)
         width = re.search(r"(?<![-\w])width\s*:\s*(\d+)px", body)
         height = re.search(r"(?<![-\w])height\s*:\s*(\d+)px", body)
         if width and height:
-            found["#root CSS"] = (int(width.group(1)), int(height.group(1)))
-            break
+            found[f"#root CSS rule {index}"] = (int(width.group(1)), int(height.group(1)))
 
     return found
 

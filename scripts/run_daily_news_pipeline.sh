@@ -267,6 +267,11 @@ if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html"
   exit 1
 fi
 rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+# Fail before render if either authored composition violates HyperFrames contracts.
+"$HYPERFRAMES_BIN" lint "$FULL_COMP"
+"$HYPERFRAMES_BIN" validate "$FULL_COMP"
+"$HYPERFRAMES_BIN" lint "$REELS_COMP"
+"$HYPERFRAMES_BIN" validate "$REELS_COMP"
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
 "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN"

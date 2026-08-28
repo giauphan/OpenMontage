@@ -186,6 +186,12 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     exit 1
   fi
   rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+  echo "[$(date -u +%FT%TZ)] lint/validate FULL $FULL_COMP"
+  "$HYPERFRAMES_BIN" lint "$FULL_COMP"
+  "$HYPERFRAMES_BIN" validate "$FULL_COMP"
+  echo "[$(date -u +%FT%TZ)] lint/validate REELS $REELS_COMP"
+  "$HYPERFRAMES_BIN" lint "$REELS_COMP"
+  "$HYPERFRAMES_BIN" validate "$REELS_COMP"
   echo "[$(date -u +%FT%TZ)] render FULL $FULL_COMP"
   "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
   echo "[$(date -u +%FT%TZ)] render REELS $REELS_COMP"
