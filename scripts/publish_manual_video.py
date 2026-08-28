@@ -248,7 +248,7 @@ def publish_batch(
                 "title": title,
                 "description": description,
                 "tags": ["AI", "Công nghệ", "Vietnamese", "OpenMontage"],
-                "privacy_status": "private" if publish_at else "unlisted",
+                "privacy_status": "private" if publish_at else "public",
                 "publish_at": publish_at,
             }
             if dry_run:
