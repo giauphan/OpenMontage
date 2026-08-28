@@ -100,12 +100,12 @@ def validate_video(
     path: Path,
     narration: Path,
     ffprobe: str,
-    min_duration: float,
-    tolerance: float,
-    expected_dimensions: tuple[int, int],
+    ffmpeg: str | None = None,
+    min_duration: float = 30.0,
+    tolerance: float = 3.0,
+    expected_dimensions: tuple[int, int] = (1080, 1920),
     max_duration: float | None = None,
     narration_text: Path | None = None,
-    ffmpeg: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -242,12 +242,12 @@ def main() -> int:
                 args.project_dir / "renders" / render_name,
                 narration,
                 args.ffprobe,
+                ffmpeg,
                 args.min_duration,
                 args.tolerance,
                 PORTRAIT_DIMENSIONS,
                 max_duration,
-                narration_text=narration_text,
-                ffmpeg=ffmpeg,
+                narration_text,
             )
         )
     for error in errors:
