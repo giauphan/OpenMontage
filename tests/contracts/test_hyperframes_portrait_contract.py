@@ -104,6 +104,23 @@ def test_repair_does_not_convert_landscape_to_portrait(tmp_path):
     assert repair.validate_html(index) != []
 
 
+def test_conflicting_later_root_css_rule_fails(tmp_path):
+    html = composition_html(1080, 1920).replace(
+        "</style>",
+        "#root { width: 1920px; height: 1080px; overflow: hidden; }\n    </style>",
+    )
+    errors = repair.validate_html(write_composition(tmp_path, html))
+    assert any("conflicting canvas dimensions" in error for error in errors)
+
+
+def test_timeline_repair_scales_small_narration_mismatches(tmp_path):
+    index = write_composition(tmp_path, composition_html(1080, 1920))
+    repair.patch_html(index, narration_duration=5.5)
+    patched = index.read_text(encoding="utf-8")
+    assert 'data-duration="5.5"' in patched
+    assert 'data-duration="5.5" data-track-index="1"' in patched
+
+
 @pytest.mark.parametrize("composition", ["hyperframes", "hyperframes_reels"])
 def test_main_rejects_landscape_in_either_composition(tmp_path, monkeypatch, composition):
     project = tmp_path / "project"

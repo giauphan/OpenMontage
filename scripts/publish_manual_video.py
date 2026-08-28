@@ -157,11 +157,11 @@ def publish_batch(
             width, height = probe_dimensions(video_path)
         except Exception as e:
             raise ValueError(f"Cannot probe {video_path}: {e}") from e
-        if width * 16 != height * 9:
+        if (width, height) != (VERTICAL_WIDTH, VERTICAL_HEIGHT):
             raise ValueError(
                 f"Dimension gate failed: {video_path} is {width}x{height} "
-                f"(not 9:16 portrait). Only {VERTICAL_WIDTH}x{VERTICAL_HEIGHT} renders "
-                f"may be published. Re-render with a portrait composition before publishing."
+                f"(not {VERTICAL_WIDTH}x{VERTICAL_HEIGHT}). Re-render with a "
+                "1080x1920 portrait composition before publishing."
             )
         if cfg["platform"] == "youtube" and cfg["kind"] == "short":
             ensure_youtube_short(video_path)

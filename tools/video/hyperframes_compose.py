@@ -760,13 +760,14 @@ class HyperFramesCompose(BaseTool):
         lint = self._lint({"workspace_path": str(workspace)})
         steps["lint"] = lint.data
         if not lint.success:
-            if inputs.get("strict", False):
-                return ToolResult(
-                    success=False,
-                    error=f"Lint failed (strict mode): {lint.error}",
-                    data={"steps": steps},
-                )
-            log.warning("hyperframes lint reported issues (non-strict mode, continuing)")
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Lint failed: {lint.error}. HyperFrames render is blocked — "
+                    "fix the composition and re-run."
+                ),
+                data={"steps": steps},
+            )
 
         # 3. Validate — browser-based contract + contrast.
         validate = self._validate(

@@ -417,6 +417,37 @@ def test_hyperframes_render_resolves_relative_output_path_once(tmp_path, monkeyp
     assert result.artifacts == [str(expected)]
 
 
+def test_hyperframes_render_blocks_on_lint_failure(tmp_path, monkeypatch):
+    from tools.base_tool import ToolResult
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "index.html").write_text("<html></html>", encoding="utf-8")
+    (workspace / "hyperframes.json").write_text("{}", encoding="utf-8")
+    tool = HyperFramesCompose()
+    monkeypatch.setattr(tool, "_runtime_check", lambda: {"runtime_available": True})
+    monkeypatch.setattr(tool, "_lint", lambda inputs: ToolResult(success=False, error="bad lint"))
+    monkeypatch.setattr(
+        tool,
+        "_validate",
+        lambda inputs: (_ for _ in ()).throw(AssertionError("validate must not run")),
+    )
+    monkeypatch.setattr(
+        tool,
+        "_run_hf",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("render must not run")),
+    )
+
+    result = tool._render(
+        {
+            "workspace_path": str(workspace),
+            "preserve_existing_workspace": True,
+        }
+    )
+    assert result.success is False
+    assert "Lint failed" in (result.error or "")
+
+
 def test_hyperframes_render_preserves_workspace_success(tmp_path, monkeypatch):
     import subprocess
     from tools.base_tool import ToolResult
