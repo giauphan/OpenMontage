@@ -121,20 +121,25 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
     local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 
-    mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
-    if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
+    mkdir -p "$project_root/artifacts" "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+    : > "$narration_text"
+    if [ -s "$script_json" ]; then
       jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
     fi
     if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
       tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
     fi
-    local narration_duration=0
-    if [ -s "$narration" ]; then
-      narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+    if [ ! -s "$narration_text" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: narration text missing for $PROJECT_ID" >&2
+      exit 1
     fi
-    if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && awk "BEGIN{exit !($narration_duration <= 30)}"; then
-      python3 "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-      edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+    "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
+    if command -v edge-tts >/dev/null 2>&1; then
+      edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration.tmp"
+      mv "$narration.tmp" "$narration"
+    elif [ ! -s "$narration" ] || [ "$narration_text" -nt "$narration" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: edge-tts unavailable and narration is missing/stale for $PROJECT_ID" >&2
+      exit 1
     fi
     if [ ! -s "$narration" ]; then
       echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
@@ -167,7 +172,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
       if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
     done
-    python3 "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
+    "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
   }
   materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
 

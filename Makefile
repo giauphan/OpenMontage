@@ -141,7 +141,7 @@ lint-shell:
 
 # The generate -> render -> QA -> portrait gates that guard publication.
 test-gates: ensure-venv
-	PYTHONPATH=. $(RUN_PYTHON) -m pytest tests/contracts/test_hyperframes_portrait_contract.py tests/contracts/test_render_quality_content_gate.py tests/tools/test_hyperframes_compose.py tests/tools/test_newsnow_pipeline.py -v
+	PYTHONPATH=. $(RUN_PYTHON) -m pytest tests/contracts/test_hyperframes_portrait_contract.py tests/contracts/test_render_quality_content_gate.py tests/tools/test_hyperframes_compose.py tests/tools/test_narration_text.py tests/tools/test_newsnow_pipeline.py -v
 
 clean:
 	$(BASE_PYTHON) -c "import pathlib, shutil; excluded=[pathlib.Path('$(VENV_DIR)'), pathlib.Path('venv')]; skip=lambda p: any(p == root or root in p.parents for root in excluded); roots=[p for p in pathlib.Path('.').rglob('__pycache__') if not skip(p)]; [shutil.rmtree(p) for p in roots]; files=[p for p in pathlib.Path('.').rglob('*.pyc') if not skip(p)]; [p.unlink() for p in files]"
