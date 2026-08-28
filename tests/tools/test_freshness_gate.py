@@ -70,6 +70,7 @@ def test_freshness_gate_rejects_audio_with_mismatched_text_timestamp(tmp_path, m
         path=render_video,
         narration=narration_audio,
         ffprobe="ffprobe",
+        ffmpeg=None,
         min_duration=5.0,
         tolerance=3.0,
         expected_dimensions=(1080, 1920),

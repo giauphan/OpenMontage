@@ -16,6 +16,7 @@ if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
   export PATH="$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin:$PATH"
 fi
 export PYTHONPATH="$ROOT"
+export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
@@ -35,6 +36,11 @@ elif [ -x "$ROOT/venv/bin/python3" ]; then
 else
   PY="$(command -v python3)"
 fi
+
+"$PY" -c 'from scripts.publish_config import load_config; load_config()' || {
+  echo "ERROR: invalid publish timezone configuration" >&2
+  exit 1
+}
 
 # Step 0: Fetch current NewsNow sources with stale fallback.
 FEED_STALE=0
@@ -355,11 +361,15 @@ fi
 
 done
 
-# Step 5: Atomically activate all three projects.
+# Step 5: Atomically activate projects with next-day local publish metadata.
 cd "$ROOT"
+PUBLISH_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
 PROJECT_JSON=$(printf '%s\n' "${PROJECT_IDS[@]}" | jq -R . | jq -s .)
+SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' config/publish_schedule.json)
 TMP=$(mktemp)
-jq --argjson projects "$PROJECT_JSON" '.active_projects = $projects' config/publish_schedule.json > "$TMP"
+jq --argjson projects "$PROJECT_JSON" --arg publish_date "$PUBLISH_DATE" --argjson slots "$SLOTS_JSON" \
+  '.active_projects = [range($projects | length) as $i | {project_id: $projects[$i], publish_date: $publish_date, publish_time: $slots[$i]}]' \
+  config/publish_schedule.json > "$TMP"
 mv "$TMP" config/publish_schedule.json
 
 echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE)"

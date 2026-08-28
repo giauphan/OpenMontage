@@ -352,6 +352,9 @@ for i, (sid, label, start, end, _) in enumerate(SECTIONS):
         "type": "narration",
         "path": tts_files[sid],
         "source_tool": "elevenlabs_tts",
+        "provider": "test-fixture",
+        "license": "CC0",
+        "acquired_at": "2026-08-28T00:00:00Z",
         "scene_id": scene_id,
     })
     # Image fixture
@@ -366,6 +369,9 @@ for i, (sid, label, start, end, _) in enumerate(SECTIONS):
         "type": "image",
         "path": img_path,
         "source_tool": "image_selector",
+        "provider": "test-fixture",
+        "license": "CC0",
+        "acquired_at": "2026-08-28T00:00:00Z",
         "scene_id": scene_id,
     })
 
@@ -374,6 +380,9 @@ clean_assets.append({
     "type": "music",
     "path": music_path,
     "source_tool": "music_gen",
+    "provider": "test-fixture",
+    "license": "CC0",
+    "acquired_at": "2026-08-28T00:00:00Z",
     "scene_id": "sc1",
 })
 
