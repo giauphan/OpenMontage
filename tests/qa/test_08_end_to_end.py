@@ -366,6 +366,7 @@ for i, (sid, label, start, end, _) in enumerate(SECTIONS):
         "type": "image",
         "path": img_path,
         "source_tool": "image_selector",
+        "provider": "test-fixture",
         "scene_id": scene_id,
     })
 
@@ -374,6 +375,7 @@ clean_assets.append({
     "type": "music",
     "path": music_path,
     "source_tool": "music_gen",
+    "provider": "test-fixture",
     "scene_id": "sc1",
 })
 
