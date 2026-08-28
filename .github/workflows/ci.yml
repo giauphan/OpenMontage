@@ -50,6 +50,9 @@ jobs:
           packages: ffmpeg
           version: "1.0"
 
+      - name: Ensure ffmpeg is on PATH
+        run: ffmpeg -version >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y ffmpeg; }
+
       - name: Create venv and install dependencies
         run: |
           uv venv --python "${{ env.PYTHON_VERSION }}" .venv
@@ -90,6 +93,9 @@ jobs:
         with:
           packages: ffmpeg
           version: "1.0"
+
+      - name: Ensure ffmpeg is on PATH
+        run: ffmpeg -version >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y ffmpeg; }
 
       # tests/qa probes the HyperFrames CLI through npx; caching the npm store
       # avoids a 30-90s cold fetch on every run.
