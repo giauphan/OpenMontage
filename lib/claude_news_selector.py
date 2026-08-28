@@ -41,7 +41,7 @@ class ClaudeNewsSelector:
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex, re
         env = os.environ.copy()
-        claude_cmd = " ".join(["claude", "-p", shlex.quote(prompt)])
+        claude_cmd = " ".join([shlex.quote(self.cli_path), "-p", shlex.quote(prompt)])
         if os.geteuid() == 0:
             cmd = ["su", "node", "-s", "/bin/bash", "-c", claude_cmd]
         else:
@@ -59,7 +59,7 @@ class ClaudeNewsSelector:
             last_idx = output.rfind("}")
             if idx != -1 and last_idx > idx:
                 json_str = output[idx:last_idx+1]
-                json_str = re.sub(r",\s*([\}\]])", r"", json_str)
+                json_str = re.sub(r",\s*([\}\]])", r"\1", json_str)
                 try:
                     return json.loads(json_str)
                 except Exception:

@@ -6,7 +6,7 @@ PIP = $(RUN_PYTHON) -m pip
 
 .DEFAULT_GOAL := setup
 
-.PHONY: setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
+.PHONY: setup install install-dev install-gpu test test-contracts test-gates lint lint-shell clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
 
 # ---- Virtual environment ----
 
@@ -124,6 +124,23 @@ lint: ensure-venv
 	$(RUN_PYTHON) -m py_compile tools/tool_registry.py
 	$(RUN_PYTHON) -m py_compile tools/cost_tracker.py
 	$(RUN_PYTHON) -m py_compile tools/analysis/composition_validator.py
+	$(RUN_PYTHON) -m py_compile scripts/validate_render_quality.py
+	$(RUN_PYTHON) -m py_compile scripts/repair_hyperframes_quality.py
+	$(RUN_PYTHON) -m py_compile scripts/check_qa.py
+	$(RUN_PYTHON) -m py_compile scripts/fix_narration_timing.py
+
+# Pipeline shell entrypoints are load-bearing: a syntax error only surfaces at
+# 3am in cron. Parse them in CI.
+lint-shell:
+	@for script in scripts/*.sh; do \
+		echo "==> bash -n $$script"; \
+		bash -n "$$script" || exit 1; \
+	done
+	@echo "All pipeline shell scripts parse cleanly."
+
+# The generate -> render -> QA -> portrait gates that guard publication.
+test-gates: ensure-venv
+	$(RUN_PYTHON) -m pytest tests/contracts/test_hyperframes_portrait_contract.py tests/contracts/test_render_quality_content_gate.py tests/tools/test_newsnow_pipeline.py -v
 
 clean:
 	$(BASE_PYTHON) -c "import pathlib, shutil; excluded=[pathlib.Path('$(VENV_DIR)'), pathlib.Path('venv')]; skip=lambda p: any(p == root or root in p.parents for root in excluded); roots=[p for p in pathlib.Path('.').rglob('__pycache__') if not skip(p)]; [shutil.rmtree(p) for p in roots]; files=[p for p in pathlib.Path('.').rglob('*.pyc') if not skip(p)]; [p.unlink() for p in files]"

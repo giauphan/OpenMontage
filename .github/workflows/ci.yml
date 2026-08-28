@@ -42,5 +42,8 @@ jobs:
       - name: Run lint smoke checks
         run: make lint
 
+      - name: Parse pipeline shell scripts
+        run: make lint-shell
+
       - name: Run test suite
         run: make test
