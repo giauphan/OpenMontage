@@ -362,9 +362,13 @@ done
 
 # Step 5: Atomically activate all three projects.
 cd "$ROOT"
+PUBLISH_DATE=$(TZ=Asia/Ho_Chi_Minh date -d tomorrow +%F)
 PROJECT_JSON=$(printf '%s\n' "${PROJECT_IDS[@]}" | jq -R . | jq -s .)
+SLOTS_JSON='["09:15", "14:15", "21:15"]'
 TMP=$(mktemp)
-jq --argjson projects "$PROJECT_JSON" '.active_projects = $projects' config/publish_schedule.json > "$TMP"
+jq --argjson projects "$PROJECT_JSON" --arg publish_date "$PUBLISH_DATE" --argjson slots "$SLOTS_JSON" \
+  '.active_projects = [range($projects | length) as $i | {project_id: $projects[$i], publish_date: $publish_date, publish_time: $slots[$i]}]' \
+  config/publish_schedule.json > "$TMP"
 mv "$TMP" config/publish_schedule.json
 
 echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE)"

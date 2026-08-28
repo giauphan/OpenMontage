@@ -7,7 +7,9 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "publish_schedule.json"
@@ -18,8 +20,11 @@ def deactivate_project(project_id: str) -> None:
     """Remove a fully published project from the schedule and disk."""
     schedule = json.loads(CONFIG.read_text(encoding="utf-8"))
     active_projects = schedule.get("active_projects", [])
-    if project_id in active_projects:
-        schedule["active_projects"] = [item for item in active_projects if item != project_id]
+    if any((item.get("project_id") if isinstance(item, dict) else item) == project_id for item in active_projects):
+        schedule["active_projects"] = [
+            item for item in active_projects
+            if (item.get("project_id") if isinstance(item, dict) else item) != project_id
+        ]
         temp_config = CONFIG.with_suffix(".json.tmp")
         temp_config.write_text(
             json.dumps(schedule, ensure_ascii=False, indent=2) + "\n",
@@ -38,17 +43,27 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Publish all active projects")
     parser.add_argument("--dry-run", action="store_true", help="Validate without uploading or touching Firebase")
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed Firebase records")
+    parser.add_argument("--slot", choices=["09:15", "14:15", "21:15"], help="Run only queued VN slot")
     args = parser.parse_args()
 
     schedule = json.loads(CONFIG.read_text(encoding="utf-8"))
     projects = schedule.get("active_projects", [])
+    if args.slot:
+        local_date = datetime.now(ZoneInfo(schedule.get("timezone", "Asia/Ho_Chi_Minh"))).date().isoformat()
+        projects = [
+            item["project_id"] for item in projects
+            if isinstance(item, dict)
+            and item.get("publish_date") == local_date
+            and item.get("publish_time") == args.slot
+        ]
     if not projects:
         print("No active projects configured")
         return 1
 
     exit_code = 0
     eligible_projects = 0
-    for project_id in projects:
+    for project in projects:
+        project_id = project["project_id"] if isinstance(project, dict) else project
         project_dir = ROOT / "projects" / project_id
         metadata_path = project_dir / "publish_metadata.json"
         if not metadata_path.is_file():
@@ -66,15 +81,6 @@ def main() -> int:
         result = subprocess.run(command, cwd=ROOT, env=env)
         if result.returncode:
             exit_code = result.returncode
-        elif not args.dry_run:
-            # publish_manual_video.py returns zero only when every selected
-            # platform is published or already recorded as published. Never
-            # delete a project after a partial or failed batch.
-            try:
-                deactivate_project(project_id)
-            except Exception as cleanup_error:
-                print(f"ERROR: publish succeeded but cleanup failed for {project_id}: {cleanup_error}")
-                exit_code = 1
     return exit_code
 
 

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timezone": "Asia/Jakarta",
+  "timezone": "Asia/Ho_Chi_Minh",
   "meta": {
     "page_id": "1183103681563663",
     "ig_account_id": "17841434265610775"
@@ -9,6 +9,7 @@
     "account": "primary"
   },
   "slots": {
+    "publish_slots_vn": ["09:15", "14:15", "21:15"],
     "fb_slots_wib": ["12:00", "14:00", "16:00"],
     "yt_slots_wib": ["09:15", "14:15", "21:15"]
   },
