@@ -20,6 +20,7 @@ from pathlib import Path
 FULL_RENDER = "renders/final_full_vi_9x16.mp4"
 REELS_RENDER = "renders/final_reels_vi_9x16.mp4"
 NARRATION_CANDIDATES = ("assets/narration.mp3", "assets/voice/narration.mp3")
+NARRATION_TEXT = "artifacts/narration_vi_text.txt"
 DEFAULT_TOLERANCE = 3.0
 REELS_MAX_SECONDS = 60.0
 
@@ -69,6 +70,7 @@ def check_project(project: Path, ffprobe: str, tolerance: float, reels_max_secon
     full = project / FULL_RENDER
     reels = project / REELS_RENDER
     narration = narration_path(project)
+    narration_text = project / NARRATION_TEXT
 
     narration_seconds = duration(narration, ffprobe)
     full_seconds = duration(full, ffprobe)
@@ -83,6 +85,13 @@ def check_project(project: Path, ffprobe: str, tolerance: float, reels_max_secon
         if not path.is_file() or path.stat().st_size == 0:
             print(f"  MISSING_FILE {label}: {path}  FAIL")
             passed = False
+
+    # A script edit after synthesis means the voice no longer matches the
+    # subtitles. Only assertable when the prepared text is present.
+    if narration.is_file() and narration_text.is_file():
+        fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+        print(f"  narration_stale={'PASS' if fresh else 'FAIL'} (audio vs {NARRATION_TEXT})")
+        passed = passed and fresh
 
     if narration_seconds is None or full_seconds is None:
         print("  narration_render_gap=CANNOT_COMPUTE  FAIL")

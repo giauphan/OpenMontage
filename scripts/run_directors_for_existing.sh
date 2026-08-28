@@ -139,10 +139,15 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       exit 1
     fi
     "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
+    local narration_stale=0
+    if [ ! -s "$narration" ] || [ "$narration_text" -nt "$narration" ]; then
+      narration_stale=1
+    fi
     if command -v edge-tts >/dev/null 2>&1; then
       edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration.tmp"
       mv "$narration.tmp" "$narration"
-    elif [ ! -s "$narration" ] || [ "$narration_text" -nt "$narration" ]; then
+      rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
+    elif [ "$narration_stale" = 1 ]; then
       echo "[$(date -u +%FT%TZ)] ERROR: edge-tts unavailable and narration is missing/stale for $PROJECT_ID" >&2
       exit 1
     fi

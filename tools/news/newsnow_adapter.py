@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft7Validator
 
 
 class NewsNowAdapter:
@@ -37,10 +37,10 @@ class NewsNowAdapter:
         self._normalized_validator = self._load_validator(self.normalized_schema_path)
 
     @staticmethod
-    def _load_validator(path: Path) -> Draft202012Validator:
+    def _load_validator(path: Path) -> Draft7Validator:
         with path.open("r", encoding="utf-8") as f:
             schema = json.load(f)
-        return Draft202012Validator(schema)
+        return Draft7Validator(schema)
 
     @staticmethod
     def canonicalize_url(url: str) -> str:

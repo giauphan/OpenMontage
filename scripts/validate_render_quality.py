@@ -13,7 +13,9 @@ inspects decoded content as well:
 Both the full render and the Reels render are validated. By default they are
 both compared against the project narration; a Reels-specific narration at
 ``assets/narration_reels.mp3`` overrides that for the Reels render so a genuine
-short excerpt is not forced to the full story length.
+short excerpt is not forced to the full story length. The narration audio is
+also checked against ``artifacts/narration_vi_text.txt`` so a re-written script
+cannot ship with the previous voice track.
 """
 
 from __future__ import annotations
@@ -98,11 +100,12 @@ def validate_video(
     path: Path,
     narration: Path,
     ffprobe: str,
-    ffmpeg: str | None,
     min_duration: float,
     tolerance: float,
     expected_dimensions: tuple[int, int],
     max_duration: float | None = None,
+    narration_text: Path | None = None,
+    ffmpeg: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -111,6 +114,9 @@ def validate_video(
         return [f"{narration}: missing or empty"]
     if path.stat().st_mtime_ns <= narration.stat().st_mtime_ns:
         errors.append(f"{path}: render is stale relative to narration")
+    if narration_text and narration_text.is_file():
+        if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
+            errors.append(f"{narration}: narration audio is stale relative to text {narration_text}")
     try:
         rendered = probe(path, ffprobe)
         spoken = probe(narration, ffprobe)
@@ -219,6 +225,13 @@ def main() -> int:
     full_narration = resolve_narration(args.project_dir, "narration.mp3")
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
 
+    # The prepared narration text is the source of truth for the spoken audio:
+    # if the script changed after the mp3 was synthesised, the voice no longer
+    # matches the subtitles and the render must not publish.
+    narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
+    if not narration_text.is_file():
+        narration_text = None
+
     errors: list[str] = []
     for render_name, narration, max_duration in (
         (FULL_RENDER, full_narration, None),
@@ -229,11 +242,12 @@ def main() -> int:
                 args.project_dir / "renders" / render_name,
                 narration,
                 args.ffprobe,
-                ffmpeg,
                 args.min_duration,
                 args.tolerance,
                 PORTRAIT_DIMENSIONS,
                 max_duration,
+                narration_text=narration_text,
+                ffmpeg=ffmpeg,
             )
         )
     for error in errors:
