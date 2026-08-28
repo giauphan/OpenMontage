@@ -34,6 +34,9 @@
           "provider": { "type": "string", "description": "Provider name (e.g. pixabay, google_imagen)" },
           "license": { "type": "string", "description": "License type (e.g. Pixabay License, CC0)" },
           "original_url": { "type": "string", "description": "Source URL if downloaded from a stock service" },
+          "attribution_text": { "type": "string", "description": "Required attribution copy when the music license requires credit." },
+          "license_url": { "type": "string", "format": "uri", "description": "Canonical license terms URL." },
+          "acquired_at": { "type": "string", "format": "date-time", "description": "ISO-8601 download or generation timestamp." },
           "voice_performance": {
             "type": "object",
             "description": "Applied voice-performance contract for narration assets.",
@@ -52,6 +55,38 @@
             "additionalProperties": false
           }
         },
+        "allOf": [
+          {
+            "if": { "required": ["type"], "properties": { "type": { "const": "music" } } },
+            "then": {
+              "required": ["provider", "license", "acquired_at"],
+              "properties": {
+                "license": {
+                  "enum": [
+                    "Pixabay Content License",
+                    "CC0",
+                    "CC BY",
+                    "AI Generated Original"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": { "properties": { "license": { "enum": ["Pixabay Content License", "CC BY"] } } },
+                  "then": { "required": ["original_url"] }
+                },
+                {
+                  "if": { "properties": { "license": { "const": "CC BY" } } },
+                  "then": { "required": ["attribution_text", "license_url"] }
+                },
+                {
+                  "if": { "properties": { "license": { "const": "AI Generated Original" } } },
+                  "then": { "required": ["license_url"] }
+                }
+              ]
+            }
+          }
+        ],
         "additionalProperties": false
       }
     },
