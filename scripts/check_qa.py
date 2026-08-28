@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Gate 2: QA check for render-ready candidates.
+"""Gate 2: QA check for render-ready projects.
 
 Takes project directories (or a projects root) as arguments instead of
-hardcoding container paths and candidate IDs, so the same gate runs on a
-developer checkout, in CI, and on the publish host.
+hardcoding container paths and candidate IDs, so same gate runs on a developer
+checkout, in CI, and on publish host.
 
 Usage:
   python3 scripts/check_qa.py projects/cand_abc projects/cand_def
   python3 scripts/check_qa.py --projects-root projects
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,11 +38,9 @@ def duration(path: Path, ffprobe: str) -> float | None:
     if result.returncode != 0:
         return None
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if not lines:
-        return None
     try:
         return float(lines[-1])
-    except ValueError:
+    except (IndexError, ValueError):
         return None
 
 
@@ -66,7 +65,7 @@ def narration_path(project: Path) -> Path:
     return project / NARRATION_CANDIDATES[0]
 
 
-def check_project(project: Path, ffprobe: str, tolerance: float, reels_max_seconds: float = REELS_MAX_SECONDS) -> bool:
+def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
     full = project / FULL_RENDER
     reels = project / REELS_RENDER
     narration = narration_path(project)
@@ -86,31 +85,28 @@ def check_project(project: Path, ffprobe: str, tolerance: float, reels_max_secon
             print(f"  MISSING_FILE {label}: {path}  FAIL")
             passed = False
 
-    # A script edit after synthesis means the voice no longer matches the
-    # subtitles. Only assertable when the prepared text is present.
     if narration.is_file() and narration_text.is_file():
-        fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
-        print(f"  narration_stale={'PASS' if fresh else 'FAIL'} (audio vs {NARRATION_TEXT})")
-        passed = passed and fresh
+        narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+        print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
+        passed = passed and narration_fresh
+    else:
+        print("  narration_stale=SKIP (source text unavailable)")
 
     if narration_seconds is None or full_seconds is None:
         print("  narration_render_gap=CANNOT_COMPUTE  FAIL")
-        return False
-
-    gap = abs(narration_seconds - full_seconds)
-    ok = gap <= tolerance
-    print(f"  narration_render_gap={gap:.3f}s  {'PASS' if ok else 'FAIL'} (tolerance={tolerance})")
-    passed = passed and ok
-
-    if reels_seconds is None:
-        print(f"  reels_duration=CANNOT_COMPUTE  FAIL")
         passed = False
     else:
-        reels_ok = reels_seconds <= reels_max_seconds
-        print(f"  reels_duration={reels_seconds:.3f}s  {'PASS' if reels_ok else 'FAIL'} (max={reels_max_seconds:.0f}s)")
-        passed = passed and reels_ok
+        gap = abs(narration_seconds - full_seconds)
+        gap_ok = gap <= tolerance
+        print(f"  narration_render_gap={gap:.3f}s  {'PASS' if gap_ok else 'FAIL'} (tolerance={tolerance})")
+        passed = passed and gap_ok
 
-    return passed
+    if reels_seconds is None:
+        print("  reels_duration=CANNOT_COMPUTE  FAIL")
+        return False
+    reels_ok = reels_seconds <= REELS_MAX_SECONDS
+    print(f"  reels_duration={reels_seconds:.3f}s  {'PASS' if reels_ok else 'FAIL'} (max={REELS_MAX_SECONDS:.0f}s)")
+    return passed and reels_ok
 
 
 def resolve_projects(args: argparse.Namespace) -> list[Path]:
@@ -123,24 +119,21 @@ def resolve_projects(args: argparse.Namespace) -> list[Path]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("projects", nargs="*", help="Project directories to check")
-    parser.add_argument("--projects-root", default="projects",
-                        help="Scan every subdirectory of this root when no projects are given")
+    parser.add_argument("--projects-root", default="projects", help="Scan subdirectories when no projects are given")
     parser.add_argument("--ffprobe", default=None)
     parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
-    parser.add_argument("--reels-max-duration", type=float, default=REELS_MAX_SECONDS)
     args = parser.parse_args()
 
     ffprobe = args.ffprobe or shutil.which("ffprobe")
     if not ffprobe:
         print("GATE2=FAIL (ffprobe not found)")
         return 1
-
     projects = resolve_projects(args)
     if not projects:
         print("GATE2=FAIL (no projects to check)")
         return 1
 
-    all_pass = all(check_project(project, ffprobe, args.tolerance, args.reels_max_duration) for project in projects)
+    all_pass = all(check_project(project, ffprobe, args.tolerance) for project in projects)
     print(f"\nGATE2={'PASS' if all_pass else 'FAIL'}")
     return 0 if all_pass else 1
 

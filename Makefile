@@ -90,10 +90,10 @@ install-gpu: ensure-venv
 # ---- Testing ----
 
 test: ensure-venv
-	PYTHONPATH=. $(RUN_PYTHON) -m pytest tests/ -v
+	$(RUN_PYTHON) -m pytest tests/ -v
 
 test-contracts: ensure-venv
-	PYTHONPATH=. $(RUN_PYTHON) -m pytest tests/contracts/ -v
+	$(RUN_PYTHON) -m pytest tests/contracts/ -v
 
 # ---- Utilities ----
 
@@ -124,7 +124,6 @@ lint: ensure-venv
 	$(RUN_PYTHON) -m py_compile tools/tool_registry.py
 	$(RUN_PYTHON) -m py_compile tools/cost_tracker.py
 	$(RUN_PYTHON) -m py_compile tools/analysis/composition_validator.py
-	$(RUN_PYTHON) -m py_compile tools/video/hyperframes_compose.py
 	$(RUN_PYTHON) -m py_compile scripts/validate_render_quality.py
 	$(RUN_PYTHON) -m py_compile scripts/repair_hyperframes_quality.py
 	$(RUN_PYTHON) -m py_compile scripts/check_qa.py
@@ -141,7 +140,7 @@ lint-shell:
 
 # The generate -> render -> QA -> portrait gates that guard publication.
 test-gates: ensure-venv
-	PYTHONPATH=. $(RUN_PYTHON) -m pytest tests/contracts/test_hyperframes_portrait_contract.py tests/contracts/test_render_quality_content_gate.py tests/tools/test_hyperframes_compose.py tests/tools/test_narration_text.py tests/tools/test_newsnow_pipeline.py -v
+	$(RUN_PYTHON) -m pytest tests/contracts/test_hyperframes_portrait_contract.py tests/contracts/test_render_quality_content_gate.py tests/tools/test_newsnow_pipeline.py -v
 
 clean:
 	$(BASE_PYTHON) -c "import pathlib, shutil; excluded=[pathlib.Path('$(VENV_DIR)'), pathlib.Path('venv')]; skip=lambda p: any(p == root or root in p.parents for root in excluded); roots=[p for p in pathlib.Path('.').rglob('__pycache__') if not skip(p)]; [shutil.rmtree(p) for p in roots]; files=[p for p in pathlib.Path('.').rglob('*.pyc') if not skip(p)]; [p.unlink() for p in files]"

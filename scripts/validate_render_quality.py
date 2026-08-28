@@ -13,9 +13,7 @@ inspects decoded content as well:
 Both the full render and the Reels render are validated. By default they are
 both compared against the project narration; a Reels-specific narration at
 ``assets/narration_reels.mp3`` overrides that for the Reels render so a genuine
-short excerpt is not forced to the full story length. The narration audio is
-also checked against ``artifacts/narration_vi_text.txt`` so a re-written script
-cannot ship with the previous voice track.
+short excerpt is not forced to the full story length.
 """
 
 from __future__ import annotations
@@ -100,10 +98,10 @@ def validate_video(
     path: Path,
     narration: Path,
     ffprobe: str,
-    ffmpeg: str | None = None,
-    min_duration: float = 30.0,
-    tolerance: float = 3.0,
-    expected_dimensions: tuple[int, int] = (1080, 1920),
+    ffmpeg: str | None,
+    min_duration: float,
+    tolerance: float,
+    expected_dimensions: tuple[int, int],
     max_duration: float | None = None,
     narration_text: Path | None = None,
 ) -> list[str]:
@@ -112,7 +110,7 @@ def validate_video(
         return [f"{path}: missing or empty"]
     if not narration.is_file() or narration.stat().st_size == 0:
         return [f"{narration}: missing or empty"]
-    if path.stat().st_mtime_ns < narration.stat().st_mtime_ns:
+    if path.stat().st_mtime_ns <= narration.stat().st_mtime_ns:
         errors.append(f"{path}: render is stale relative to narration")
     if narration_text and narration_text.is_file():
         if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
@@ -219,18 +217,13 @@ def main() -> int:
     parser.add_argument("--tolerance", type=float, default=3.0)
     parser.add_argument("--reels-max-duration", type=float, default=None)
     args = parser.parse_args()
-
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
-
-    full_narration = resolve_narration(args.project_dir, "narration.mp3")
-    reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
-
-    # The prepared narration text is the source of truth for the spoken audio:
-    # if the script changed after the mp3 was synthesised, the voice no longer
-    # matches the subtitles and the render must not publish.
     narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
     if not narration_text.is_file():
         narration_text = None
+
+    full_narration = resolve_narration(args.project_dir, "narration.mp3")
+    reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
 
     errors: list[str] = []
     for render_name, narration, max_duration in (

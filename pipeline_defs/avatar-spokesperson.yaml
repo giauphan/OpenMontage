@@ -115,6 +115,7 @@ stages:
       - image_selector
       - audio_enhance
       - video_selector
+      - pixabay_music
     tools_available:
       - talking_head
       - lip_sync
@@ -123,6 +124,7 @@ stages:
       - image_selector
       - audio_enhance
       - video_selector
+      - pixabay_music
     checkpoint_required: true
     human_approval_default: true
     review_focus:

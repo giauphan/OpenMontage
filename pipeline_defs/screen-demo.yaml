@@ -155,6 +155,7 @@ stages:
       - image_selector
       - diagram_gen
       - audio_enhance
+      - pixabay_music
     tools_available:
       - subtitle_gen
       - tts_selector

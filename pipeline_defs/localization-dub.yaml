@@ -119,11 +119,13 @@ stages:
     optional_tools:
       - lip_sync
       - audio_enhance
+      - pixabay_music
     tools_available:
       - tts_selector
       - subtitle_gen
       - lip_sync
       - audio_enhance
+      - pixabay_music
     checkpoint_required: true
     human_approval_default: true
     review_focus:

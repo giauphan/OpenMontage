@@ -126,6 +126,7 @@ stages:
       - video_selector
       - diagram_gen
       - code_snippet
+      - pixabay_music
       - music_gen
       - audio_enhance
     tools_available:
@@ -135,6 +136,7 @@ stages:
       - video_selector
       - diagram_gen
       - code_snippet
+      - pixabay_music
       - music_gen
       - audio_enhance
     checkpoint_required: true

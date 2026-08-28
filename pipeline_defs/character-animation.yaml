@@ -209,6 +209,7 @@ stages:
     tools_available:
       - image_selector
       - tts_selector
+      - pixabay_music
       - music_gen
       - character_rig_renderer
     checkpoint_required: true
