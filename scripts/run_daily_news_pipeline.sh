@@ -298,17 +298,35 @@ if [ "$FEED_STALE" -eq 1 ]; then
 fi
 
 # Step 4: Create publish_metadata.json
-TITLE=""
-SUMMARY=""
-if [ -f "artifacts/research_brief.json" ]; then
-  TITLE=$(jq -r '.topic // .title // ""' artifacts/research_brief.json 2>/dev/null || echo "")
-  SUMMARY=$(jq -r '.summary // ""' artifacts/research_brief.json 2>/dev/null || echo "")
+TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+if [ -z "$TITLE" ]; then
+  TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 fi
+if [ -z "$TITLE" ]; then
+  TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
+fi
+
+CONCEPT_HOOK=$(jq -r '.concept_options[0].hook // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
+CONCEPT_MSG=$(jq -r '.concept_options[0].core_message // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
+CONCEPT_CTA=$(jq -r '.concept_options[0].cta // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
+
+DESCRIPTION=""
+if [ -n "$CONCEPT_HOOK" ]; then DESCRIPTION="$CONCEPT_HOOK"; fi
+if [ -n "$CONCEPT_MSG" ]; then
+  if [ -n "$DESCRIPTION" ]; then DESCRIPTION="$DESCRIPTION. $CONCEPT_MSG"; else DESCRIPTION="$CONCEPT_MSG"; fi
+fi
+if [ -n "$CONCEPT_CTA" ]; then
+  if [ -n "$DESCRIPTION" ]; then DESCRIPTION="$DESCRIPTION. $CONCEPT_CTA"; else DESCRIPTION="$CONCEPT_CTA"; fi
+fi
+if [ -z "$DESCRIPTION" ]; then
+  DESCRIPTION="Điểm tin công nghệ AI mới nhất."
+fi
+DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai #vietnam"
 
 jq -n \
   --arg id "$PROJECT_ID" \
-  --arg title "${TITLE:-News Video}" \
-  --arg description "${SUMMARY:-AI generated news breakdown}" \
+  --arg title "$TITLE" \
+  --arg description "$DESCRIPTION" \
   --argjson feed_stale "$FEED_STALE" \
   '{
     id: $id,

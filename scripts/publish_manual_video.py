@@ -113,6 +113,7 @@ def publish_batch(
     dry_run: bool = False,
     retry_failed: bool = False,
     only_platform: str | None = None,
+    force: bool = False,
 ) -> dict:
     """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
@@ -167,12 +168,12 @@ def publish_batch(
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Auto-clear uniqueness documents when retrying so claim() can succeed.
+    # Auto-clear uniqueness documents when retrying or forcing re-publish so claim() can succeed.
     # Only clears docs for THIS topic so it's safe: we only unblock our own re-publish.
-    if retry_failed and store:
+    if (retry_failed or force) and store:
         cleared = _clear_uniqueness_for_topic(store, metadata["id"])
         if cleared > 0:
-            print(f"[RETRY] Cleared {cleared} stale uniqueness doc(s) for {metadata['id']}")
+            print(f"[{'FORCE' if force else 'RETRY'}] Cleared {cleared} stale uniqueness doc(s) for {metadata['id']}")
 
     for cfg in platforms:
         platform = cfg["platform"]
@@ -182,6 +183,10 @@ def publish_batch(
         description = cfg["description"]
         video_path = resolve_video_path(cfg["video_path"], project_dir, root)
         publish_at = cfg["publish_at"]
+
+        if force and store and not dry_run:
+            key = publish_key(today, metadata["id"], platform, kind)
+            store.session.delete(store._url(key), timeout=30)
 
         # Step 1: Claim in Firebase before upload
         if dry_run:
@@ -331,6 +336,7 @@ def main():
     parser.add_argument("project_dir", help="Path to generated project directory")
     parser.add_argument("--dry-run", action="store_true", help="Validate without uploading")
     parser.add_argument("--retry-failed", action="store_true", help="Retry only records marked failed")
+    parser.add_argument("--force", action="store_true", help="Force re-publish even if already uploaded/published")
     parser.add_argument("--only-platform", choices=["instagram", "facebook", "youtube"], help="Limit publishing to one platform")
     parser.add_argument("--last-publish", type=str, default=None, help="Last publish timestamp (ISO8601) for gap enforcement")
     args = parser.parse_args()
@@ -368,6 +374,7 @@ def main():
         dry_run=args.dry_run,
         retry_failed=args.retry_failed,
         only_platform=args.only_platform,
+        force=args.force,
     )
 
     # Print summary
