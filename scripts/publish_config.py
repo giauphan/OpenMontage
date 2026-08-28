@@ -15,7 +15,7 @@ import os
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "config" / "publish_schedule.json"
@@ -29,6 +29,10 @@ def _parse_hhmm(value: str) -> dt_time:
 def load_config() -> dict[str, Any]:
     cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     cfg["timezone"] = os.environ.get("PUBLISH_TZ", cfg.get("timezone", "Asia/Ho_Chi_Minh"))
+    try:
+        ZoneInfo(cfg["timezone"])
+    except (TypeError, ZoneInfoNotFoundError) as exc:
+        raise ValueError(f"invalid publish timezone: {cfg['timezone']!r}") from exc
     meta = cfg.setdefault("meta", {})
     meta["page_id"] = os.environ.get("FB_PAGE_ID", meta.get("page_id"))
     meta["ig_account_id"] = os.environ.get("IG_ACCOUNT_ID", meta.get("ig_account_id"))

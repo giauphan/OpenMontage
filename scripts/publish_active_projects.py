@@ -9,9 +9,13 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.publish_config import load_config, publish_timezone
+
 CONFIG = ROOT / "config" / "publish_schedule.json"
 PUBLISHER = ROOT / "scripts" / "publish_manual_video.py"
 
@@ -46,16 +50,27 @@ def main() -> int:
     parser.add_argument("--slot", choices=["09:15", "14:15", "21:15"], help="Run only queued VN slot")
     args = parser.parse_args()
 
-    schedule = json.loads(CONFIG.read_text(encoding="utf-8"))
+    schedule = load_config()
     projects = schedule.get("active_projects", [])
+    if not isinstance(projects, list):
+        print("ERROR: active_projects must be a list")
+        return 1
     if args.slot:
-        local_date = datetime.now(ZoneInfo(schedule.get("timezone", "Asia/Ho_Chi_Minh"))).date().isoformat()
-        projects = [
-            item["project_id"] for item in projects
-            if isinstance(item, dict)
-            and item.get("publish_date") == local_date
-            and item.get("publish_time") == args.slot
-        ]
+        local_date = datetime.now(publish_timezone(schedule)).date().isoformat()
+        queued_projects = []
+        for item in projects:
+            if not isinstance(item, dict):
+                print(f"WARNING: skipping malformed scheduled project entry: {item!r}")
+                continue
+            project_id = item.get("project_id")
+            publish_date = item.get("publish_date")
+            publish_time = item.get("publish_time")
+            if not project_id or not publish_date or not publish_time:
+                print(f"WARNING: skipping {project_id or '<unknown>'}: missing publish metadata")
+                continue
+            if publish_date == local_date and publish_time == args.slot:
+                queued_projects.append(project_id)
+        projects = queued_projects
     if not projects:
         print("No active projects configured")
         return 1
@@ -63,7 +78,13 @@ def main() -> int:
     exit_code = 0
     eligible_projects = 0
     for project in projects:
-        project_id = project["project_id"] if isinstance(project, dict) else project
+        if isinstance(project, dict):
+            project_id = project.get("project_id")
+            if not project_id:
+                print(f"WARNING: skipping malformed project entry: {project!r}")
+                continue
+        else:
+            project_id = project
         project_dir = ROOT / "projects" / project_id
         metadata_path = project_dir / "publish_metadata.json"
         if not metadata_path.is_file():
