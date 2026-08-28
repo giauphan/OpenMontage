@@ -95,11 +95,13 @@ stages:
       - direct_clip_search
       - corpus_builder
       - clip_search
+      - pixabay_music
       - music_gen
     tools_available:
       - direct_clip_search
       - corpus_builder
       - clip_search
+      - pixabay_music
       - music_gen
     checkpoint_required: true
     human_approval_default: true

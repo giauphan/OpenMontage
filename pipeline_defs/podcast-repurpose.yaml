@@ -122,12 +122,14 @@ stages:
     optional_tools:
       - image_selector
       - diagram_gen
+      - pixabay_music
       - music_gen
       - audio_enhance
     tools_available:
       - subtitle_gen
       - image_selector
       - diagram_gen
+      - pixabay_music
       - music_gen
       - audio_enhance
     checkpoint_required: true

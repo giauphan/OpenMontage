@@ -1373,6 +1373,7 @@ class VideoCompose(BaseTool):
         edit_decisions: dict[str, Any],
         resolved_cuts: list[dict],
         scene_plan: list[dict] | None = None,
+        asset_manifest: dict[str, Any] | None = None,
     ) -> ToolResult | None:
         """Pre-compose quality gate — blocks render on critical violations.
 
@@ -1452,6 +1453,16 @@ class VideoCompose(BaseTool):
                 "renderer_family must be set at proposal stage and locked before compose. "
                 "Re-run the proposal stage with a renderer_family selection."
             )
+
+        # --- 4. Music copyright / platform policy check ---
+        if asset_manifest is not None:
+            try:
+                from lib.music_policy import validate_music_policy
+                music_errors = validate_music_policy(asset_manifest, edit_decisions)
+                for err in music_errors:
+                    blocks.append(f"Music policy: {err}")
+            except Exception as e:
+                log.warning("Could not validate music policy: %s", e)
 
         # Log warnings
         for w in warnings:
@@ -1561,7 +1572,9 @@ class VideoCompose(BaseTool):
 
         # --- Pre-compose validation gate ---
         scene_plan = inputs.get("scene_plan")
-        validation_block = self._pre_compose_validation(edit_decisions, resolved_cuts, scene_plan)
+        validation_block = self._pre_compose_validation(
+            edit_decisions, resolved_cuts, scene_plan, asset_manifest
+        )
         if validation_block is not None:
             return validation_block
 

@@ -187,7 +187,10 @@ class PixabayMusic(BaseTool):
                 "query": inputs["query"],
                 "output": str(output_path),
                 "format": "mp3",
-                "license": "Pixabay Content License (free, no attribution required)",
+                "license": "Pixabay Content License",
+                "license_url": "https://pixabay.com/service/license-summary/",
+                "original_url": track.get("page_url"),
+                "acquired_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "results_found": len(tracks),
                 "results_after_filter": len(filtered),
             },
@@ -292,6 +295,7 @@ class PixabayMusic(BaseTool):
                 "rating": item.get("rating"),
                 "download_count": item.get("downloadCount"),
                 "pixabay_id": item.get("id"),
+                "page_url": item.get("pageURL") or item.get("url"),
             })
 
         return tracks
