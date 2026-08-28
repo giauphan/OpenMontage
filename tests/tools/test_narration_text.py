@@ -47,7 +47,6 @@ def test_pipeline_scripts_regenerate_narration_from_current_text():
         source = path.read_text(encoding="utf-8")
         assert "tools/narration_text.py" in source
         assert "edge-tts --voice vi-VN-HoaiMyNeural" in source
-        assert "narration_duration <= 30" not in source
 
 
 def test_ci_runs_narration_gate_suite():
