@@ -36,6 +36,10 @@ elif [ -x "$ROOT/venv/bin/python3" ]; then
 else
   PY="$(command -v python3)"
 fi
+"$PY" -c 'from scripts.publish_config import load_config; load_config()' || {
+  echo "ERROR: invalid publish timezone configuration" >&2
+  exit 1
+}
 
 # Step 0: Fetch current NewsNow sources with stale fallback.
 FEED_STALE=0

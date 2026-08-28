@@ -20,6 +20,28 @@ CONFIG = ROOT / "config" / "publish_schedule.json"
 PUBLISHER = ROOT / "scripts" / "publish_manual_video.py"
 
 
+def scheduled_projects_for_slot(projects: list[object], slot: str, local_date: str) -> list[str]:
+    """Return valid structured entries due for one slot.
+
+    Legacy string entries remain supported by unfiltered publishing, but lack
+    scheduling metadata and are skipped when a slot is requested.
+    """
+    queued_projects: list[str] = []
+    for item in projects:
+        if not isinstance(item, dict):
+            print(f"WARNING: skipping malformed scheduled project entry: {item!r}")
+            continue
+        project_id = item.get("project_id")
+        publish_date = item.get("publish_date")
+        publish_time = item.get("publish_time")
+        if not isinstance(project_id, str) or not project_id or not isinstance(publish_date, str) or not isinstance(publish_time, str):
+            print(f"WARNING: skipping {project_id or '<unknown>'}: missing publish metadata")
+            continue
+        if publish_date == local_date and publish_time == slot:
+            queued_projects.append(project_id)
+    return queued_projects
+
+
 def deactivate_project(project_id: str) -> None:
     """Remove a fully published project from the schedule and disk."""
     schedule = json.loads(CONFIG.read_text(encoding="utf-8"))
@@ -57,20 +79,7 @@ def main() -> int:
         return 1
     if args.slot:
         local_date = datetime.now(publish_timezone(schedule)).date().isoformat()
-        queued_projects = []
-        for item in projects:
-            if not isinstance(item, dict):
-                print(f"WARNING: skipping malformed scheduled project entry: {item!r}")
-                continue
-            project_id = item.get("project_id")
-            publish_date = item.get("publish_date")
-            publish_time = item.get("publish_time")
-            if not project_id or not publish_date or not publish_time:
-                print(f"WARNING: skipping {project_id or '<unknown>'}: missing publish metadata")
-                continue
-            if publish_date == local_date and publish_time == args.slot:
-                queued_projects.append(project_id)
-        projects = queued_projects
+        projects = scheduled_projects_for_slot(projects, args.slot, local_date)
     if not projects:
         print("No active projects configured")
         return 1
