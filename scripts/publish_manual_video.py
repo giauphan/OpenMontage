@@ -247,7 +247,7 @@ def publish_batch(
                 "video_path": str(video_path),
                 "title": title,
                 "description": description,
-                "tags": ["AI", "Công nghệ", "Vietnamese", "OpenMontage"],
+                "tags": ["tintuc", "congnghe", "ai", "tuonglai", "vietnam"],
                 "privacy_status": "private" if publish_at else "public",
                 "publish_at": publish_at,
             }
