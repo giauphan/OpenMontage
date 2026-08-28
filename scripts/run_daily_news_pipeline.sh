@@ -20,11 +20,12 @@ export PYTHONPATH="$ROOT"
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
 if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
-[ -n "$FFMPEG_BIN" ] || { echo "ERROR: ffmpeg is required" >&2; exit 1; }
+if [ -z "$FFMPEG_BIN" ] && [ -x "$HOME/.local/bin/ffmpeg" ]; then FFMPEG_BIN="$HOME/.local/bin/ffmpeg"; fi
 HYPERFRAMES_BIN="$(command -v hyperframes || true)"
 if [ -z "$HYPERFRAMES_BIN" ] && [ -x "$ROOT/node_modules/.bin/hyperframes" ]; then HYPERFRAMES_BIN="$ROOT/node_modules/.bin/hyperframes"; fi
 if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
 [ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
+[ -n "$FFMPEG_BIN" ] || { echo "ERROR: ffmpeg is required for content QA" >&2; exit 1; }
 [ -n "$HYPERFRAMES_BIN" ] || { echo "ERROR: hyperframes CLI is required" >&2; exit 1; }
 
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
@@ -58,7 +59,8 @@ fi
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   cd "$ROOT"
-  if [ -d "projects/$PROJECT_ID" ]; then
+  PROJECT_DIR="$ROOT/projects/$PROJECT_ID"
+  if [ -d "$PROJECT_DIR" ]; then
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
@@ -78,9 +80,8 @@ DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run eve
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
 DIRECTOR_ARTIFACTS_READY=0
-if [ -s "$DIRECTOR_FULL_INDEX" ] && [ -s "$DIRECTOR_REELS_INDEX" ]; then
-  DIRECTOR_ARTIFACTS_READY=1
-fi
+# Existing files are not a valid success signal: they may belong to a prior run.
+# A director timeout must fail closed rather than publishing stale content.
 
 run_directors() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -114,9 +115,7 @@ run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
 CLAUDE_EXIT=$?
 DIRECTOR_ARTIFACT_FALLBACK=0
 if [ "$CLAUDE_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
-  echo "[$(date -u +%FT%TZ)] WARN: directors timed out; using existing full and reels artifacts" >> "$DIRECTORS_LOG"
-  CLAUDE_EXIT=0
-  DIRECTOR_ARTIFACT_FALLBACK=1
+  echo "[$(date -u +%FT%TZ)] ERROR: directors timed out; refusing stale artifacts" >> "$DIRECTORS_LOG"
 fi
 
 # Flatten any director-created subdirectory nesting so compositions land at canonical paths.
@@ -212,18 +211,22 @@ materialize_hyperframes_assets() {
   if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
     tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
   fi
-  local narration_duration=0
-  if [ -s "$narration" ]; then
-    narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+  if [ ! -s "$narration_text" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: narration text missing for $PROJECT_ID"
+    exit 1
   fi
+  "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
   local narration_stale=0
-  if [ ! -s "$narration" ] || { [ -s "$narration_text" ] && [ "$narration_text" -nt "$narration" ]; }; then
+  if [ ! -s "$narration" ] || [ "$narration_text" -nt "$narration" ]; then
     narration_stale=1
   fi
-  if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk "BEGIN{exit !($narration_duration <= 30)}" || [ "$narration_stale" = 1 ]; }; then
-    python3 "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-    edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+  if command -v edge-tts >/dev/null 2>&1; then
+    edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration.tmp"
+    mv "$narration.tmp" "$narration"
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
+  elif [ "$narration_stale" = 1 ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: edge-tts unavailable and narration is missing/stale for $PROJECT_ID"
+    exit 1
   fi
   if [ ! -s "$narration" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
@@ -235,12 +238,18 @@ materialize_hyperframes_assets() {
     exit 1
   fi
   if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
-    cp "$narration" "$project_root/assets/music-bg.mp3"
+    echo "[$(date -u +%FT%TZ)] ERROR: background music asset missing for $PROJECT_ID"
+    exit 1
   fi
   local music_duration
   music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
   if ! awk "BEGIN{exit !($music_duration > 30)}"; then
-    cp "$narration" "$project_root/assets/music-bg.mp3"
+    echo "[$(date -u +%FT%TZ)] ERROR: background music duration ${music_duration}s <=30s for $PROJECT_ID"
+    exit 1
+  fi
+  if cmp -s "$narration" "$project_root/assets/music-bg.mp3"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID"
+    exit 1
   fi
   # Reels/Shorts must stay under the 60s platform limit. Derive a capped
   # narration for the reels composition so its aligned timeline is <=60s.
@@ -259,11 +268,11 @@ materialize_hyperframes_assets() {
       cp "$narration" "$target/narration.mp3"
     fi
     cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
-    [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ] && cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf" || cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"
-    [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ] && cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"
-    [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ] && cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"
+    if [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ]; then cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf"; else cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"; fi
+    if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
+    if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
   done
-  python3 "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
+  "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
 }
 materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
 
@@ -286,9 +295,14 @@ if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html"
   exit 1
 fi
 rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+# Fail before render if either authored composition violates HyperFrames contracts.
+"$HYPERFRAMES_BIN" lint "$FULL_COMP"
+"$HYPERFRAMES_BIN" validate "$FULL_COMP"
+"$HYPERFRAMES_BIN" lint "$REELS_COMP"
+"$HYPERFRAMES_BIN" validate "$REELS_COMP"
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
-"$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --reels-max-duration 60
+"$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60
 for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
   [ -s "$render" ] || { echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render" >&2; exit 1; }
 done
@@ -342,10 +356,10 @@ jq -n \
 
 # Step 4.5: Run copyright preflight (if files exist)
 if [ -f "renders/final_full_vi_9x16.mp4" ]; then
-  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_full_vi_9x16.mp4" || true
+  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_full_vi_9x16.mp4"
 fi
 if [ -f "renders/final_reels_vi_9x16.mp4" ]; then
-  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_reels_vi_9x16.mp4" || true
+  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_reels_vi_9x16.mp4"
 fi
 
 done

@@ -15,16 +15,7 @@ export PYTHONPATH="$ROOT"
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
 if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
-[ -n "$FFMPEG_BIN" ] || { echo "ERROR: ffmpeg is required" >&2; exit 1; }
-HYPERFRAMES_BIN="$(command -v hyperframes || true)"
-if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
-[ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
-[ -n "$HYPERFRAMES_BIN" ] || { echo "ERROR: hyperframes CLI is required" >&2; exit 1; }
-export FFPROBE_BIN HYPERFRAMES_BIN
-
-auto_render_quality() {
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --reels-max-duration 60
-}
+if [ -z "$FFMPEG_BIN" ] && [ -x "$HOME/.local/bin/ffmpeg" ]; then FFMPEG_BIN="$HOME/.local/bin/ffmpeg"; fi
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
 elif [ -x "$ROOT/venv/bin/python3" ]; then
@@ -32,6 +23,18 @@ elif [ -x "$ROOT/venv/bin/python3" ]; then
 else
   PY="$(command -v python3)"
 fi
+HYPERFRAMES_BIN="$(command -v hyperframes || true)"
+if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
+[ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
+[ -n "$FFMPEG_BIN" ] || { echo "ERROR: ffmpeg is required for content QA" >&2; exit 1; }
+[ -n "$HYPERFRAMES_BIN" ] || { echo "ERROR: hyperframes CLI is required" >&2; exit 1; }
+export FFPROBE_BIN FFMPEG_BIN HYPERFRAMES_BIN
+
+auto_render_quality() {
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60
+}
+DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
+command -v timeout >/dev/null 2>&1 || { echo "ERROR: timeout command is required for directors" >&2; exit 1; }
 
 PROJECT_IDS=("$@")
 if [ "${#PROJECT_IDS[@]}" -eq 0 ]; then
@@ -65,7 +68,8 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       cd \"$ROOT\"
       env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
           -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-        claude -p --dangerously-skip-permissions \
+        timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
+          claude -p --dangerously-skip-permissions \
           --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" \
           --output-format json \
           \"$PROMPT_STR\"
@@ -73,7 +77,8 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   else
     env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
         -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-      claude -p --dangerously-skip-permissions \
+      timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
+        claude -p --dangerously-skip-permissions \
         --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \
         --output-format json \
         "$PROMPT_STR" \
@@ -121,25 +126,30 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
     local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 
-    mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
-    if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
+    mkdir -p "$project_root/artifacts" "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+    : > "$narration_text"
+    if [ -s "$script_json" ]; then
       jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
     fi
     if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
       tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
     fi
-    local narration_duration=0
-    if [ -s "$narration" ]; then
-      narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+    if [ ! -s "$narration_text" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: narration text missing for $PROJECT_ID" >&2
+      exit 1
     fi
+    "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
     local narration_stale=0
-    if [ ! -s "$narration" ] || { [ -s "$narration_text" ] && [ "$narration_text" -nt "$narration" ]; }; then
+    if [ ! -s "$narration" ] || [ "$narration_text" -nt "$narration" ]; then
       narration_stale=1
     fi
-    if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk "BEGIN{exit !($narration_duration <= 30)}" || [ "$narration_stale" = 1 ]; }; then
-      python3 "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-      edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+    if command -v edge-tts >/dev/null 2>&1; then
+      edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration.tmp"
+      mv "$narration.tmp" "$narration"
       rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
+    elif [ "$narration_stale" = 1 ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: edge-tts unavailable and narration is missing/stale for $PROJECT_ID" >&2
+      exit 1
     fi
     if [ ! -s "$narration" ]; then
       echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
@@ -151,12 +161,18 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       exit 1
     fi
     if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
-      cp "$narration" "$project_root/assets/music-bg.mp3"
+      echo "[$(date -u +%FT%TZ)] ERROR: background music asset missing for $PROJECT_ID" >&2
+      exit 1
     fi
     local music_duration
     music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
     if ! awk "BEGIN{exit !($music_duration > 30)}"; then
-      cp "$narration" "$project_root/assets/music-bg.mp3"
+      echo "[$(date -u +%FT%TZ)] ERROR: background music duration ${music_duration}s <=30s for $PROJECT_ID" >&2
+      exit 1
+    fi
+    if cmp -s "$narration" "$project_root/assets/music-bg.mp3"; then
+      echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID" >&2
+      exit 1
     fi
     local reels_cap=58
     if awk "BEGIN{exit !($narration_duration > $reels_cap)}"; then
@@ -173,11 +189,11 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
         cp "$narration" "$target/narration.mp3"
       fi
       cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
-      [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ] && cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf" || cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"
-      [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ] && cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"
-      [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ] && cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf" || cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"
+      if [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ]; then cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf"; else cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"; fi
+      if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
+      if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
     done
-    python3 "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
+    "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
   }
   materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
 
@@ -196,6 +212,12 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     exit 1
   fi
   rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+  echo "[$(date -u +%FT%TZ)] lint/validate FULL $FULL_COMP"
+  "$HYPERFRAMES_BIN" lint "$FULL_COMP"
+  "$HYPERFRAMES_BIN" validate "$FULL_COMP"
+  echo "[$(date -u +%FT%TZ)] lint/validate REELS $REELS_COMP"
+  "$HYPERFRAMES_BIN" lint "$REELS_COMP"
+  "$HYPERFRAMES_BIN" validate "$REELS_COMP"
   echo "[$(date -u +%FT%TZ)] render FULL $FULL_COMP"
   "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
   echo "[$(date -u +%FT%TZ)] render REELS $REELS_COMP"
