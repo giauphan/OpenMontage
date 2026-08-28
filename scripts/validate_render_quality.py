@@ -102,6 +102,7 @@ def validate_video(
     min_duration: float,
     tolerance: float,
     expected_dimensions: tuple[int, int],
+    max_duration: float | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -142,6 +143,8 @@ def validate_video(
     narration_duration = number(spoken.get("format", {}).get("duration"))
     if duration <= min_duration:
         errors.append(f"{path}: duration {duration:.2f}s is not greater than {min_duration:.2f}s")
+    if max_duration is not None and duration > max_duration:
+        errors.append(f"{path}: duration {duration:.2f}s exceeds {max_duration:.2f}s")
     if narration_duration <= 0:
         errors.append(f"{narration}: invalid duration {narration_duration:.2f}s")
     elif abs(duration - narration_duration) > tolerance:
@@ -208,6 +211,7 @@ def main() -> int:
     )
     parser.add_argument("--min-duration", type=float, default=30.0)
     parser.add_argument("--tolerance", type=float, default=3.0)
+    parser.add_argument("--reels-max-duration", type=float, default=None)
     args = parser.parse_args()
 
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
@@ -216,9 +220,9 @@ def main() -> int:
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
 
     errors: list[str] = []
-    for render_name, narration in (
-        (FULL_RENDER, full_narration),
-        (REELS_RENDER, reels_narration),
+    for render_name, narration, max_duration in (
+        (FULL_RENDER, full_narration, None),
+        (REELS_RENDER, reels_narration, args.reels_max_duration),
     ):
         errors.extend(
             validate_video(
@@ -229,6 +233,7 @@ def main() -> int:
                 args.min_duration,
                 args.tolerance,
                 PORTRAIT_DIMENSIONS,
+                max_duration,
             )
         )
     for error in errors:

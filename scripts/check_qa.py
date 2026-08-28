@@ -9,7 +9,6 @@ Usage:
   python3 scripts/check_qa.py projects/cand_abc projects/cand_def
   python3 scripts/check_qa.py --projects-root projects
 """
-
 from __future__ import annotations
 
 import argparse
@@ -22,6 +21,7 @@ FULL_RENDER = "renders/final_full_vi_9x16.mp4"
 REELS_RENDER = "renders/final_reels_vi_9x16.mp4"
 NARRATION_CANDIDATES = ("assets/narration.mp3", "assets/voice/narration.mp3")
 DEFAULT_TOLERANCE = 3.0
+REELS_MAX_SECONDS = 60.0
 
 
 def duration(path: Path, ffprobe: str) -> float | None:
@@ -65,7 +65,7 @@ def narration_path(project: Path) -> Path:
     return project / NARRATION_CANDIDATES[0]
 
 
-def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
+def check_project(project: Path, ffprobe: str, tolerance: float, reels_max_seconds: float = REELS_MAX_SECONDS) -> bool:
     full = project / FULL_RENDER
     reels = project / REELS_RENDER
     narration = narration_path(project)
@@ -91,7 +91,17 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
     gap = abs(narration_seconds - full_seconds)
     ok = gap <= tolerance
     print(f"  narration_render_gap={gap:.3f}s  {'PASS' if ok else 'FAIL'} (tolerance={tolerance})")
-    return passed and ok
+    passed = passed and ok
+
+    if reels_seconds is None:
+        print(f"  reels_duration=CANNOT_COMPUTE  FAIL")
+        passed = False
+    else:
+        reels_ok = reels_seconds <= reels_max_seconds
+        print(f"  reels_duration={reels_seconds:.3f}s  {'PASS' if reels_ok else 'FAIL'} (max={reels_max_seconds:.0f}s)")
+        passed = passed and reels_ok
+
+    return passed
 
 
 def resolve_projects(args: argparse.Namespace) -> list[Path]:
@@ -108,6 +118,7 @@ def main() -> int:
                         help="Scan every subdirectory of this root when no projects are given")
     parser.add_argument("--ffprobe", default=None)
     parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
+    parser.add_argument("--reels-max-duration", type=float, default=REELS_MAX_SECONDS)
     args = parser.parse_args()
 
     ffprobe = args.ffprobe or shutil.which("ffprobe")
@@ -120,7 +131,7 @@ def main() -> int:
         print("GATE2=FAIL (no projects to check)")
         return 1
 
-    all_pass = all(check_project(project, ffprobe, args.tolerance) for project in projects)
+    all_pass = all(check_project(project, ffprobe, args.tolerance, args.reels_max_duration) for project in projects)
     print(f"\nGATE2={'PASS' if all_pass else 'FAIL'}")
     return 0 if all_pass else 1
 

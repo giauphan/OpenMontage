@@ -14,7 +14,13 @@ from pathlib import Path
 
 from publish_config import load_config
 from tools.publish_store import PublishStore, publish_key
-from tools.publishers.platform_routes import PLATFORM_ROUTES, probe_dimensions, VERTICAL_WIDTH, VERTICAL_HEIGHT
+from tools.publishers.platform_routes import (
+    PLATFORM_ROUTES,
+    ensure_youtube_short,
+    probe_dimensions,
+    VERTICAL_WIDTH,
+    VERTICAL_HEIGHT,
+)
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
 
@@ -156,6 +162,8 @@ def publish_batch(
                 f"(not 9:16 portrait). Only {VERTICAL_WIDTH}x{VERTICAL_HEIGHT} renders "
                 f"may be published. Re-render with a portrait composition before publishing."
             )
+        if cfg["platform"] == "youtube" and cfg["kind"] == "short":
+            ensure_youtube_short(video_path)
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 

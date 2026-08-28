@@ -18,8 +18,8 @@ fi
 export PYTHONPATH="$ROOT"
 
 FFPROBE_BIN="$(command -v ffprobe || true)"
-if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
 FFMPEG_BIN="$(command -v ffmpeg || true)"
+if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
 if [ -z "$FFMPEG_BIN" ] && [ -x "$HOME/.local/bin/ffmpeg" ]; then FFMPEG_BIN="$HOME/.local/bin/ffmpeg"; fi
 HYPERFRAMES_BIN="$(command -v hyperframes || true)"
 if [ -z "$HYPERFRAMES_BIN" ] && [ -x "$ROOT/node_modules/.bin/hyperframes" ]; then HYPERFRAMES_BIN="$ROOT/node_modules/.bin/hyperframes"; fi
@@ -76,6 +76,7 @@ DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 set +e
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Do not ask for confirmation between stages."
+DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one."
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
 DIRECTOR_ARTIFACTS_READY=0
@@ -91,13 +92,17 @@ run_directors() {
       env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
           -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
         timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
-          claude -p --dangerously-skip-permissions --output-format json \"$PROMPT_STR\"
+          claude -p --dangerously-skip-permissions \
+            --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" \
+            --output-format json \"$PROMPT_STR\"
     "
   else
     env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
         -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-      timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
-        claude -p --dangerously-skip-permissions --output-format json \"$PROMPT_STR\"
+      timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
+        claude -p --dangerously-skip-permissions \
+          --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \
+          --output-format json "$PROMPT_STR"
   fi
 }
 
@@ -175,6 +180,7 @@ mkdir -p renders
 materialize_hyperframes_assets() {
   local project_root="$1"
   local narration="$project_root/assets/narration.mp3"
+  local reels_narration="$project_root/assets/narration_reels.mp3"
   local narration_text="$project_root/artifacts/narration_vi_text.txt"
   local script_json="$project_root/artifacts/script_vi.json"
   if [ ! -s "$script_json" ] && [ -s "$project_root/artifacts/script.json" ]; then script_json="$project_root/artifacts/script.json"; fi
@@ -240,9 +246,22 @@ materialize_hyperframes_assets() {
     echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID"
     exit 1
   fi
+  # Reels/Shorts must stay under the 60s platform limit. Derive a capped
+  # narration for the reels composition so its aligned timeline is <=60s.
+  local reels_cap=58
+  if awk "BEGIN{exit !($narration_duration > $reels_cap)}"; then
+    "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
+      || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"
+  else
+    cp "$narration" "$reels_narration"
+  fi
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
-    cp "$narration" "$target/narration.mp3"
+    if [ "$composition" = "hyperframes_reels" ]; then
+      cp "$reels_narration" "$target/narration.mp3"
+    else
+      cp "$narration" "$target/narration.mp3"
+    fi
     cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
     if [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ]; then cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf"; else cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
@@ -278,7 +297,7 @@ rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
 "$HYPERFRAMES_BIN" validate "$REELS_COMP"
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
-"$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN"
+"$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60
 for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
   [ -s "$render" ] || { echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render" >&2; exit 1; }
 done
@@ -305,7 +324,7 @@ jq -n \
     topic: $title,
     title: $title,
     description: $description,
-    yt_shorts: "renders/final_full_vi_9x16.mp4",
+    yt_shorts: "renders/final_reels_vi_9x16.mp4",
     tiktok: "renders/final_full_vi_9x16.mp4",
     fb_video: "renders/final_full_vi_9x16.mp4",
     ig_reels: "renders/final_reels_vi_9x16.mp4",

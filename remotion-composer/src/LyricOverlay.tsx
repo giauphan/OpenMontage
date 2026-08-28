@@ -12,7 +12,7 @@ import { resolveAsset } from "./lib/resolveAsset";
 
 const { fontFamily: playfairItalic } = loadPlayfair("italic", {
   weights: ["400", "700"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext", "vietnamese"],
 });
 
 export interface Lyric {

@@ -20,7 +20,7 @@ const FPS = 30;
 
 const { fontFamily } = loadFont("normal", {
   weights: ["400", "500", "700"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext", "vietnamese"],
 });
 
 const toneGradient = (tone: CinematicTone) => {

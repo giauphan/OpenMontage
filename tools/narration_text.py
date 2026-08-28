@@ -45,7 +45,7 @@ _DEFAULT_TERMS: dict[str, str] = {
     "CSS": "Xi-Ét-Ét",
     "HTML": "Hắt-Ti-Em-eo",
     "SQL": "Ét-Q-eo",
-    "AI": "Ây Âi",
+    "AI": "ây-ai",
     "machine learning": "meo-sin lơ-ning",
     "cloud": "cờ-lao",
     "framework": "phrêm-uốc",

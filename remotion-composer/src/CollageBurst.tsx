@@ -15,11 +15,11 @@ import { resolveAsset } from "./lib/resolveAsset";
 
 const { fontFamily: playfairFamily } = loadPlayfair("normal", {
   weights: ["400", "700"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext", "vietnamese"],
 });
 const { fontFamily: playfairItalic } = loadPlayfair("italic", {
   weights: ["400", "700"],
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext", "vietnamese"],
 });
 
 export type CollageTransition =

@@ -13,8 +13,8 @@ if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
 fi
 export PYTHONPATH="$ROOT"
 FFPROBE_BIN="$(command -v ffprobe || true)"
-if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
 FFMPEG_BIN="$(command -v ffmpeg || true)"
+if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
 if [ -z "$FFMPEG_BIN" ] && [ -x "$HOME/.local/bin/ffmpeg" ]; then FFMPEG_BIN="$HOME/.local/bin/ffmpeg"; fi
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
@@ -31,7 +31,7 @@ if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -pa
 export FFPROBE_BIN FFMPEG_BIN HYPERFRAMES_BIN
 
 auto_render_quality() {
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN"
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60
 }
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 command -v timeout >/dev/null 2>&1 || { echo "ERROR: timeout command is required for directors" >&2; exit 1; }
@@ -56,7 +56,9 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
   START_TS=$(date -u +%s)
   echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_LOG"
-  PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json for topic and sources. Produce all required artifacts: proposal_packet.json, script.json, script_vi.json (Vietnamese), scene_pack.json, asset_manifest.json, and Hyperframes composition directories hyperframes/ and hyperframes_reels/ inside projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Do not skip any director. Finish the full pipeline."
+  PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json for topic and sources. Produce all required artifacts: proposal_packet.json, script.json, script_vi.json (Vietnamese), scene_pack.json, asset_manifest.json, and Hyperframes composition directories hyperframes/ and hyperframes_reels/ inside projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. Both compositions MUST contain genuine visible Vietnamese on-screen headlines or captions sourced from artifacts/script_vi.json sections[].text_vi, NFC-normalized; do not use English-only placeholder copy, hidden text, comments, or a glyph-only workaround. Include at least one real Vietnamese diacritic in visible text in each index. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Do not skip any director. Finish the full pipeline."
+
+  DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one."
 
   set +e
   if [ "$(id -u)" -eq 0 ]; then
@@ -68,6 +70,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
           -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
         timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
           claude -p --dangerously-skip-permissions \
+          --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" \
           --output-format json \
           \"$PROMPT_STR\"
     " > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
@@ -76,6 +79,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
         -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
       timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
         claude -p --dangerously-skip-permissions \
+        --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \
         --output-format json \
         "$PROMPT_STR" \
         > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
@@ -113,6 +117,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   materialize_hyperframes_assets() {
     local project_root="$1"
     local narration="$project_root/assets/narration.mp3"
+    local reels_narration="$project_root/assets/narration_reels.mp3"
     local narration_text="$project_root/artifacts/narration_vi_text.txt"
     local script_json="$project_root/artifacts/script_vi.json"
     if [ ! -s "$script_json" ] && [ -s "$project_root/artifacts/script.json" ]; then script_json="$project_root/artifacts/script.json"; fi
@@ -164,9 +169,20 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID" >&2
       exit 1
     fi
+    local reels_cap=58
+    if awk "BEGIN{exit !($narration_duration > $reels_cap)}"; then
+      "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
+        || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"
+    else
+      cp "$narration" "$reels_narration"
+    fi
     for composition in hyperframes hyperframes_reels; do
       local target="$project_root/$composition/assets"
-      cp "$narration" "$target/narration.mp3"
+      if [ "$composition" = "hyperframes_reels" ]; then
+        cp "$reels_narration" "$target/narration.mp3"
+      else
+        cp "$narration" "$target/narration.mp3"
+      fi
       cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
       if [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ]; then cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf"; else cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"; fi
       if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
@@ -216,7 +232,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       topic: $title,
       title: $title,
       description: $description,
-      yt_shorts: "renders/final_full_vi_9x16.mp4",
+      yt_shorts: "renders/final_reels_vi_9x16.mp4",
       tiktok: "renders/final_full_vi_9x16.mp4",
       fb_video: "renders/final_full_vi_9x16.mp4",
       ig_reels: "renders/final_reels_vi_9x16.mp4",

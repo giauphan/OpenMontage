@@ -27,7 +27,7 @@ def test_vietnamese_words_are_not_phoneticized():
     assert "Phần mềm" in out
     assert "60 phần trăm" in out
     assert "một phần" in out
-    assert "Ây Âi" in out
+    assert "ây-ai" in out
 
 
 def test_display_text_remains_editorial_while_tts_is_localized():
@@ -57,6 +57,13 @@ def test_ci_runs_narration_gate_suite():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "tests/tools/test_narration_text.py" in makefile
     assert "run: make test-gates" in workflow
+
+
+def test_ai_uses_single_vietnamese_pronunciation():
+    out = prepare_narration("Cuộc chiến AI đang thay đổi.")
+    assert "AI" not in out
+    assert "ây-ai" in out
+    assert "Ây Âi" not in out
 
 
 def test_multiword_wins_over_component():

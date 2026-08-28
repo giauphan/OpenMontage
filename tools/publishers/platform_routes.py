@@ -15,10 +15,10 @@ FULL_RENDER = "renders/final_full_vi_9x16.mp4"
 CUT_RENDER = "renders/final_reels_vi_9x16.mp4"
 
 # The full render is the complete vertical NewsNow story. The cut render is
-# reserved for the shorter Instagram excerpt.
+# used by short-form routes that have a duration limit.
 # platform -> (publish kind, publish_metadata.json field, render used)
 PLATFORM_ROUTES: dict[str, tuple[str, str, str]] = {
-    "youtube": ("short", "yt_shorts", FULL_RENDER),
+    "youtube": ("short", "yt_shorts", CUT_RENDER),
     "tiktok": ("video", "tiktok", FULL_RENDER),
     "facebook": ("reels", "fb_video", FULL_RENDER),
     "instagram": ("reels", "ig_reels", CUT_RENDER),
@@ -26,6 +26,7 @@ PLATFORM_ROUTES: dict[str, tuple[str, str, str]] = {
 
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
+YOUTUBE_SHORT_MAX_SECONDS = 60.0
 
 
 def metadata_field(platform: str) -> str:
@@ -60,6 +61,29 @@ def probe_dimensions(path: Path) -> tuple[int, int]:
         raise ValueError(f"{path}: no video stream to validate ({exc})") from exc
 
 
+def probe_duration(path: Path) -> float:
+    """Return the container duration in seconds for a media file."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        raise ValueError("ffprobe is required to validate video duration")
+    if not path.is_file():
+        raise ValueError(f"video not found: {path}")
+    result = subprocess.run(
+        [
+            ffprobe, "-v", "error", "-show_entries", "format=duration",
+            "-of", "json", str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"ffprobe failed for {path}: {result.stderr.strip()[:200]}")
+    try:
+        return float(json.loads(result.stdout)["format"]["duration"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{path}: cannot determine video duration ({exc})") from exc
+
+
 def ensure_vertical(path: Path) -> None:
     """Reject any asset that is not 9:16 portrait before it reaches a platform."""
     width, height = probe_dimensions(path)
@@ -67,4 +91,14 @@ def ensure_vertical(path: Path) -> None:
         raise ValueError(
             f"{path}: {width}x{height} is not 9:16 vertical; "
             f"only {VERTICAL_WIDTH}x{VERTICAL_HEIGHT}-style portrait media may be published"
+        )
+
+
+def ensure_youtube_short(path: Path) -> None:
+    """Reject a video that YouTube would classify as a regular video."""
+    duration = probe_duration(path)
+    if duration > YOUTUBE_SHORT_MAX_SECONDS:
+        raise ValueError(
+            f"{path}: {duration:.3f}s exceeds the YouTube Shorts limit of "
+            f"{YOUTUBE_SHORT_MAX_SECONDS:.0f} seconds"
         )
