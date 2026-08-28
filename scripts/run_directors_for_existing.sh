@@ -256,6 +256,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     --arg id "$PROJECT_ID" \
     --arg title "$TITLE" \
     --arg description "$DESCRIPTION" \
+    --argjson feed_stale "${FEED_STALE:-0}" \
     '{
       id: $id,
       topic: $title,
@@ -265,7 +266,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       tiktok: "renders/final_full_vi_9x16.mp4",
       fb_video: "renders/final_full_vi_9x16.mp4",
       ig_reels: "renders/final_reels_vi_9x16.mp4",
-      feed_stale: false
+      feed_stale: $feed_stale
     }' > publish_metadata.json
   echo "[$(date -u +%FT%TZ)] === DONE project=$PROJECT_ID ==="
 done

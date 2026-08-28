@@ -79,7 +79,6 @@ PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read pr
 DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one."
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
-DIRECTOR_ARTIFACTS_READY=0
 # Existing files are not a valid success signal: they may belong to a prior run.
 # A director timeout must fail closed rather than publishing stale content.
 
@@ -113,8 +112,7 @@ fi
 
 run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
 CLAUDE_EXIT=$?
-DIRECTOR_ARTIFACT_FALLBACK=0
-if [ "$CLAUDE_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
+if [ "$CLAUDE_EXIT" -eq 124 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: directors timed out; refusing stale artifacts" >> "$DIRECTORS_LOG"
 fi
 
@@ -128,9 +126,7 @@ done
 
 set -e
 
-if [ "$DIRECTOR_ARTIFACT_FALLBACK" -eq 1 ]; then
-  :
-elif jq empty "$DIRECTORS_JSON" 2>/dev/null; then
+if jq empty "$DIRECTORS_JSON" 2>/dev/null; then
   jq -r '"session_id=\(.session_id // "?") is_error=\(.is_error // "?") turns=\(.num_turns // "?") cost_usd=\(.total_cost_usd // "?")"' \
     "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   jq -r '.result // ""' "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"

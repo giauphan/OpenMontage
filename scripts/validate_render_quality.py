@@ -112,7 +112,7 @@ def validate_video(
         return [f"{path}: missing or empty"]
     if not narration.is_file() or narration.stat().st_size == 0:
         return [f"{narration}: missing or empty"]
-    if path.stat().st_mtime_ns <= narration.stat().st_mtime_ns:
+    if path.stat().st_mtime_ns < narration.stat().st_mtime_ns:
         errors.append(f"{path}: render is stale relative to narration")
     if narration_text and narration_text.is_file():
         if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
