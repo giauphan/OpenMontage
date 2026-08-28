@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft7Validator
 
 
 class NewsResearchBridge:
@@ -17,7 +17,7 @@ class NewsResearchBridge:
 
         with self.schema_path.open("r", encoding="utf-8") as f:
             self.schema = json.load(f)
-        self.validator = Draft202012Validator(self.schema)
+        self.validator = Draft7Validator(self.schema)
 
     def build_brief(
         self,

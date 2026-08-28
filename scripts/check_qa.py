@@ -35,6 +35,7 @@ for pid in PROJ:
     r_full = p / "renders/final_full_vi_9x16.mp4"
     r_reels = p / "renders/final_reels_vi_9x16.mp4"
     narr = p / "assets/narration.mp3"
+    narr_text = p / "artifacts/narration_vi_text.txt"
 
     nd = dur(narr)
     rd = dur(r_full)
@@ -47,6 +48,17 @@ for pid in PROJ:
     print(f"=== {pid} ===")
     print(f"  narration={nd}s  full_render={rd}s  reels_render={vd}s")
     print(f"  full_video={vc}  full_audio={ac}  full_size={sz}")
+
+    # Narration must be current relative to its source script text.
+    if narr.exists() and narr_text.exists():
+        if narr.stat().st_mtime_ns < narr_text.stat().st_mtime_ns:
+            print(f"  narration_stale  FAIL (audio older than narration_vi_text.txt)")
+            all_pass = False
+        else:
+            print(f"  narration_stale  PASS")
+    else:
+        print(f"  narration_stale=CANNOT_COMPUTE  FAIL")
+        all_pass = False
 
     try:
         narr_f = float(nd)

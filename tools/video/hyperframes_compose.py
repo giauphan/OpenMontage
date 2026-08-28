@@ -902,6 +902,27 @@ class HyperFramesCompose(BaseTool):
             return 0.0
         return max(float(c.get("out_seconds", 0) or 0) for c in cuts)
 
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        return h.hexdigest()
+
+    @classmethod
+    def _copy_if_needed(cls, src: Path, dest: Path) -> bool:
+        if not dest.exists():
+            shutil.copy2(src, dest)
+            return True
+        if dest.stat().st_size != src.stat().st_size:
+            shutil.copy2(src, dest)
+            return True
+        if cls._file_sha256(dest) != cls._file_sha256(src):
+            shutil.copy2(src, dest)
+            return True
+        return False
+
     def _resolve_and_stage_assets(
         self,
         cuts: list[dict],
@@ -927,8 +948,7 @@ class HyperFramesCompose(BaseTool):
             src_path = Path(resolved_cut["source"]) if resolved_cut.get("source") else None
             if src_path and src_path.exists() and not self._is_inside(src_path, workspace):
                 dest = assets_dir / src_path.name
-                if not dest.exists() or dest.stat().st_size != src_path.stat().st_size:
-                    shutil.copy2(src_path, dest)
+                self._copy_if_needed(src_path, dest)
                 resolved_cut["source"] = str(dest)
                 copies.append({"from": str(src_path), "to": str(dest)})
             resolved.append(resolved_cut)
@@ -954,8 +974,7 @@ class HyperFramesCompose(BaseTool):
                 continue
             if not self._is_inside(src, workspace):
                 dest = assets_dir / src.name
-                if not dest.exists() or dest.stat().st_size != src.stat().st_size:
-                    shutil.copy2(src, dest)
+                self._copy_if_needed(src, dest)
             else:
                 dest = src
             out["narration"].append(
@@ -973,8 +992,7 @@ class HyperFramesCompose(BaseTool):
             if src.exists():
                 if not self._is_inside(src, workspace):
                     dest = assets_dir / src.name
-                    if not dest.exists() or dest.stat().st_size != src.stat().st_size:
-                        shutil.copy2(src, dest)
+                    self._copy_if_needed(src, dest)
                 else:
                     dest = src
                 out["music"] = {

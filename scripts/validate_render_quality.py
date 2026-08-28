@@ -40,6 +40,7 @@ def validate_video(
     tolerance: float,
     expected_dimensions: tuple[int, int],
     max_duration: float | None = None,
+    narration_text: Path | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -48,6 +49,9 @@ def validate_video(
         return [f"{narration}: missing or empty"]
     if path.stat().st_mtime_ns <= narration.stat().st_mtime_ns:
         errors.append(f"{path}: render is stale relative to narration")
+    if narration_text and narration_text.is_file():
+        if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
+            errors.append(f"{narration}: narration audio is stale relative to text {narration_text}")
     try:
         rendered = probe(path, ffprobe)
         spoken = probe(narration, ffprobe)
@@ -105,6 +109,9 @@ def main() -> int:
     reels_narration = args.project_dir / "hyperframes_reels" / "assets" / "narration.mp3"
     if not reels_narration.is_file() or reels_narration.stat().st_size == 0:
         reels_narration = narration
+    narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
+    if not narration_text.is_file():
+        narration_text = None
     errors: list[str] = []
     errors.extend(
         validate_video(
@@ -114,6 +121,7 @@ def main() -> int:
             args.min_duration,
             args.tolerance,
             (1080, 1920),
+            narration_text=narration_text,
         )
     )
     errors.extend(
@@ -125,6 +133,7 @@ def main() -> int:
             args.tolerance,
             (1080, 1920),
             args.reels_max_duration,
+            narration_text=narration_text,
         )
     )
     for error in errors:
