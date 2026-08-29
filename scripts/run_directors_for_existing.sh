@@ -66,7 +66,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
   START_TS=$(date -u +%s)
   echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_LOG"
-  PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json for topic and sources. Produce all required artifacts: proposal_packet.json, script.json, script_vi.json (Vietnamese), scene_pack.json, asset_manifest.json, and Hyperframes composition directories hyperframes/ and hyperframes_reels/ inside projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. Both compositions MUST contain genuine visible Vietnamese on-screen headlines or captions sourced from artifacts/script_vi.json sections[].text_vi, NFC-normalized; do not use English-only placeholder copy, hidden text, comments, or a glyph-only workaround. Include at least one real Vietnamese diacritic in visible text in each index. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Do not skip any director. Finish the full pipeline."
+  PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json for topic and sources. Produce all required artifacts: proposal_packet.json, script.json, script_vi.json (Vietnamese), scene_pack.json, asset_manifest.json, and Hyperframes composition directories hyperframes/ and hyperframes_reels/ inside projects/$PROJECT_ID/. Write the script artifacts as flat JSON files under artifacts/, not embedded inside checkpoints. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. Both compositions MUST contain genuine visible Vietnamese on-screen headlines or captions sourced from artifacts/script_vi.json sections[].text_vi, NFC-normalized; do not use English-only placeholder copy, hidden text, comments, or a glyph-only workaround. Include at least one real Vietnamese diacritic in visible text in each index. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Do not skip any director. Finish the full pipeline."
 
   DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one."
 
@@ -89,7 +89,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
         -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
         timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
           claude -p --dangerously-skip-permissions \
-          --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \\
+          --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \
         --output-format json \
         "$PROMPT_STR" \
         > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
@@ -99,6 +99,11 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
 
   END_TS=$(date -u +%s)
   ELAPSED=$((END_TS - START_TS))
+
+  if [ $CLAUDE_EXIT -eq 0 ] && ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: missing canonical script artifact after director run" >> "$DIRECTORS_LOG"
+    CLAUDE_EXIT=6
+  fi
 
   if jq empty "$DIRECTORS_JSON" 2>/dev/null; then
     jq -r '"session_id=\(.session_id // "?") is_error=\(.is_error // "?") turns=\(.num_turns // "?") cost_usd=\(.total_cost_usd // "?")"' \
