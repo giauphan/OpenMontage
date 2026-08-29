@@ -316,6 +316,17 @@ if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
 fi
 
+# Ensure title contains required hashtags (#tintuc #congnghe #ai)
+if [[ ! "$TITLE" =~ "#tintuc" && ! "$TITLE" =~ "#congnghe" && ! "$TITLE" =~ "#ai" ]]; then
+  TITLE="$TITLE #tintuc #congnghe #ai"
+fi
+# Safeguard: ensure it fits within 100 chars for YT Shorts
+if [ ${#TITLE} -gt 100 ]; then
+  # Strip any existing suffix and truncate base title to 80 chars, then append required hashtags
+  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+fi
+
 CONCEPT_HOOK=$(jq -r '.concept_options[0].hook // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 CONCEPT_MSG=$(jq -r '.concept_options[0].core_message // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 CONCEPT_CTA=$(jq -r '.concept_options[0].cta // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")

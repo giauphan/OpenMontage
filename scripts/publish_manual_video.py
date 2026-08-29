@@ -339,6 +339,22 @@ def publish_batch(
 
 def validate_project_quality(project_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
+
+    # Step 1: Validate metadata text fields (hashtags, shell syntax, placeholders)
+    metadata_validator = root / "scripts" / "validate_publish_metadata.py"
+    if not metadata_validator.is_file():
+        raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: metadata validator required")
+
+    result = subprocess.run(
+        [sys.executable, str(metadata_validator), str(project_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        diagnostic = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+        raise RuntimeError(diagnostic or f"metadata validator exited {result.returncode}")
+
+    # Step 2: Validate video/audio content (dimensions, codecs, black frames, silent audio)
     ffprobe = shutil.which("ffprobe") or ""
     ffmpeg = shutil.which("ffmpeg") or ""
     if not ffprobe:
