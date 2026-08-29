@@ -130,6 +130,23 @@ def test_youtube_scheduler_validates_project_before_store_claim(tmp_path, monkey
     assert calls == []
 
 
+def test_youtube_scheduler_adds_shorts_hashtag_without_truncating_it(tmp_path, monkeypatch):
+    module = _load("schedule_youtube_today")
+    project = _project(tmp_path)
+    captured = {}
+    monkeypatch.setattr(
+        module.YoutubePublisher,
+        "execute",
+        lambda _self, payload: captured.update(payload) or SimpleNamespace(success=True, data={}),
+    )
+
+    title = "A" * 94
+    module.upload(project, {"yt_shorts": "renders/final_reels_vi_9x16.mp4", "title": title}, "yt_shorts", datetime.now().astimezone())
+
+    assert len(captured["title"]) == 100
+    assert captured["title"].endswith(" #Shorts")
+
+
 def test_youtube_scheduler_uses_canonical_project_asset(tmp_path, monkeypatch):
     module = _load("schedule_youtube_today")
     project = _project(tmp_path)

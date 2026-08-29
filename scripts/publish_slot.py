@@ -6,7 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from publish_config import load_config
-from publish_manual_video import validate_project_quality
+from publish_manual_video import meta_caption, validate_project_quality, youtube_short_title
 from tools.publish_store import PublishStore, existing_record_summary
 from tools.publishers.meta_publisher import MetaPublisher
 from tools.publishers.youtube_publisher import YoutubePublisher
@@ -80,7 +80,7 @@ def publish(job):
     if job["platform"] == "youtube":
         return YoutubePublisher().execute({
             "video_path": str(path),
-            "title": job["title"][:100],
+            'title': youtube_short_title(job['title']),
             "description": job["description"],
             "privacy_status": "public",
             "category_id": "28",
@@ -88,7 +88,7 @@ def publish(job):
     return MetaPublisher().execute({
         "video_path": str(path),
         "page_id": IG_ACCOUNT_ID,
-        "caption": f'{job["title"]} #TechNews #Vietnam #OpenMontage',
+        'caption': meta_caption(job['title'], job['description'] + "\n\n#TechNews #Vietnam #OpenMontage"),
         "post_to_facebook": False,
         "post_to_instagram": True,
     })

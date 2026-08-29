@@ -13,6 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from publish_config import fb_slot_times, load_config
+from publish_manual_video import meta_caption
 from tools.publish_store import PublishStore, publish_key
 from tools.publishers.meta_publisher import MetaPublisher
 
@@ -69,7 +70,7 @@ def main():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         pid = meta["id"]
         title = meta["title"]
-        caption = meta.get("description", title)
+        caption = meta_caption(title, meta.get("description", title))
 
         # Dynamic FB slot; FB requires >=10min in the future, roll to next day if passed
         slot_time = slot_times[idx % len(slot_times)]
