@@ -11,6 +11,14 @@ import shutil
 import subprocess
 from pathlib import Path
 
+
+def _ffprobe() -> str | None:
+    path = shutil.which("ffprobe")
+    if path:
+        return path
+    candidates = list(Path.home().glob(".local/share/uv/**/ffprobe"))
+    return str(candidates[0]) if candidates else None
+
 FULL_RENDER = "renders/final_full_vi_9x16.mp4"
 CUT_RENDER = "renders/final_reels_vi_9x16.mp4"
 
@@ -39,7 +47,7 @@ def probe_dimensions(path: Path) -> tuple[int, int]:
     Raises ValueError when the file is missing, unprobeable, or has no video
     stream — publishing must fail closed rather than upload unknown media.
     """
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = _ffprobe()
     if not ffprobe:
         raise ValueError("ffprobe is required to validate video geometry")
     if not path.is_file():
@@ -63,7 +71,7 @@ def probe_dimensions(path: Path) -> tuple[int, int]:
 
 def probe_duration(path: Path) -> float:
     """Return the container duration in seconds for a media file."""
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = _ffprobe()
     if not ffprobe:
         raise ValueError("ffprobe is required to validate video duration")
     if not path.is_file():

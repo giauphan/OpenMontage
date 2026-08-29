@@ -4,15 +4,19 @@ Publishes one generated topic to YouTube Long + YouTube Short + Instagram Reels 
 Enforces Firebase duplicate protection and a two-hour gap between batches.
 """
 
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import argparse
 import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from publish_config import load_config
 from tools.publish_store import PublishStore, publish_key
@@ -333,6 +337,39 @@ def publish_batch(
     return results
 
 
+def validate_project_quality(project_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    ffprobe = shutil.which("ffprobe") or ""
+    ffmpeg = shutil.which("ffmpeg") or ""
+    if not ffprobe:
+        candidates = list(Path.home().glob(".local/share/uv/**/ffprobe"))
+        ffprobe = str(candidates[0]) if candidates else ""
+    if not ffmpeg:
+        candidates = list(Path.home().glob(".local/share/uv/**/ffmpeg"))
+        ffmpeg = str(candidates[0]) if candidates else ""
+    validate_script = root / "scripts" / "validate_render_quality.py"
+    if not validate_script.is_file() or not ffprobe or not ffmpeg:
+        raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: validator, ffprobe, and ffmpeg are required")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(validate_script),
+            str(project_path),
+            "--ffprobe",
+            ffprobe,
+            "--ffmpeg",
+            ffmpeg,
+            "--reels-max-duration",
+            "60",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        diagnostic = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+        raise RuntimeError(diagnostic or f"validator exited {result.returncode}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Firebase-guarded manual publisher for generated videos")
     parser.add_argument("project_dir", help="Path to generated project directory")
@@ -355,29 +392,13 @@ def main():
         print(f"Error loading metadata: {e}")
         sys.exit(1)
 
-    # Strict quality gate (skip only with --force)
-    if not args.force:
-        root = Path(__file__).resolve().parents[1]
-        ffprobe = shutil.which("ffprobe") or ""
-        ffmpeg = shutil.which("ffmpeg") or ""
-        if not ffprobe:
-            candidates = list(Path.home().glob(".local/share/uv/**/ffprobe"))
-            ffprobe = str(candidates[0]) if candidates else ""
-        if not ffmpeg:
-            candidates = list(Path.home().glob(".local/share/uv/**/ffmpeg"))
-            ffmpeg = str(candidates[0]) if candidates else ""
-        validate_script = root / "scripts" / "validate_render_quality.py"
-        if validate_script.is_file() and ffprobe and ffmpeg:
-            result = subprocess.run(
-                [sys.executable, str(validate_script), str(project_path),
-                 "--ffprobe", ffprobe, "--ffmpeg", ffmpeg, "--reels-max-duration", "60"],
-                capture_output=True, text=True,
-            )
-            if result.returncode != 0:
-                print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
-                print(result.stdout)
-                print(result.stderr, file=sys.stderr)
-                sys.exit(2)
+    try:
+        validate_project_quality(project_path)
+    except Exception as exc:
+        print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
+        print(str(exc), file=sys.stderr)
+        sys.exit(2)
+
 
     # Enforce batch gap
     enforce_batch_gap(args.last_publish)

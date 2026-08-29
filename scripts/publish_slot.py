@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from publish_config import load_config
+from publish_manual_video import validate_project_quality
 from tools.publish_store import PublishStore, existing_record_summary
 from tools.publishers.meta_publisher import MetaPublisher
 from tools.publishers.youtube_publisher import YoutubePublisher
@@ -97,13 +98,21 @@ def run(job_name):
     if job_name not in JOBS:
         raise SystemExit(f"Unknown job: {job_name}")
     job = JOBS[job_name]
+    asset_path = (ROOT / job["path"]).resolve()
+    projects_root = (ROOT / "projects").resolve()
+    try:
+        project_dir = projects_root / asset_path.relative_to(projects_root).parts[0]
+    except (ValueError, IndexError) as exc:
+        raise ValueError(f"{job_name}: asset is not mapped to a canonical project") from exc
+    if not (project_dir / "publish_metadata.json").is_file():
+        raise ValueError(f"{job_name}: canonical project has no publish_metadata.json")
+    validate_project_quality(project_dir)
     now = datetime.now(LOCAL_TZ)
     date = now.date().isoformat()
     lock_file = LOCK_PATH.open("a+")
     fcntl.flock(lock_file, fcntl.LOCK_EX)
     try:
         store = PublishStore()
-        asset_path = ROOT / job["path"]
         if not asset_path.is_file():
             raise FileNotFoundError(asset_path)
         key, claimed, existing = store.claim(

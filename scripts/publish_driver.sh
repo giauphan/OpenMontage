@@ -31,9 +31,12 @@ if [ -z "$PY" ]; then
 fi
 W "PY=${PY:-NONE}"
 
-SEM=""
-if [ "$MODE" = "publish" ]; then
-  SEM="--no-dry-run-placeholder"
+PUBLISH_ARGS=("projects/$CAND")
+if [ "$MODE" = "dry-run" ]; then
+  PUBLISH_ARGS+=("--dry-run")
+elif [ "$MODE" != "publish" ]; then
+  W "invalid mode: $MODE"
+  exit 2
 fi
 
 run_in() {
@@ -46,7 +49,7 @@ run_in() {
 RCOUT=""
 if [ -n "$PY" ]; then
   cd "$ROOT"
-  RCOUT=$(env PYTHONPATH="$ROOT" "$PY" "$ROOT/scripts/publish_manual_video.py" "projects/$CAND" ${MODE:+"--dry-run"} 2>&1)
+  RCOUT=$(env PYTHONPATH="$ROOT" "$PY" "$ROOT/scripts/publish_manual_video.py" "${PUBLISH_ARGS[@]}" 2>&1)
   RCR=$?
   W "RUN_RC=$RCR"
   printf '%s\n' "$RCOUT" | tail -n 30 >> "$STATUS"

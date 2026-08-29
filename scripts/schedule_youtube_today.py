@@ -11,6 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from publish_config import load_config, yt_slot_times
+from publish_manual_video import validate_project_quality
 from tools.publish_store import PublishStore, existing_record_summary
 from tools.publishers.youtube_publisher import YoutubePublisher
 
@@ -22,8 +23,8 @@ def ytv_publish_at(dt):
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def upload(topic_meta, kind, publish_at):
-    path = ROOT / topic_meta[kind]
+def upload(project_dir, topic_meta, kind, publish_at):
+    path = project_dir / topic_meta[kind]
     if not path.is_file():
         raise FileNotFoundError(path)
     result = YoutubePublisher().execute({
@@ -46,22 +47,28 @@ def schedule_day(day):
     slot_times = yt_slot_times(cfg)
 
     now = datetime.now(tz)
-    store = PublishStore()
     date = day.isoformat()
 
     planned = []
-    for idx, proj in enumerate(cfg.get("active_projects", [])):
-        meta_path = ROOT / "projects" / proj / "publish_metadata.json"
+    for idx, project in enumerate(cfg.get("active_projects", [])):
+        proj = project.get("project_id") if isinstance(project, dict) else project
+        if not isinstance(proj, str) or not proj:
+            print(f"skip malformed active project: {project!r}")
+            continue
+        project_dir = ROOT / "projects" / proj
+        meta_path = project_dir / "publish_metadata.json"
         if not meta_path.is_file():
             print(f"skip {proj}: missing publish_metadata.json")
             continue
         topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        validate_project_quality(project_dir)
         slot_time = slot_times[idx % len(slot_times)]
         dt = datetime.combine(day, slot_time, tz)
-        planned.append((proj, topic_meta, "yt_shorts", dt))
+        planned.append((proj, project_dir, topic_meta, "yt_shorts", dt))
 
+    store = PublishStore()
     previous = None
-    for proj, topic_meta, kind, publish_at in sorted(planned, key=lambda item: item[3]):
+    for proj, project_dir, topic_meta, kind, publish_at in sorted(planned, key=lambda item: item[4]):
         if previous and publish_at - previous < MIN_GAP:
             raise RuntimeError(f"slot gap under 2h: {previous.isoformat()} -> {publish_at.isoformat()}")
         previous = publish_at
@@ -71,7 +78,7 @@ def schedule_day(day):
             continue
 
         scheduled_for = publish_at.isoformat()
-        asset_path = ROOT / topic_meta[kind]
+        asset_path = project_dir / topic_meta[kind]
         if not asset_path.is_file():
             raise FileNotFoundError(asset_path)
 
@@ -91,7 +98,7 @@ def schedule_day(day):
             continue
 
         try:
-            result = upload(topic_meta, kind, publish_at)
+            result = upload(project_dir, topic_meta, kind, publish_at)
             data = result.data or {}
             store.mark_scheduled(
                 key,
