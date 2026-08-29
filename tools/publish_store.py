@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,14 @@ from google.oauth2.service_account import Credentials
 
 SCOPES = ["https://www.googleapis.com/auth/datastore"]
 DEFAULT_COLLECTION = "openmontage_publish_state"
+
+
+def _ffmpeg() -> str:
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    candidates = list(Path.home().glob(".local/share/uv/**/ffmpeg"))
+    return str(candidates[0]) if candidates else "ffmpeg"
 
 
 def utc_now() -> str:
@@ -46,7 +55,7 @@ def file_sha256(path: str | Path) -> str:
 def media_fingerprint(path: str | Path) -> str:
     result = subprocess.run(
         [
-            "ffmpeg",
+            _ffmpeg(),
             "-hide_banner",
             "-loglevel",
             "error",

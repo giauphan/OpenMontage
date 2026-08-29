@@ -77,6 +77,14 @@ def test_platform_routes_finds_bundled_ffprobe(monkeypatch):
     assert module._ffprobe() == "/tools/ffprobe"
 
 
+def test_publish_store_finds_bundled_ffmpeg(monkeypatch):
+    module = importlib.import_module("tools.publish_store")
+    monkeypatch.setattr(module.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(Path, "glob", lambda *_args, **_kwargs: [Path("/tools/ffmpeg")])
+
+    assert module._ffmpeg() == "/tools/ffmpeg"
+
+
 def test_active_project_publisher_delegates_to_manual_authority():
     module = _load("publish_active_projects")
     assert module.PUBLISHER.name == "publish_manual_video.py"
