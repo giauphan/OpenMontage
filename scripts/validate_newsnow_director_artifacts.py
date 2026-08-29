@@ -25,13 +25,21 @@ def _is_valid_script_payload(payload: Any) -> bool:
     if not isinstance(payload, dict):
         return False
     try:
-        # Strip text_vi before validation as it's not in the strict schema
+        # Strip extraneous data for validation
         payload_for_validation = json.loads(json.dumps(payload))
+        valid_root_keys = {"version", "title", "total_duration_seconds", "sections", "metadata", "voice_performance"}
+        payload_for_validation = {k: v for k, v in payload_for_validation.items() if k in valid_root_keys}
+
+        valid_sec_keys = {"id", "label", "text", "start_seconds", "end_seconds", "speaker_directions",
+                          "delivery_cues", "enhancement_cues", "pronunciation_guides", "source_ref"}
         for sec in payload_for_validation.get("sections", []):
-            if isinstance(sec, dict) and "text_vi" in sec:
-                if "text" not in sec:
-                    sec["text"] = sec["text_vi"]
-                del sec["text_vi"]
+            if isinstance(sec, dict):
+                if "text_vi" in sec:
+                    if "text" not in sec:
+                        sec["text"] = sec["text_vi"]
+                for k in list(sec.keys()):
+                    if k not in valid_sec_keys:
+                        del sec[k]
         validate_artifact("script", payload_for_validation)
     except Exception:
         return False

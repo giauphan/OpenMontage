@@ -55,8 +55,9 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
 
   # Step 2.5: Directors
-  DIRECTORS_LOG="$ROOT/logs/directors_${PROJECT_ID}_$(date -u +%Y%m%dT%H%M%SZ).log"
-  DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
+  RUN_ID="${RUN_NONCE:-$(date -u +%Y%m%dT%H%M%S%NZ)}"
+  DIRECTORS_LOG="$ROOT/logs/directors_${PROJECT_ID}_${RUN_ID}.log"
+  DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_${RUN_ID}_result.json"
   START_TS=$(date -u +%s)
   echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_LOG"
   PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json for topic and sources. Produce all required artifacts: proposal_packet.json, script.json, script_vi.json (Vietnamese), scene_pack.json, asset_manifest.json, and Hyperframes composition directories hyperframes/ and hyperframes_reels/ inside projects/$PROJECT_ID/. Write the script artifacts as flat JSON files under artifacts/, not embedded inside checkpoints. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. Both compositions MUST contain genuine visible Vietnamese on-screen headlines or captions sourced from artifacts/script_vi.json sections[].text_vi, NFC-normalized; do not use English-only placeholder copy, hidden text, comments, or a glyph-only workaround. Include at least one real Vietnamese diacritic in visible text in each index. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Do not skip any director. Finish the full pipeline."
@@ -123,7 +124,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     [ -s "$fallback_bold" ] || fallback_bold="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-    mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+    mkdir -p "$project_root/artifacts" "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
     if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
       jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
     fi

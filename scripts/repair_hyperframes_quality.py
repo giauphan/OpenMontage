@@ -54,6 +54,21 @@ def probe_duration(path: Path) -> float:
 
 def patch_html(path: Path, narration_duration: float = 0.0) -> None:
     html = path.read_text(encoding="utf-8")
+
+    # Ensure composition root has required attributes
+    root_open = re.search(r"<div\b[^>]*>", html)
+    if root_open:
+        tag = root_open.group(0)
+        new_tag = tag
+        if "data-composition-id" not in new_tag:
+            new_tag = new_tag.replace("<div", '<div data-composition-id="main"', 1)
+        if "data-width" not in new_tag:
+            new_tag = new_tag.replace("<div", '<div data-width="1080"', 1)
+        if "data-height" not in new_tag:
+            new_tag = new_tag.replace("<div", '<div data-height="1920"', 1)
+        if new_tag != tag:
+            html = html[:root_open.start()] + new_tag + html[root_open.end():]
+
     if "font-family: 'BeVietnamPro'" not in html:
         if "<style>" not in html:
             raise ValueError(f"{path}: missing style element for font binding")
