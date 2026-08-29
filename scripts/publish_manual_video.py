@@ -7,6 +7,8 @@ Enforces Firebase duplicate protection and a two-hour gap between batches.
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -352,6 +354,30 @@ def main():
     except Exception as e:
         print(f"Error loading metadata: {e}")
         sys.exit(1)
+
+    # Strict quality gate (skip only with --force)
+    if not args.force:
+        root = Path(__file__).resolve().parents[1]
+        ffprobe = shutil.which("ffprobe") or ""
+        ffmpeg = shutil.which("ffmpeg") or ""
+        if not ffprobe:
+            candidates = list(Path.home().glob(".local/share/uv/**/ffprobe"))
+            ffprobe = str(candidates[0]) if candidates else ""
+        if not ffmpeg:
+            candidates = list(Path.home().glob(".local/share/uv/**/ffmpeg"))
+            ffmpeg = str(candidates[0]) if candidates else ""
+        validate_script = root / "scripts" / "validate_render_quality.py"
+        if validate_script.is_file() and ffprobe and ffmpeg:
+            result = subprocess.run(
+                [sys.executable, str(validate_script), str(project_path),
+                 "--ffprobe", ffprobe, "--ffmpeg", ffmpeg, "--reels-max-duration", "60"],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
+                print(result.stdout)
+                print(result.stderr, file=sys.stderr)
+                sys.exit(2)
 
     # Enforce batch gap
     enforce_batch_gap(args.last_publish)
