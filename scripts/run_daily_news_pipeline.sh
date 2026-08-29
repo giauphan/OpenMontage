@@ -11,7 +11,7 @@ if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
-export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
 if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
   export PATH="$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin:$PATH"
 fi
@@ -20,8 +20,8 @@ export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
-if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
-if [ -z "$FFMPEG_BIN" ] && [ -x "$HOME/.local/bin/ffmpeg" ]; then FFMPEG_BIN="$HOME/.local/bin/ffmpeg"; fi
+if [ -z "$FFPROBE_BIN" ]; then FFPROBE_BIN="$(find "$HOME/.local/share/uv" -name ffprobe -type f -executable 2>/dev/null | head -1)"; fi
+if [ -z "$FFMPEG_BIN" ]; then FFMPEG_BIN="$(find "$HOME/.local/share/uv" -name ffmpeg -type f -executable 2>/dev/null | head -1)"; fi
 HYPERFRAMES_BIN="$(command -v hyperframes || true)"
 if [ -z "$HYPERFRAMES_BIN" ] && [ -x "$ROOT/node_modules/.bin/hyperframes" ]; then HYPERFRAMES_BIN="$ROOT/node_modules/.bin/hyperframes"; fi
 if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
@@ -31,6 +31,8 @@ if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -pa
 
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
+elif [ -x "$ROOT/.venv/bin/python" ]; then
+  PY="$ROOT/.venv/bin/python"
 elif [ -x "$ROOT/venv/bin/python3" ]; then
   PY="$ROOT/venv/bin/python3"
 else
@@ -82,7 +84,7 @@ DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 set +e
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Write the Production Script as a flat JSON file at projects/$PROJECT_ID/artifacts/script_vi.json, not embedded in a checkpoint file. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Do not ask for confirmation between stages."
-DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one."
+DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop."
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
 DIRECTOR_ARTIFACTS_READY=0
@@ -95,20 +97,10 @@ run_directors() {
       export PATH=\"$PATH\"
       export PYTHONPATH=\"$PYTHONPATH\"
       cd \"$ROOT\"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
-          -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-        timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" \
-          claude -p --dangerously-skip-permissions \
-            --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" \
-            --output-format json \"$PROMPT_STR\"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" claude -p --dangerously-skip-permissions --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" --output-format json \"$PROMPT_STR\"
     "
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
-        -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-      timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
-        claude -p --dangerously-skip-permissions \
-          --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \
-          --output-format json "$PROMPT_STR"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
   fi
 }
 
@@ -198,7 +190,9 @@ materialize_hyperframes_assets() {
   local script_spoken="$project_root/04_audio/script_spoken.md"
   local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
   local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+  [ -s "$fallback_regular" ] || fallback_regular="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
   local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+  [ -s "$fallback_bold" ] || fallback_bold="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
   find_vietnamese_font() {
     local file="$1"
     local candidate

@@ -70,3 +70,34 @@ def test_cli_integration(tmp_path):
     res = subprocess.run([sys.executable, str(helper.__file__), str(tmp_path)], env=env, capture_output=True, text=True)
     assert res.returncode == 0
     assert "✓ Validated" in res.stdout
+
+
+def test_scripts_prevent_recursive_invocation():
+    """Verify that the director wrapper shell scripts explicitly forbid recursive execution in system prompt."""
+    root = Path(__file__).resolve().parents[2]
+
+    scripts = [
+        root / "scripts" / "run_daily_news_pipeline.sh",
+        root / "scripts" / "run_directors_for_existing.sh"
+    ]
+
+    for script_path in scripts:
+        content = script_path.read_text(encoding="utf-8")
+        assert "DIRECTOR_SYSTEM_NOTE=" in content
+        # It must explicitly prevent infinite loops
+        assert "infinite loop" in content or "recursion" in content
+
+
+def test_scripts_resolve_hyperframes_from_node_modules():
+    """Verify that both scripts check node_modules/.bin/hyperframes as a fallback path."""
+    root = Path(__file__).resolve().parents[2]
+
+    scripts = [
+        root / "scripts" / "run_daily_news_pipeline.sh",
+        root / "scripts" / "run_directors_for_existing.sh"
+    ]
+
+    for script_path in scripts:
+        content = script_path.read_text(encoding="utf-8")
+        assert "node_modules/.bin/hyperframes" in content
+

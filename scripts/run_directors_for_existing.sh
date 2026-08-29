@@ -7,16 +7,17 @@ mkdir -p "$ROOT/logs"
 if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
-export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:$HOME/.local/share/uv/tools/edge-tts/bin:/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
 if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
   export PATH="$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin:$PATH"
 fi
 export PYTHONPATH="$ROOT"
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
-if [ -z "$FFPROBE_BIN" ] && [ -x "$HOME/.local/bin/ffprobe" ]; then FFPROBE_BIN="$HOME/.local/bin/ffprobe"; fi
-if [ -z "$FFMPEG_BIN" ] && [ -x "$HOME/.local/bin/ffmpeg" ]; then FFMPEG_BIN="$HOME/.local/bin/ffmpeg"; fi
+if [ -z "$FFPROBE_BIN" ]; then FFPROBE_BIN="$(find "$HOME/.local/share/uv" -name ffprobe -type f -executable 2>/dev/null | head -1)"; fi
+if [ -z "$FFMPEG_BIN" ]; then FFMPEG_BIN="$(find "$HOME/.local/share/uv" -name ffmpeg -type f -executable 2>/dev/null | head -1)"; fi
 HYPERFRAMES_BIN="$(command -v hyperframes || true)"
+if [ -z "$HYPERFRAMES_BIN" ] && [ -x "$ROOT/node_modules/.bin/hyperframes" ]; then HYPERFRAMES_BIN="$ROOT/node_modules/.bin/hyperframes"; fi
 if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
 [ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
 [ -n "$FFMPEG_BIN" ] || { echo "ERROR: ffmpeg is required for content QA" >&2; exit 1; }
@@ -28,21 +29,13 @@ auto_render_quality() {
 }
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
+elif [ -x "$ROOT/.venv/bin/python" ]; then
+  PY="$ROOT/.venv/bin/python"
 elif [ -x "$ROOT/venv/bin/python3" ]; then
   PY="$ROOT/venv/bin/python3"
 else
   PY="$(command -v python3)"
 fi
-HYPERFRAMES_BIN="$(command -v hyperframes || true)"
-if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -path '*/node_modules/.bin/hyperframes' -type f -perm -111 2>/dev/null | sort | tail -1)"; fi
-[ -n "$FFPROBE_BIN" ] || { echo "ERROR: ffprobe is required" >&2; exit 1; }
-[ -n "$FFMPEG_BIN" ] || { echo "ERROR: ffmpeg is required for content QA" >&2; exit 1; }
-[ -n "$HYPERFRAMES_BIN" ] || { echo "ERROR: hyperframes CLI is required" >&2; exit 1; }
-export FFPROBE_BIN FFMPEG_BIN HYPERFRAMES_BIN
-
-auto_render_quality() {
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN"
-}
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 command -v timeout >/dev/null 2>&1 || { echo "ERROR: timeout command is required for directors" >&2; exit 1; }
 
@@ -68,7 +61,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_LOG"
   PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json for topic and sources. Produce all required artifacts: proposal_packet.json, script.json, script_vi.json (Vietnamese), scene_pack.json, asset_manifest.json, and Hyperframes composition directories hyperframes/ and hyperframes_reels/ inside projects/$PROJECT_ID/. Write the script artifacts as flat JSON files under artifacts/, not embedded inside checkpoints. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. Both compositions MUST contain genuine visible Vietnamese on-screen headlines or captions sourced from artifacts/script_vi.json sections[].text_vi, NFC-normalized; do not use English-only placeholder copy, hidden text, comments, or a glyph-only workaround. Include at least one real Vietnamese diacritic in visible text in each index. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Do not skip any director. Finish the full pipeline."
 
-  DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one."
+  DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop."
 
   set +e
   if [ "$(id -u)" -eq 0 ]; then
@@ -76,23 +69,10 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       export PATH=\"$PATH\"
       export PYTHONPATH=\"$PYTHONPATH\"
       cd \"$ROOT\"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
-          -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-      timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
-        claude -p --dangerously-skip-permissions \
-        --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \
-          --output-format json \
-          \"$PROMPT_STR\"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json \"$PROMPT_STR\"
     " > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT \
-        -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL \
-        timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" \
-          claude -p --dangerously-skip-permissions \
-          --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" \
-        --output-format json \
-        "$PROMPT_STR" \
-        > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR" > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   fi
   CLAUDE_EXIT=$?
   set -e
@@ -139,7 +119,9 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     local script_spoken="$project_root/04_audio/script_spoken.md"
     local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
     local fallback_regular="/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+    [ -s "$fallback_regular" ] || fallback_regular="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     local fallback_bold="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+    [ -s "$fallback_bold" ] || fallback_bold="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
     mkdir -p "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
     if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
