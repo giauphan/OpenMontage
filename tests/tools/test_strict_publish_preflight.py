@@ -138,6 +138,7 @@ def test_youtube_scheduler_validates_project_before_store_claim(tmp_path, monkey
         ("  Title  ", f"  Title {'x' * 2_100}  ", f"Title {'x' * 2_100}"),
         ("Docker", "Dockerizing Python apps", "Docker\n\nDockerizing Python apps"),
         ("Docker", "Docker: Python apps", "Docker: Python apps"),
+        ("   ", "  Description only  ", "Description only"),
     ],
 )
 def test_meta_caption_normalizes_and_deduplicates(title, description, expected):

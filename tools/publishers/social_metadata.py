@@ -7,6 +7,8 @@ def meta_caption(title: str, description: str) -> str:
     """Prefix a Meta caption with its title without duplicating it."""
     clean_title = title.strip()
     clean_description = description.strip()
+    if not clean_title:
+        return clean_description
     title_prefix = re.escape(clean_title)
     if re.match(rf"^{title_prefix}(?:$|[\s:|.!?,;()-])", clean_description):
         return clean_description
