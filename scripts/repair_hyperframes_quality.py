@@ -66,11 +66,6 @@ def patch_html(path: Path, narration_duration: float = 0.0) -> None:
             new_tag = new_tag.replace("<div", '<div data-width="1080"', 1)
         if "data-height" not in new_tag:
             new_tag = new_tag.replace("<div", '<div data-height="1920"', 1)
-        if narration_duration > 0.0:
-            if "data-duration" in new_tag:
-                new_tag = re.sub(r'\bdata-duration="[^"]*"', f'data-duration="{narration_duration:.3f}"', new_tag)
-            else:
-                new_tag = new_tag.replace("<div", f'<div data-duration="{narration_duration:.3f}"', 1)
         if new_tag != tag:
             html = html[:root_open.start()] + new_tag + html[root_open.end():]
 
@@ -125,6 +120,20 @@ def patch_html(path: Path, narration_duration: float = 0.0) -> None:
         html = html[:root_open.end()] + "\n    " + NARRATION_TAG + html[root_open.end():]
     if narration_duration and narration_duration > 0:
         html = align_timeline(path, html, narration_duration)
+        root_open = re.search(r"<div\b[^>]*>", html)
+        if root_open:
+            root_tag = root_open.group(0)
+            if "data-duration" in root_tag:
+                root_tag = re.sub(
+                    r'\bdata-duration="[^"]*"',
+                    f'data-duration="{narration_duration:g}"',
+                    root_tag,
+                )
+            else:
+                root_tag = root_tag.replace(
+                    "<div", f'<div data-duration="{narration_duration:g}"', 1
+                )
+            html = html[:root_open.start()] + root_tag + html[root_open.end():]
     path.write_text(html, encoding="utf-8")
 
 
