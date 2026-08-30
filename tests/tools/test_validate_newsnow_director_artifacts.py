@@ -123,10 +123,10 @@ def test_validator_normalizes_director_schema_variants(tmp_path):
         "total_duration_secs": 90,
         "sections": [
             {
-                "id": "s1",
+                "id": 1,
                 "label": "Hook",
                 "narration": "Hello world",
-                "duration_secs": 10,
+                "duration_seconds": 10,
                 "audio_file": "s1.wav",
                 "scene_type": "hook"
             }

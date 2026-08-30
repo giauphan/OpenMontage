@@ -60,8 +60,9 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
             if not isinstance(sec, dict):
                 continue
 
+            sec["id"] = str(sec.get("id"))
             sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration")
-            duration = sec.get("duration", sec.get("duration_secs"))
+            duration = sec.get("duration", sec.get("duration_secs", sec.get("duration_seconds")))
             if duration is not None:
                 duration = float(duration)
                 sec["start_seconds"] = accumulated_time
