@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tools.publishers.social_metadata import meta_caption
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
@@ -128,6 +130,16 @@ def test_youtube_scheduler_validates_project_before_store_claim(tmp_path, monkey
         module.schedule_day(future_day)
 
     assert calls == []
+
+
+def test_meta_caption_strips_existing_title_and_keeps_full_capacity():
+    title = "  Title  "
+    description = f"  Title {'x' * 2_100}  "
+
+    caption = meta_caption(title, description)
+
+    assert caption == f"Title {'x' * 1_994}"
+    assert len(caption) == 2_000
 
 
 def test_youtube_scheduler_adds_shorts_hashtag_without_truncating_it(tmp_path, monkeypatch):
