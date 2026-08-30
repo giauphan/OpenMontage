@@ -30,7 +30,7 @@ from tools.publishers.platform_routes import (
 )
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
-from tools.publishers.social_metadata import meta_caption, youtube_short_title
+from tools.publishers.social_metadata import meta_caption
 
 _CFG = load_config()
 FB_PAGE_ID = _CFG["meta"]["page_id"]
@@ -281,7 +281,7 @@ def publish_batch(
             inputs = {
                 "video_path": video_path,
                 "title": title,
-                "caption": description,
+                "caption": meta_caption(title, description),
                 "page_id": FB_PAGE_ID,
                 "post_to_facebook": platform == "facebook",
                 "post_to_instagram": platform == "instagram",

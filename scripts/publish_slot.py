@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from publish_config import load_config
 from publish_manual_video import validate_project_quality
-from tools.publishers.social_metadata import meta_caption, youtube_short_title
+from tools.publishers.platform_routes import youtube_shorts_title
 from tools.publish_store import PublishStore, existing_record_summary
 from tools.publishers.meta_publisher import MetaPublisher
 from tools.publishers.youtube_publisher import YoutubePublisher
@@ -81,7 +81,7 @@ def publish(job):
     if job["platform"] == "youtube":
         return YoutubePublisher().execute({
             "video_path": str(path),
-            "title": youtube_short_title(job["title"]),
+            "title": youtube_shorts_title(job["title"]),
             "description": job["description"],
             "privacy_status": "public",
             "category_id": "28",
