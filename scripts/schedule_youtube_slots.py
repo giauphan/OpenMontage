@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from tools.publish_store import PublishStore, publish_key
+from tools.publishers.platform_routes import youtube_shorts_title
 from tools.publishers.youtube_publisher import YoutubePublisher
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +27,7 @@ def main():
         proj, kind, publish_at = spec.split(":", 2)
         meta = json.loads((ROOT / "projects" / proj / "publish_metadata.json").read_text())
         asset = ROOT / meta[ASSET_FIELD[kind]]
-        title = f"{meta['title']} #Shorts"
+        title = youtube_shorts_title(meta["title"])
 
         key, claimed, existing = store.claim(
             date=date,
@@ -51,7 +52,7 @@ def main():
         result = publisher.execute(
             {
                 "video_path": str(asset),
-                "title": title[:100],
+                "title": title,
                 "description": meta.get("description", ""),
                 "tags": ["AI", "Công nghệ", "Vietnamese", "OpenMontage"],
                 "privacy_status": "private",

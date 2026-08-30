@@ -7,6 +7,7 @@ vertical render; Instagram Reels takes the shorter cut render.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,6 +36,17 @@ PLATFORM_ROUTES: dict[str, tuple[str, str, str]] = {
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
 YOUTUBE_SHORT_MAX_SECONDS = 60.0
+YOUTUBE_TITLE_MAX_CHARS = 100
+YOUTUBE_SHORTS_HASHTAG = "#Shorts"
+
+
+def youtube_shorts_title(title: str) -> str:
+    """Build a valid Shorts title without truncating its required hashtag."""
+    base = re.sub(r"(?i)(?:^|\s)#shorts\b", "", title).strip()
+    if not base:
+        raise ValueError("YouTube Shorts title must contain text before #Shorts")
+    suffix = f" {YOUTUBE_SHORTS_HASHTAG}"
+    return f"{base[:YOUTUBE_TITLE_MAX_CHARS - len(suffix)].rstrip()}{suffix}"
 
 
 def metadata_field(platform: str) -> str:

@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from publish_config import load_config, yt_slot_times
 from publish_manual_video import validate_project_quality
 from tools.publish_store import PublishStore, existing_record_summary
+from tools.publishers.platform_routes import youtube_shorts_title
 from tools.publishers.youtube_publisher import YoutubePublisher
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +30,7 @@ def upload(project_dir, topic_meta, kind, publish_at):
         raise FileNotFoundError(path)
     result = YoutubePublisher().execute({
         "video_path": str(path),
-        "title": f'{topic_meta["title"]} #Shorts'[:100],
+        "title": youtube_shorts_title(topic_meta["title"]),
         "description": topic_meta.get("description", ""),
         "privacy_status": "private",
         "publish_at": ytv_publish_at(publish_at),

@@ -199,8 +199,10 @@ stages:
     human_approval_default: true
     review_focus:
       - Per-clip metadata with platform-specific titles and descriptions
+      - YouTube Shorts titles retain #Shorts within the 100-character limit
       - Clips numbered/ordered for posting schedule
       - Export package organized by platform
     success_criteria:
       - Schema-valid publish_log artifact
+      - Every YouTube Shorts upload title contains #Shorts and is at most 100 characters
       - Export directory contains all clips with per-clip metadata

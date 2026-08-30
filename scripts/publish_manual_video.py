@@ -23,6 +23,7 @@ from tools.publish_store import PublishStore, publish_key
 from tools.publishers.platform_routes import (
     PLATFORM_ROUTES,
     ensure_youtube_short,
+    youtube_shorts_title,
     probe_dimensions,
     VERTICAL_WIDTH,
     VERTICAL_HEIGHT,
@@ -144,7 +145,11 @@ def publish_batch(
             "platform": platform,
             "account": account,
             "kind": kind,
-            "title": metadata["title"],
+            "title": (
+                youtube_shorts_title(metadata["title"])
+                if platform == "youtube"
+                else metadata["title"]
+            ),
             "description": metadata["description"],
             "video_path": metadata[field],
             "publish_at": None,
@@ -344,6 +349,11 @@ def validate_project_quality(project_path: Path) -> None:
     metadata_validator = root / "scripts" / "validate_publish_metadata.py"
     if not metadata_validator.is_file():
         raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: metadata validator required")
+
+    try:
+        youtube_shorts_title(load_metadata(project_path)["title"])
+    except (KeyError, ValueError) as exc:
+        raise RuntimeError(f"YouTube Shorts title validation failed: {exc}") from exc
 
     result = subprocess.run(
         [sys.executable, str(metadata_validator), str(project_path)],

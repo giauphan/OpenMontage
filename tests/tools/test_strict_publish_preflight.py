@@ -147,6 +147,34 @@ def test_youtube_scheduler_uses_canonical_project_asset(tmp_path, monkeypatch):
     module.upload(tmp_path / "projects" / project.name, {"yt_shorts": "renders/final_reels_vi_9x16.mp4", "title": "Title"}, "yt_shorts", publish_at)
 
     assert captured["video_path"] == str(tmp_path / "projects" / project.name / "renders" / "final_reels_vi_9x16.mp4")
+    assert captured["title"] == "Title #Shorts"
+
+
+def test_youtube_short_title_preserves_hashtag_at_limit():
+    routes = importlib.import_module("tools.publishers.platform_routes")
+
+    title = routes.youtube_shorts_title("x" * 100)
+
+    assert title == f"{'x' * 92} #Shorts"
+    assert len(title) == 100
+
+
+def test_youtube_short_title_replaces_existing_case_insensitive_hashtag():
+    routes = importlib.import_module("tools.publishers.platform_routes")
+
+    assert routes.youtube_shorts_title("Title #shorts") == "Title #Shorts"
+
+
+def test_manual_publish_quality_gate_rejects_empty_youtube_short_title(tmp_path):
+    module = _load("publish_manual_video")
+    project = _project(tmp_path)
+    (project / "publish_metadata.json").write_text(
+        '{"id":"topic","title":"#Shorts","description":"#tintuc #congnghe #ai"}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="YouTube Shorts title validation failed"):
+        module.validate_project_quality(project)
 
 
 def test_publish_driver_only_adds_dry_run_for_dry_run_mode():
