@@ -135,6 +135,15 @@ def patch_html(path: Path, narration_duration: float = 0.0) -> None:
             f'data-duration="{narration_duration:.3f}"',
             html,
         )
+
+    # Remove GSAP display tweens that break HyperFrames internal visibility engine
+    # HyperFrames controls visibility based on timeline, GSAP tweens override this and cause blank renders
+    html = re.sub(
+        r"\.set\(['\"]#scene-\d+['\"]\s*,\s*\{\s*display\s*:\s*['\"](?:none|flex|block)['\"]\s*\}\s*,\s*[^)]*\)",
+        "",
+        html
+    )
+
     path.write_text(html, encoding="utf-8")
 
 

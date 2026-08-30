@@ -27,16 +27,38 @@ def _is_valid_script_payload(payload: Any) -> bool:
     try:
         # Strip extraneous data for validation
         payload_for_validation = json.loads(json.dumps(payload))
+
+        # Normalize root keys
+        if "title_vi" in payload_for_validation and "title" not in payload_for_validation:
+            payload_for_validation["title"] = payload_for_validation["title_vi"]
+        if "title_en" in payload_for_validation and "title" not in payload_for_validation:
+            payload_for_validation["title"] = payload_for_validation["title_en"]
+        if "title" not in payload_for_validation:
+            payload_for_validation["title"] = "Untitled"
+
+        if "total_duration" in payload_for_validation and "total_duration_seconds" not in payload_for_validation:
+            payload_for_validation["total_duration_seconds"] = float(payload_for_validation["total_duration"])
+        if "total_duration_seconds" not in payload_for_validation:
+            payload_for_validation["total_duration_seconds"] = 60.0
+
         valid_root_keys = {"version", "title", "total_duration_seconds", "sections", "metadata", "voice_performance"}
         payload_for_validation = {k: v for k, v in payload_for_validation.items() if k in valid_root_keys}
 
         valid_sec_keys = {"id", "label", "text", "start_seconds", "end_seconds", "speaker_directions",
                           "delivery_cues", "enhancement_cues", "pronunciation_guides", "source_ref"}
+        accumulated_time = 0.0
         for sec in payload_for_validation.get("sections", []):
             if isinstance(sec, dict):
-                if "text_vi" in sec:
-                    if "text" not in sec:
-                        sec["text"] = sec["text_vi"]
+                # Normalize text_vi/text_va -> text
+                text = sec.get("text") or sec.get("text_vi") or sec.get("text_va")
+                sec["text"] = text
+
+                # Normalize duration -> start_seconds/end_seconds
+                dur = float(sec.get("duration", 0))
+                sec["start_seconds"] = accumulated_time
+                sec["end_seconds"] = accumulated_time + dur
+                accumulated_time += dur
+
                 for k in list(sec.keys()):
                     if k not in valid_sec_keys:
                         del sec[k]
