@@ -53,7 +53,14 @@ def test_validator_promotes_nested_checkpoint(tmp_path):
     # Promoted successfully
     promoted = tmp_path / "artifacts" / "script_vi.json"
     assert promoted.is_file()
-    assert json.loads(promoted.read_text()) == payload
+
+    expected_payload = {
+        "version": "1.0",
+        "title": "T",
+        "total_duration_seconds": 10.0,
+        "sections": [{"id": "1", "text": "A", "start_seconds": 0.0, "end_seconds": 10.0}]
+    }
+    assert json.loads(promoted.read_text()) == expected_payload
 
 
 def test_cli_integration(tmp_path):
@@ -101,3 +108,47 @@ def test_scripts_resolve_hyperframes_from_node_modules():
         content = script_path.read_text(encoding="utf-8")
         assert "node_modules/.bin/hyperframes" in content
 
+
+def test_validator_normalizes_director_schema_variants(tmp_path):
+    project_id = tmp_path.name
+    nested_dir = tmp_path / project_id
+    nested_dir.mkdir()
+    checkpoint = nested_dir / "checkpoint_script.json"
+
+    # Variant payload with none of the strict schema names
+    variant_payload = {
+        "project_id": "cand_3eb816",
+        "version": "2.0",
+        "title_vi": "Test title",
+        "total_duration_secs": 90,
+        "sections": [
+            {
+                "id": "s1",
+                "label": "Hook",
+                "narration": "Hello world",
+                "duration_secs": 10,
+                "audio_file": "s1.wav",
+                "scene_type": "hook"
+            }
+        ]
+    }
+
+    checkpoint.write_text(json.dumps({"artifacts": {"script": variant_payload}}))
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is True
+    
+    promoted = tmp_path / "artifacts" / "script_vi.json"
+    assert promoted.is_file()
+    data = json.loads(promoted.read_text())
+    
+    # Assert normalized values match schema
+    assert data["version"] == "1.0"
+    assert data["title"] == "Test title"
+    assert data["total_duration_seconds"] == 90.0
+    assert "project_id" not in data # Extraneous root key removed
+    
+    sec = data["sections"][0]
+    assert sec["text"] == "Hello world"
+    assert sec["start_seconds"] == 0.0
+    assert sec["end_seconds"] == 10.0
+    assert "scene_type" not in sec # Extraneous section key removed
+    assert "narration" not in sec

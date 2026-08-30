@@ -21,63 +21,69 @@ if str(ROOT) not in sys.path:
 from schemas.artifacts import validate_artifact
 
 
-def _is_valid_script_payload(payload: Any) -> bool:
+def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
-        return False
+        return None
+
     try:
-        # Strip extraneous data for validation
-        payload_for_validation = json.loads(json.dumps(payload))
+        normalized = json.loads(json.dumps(payload))
+        if "version" in normalized:
+            normalized["version"] = "1.0"
 
-        # Normalize root keys
-        if "title_vi" in payload_for_validation and "title" not in payload_for_validation:
-            payload_for_validation["title"] = payload_for_validation["title_vi"]
-        if "title_en" in payload_for_validation and "title" not in payload_for_validation:
-            payload_for_validation["title"] = payload_for_validation["title_en"]
-        if "title" not in payload_for_validation:
-            payload_for_validation["title"] = "Untitled"
+        if "title_vi" in normalized and "title" not in normalized:
+            normalized["title"] = normalized["title_vi"]
+        if "title_en" in normalized and "title" not in normalized:
+            normalized["title"] = normalized["title_en"]
+        if "title" not in normalized:
+            normalized["title"] = "Untitled"
 
-        if "total_duration" in payload_for_validation and "total_duration_seconds" not in payload_for_validation:
-            payload_for_validation["total_duration_seconds"] = float(payload_for_validation["total_duration"])
-        if "total_duration_seconds" not in payload_for_validation:
-            payload_for_validation["total_duration_seconds"] = 60.0
+        if "total_duration" in normalized and "total_duration_seconds" not in normalized:
+            normalized["total_duration_seconds"] = float(normalized["total_duration"])
+        if "total_duration_secs" in normalized and "total_duration_seconds" not in normalized:
+            normalized["total_duration_seconds"] = float(normalized["total_duration_secs"])
+        if "total_duration_seconds" not in normalized:
+            normalized["total_duration_seconds"] = 60.0
 
         valid_root_keys = {"version", "title", "total_duration_seconds", "sections", "metadata", "voice_performance"}
-        payload_for_validation = {k: v for k, v in payload_for_validation.items() if k in valid_root_keys}
+        normalized = {k: v for k, v in normalized.items() if k in valid_root_keys}
 
         valid_sec_keys = {"id", "label", "text", "start_seconds", "end_seconds", "speaker_directions",
                           "delivery_cues", "enhancement_cues", "pronunciation_guides", "source_ref"}
         accumulated_time = 0.0
-        for sec in payload_for_validation.get("sections", []):
-            if isinstance(sec, dict):
-                # Normalize text_vi/text_va -> text
-                text = sec.get("text") or sec.get("text_vi") or sec.get("text_va")
-                sec["text"] = text
+        for sec in normalized.get("sections", []):
+            if not isinstance(sec, dict):
+                continue
 
-                # Normalize duration -> start_seconds/end_seconds
-                dur = float(sec.get("duration", 0))
+            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration")
+            duration = sec.get("duration", sec.get("duration_secs"))
+            if duration is not None:
+                duration = float(duration)
                 sec["start_seconds"] = accumulated_time
-                sec["end_seconds"] = accumulated_time + dur
-                accumulated_time += dur
+                sec["end_seconds"] = accumulated_time + duration
+            else:
+                sec["start_seconds"] = float(sec.get("start_seconds", accumulated_time))
+                sec["end_seconds"] = float(sec.get("end_seconds", sec["start_seconds"]))
+            accumulated_time = sec["end_seconds"]
 
-                for k in list(sec.keys()):
-                    if k not in valid_sec_keys:
-                        del sec[k]
-        validate_artifact("script", payload_for_validation)
+            for key in list(sec.keys()):
+                if key not in valid_sec_keys:
+                    del sec[key]
+
+        validate_artifact("script", normalized)
     except Exception:
-        return False
+        return None
 
-    sections = payload.get("sections")
+    sections = normalized.get("sections")
     if not isinstance(sections, list) or not sections:
-        return False
+        return None
+    if not any(isinstance(section.get("text"), str) and section["text"].strip()
+               for section in sections if isinstance(section, dict)):
+        return None
+    return normalized
 
-    for section in sections:
-        if not isinstance(section, dict):
-            return False
-        text = section.get("text_vi") or section.get("text")
-        if isinstance(text, str) and text.strip():
-            return True
 
-    return False
+def _is_valid_script_payload(payload: Any) -> bool:
+    return _normalize_script_payload(payload) is not None
 
 
 def _load_nested_checkpoint_script(project_dir: Path, min_mtime_ns: int = 0) -> Optional[Dict[str, Any]]:
@@ -96,9 +102,9 @@ def _load_nested_checkpoint_script(project_dir: Path, min_mtime_ns: int = 0) -> 
 
         artifacts = data.get("artifacts")
         if isinstance(artifacts, dict) and "script" in artifacts:
-            script_payload = artifacts["script"]
-            if _is_valid_script_payload(script_payload):
-                return script_payload
+            normalized = _normalize_script_payload(artifacts["script"])
+            if normalized is not None:
+                return normalized
 
     return None
 
@@ -110,8 +116,11 @@ def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int
 
     if canonical_script.is_file():
         try:
-            data = json.loads(canonical_script.read_text(encoding="utf-8"))
-            if _is_valid_script_payload(data):
+            normalized = _normalize_script_payload(json.loads(canonical_script.read_text(encoding="utf-8")))
+            if normalized is not None:
+                tmp = canonical_script.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                tmp.replace(canonical_script)
                 return True
         except (OSError, json.JSONDecodeError):
             pass
