@@ -66,11 +66,6 @@ def patch_html(path: Path, narration_duration: float = 0.0) -> None:
             new_tag = new_tag.replace("<div", '<div data-width="1080"', 1)
         if "data-height" not in new_tag:
             new_tag = new_tag.replace("<div", '<div data-height="1920"', 1)
-        if narration_duration > 0.0:
-            if "data-duration" in new_tag:
-                new_tag = re.sub(r'\bdata-duration="[^"]*"', f'data-duration="{narration_duration:.3f}"', new_tag)
-            else:
-                new_tag = new_tag.replace("<div", f'<div data-duration="{narration_duration:.3f}"', 1)
         if new_tag != tag:
             html = html[:root_open.start()] + new_tag + html[root_open.end():]
 

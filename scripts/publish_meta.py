@@ -13,9 +13,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from publish_config import fb_slot_times, load_config
-from publish_manual_video import meta_caption
 from tools.publish_store import PublishStore, publish_key
 from tools.publishers.meta_publisher import MetaPublisher
+from tools.publishers.social_metadata import meta_caption
 
 ROOT = Path(__file__).resolve().parents[1]
 

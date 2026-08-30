@@ -30,6 +30,7 @@ from tools.publishers.platform_routes import (
 )
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
+from tools.publishers.social_metadata import meta_caption, youtube_short_title
 
 _CFG = load_config()
 FB_PAGE_ID = _CFG["meta"]["page_id"]
