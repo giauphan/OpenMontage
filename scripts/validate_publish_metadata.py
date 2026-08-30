@@ -15,6 +15,8 @@ import re
 import sys
 from pathlib import Path
 
+from tools.publishers.platform_routes import youtube_shorts_title
+
 
 REQUIRED_HASHTAGS = {"#tintuc", "#congnghe", "#ai"}
 SHELL_PATTERNS = [
@@ -54,6 +56,7 @@ def validate_hashtags(field_name: str, value: str, required: set[str]) -> list[s
     return errors
 
 
+
 def validate_metadata(metadata_path: Path) -> tuple[bool, list[str]]:
     """Validate publish_metadata.json. Returns (success, errors)."""
     if not metadata_path.is_file():
@@ -74,6 +77,10 @@ def validate_metadata(metadata_path: Path) -> tuple[bool, list[str]]:
     else:
         errors.extend(validate_text_field("title", title))
         errors.extend(validate_hashtags("title", title, REQUIRED_HASHTAGS))
+        try:
+            youtube_shorts_title(title)
+        except ValueError as exc:
+            errors.append(f"YouTube Shorts title invalid: {exc}")
 
     # Validate description
     description = metadata.get("description", "")
