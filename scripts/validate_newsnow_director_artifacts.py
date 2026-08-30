@@ -47,6 +47,12 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
         valid_root_keys = {"version", "title", "total_duration_seconds", "sections", "metadata", "voice_performance"}
         normalized = {k: v for k, v in normalized.items() if k in valid_root_keys}
 
+        # Normalize voice_performance.provider_notes values to strings (schema requires string values)
+        if "voice_performance" in normalized and isinstance(normalized["voice_performance"], dict):
+            vp = normalized["voice_performance"]
+            if "provider_notes" in vp and isinstance(vp["provider_notes"], dict):
+                vp["provider_notes"] = {k: str(v) for k, v in vp["provider_notes"].items()}
+
         valid_sec_keys = {"id", "label", "text", "start_seconds", "end_seconds", "speaker_directions",
                           "delivery_cues", "enhancement_cues", "pronunciation_guides", "source_ref"}
         accumulated_time = 0.0
