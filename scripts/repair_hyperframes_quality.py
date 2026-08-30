@@ -120,20 +120,21 @@ def patch_html(path: Path, narration_duration: float = 0.0) -> None:
         html = html[:root_open.end()] + "\n    " + NARRATION_TAG + html[root_open.end():]
     if narration_duration and narration_duration > 0:
         html = align_timeline(path, html, narration_duration)
-        root_open = re.search(r"<div\b[^>]*>", html)
-        if root_open:
-            root_tag = root_open.group(0)
-            if "data-duration" in root_tag:
-                root_tag = re.sub(
-                    r'\bdata-duration="[^"]*"',
-                    f'data-duration="{narration_duration:g}"',
-                    root_tag,
-                )
-            else:
-                root_tag = root_tag.replace(
-                    "<div", f'<div data-duration="{narration_duration:g}"', 1
-                )
-            html = html[:root_open.start()] + root_tag + html[root_open.end():]
+        # Ensure all div elements have the narration duration in :3f format
+        html = re.sub(
+            r'<div\b([^>]*)>',
+            lambda m: (
+                f'<div{m.group(1)}>'
+                if 'data-duration="' in m.group(1)
+                else f'<div data-duration="{narration_duration:.3f}"{m.group(1)}>'
+            ),
+            html,
+        )
+        html = re.sub(
+            r'\bdata-duration="[^"]*"',
+            f'data-duration="{narration_duration:.3f}"',
+            html,
+        )
     path.write_text(html, encoding="utf-8")
 
 

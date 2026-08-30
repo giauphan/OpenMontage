@@ -117,8 +117,8 @@ def test_timeline_repair_scales_small_narration_mismatches(tmp_path):
     index = write_composition(tmp_path, composition_html(1080, 1920))
     repair.patch_html(index, narration_duration=5.5)
     patched = index.read_text(encoding="utf-8")
-    assert 'data-duration="5.5"' in patched
-    assert 'data-duration="5.5" data-track-index="1"' in patched
+    assert 'data-duration="5.500"' in patched
+    assert 'data-duration="5.500" data-track-index="1"' in patched
 
 
 @pytest.mark.parametrize("composition", ["hyperframes", "hyperframes_reels"])
