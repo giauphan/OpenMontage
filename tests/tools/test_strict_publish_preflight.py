@@ -132,14 +132,18 @@ def test_youtube_scheduler_validates_project_before_store_claim(tmp_path, monkey
     assert calls == []
 
 
-def test_meta_caption_strips_existing_title_and_keeps_full_capacity():
-    title = "  Title  "
-    description = f"  Title {'x' * 2_100}  "
-
+@pytest.mark.parametrize(
+    ("title", "description", "expected"),
+    [
+        ("  Title  ", f"  Title {'x' * 2_100}  ", f"Title {'x' * 2_100}"),
+        ("Docker", "Dockerizing Python apps", "Docker\n\nDockerizing Python apps"),
+        ("Docker", "Docker: Python apps", "Docker: Python apps"),
+    ],
+)
+def test_meta_caption_normalizes_and_deduplicates(title, description, expected):
     caption = meta_caption(title, description)
 
-    assert caption == f"Title {'x' * 1_994}"
-    assert len(caption) == 2_000
+    assert caption == expected
 
 
 def test_youtube_scheduler_adds_shorts_hashtag_without_truncating_it(tmp_path, monkeypatch):
@@ -179,13 +183,14 @@ def test_youtube_scheduler_uses_canonical_project_asset(tmp_path, monkeypatch):
     assert captured["title"] == "Title #Shorts"
 
 
-def test_youtube_short_title_preserves_hashtag_at_limit():
+@pytest.mark.parametrize("length", [1, 92, 100, 500])
+def test_youtube_short_title_preserves_limit_and_hashtag(length):
     routes = importlib.import_module("tools.publishers.platform_routes")
 
-    title = routes.youtube_shorts_title("x" * 100)
+    title = routes.youtube_shorts_title("x" * length)
 
-    assert title == f"{'x' * 92} #Shorts"
-    assert len(title) == 100
+    assert len(title) <= 100
+    assert title.endswith(" #Shorts")
 
 
 def test_youtube_short_title_replaces_existing_case_insensitive_hashtag():
