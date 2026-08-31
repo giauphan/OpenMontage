@@ -11,10 +11,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from publish_config import load_config, yt_slot_times
-from publish_manual_video import validate_project_quality
+from publish_manual_video import validate_project_quality, validate_publish_asset
 from tools.publish_store import PublishStore, existing_record_summary
 from tools.publishers.platform_routes import youtube_shorts_title
 from tools.publishers.youtube_publisher import YoutubePublisher
+from tools.publishers.meta_publisher import MetaPublisher
 
 ROOT = Path(__file__).resolve().parents[1]
 MIN_GAP = timedelta(hours=2)
@@ -41,6 +42,25 @@ def upload(project_dir, topic_meta, kind, publish_at):
     return result
 
 
+def schedule_facebook(project_dir, topic_meta, publish_at, page_id):
+    """Schedule Facebook video via Meta Graph API native scheduling."""
+    video_path = project_dir / topic_meta["yt_shorts"]
+    if not video_path.is_file():
+        raise FileNotFoundError(video_path)
+    scheduled_epoch = int(publish_at.astimezone(timezone.utc).timestamp())
+    result = MetaPublisher().execute({
+        "video_path": str(video_path),
+        "caption": topic_meta.get("title", ""),
+        "page_id": page_id,
+        "post_to_facebook": True,
+        "post_to_instagram": False,
+        "scheduled_publish_time": scheduled_epoch,
+    })
+    if not result.success:
+        raise RuntimeError(result.error or "Facebook schedule failed")
+    return result
+
+
 def schedule_day(day):
     cfg = load_config()
     tz = ZoneInfo(cfg["timezone"])
@@ -63,6 +83,10 @@ def schedule_day(day):
             continue
         topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
         validate_project_quality(project_dir)
+        asset_path = project_dir / topic_meta["yt_shorts"]
+        validate_publish_asset(asset_path, project_dir, "youtube")
+        if cfg.get("meta", {}).get("page_id"):
+            validate_publish_asset(asset_path, project_dir, "facebook")
         slot_time = slot_times[idx % len(slot_times)]
         dt = datetime.combine(day, slot_time, tz)
         planned.append((proj, project_dir, topic_meta, "yt_shorts", dt))
@@ -108,6 +132,39 @@ def schedule_day(day):
                 scheduled_for=scheduled_for,
             )
             print(f"scheduled {date} {proj} {kind} {scheduled_for} {data.get('video_url')}")
+
+            # Schedule Facebook upload via native Graph API scheduling
+            fb_page_id = cfg.get("meta", {}).get("page_id")
+            if fb_page_id:
+                fb_key, fb_claimed, fb_existing = store.claim(
+                    date=date,
+                    topic=topic_meta["id"],
+                    platform="facebook",
+                    account="primary",
+                    kind="video",
+                    status="scheduling",
+                    title=topic_meta["title"],
+                    asset_path=asset_path,
+                    scheduled_for=scheduled_for,
+                )
+                if fb_claimed:
+                    try:
+                        fb_result = schedule_facebook(project_dir, topic_meta, publish_at, fb_page_id)
+                        fb_data = fb_result.data or {}
+                        fb_entries = fb_data.get("publish_log", {}).get("entries", [])
+                        fb_url = fb_entries[0].get("url") if fb_entries else None
+                        store.mark_scheduled(
+                            fb_key,
+                            video_id=fb_entries[0].get("video_id") if fb_entries else None,
+                            video_url=fb_url,
+                            scheduled_for=scheduled_for,
+                        )
+                        print(f"scheduled {date} {proj} fb_video {scheduled_for} {fb_url}")
+                    except Exception as fb_exc:
+                        store.mark_failed(fb_key, str(fb_exc))
+                        print(f"facebook schedule failed {date} {proj}: {fb_exc}")
+                else:
+                    print(f"skip fb {date} {proj}: {existing_record_summary(fb_existing)}")
         except Exception as exc:
             store.mark_failed(key, str(exc))
             raise

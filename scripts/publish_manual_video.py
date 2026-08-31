@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 from publish_config import load_config
 from tools.publish_store import PublishStore, publish_key
+from validate_render_quality import PORTRAIT_DIMENSIONS, resolve_narration, validate_video
 from tools.publishers.platform_routes import (
     PLATFORM_ROUTES,
     ensure_youtube_short,
@@ -114,6 +115,39 @@ def enforce_batch_gap(last_publish_time: str | None) -> None:
         time.sleep(wait_seconds)
 
 
+def validate_publish_asset(video_path: Path, project_dir: Path, platform: str) -> None:
+    ffprobe = shutil.which("ffprobe") or ""
+    ffmpeg = shutil.which("ffmpeg") or ""
+    if not ffprobe:
+        candidates = list(Path.home().glob(".local/share/uv/**/ffprobe"))
+        ffprobe = str(candidates[0]) if candidates else ""
+    if not ffmpeg:
+        candidates = list(Path.home().glob(".local/share/uv/**/ffmpeg"))
+        ffmpeg = str(candidates[0]) if candidates else ""
+    if not ffprobe or not ffmpeg:
+        raise ValueError("ffprobe and ffmpeg are required for strict publish asset validation")
+
+    narration = resolve_narration(
+        project_dir,
+        "narration_reels.mp3" if platform in ("youtube", "instagram") else "narration.mp3",
+        "narration.mp3",
+    )
+    narration_text = project_dir / "artifacts" / "narration_vi_text.txt"
+    errors = validate_video(
+        video_path,
+        narration,
+        ffprobe,
+        ffmpeg,
+        30.0,
+        3.0,
+        PORTRAIT_DIMENSIONS,
+        60.0 if platform in ("youtube", "instagram") else None,
+        narration_text if narration_text.is_file() else None,
+    )
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
 def publish_batch(
     metadata: dict,
     project_dir: Path,
@@ -162,30 +196,12 @@ def publish_batch(
     if not platforms:
         raise ValueError(f"No platform configured for {only_platform}")
 
-    # Gate: reject landscape renders before any upload attempt.
+    # Validate exact selected assets before any Firebase claim or mutation.
     for cfg in platforms:
         video_path = resolve_video_path(cfg["video_path"], project_dir, root)
-        try:
-            width, height = probe_dimensions(video_path)
-        except Exception as e:
-            raise ValueError(f"Cannot probe {video_path}: {e}") from e
-        if (width, height) != (VERTICAL_WIDTH, VERTICAL_HEIGHT):
-            raise ValueError(
-                f"Dimension gate failed: {video_path} is {width}x{height} "
-                f"(not {VERTICAL_WIDTH}x{VERTICAL_HEIGHT}). Re-render with a "
-                "1080x1920 portrait composition before publishing."
-            )
-        if cfg["platform"] == "youtube" and cfg["kind"] == "short":
-            ensure_youtube_short(video_path)
+        validate_publish_asset(video_path, project_dir, cfg["platform"])
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    # Auto-clear uniqueness documents when retrying or forcing re-publish so claim() can succeed.
-    # Only clears docs for THIS topic so it's safe: we only unblock our own re-publish.
-    if (retry_failed or force) and store:
-        cleared = _clear_uniqueness_for_topic(store, metadata["id"])
-        if cleared > 0:
-            print(f"[{'FORCE' if force else 'RETRY'}] Cleared {cleared} stale uniqueness doc(s) for {metadata['id']}")
 
     for cfg in platforms:
         platform = cfg["platform"]
@@ -226,7 +242,7 @@ def publish_batch(
             status="scheduling",
             title=title,
             asset_path=video_path,
-            source_topic=metadata["topic"],
+            source_topic=metadata.get("topic", metadata["id"]),
             scheduled_for=publish_at,
         )
 

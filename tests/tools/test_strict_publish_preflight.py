@@ -103,6 +103,99 @@ def test_legacy_slot_rejects_unmappable_job_before_claim(monkeypatch):
     assert calls == []
 
 
+@pytest.mark.parametrize("status", ["scheduled", "published"])
+def test_publish_store_rejects_cross_date_duplicate_with_platform_record(tmp_path, monkeypatch, status):
+    module = importlib.import_module("tools.publish_store")
+    asset = tmp_path / "video.mp4"
+    asset.write_bytes(b"video")
+    existing = {
+        "date": "2026-09-01",
+        "topic": "topic",
+        "status": status,
+        "video_id": "platform-video-id",
+    }
+    store = object.__new__(module.PublishStore)
+    updates = []
+
+    monkeypatch.setattr(module, "file_sha256", lambda _path: "source-hash")
+    monkeypatch.setattr(module, "media_fingerprint", lambda _path: "visual-hash")
+    new_key = module.publish_key("2026-09-02", "topic", "youtube", "short")
+    monkeypatch.setattr(store, "create_many_once", lambda _documents: False)
+    monkeypatch.setattr(store, "get", lambda key: None if key == new_key else existing)
+    monkeypatch.setattr(store, "update", lambda key, data: updates.append((key, data)))
+
+    _key, claimed, conflict = store.claim(
+        date="2026-09-02",
+        topic="topic",
+        platform="youtube",
+        account="primary",
+        kind="short",
+        status="scheduling",
+        title="Title",
+        asset_path=str(asset),
+    )
+
+    assert claimed is False
+    assert conflict == existing
+    assert updates == []
+
+
+@pytest.mark.parametrize("status", ["claimed", "scheduling", "scheduled", "published"])
+def test_manual_retry_never_mutates_or_uploads_duplicate_active_record(tmp_path, monkeypatch, status):
+    module = _load("publish_manual_video")
+    project = _project(tmp_path)
+    metadata = module.load_metadata(project)
+    calls = []
+
+    class Store:
+        def claim(self, **_kwargs):
+            return "key", False, {"status": status, "video_id": "existing-video"}
+
+        def update(self, *_args, **_kwargs):
+            calls.append("update")
+
+        def __getattr__(self, name):
+            calls.append(name)
+            raise AssertionError(f"unexpected store mutation: {name}")
+
+    monkeypatch.setattr(module, "validate_publish_asset", lambda *_args, **_kwargs: None, raising=False)
+    monkeypatch.setattr(module.YoutubePublisher, "execute", lambda *_args, **_kwargs: calls.append("youtube"))
+    monkeypatch.setattr(module.MetaPublisher, "execute", lambda *_args, **_kwargs: calls.append("meta"))
+
+    result = module.publish_batch(
+        metadata,
+        project,
+        Store(),
+        retry_failed=True,
+        only_platform="youtube",
+    )
+
+    assert result["platforms"]["youtube/short"]["status"] == "skipped"
+    assert calls == []
+
+
+def test_manual_validates_exact_selected_asset_before_store_claim(tmp_path, monkeypatch):
+    module = _load("publish_manual_video")
+    project = _project(tmp_path)
+    custom = project / "renders" / "custom-short.mp4"
+    custom.write_bytes(b"video")
+    metadata = module.load_metadata(project)
+    metadata["yt_shorts"] = "renders/custom-short.mp4"
+    calls = []
+
+    class Store:
+        def claim(self, **_kwargs):
+            calls.append("claim")
+            raise AssertionError("claim must not run after asset validation failure")
+
+    monkeypatch.setattr(module, "validate_publish_asset", lambda path, *_args, **_kwargs: (_ for _ in ()).throw(ValueError(f"blank video: {path}")))
+
+    with pytest.raises(ValueError, match="custom-short.mp4"):
+        module.publish_batch(metadata, project, Store(), only_platform="youtube")
+
+    assert calls == []
+
+
 def test_youtube_scheduler_validates_project_before_store_claim(tmp_path, monkeypatch):
     module = _load("schedule_youtube_today")
     project = _project(tmp_path)
@@ -124,6 +217,7 @@ def test_youtube_scheduler_validates_project_before_store_claim(tmp_path, monkey
         "validate_project_quality",
         lambda _project: (_ for _ in ()).throw(ValueError("quality failed")),
     )
+    monkeypatch.setattr(module, "validate_publish_asset", lambda *_args, **_kwargs: calls.append("asset-validation"))
     future_day = (datetime.now().date() + timedelta(days=1))
 
     with pytest.raises(ValueError, match="quality failed"):
