@@ -121,6 +121,13 @@ def test_timeline_repair_scales_small_narration_mismatches(tmp_path):
     assert 'data-duration="5.500" data-track-index="1"' in patched
 
 
+def test_repair_adds_narration_duration_when_ffprobe_is_unavailable(tmp_path):
+    index = write_composition(tmp_path, composition_html(1080, 1920))
+    repair.patch_html(index)
+    patched = index.read_text(encoding="utf-8")
+    assert 'data-duration="60.000"' in patched
+
+
 @pytest.mark.parametrize("composition", ["hyperframes", "hyperframes_reels"])
 def test_main_rejects_landscape_in_either_composition(tmp_path, monkeypatch, composition):
     project = tmp_path / "project"

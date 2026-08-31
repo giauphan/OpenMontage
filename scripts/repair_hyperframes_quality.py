@@ -54,6 +54,8 @@ def probe_duration(path: Path) -> float:
 
 def patch_html(path: Path, narration_duration: float = 0.0) -> None:
     html = path.read_text(encoding="utf-8")
+    if narration_duration <= 0:
+        narration_duration = 60.0
 
     # Ensure composition root has required attributes
     root_open = re.search(r"<div\b[^>]*>", html)
@@ -118,23 +120,21 @@ def patch_html(path: Path, narration_duration: float = 0.0) -> None:
         if not root_open:
             raise ValueError(f"{path}: missing composition root for narration audio binding")
         html = html[:root_open.end()] + "\n    " + NARRATION_TAG + html[root_open.end():]
-    if narration_duration and narration_duration > 0:
-        html = align_timeline(path, html, narration_duration)
-        # Ensure all div elements have the narration duration in :3f format
-        html = re.sub(
-            r'<div\b([^>]*)>',
-            lambda m: (
-                f'<div{m.group(1)}>'
-                if 'data-duration="' in m.group(1)
-                else f'<div data-duration="{narration_duration:.3f}"{m.group(1)}>'
-            ),
-            html,
-        )
-        html = re.sub(
-            r'\bdata-duration="[^"]*"',
-            f'data-duration="{narration_duration:.3f}"',
-            html,
-        )
+    # Ensure all div elements have the narration duration in :3f format
+    html = re.sub(
+        r'<div\b([^>]*)>',
+        lambda m: (
+            f'<div{m.group(1)}>'
+            if 'data-duration="' in m.group(1)
+            else f'<div data-duration="{narration_duration:.3f}"{m.group(1)}>'
+        ),
+        html,
+    )
+    html = re.sub(
+        r'\bdata-duration="[^"]*"',
+        f'data-duration="{narration_duration:.3f}"',
+        html,
+    )
 
     # Remove GSAP display tweens that break HyperFrames internal visibility engine
     # HyperFrames controls visibility based on timeline, GSAP tweens override this and cause blank renders
