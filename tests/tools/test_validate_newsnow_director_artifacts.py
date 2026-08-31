@@ -28,6 +28,26 @@ def test_validator_accepts_valid_flat_artifact(tmp_path):
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
 
+def test_validator_accepts_comparison_enhancement_cue(tmp_path):
+    arts = tmp_path / "artifacts"
+    arts.mkdir()
+    script = arts / "script_vi.json"
+    script.write_text(json.dumps({
+        "version": "1.0",
+        "title": "T",
+        "total_duration_seconds": 10,
+        "sections": [{
+            "id": "1",
+            "text": "A",
+            "start_seconds": 0,
+            "end_seconds": 10,
+            "enhancement_cues": [{"type": "comparison", "description": "Before and after"}],
+        }],
+    }))
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is True
+
+
 def test_validator_promotes_nested_checkpoint(tmp_path):
     project_id = tmp_path.name
     nested_dir = tmp_path / project_id
