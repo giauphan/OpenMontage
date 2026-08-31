@@ -72,12 +72,12 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
 
   set +e
   if [ "$(id -u)" -eq 0 ]; then
-    su node -s /bin/bash -c "
-      export PATH=\"$PATH\"
-      export PYTHONPATH=\"$PYTHONPATH\"
-      cd \"$ROOT\"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json \"$PROMPT_STR\"
-    " > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+    PROMPT_STR="$PROMPT_STR" DIRECTOR_SYSTEM_NOTE="$DIRECTOR_SYSTEM_NOTE" su node -s /bin/bash -c '
+      export PATH="$PATH"
+      export PYTHONPATH="$PYTHONPATH"
+      cd "$ROOT"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s '"$DIRECTORS_TIMEOUT_SECONDS"' claude -p --max-budget-usd '"${DIRECTORS_MAX_BUDGET_USD:-20}"' --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
+    ' > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   else
     env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR" > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   fi

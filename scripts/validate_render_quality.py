@@ -80,7 +80,7 @@ def measure_black_seconds(path: Path, ffmpeg: str) -> float | None:
     """Return total detected black-frame duration in seconds, or None if unavailable."""
     result = subprocess.run(
         [ffmpeg, "-nostdin", "-v", "info", "-i", str(path),
-         "-vf", "blackdetect=d=0.5:pic_th=0.98:pix_th=0.10", "-an", "-f", "null", "-"],
+         "-vf", "blackdetect=d=0.5:pic_th=0.99:pix_th=0.02", "-an", "-f", "null", "-"],
         check=False,
         capture_output=True,
         text=True,
