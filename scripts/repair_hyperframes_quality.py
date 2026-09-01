@@ -52,7 +52,7 @@ def probe_duration(path: Path) -> float:
         return 0.0
 
 
-def patch_html(path: Path, narration_duration: float = 0.0) -> None:
+def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False) -> None:
     html = path.read_text(encoding="utf-8")
     if narration_duration <= 0:
         narration_duration = 60.0
@@ -143,6 +143,14 @@ def patch_html(path: Path, narration_duration: float = 0.0) -> None:
         "",
         html
     )
+    if strict:
+        root = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+        if not root:
+            raise ValueError(f"{path}: missing composition root for strict timeline repair")
+        if "data-no-timeline" not in root.group(0):
+            html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
+        html = re.sub(r"\bopacity\s*:\s*0\s*;?", "opacity: 1;", html)
+        html = re.sub(r"\bvisibility\s*:\s*hidden\s*;?", "visibility: visible;", html)
 
     path.write_text(html, encoding="utf-8")
 
