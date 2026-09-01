@@ -84,10 +84,10 @@ def schedule_day(day):
         topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
         validate_project_quality(project_dir)
         asset_path = project_dir / topic_meta["yt_shorts"]
-        validate_publish_asset(asset_path, project_dir, "youtube")
+        validate_publish_asset(asset_path, project_dir, "youtube", strict=True)
         if cfg.get("meta", {}).get("page_id"):
             fb_asset_path = project_dir / topic_meta["fb_video"]
-            validate_publish_asset(fb_asset_path, project_dir, "facebook")
+            validate_publish_asset(fb_asset_path, project_dir, "facebook", strict=True)
         slot_time = slot_times[idx % len(slot_times)]
         dt = datetime.combine(day, slot_time, tz)
         planned.append((proj, project_dir, topic_meta, "yt_shorts", dt))

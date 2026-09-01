@@ -115,7 +115,7 @@ def enforce_batch_gap(last_publish_time: str | None) -> None:
         time.sleep(wait_seconds)
 
 
-def validate_publish_asset(video_path: Path, project_dir: Path, platform: str) -> None:
+def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, strict: bool = False) -> None:
     ffprobe = shutil.which("ffprobe") or ""
     ffmpeg = shutil.which("ffmpeg") or ""
     if not ffprobe:
@@ -143,6 +143,7 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str) -
         PORTRAIT_DIMENSIONS,
         60.0 if platform in ("youtube", "instagram") else None,
         narration_text if narration_text.is_file() else None,
+        strict=strict,
     )
     if errors:
         raise ValueError("\n".join(errors))
