@@ -37,6 +37,10 @@ ALLOWED_FRAME_RATES = {"30/1", "60/1"}
 SILENCE_MEAN_DB = -50.0
 # Fraction of the runtime allowed to be detected as black frames.
 MAX_BLACK_RATIO = 0.30
+# Minimum edge density required for text/graphics presence (strict mode only).
+MIN_EDGE_DENSITY = 0.005
+# Maximum allowed ratio of low-motion/static frames (strict mode only).
+MAX_STATIC_RATIO = 0.50
 
 
 def probe(path: Path, ffprobe: str) -> dict:
@@ -76,11 +80,18 @@ def measure_mean_volume(path: Path, ffmpeg: str) -> float | None:
     return float(match.group(1))
 
 
-def measure_black_seconds(path: Path, ffmpeg: str) -> float | None:
-    """Return total detected black-frame duration in seconds, or None if unavailable."""
+def measure_black_seconds(path: Path, ffmpeg: str, strict: bool = False) -> float | None:
+
+
+    """Return total detected black-frame duration in seconds, or None if unavailable.
+
+    In strict mode, also detects near-black/dark frames using a lower pixel threshold
+    to catch dark blue/black backgrounds that pass the default blackdetect.
+    """
+    pix_th = "0.02" if not strict else "0.10"
     result = subprocess.run(
         [ffmpeg, "-nostdin", "-v", "info", "-i", str(path),
-         "-vf", "blackdetect=d=0.5:pic_th=0.99:pix_th=0.02", "-an", "-f", "null", "-"],
+         "-vf", f"blackdetect=d=0.5:pic_th=0.99:pix_th={pix_th}", "-an", "-f", "null", "-"],
         check=False,
         capture_output=True,
         text=True,
@@ -94,6 +105,33 @@ def measure_black_seconds(path: Path, ffmpeg: str) -> float | None:
     return total
 
 
+def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
+    result = subprocess.run(
+        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
+         "fps=1,scale=270:480,edgedetect=low=0.1:high=0.4,signalstats,metadata=print",
+         "-an", "-f", "null", "-"],
+        check=False, capture_output=True, text=True,
+    )
+    values = [float(value) / 255.0 for value in re.findall(r"lavfi.signalstats.YAVG=(\d+(?:\.\d+)?)", result.stderr or "")]
+    return sum(values) / len(values) if values else None
+
+
+def measure_static_ratio(path: Path, ffmpeg: str, duration: float) -> float | None:
+    result = subprocess.run(
+        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
+         "freezedetect=n=-60dB:d=2", "-an", "-f", "null", "-"],
+        check=False, capture_output=True, text=True,
+    )
+    stderr = result.stderr or ""
+    if result.returncode != 0 and "freezedetect" not in stderr:
+        return None
+    durations = [float(value) for value in re.findall(r"freeze_duration:\s*(\d+(?:\.\d+)?)", stderr)]
+    if not durations:
+        return 0.0
+    # caller provides duration to avoid re-probing
+    return min(sum(durations) / duration, 1.0) if duration > 0 else None
+
+
 def validate_video(
     path: Path,
     narration: Path,
@@ -104,6 +142,7 @@ def validate_video(
     expected_dimensions: tuple[int, int],
     max_duration: float | None = None,
     narration_text: Path | None = None,
+    strict: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -156,7 +195,7 @@ def validate_video(
             f"{path}: duration {duration:.2f}s differs from narration {narration_duration:.2f}s by more than {tolerance:.2f}s"
         )
 
-    errors.extend(validate_content(path, ffmpeg, duration, bool(audio), bool(video)))
+    errors.extend(validate_content(path, ffmpeg, duration, bool(audio), bool(video), strict=strict))
     return errors
 
 
@@ -166,6 +205,7 @@ def validate_content(
     duration: float,
     has_audio: bool,
     has_video: bool,
+    strict: bool = False,
 ) -> list[str]:
     """Decode-level checks that catch silent mixes and blank visuals."""
     if ffmpeg is None:
@@ -181,7 +221,7 @@ def validate_content(
                 f"{path}: audio is effectively silent (mean volume {mean_db:.1f} dB <= {SILENCE_MEAN_DB:.1f} dB)"
             )
     if has_video and duration > 0:
-        black_seconds = measure_black_seconds(path, ffmpeg)
+        black_seconds = measure_black_seconds(path, ffmpeg, strict=strict)
         if black_seconds is None:
             errors.append(f"{path}: could not measure black-frame coverage")
         else:
@@ -191,6 +231,29 @@ def validate_content(
                     f"{path}: {black_seconds:.2f}s of {duration:.2f}s is black "
                     f"({ratio:.0%} > {MAX_BLACK_RATIO:.0%}) — composition is likely blank"
                 )
+            elif strict and ratio > 0.15:
+                errors.append(
+                    f"{path}: {black_seconds:.2f}s of {duration:.2f}s is dark/near-black "
+                    f"({ratio:.0%} > 15% in strict mode)"
+                )
+            # Strict mode: additional content gates
+            if strict:
+                # Edge density gate (text/captions/graphics)
+                edge_ratio = measure_edge_density(path, ffmpeg)
+                if edge_ratio is None:
+                    errors.append(f"{path}: could not measure edge density")
+                elif edge_ratio < MIN_EDGE_DENSITY:
+                    errors.append(
+                        f"{path}: {edge_ratio:.4%} edge density < {MIN_EDGE_DENSITY:.4%} — missing text/graphics"
+                    )
+                # Motion variance gate (frozen canvas)
+                static_ratio = measure_static_ratio(path, ffmpeg, duration)
+                if static_ratio is None:
+                    errors.append(f"{path}: could not measure static ratio")
+                elif static_ratio > MAX_STATIC_RATIO:
+                    errors.append(
+                        f"{path}: {static_ratio:.0%} static frames > {MAX_STATIC_RATIO:.0%} — frozen canvas"
+                    )
     return errors
 
 
@@ -216,6 +279,11 @@ def main() -> int:
     parser.add_argument("--min-duration", type=float, default=30.0)
     parser.add_argument("--tolerance", type=float, default=3.0)
     parser.add_argument("--reels-max-duration", type=float, default=None)
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Enable strict visual content checks (enhanced black/detect, edge + motion variance)",
+    )
     args = parser.parse_args()
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
     narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
@@ -241,6 +309,7 @@ def main() -> int:
                 PORTRAIT_DIMENSIONS,
                 max_duration,
                 narration_text,
+                strict=args.strict,
             )
         )
     for error in errors:
