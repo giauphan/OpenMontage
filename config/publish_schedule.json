@@ -9,11 +9,37 @@
     "account": "primary"
   },
   "slots": {
-    "publish_slots_vn": ["09:15", "14:15", "21:15"],
-    "fb_slots_wib": ["12:00", "14:00", "16:00"],
-    "yt_slots_wib": ["09:15", "14:15", "21:15"]
+    "publish_slots_vn": [
+      "09:15",
+      "14:15",
+      "21:15"
+    ],
+    "fb_slots_wib": [
+      "12:00",
+      "14:00",
+      "16:00"
+    ],
+    "yt_slots_wib": [
+      "09:15",
+      "14:15",
+      "21:15"
+    ]
   },
   "active_projects": [
-    "cand_070355b2edd1e9ae"
+    {
+      "project_id": "cand_80136a0e2ec3829c",
+      "publish_date": "2026-09-01",
+      "publish_time": "09:15"
+    },
+    {
+      "project_id": "cand_2ea8dd2abd94305d",
+      "publish_date": "2026-09-01",
+      "publish_time": "14:15"
+    },
+    {
+      "project_id": "cand_10a7c768f3a3a190",
+      "publish_date": "2026-09-01",
+      "publish_time": "21:15"
+    }
   ]
 }
