@@ -143,6 +143,8 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         "",
         html
     )
+    # Fix malformed GSAP syntax: "opacity: 1;," → "opacity: 1,"
+    html = re.sub(r"opacity:\s*1\s*;\s*,", "opacity: 1,", html)
     if strict:
         root = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root:
