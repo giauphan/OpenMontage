@@ -200,7 +200,7 @@ def publish_batch(
     # Validate exact selected assets before any Firebase claim or mutation.
     for cfg in platforms:
         video_path = resolve_video_path(cfg["video_path"], project_dir, root)
-        validate_publish_asset(video_path, project_dir, cfg["platform"])
+        validate_publish_asset(video_path, project_dir, cfg["platform"], strict=True)
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
