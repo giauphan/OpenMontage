@@ -233,6 +233,120 @@ materialize_hyperframes_assets() {
     edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
+
+  # Generate word timestamps and subtitles for caption synchronization
+  if [ -s "$narration" ]; then
+    echo "[$(date -u +%FT%TZ)] Generating word timestamps and subtitles from narration..."
+    local subtitle_text="$narration_text.prepared"
+    [ -s "$subtitle_text" ] || subtitle_text="$narration_text"
+
+    # Use failsafe subtitle generation with multiple retry mechanisms
+    local subtitles_success=false
+  
+    # Method 1: Try direct subtitle generation with prepared text
+    if python3 "$ROOT/scripts/generate_subtitles_from_text.py" \
+        --narration-text "$subtitle_text" \
+        --audio-path "$narration" \
+        --output-srt "$project_root/hyperframes/assets/subtitles.srt" \
+        --output-json "$project_root/hyperframes/assets/word_timestamps.json" \
+        --max-words-per-cue 3; then
+      subtitles_success=true
+    
+    # Method 2: Try with raw text if prepared text failed
+    elif python3 "$ROOT/scripts/generate_subtitles_from_text.py" \
+        --narration-text "$narration_text" \
+        --audio-path "$narration" \
+        --output-srt "$project_root/hyperframes/assets/subtitles.srt" \
+        --output-json "$project_root/hyperframes/assets/word_timestamps.json" \
+        --max-words-per-cue 3; then
+      subtitles_success=true
+      echo "[$(date -u +%FT%TZ)] Subtitle generation succeeded with raw text" >&2
+    
+    # Method 3: Use failsafe handler
+    elif python3 "$ROOT/scripts/vn_subtitle_failsafe.py" \
+        --project-id "$PROJECT_ID" \
+        --project-root "$ROOT" \
+        --narration-text "$subtitle_text" \
+        --audio-path "$narration" \
+        --max-words-per-cue 3; then
+      subtitles_success=true
+      echo "[$(date -u +%FT%TZ)] Subtitle generation succeeded via failsafe handler" >&2
+    
+    else
+      # Method 4: Create empty fallback files to prevent pipeline crash
+      echo "[$(date -u +%FT%TZ)] ERROR: All subtitle generation methods failed for full video" >&2
+      touch "$project_root/hyperframes/assets/subtitles.srt"
+      touch "$project_root/hyperframes/assets/word_timestamps.json"
+    fi
+
+    # Generate subtitles for reels with same fallback chain
+    if [ -s "$reels_narration" ]; then
+      local reels_subtitle_text="$reels_narration_text.prepared"
+      [ -s "$reels_subtitle_text" ] || reels_subtitle_text="$reels_narration_text"
+
+      local reels_success=false
+    
+      if python3 "$ROOT/scripts/generate_subtitles_from_text.py" \
+          --narration-text "$reels_subtitle_text" \
+          --audio-path "$reels_narration" \
+          --output-srt "$project_root/hyperframes_reels/assets/subtitles.srt" \
+          --output-json "$project_root/hyperframes_reels/assets/word_timestamps.json" \
+          --max-words-per-cue 3; then
+        reels_success=true
+      
+      elif python3 "$ROOT/scripts/vn_subtitle_failsafe.py" \
+          --project-id "$PROJECT_ID" \
+          --project-root "$ROOT" \
+          --narration-text "$reels_subtitle_text" \
+          --audio-path "$reels_narration" \
+          --max-words-per-cue 3; then
+        reels_success=true
+        echo "[$(date -u +%FT%TZ)] Reels subtitle generation succeeded via failsafe handler" >&2
+      
+      else
+        echo "[$(date -u +%FT%TZ)] WARNING: All reels subtitle generation methods failed" >&2
+        touch "$project_root/hyperframes_reels/assets/subtitles.srt"
+        touch "$project_root/hyperframes_reels/assets/word_timestamps.json"
+      fi
+    fi
+
+    # Verify subtitle files were created and log results
+    local subtitle_size=$(wc -c < "$project_root/hyperframes/assets/subtitles.srt" 2>/dev/null || echo 0)
+    local timestamps_size=$(wc -c < "$project_root/hyperframes/assets/word_timestamps.json" 2>/dev/null || echo 0)
+
+    echo "[$(date -u +%FT%TZ)] Subtitle generation results:" >&2
+    echo "- Full video subtitles: $project_root/hyperframes/assets/subtitles.srt ($subtitle_size bytes)" >&2
+    echo "- Full word timestamps: $project_root/hyperframes/assets/word_timestamps.json ($timestamps_size bytes)" >&2
+
+    if [ $subtitle_size -le 10 ] || [ $timestamps_size -le 10 ]; then
+      if [ $subtitle_size -le 10 ]; then
+        echo "[$(date -u +%FT%TZ)] WARNING: Subtitles file is very small, may be corrupt" >&2
+      fi
+      if [ $timestamps_size -le 10 ]; then
+        echo "[$(date -u +%FT%TZ)] WARNING: Timestamp file is very small, may be corrupt" >&2
+      fi
+    
+      # Attempt to regenerate if files are too small
+      echo "[$(date -u +%FT%TZ)] Attempting to regenerate subtitle files..." >&2
+      python3 "$ROOT/scripts/vn_subtitle_failsafe.py" \
+          --project-id "$PROJECT_ID" \
+          --project-root "$ROOT" \
+          --narration-text "$subtitle_text" \
+          --audio-path "$narration" \
+          --max-words-per-cue 3
+    fi
+
+    if [ -s "$project_root/hyperframes_reels/assets/subtitles.srt" ]; then
+      local reels_subtitle_size=$(wc -c < "$project_root/hyperframes_reels/assets/subtitles.srt")
+      echo "- Reels subtitles: $project_root/hyperframes_reels/assets/subtitles.srt ($reels_subtitle_size bytes)" >&2
+      echo "- Reels word timestamps: $project_root/hyperframes_reels/assets/word_timestamps.json" >&2
+    fi
+
+    # Validate subtitle files don't crash the pipeline
+    if [ ! -s "$project_root/hyperframes/assets/subtitles.srt" ]; then
+      echo "[$(date -u +%FT%TZ)] WARNING: Subtitles file is empty, continuing without subtitles" >&2
+    fi
+  fi
   if [ ! -s "$narration" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
     exit 1
