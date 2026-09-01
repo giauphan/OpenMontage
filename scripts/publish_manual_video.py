@@ -360,7 +360,7 @@ def publish_batch(
     return results
 
 
-def validate_project_quality(project_path: Path) -> None:
+def validate_project_quality(project_path: Path, strict: bool = False) -> None:
     root = Path(__file__).resolve().parents[1]
 
     # Step 1: Validate metadata text fields (hashtags, shell syntax, placeholders)
@@ -394,21 +394,20 @@ def validate_project_quality(project_path: Path) -> None:
     validate_script = root / "scripts" / "validate_render_quality.py"
     if not validate_script.is_file() or not ffprobe or not ffmpeg:
         raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: validator, ffprobe, and ffmpeg are required")
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(validate_script),
-            str(project_path),
-            "--ffprobe",
-            ffprobe,
-            "--ffmpeg",
-            ffmpeg,
-            "--reels-max-duration",
-            "60",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    command = [
+        sys.executable,
+        str(validate_script),
+        str(project_path),
+        "--ffprobe",
+        ffprobe,
+        "--ffmpeg",
+        ffmpeg,
+        "--reels-max-duration",
+        "60",
+    ]
+    if strict:
+        command.append("--strict")
+    result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:
         diagnostic = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
         raise RuntimeError(diagnostic or f"validator exited {result.returncode}")
