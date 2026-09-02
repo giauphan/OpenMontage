@@ -28,11 +28,11 @@ jobs:
     name: Vietnamese Subtitle Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     strategy:
       matrix:
         python-version: ["3.10", "3.11"]
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -69,7 +69,7 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           python -m pytest tests/integration/test_vn_subtitle_sync.py -v --tb=short
-          
+
       - name: Test subtitle generation script
         run: |
           cd ${{ github.workspace }}
@@ -91,10 +91,11 @@ jobs:
           "
 
   docker-subtitle-integration:
-    name: Docker Pipeline Integration
+    name: Docker Subtitle Integration Test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
+    timeout-minutes: 20
+    needs: vn-subtitle-unit-tests
+
     services:
       docker:
         image: docker:dind
@@ -173,7 +174,7 @@ jobs:
     name: Dependency Graph Caching Test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -210,10 +211,10 @@ jobs:
                 print('✅ transcriber available')
             except ImportError:
                 print('⚠️  transcriber not available')
-            
+
             try:
                 import subtitle_gen
-                print('✅ subtitle_gen available')  
+                print('✅ subtitle_gen available')
             except ImportError:
                 print('⚠️  subtitle_gen not available')
           "
@@ -222,7 +223,7 @@ jobs:
     name: Memory Usage and Performance Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -243,13 +244,13 @@ jobs:
             sys.path.insert(0, 'scripts')
             from generate_subtitles_from_text import estimateWordDurations, generateSRTFromWordTimestamps
             import time
-            
+
             # Test with long Vietnamese text
             long_text = 'Xin chào. ' * 100 + 'Đây là bản tin thiết kế kiểm tra phụ đề.' * 50
             start_time = time.time()
             word_timestamps = estimateWordDurations(long_text, 300.0)  # 5 minutes
             srt_content = generateSRTFromWordTimestamps(word_timestamps, max_words_per_cue=5)
-            
+
             print(f'✅ Generated {len(word_timestamps)} word timestamps')
             print(f'✅ Generated {len(srt_content)} characters of SRT')
             print(f'✅ Performance: {time.time() - start_time:.2f} seconds')
@@ -259,9 +260,9 @@ jobs:
     name: Cache Validation for CI
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    
+
     needs: [vn-subtitle-unit-tests, dependency-graph-caching, memory-usage-test]
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -272,20 +273,15 @@ jobs:
           echo "✅ Vietnamese subtitle pipeline is CI-ready"
           echo "Cache effectiveness validated"
 
-  # Final workflow run on main branch
   deploy-validation:
     name: Deploy Validation
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: github.ref == 'refs/heads/main'
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Final validation
-        run: |
-          echo "✅ Vietnamese subtitle pipeline changes validated"
-          echo "✅ All CI tests passed successfully"
-          echo "✅ Ready for production deployment"
-          echo "🎉 Deployment validation complete"
+      - name: Validate deploy readiness
+        run: echo "✅ Ready for deployment"
