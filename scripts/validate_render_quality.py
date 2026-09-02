@@ -117,7 +117,7 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
 
 
 def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool = False) -> float | None:
-    noise_threshold = "-30dB" if strict else "-60dB"
+    noise_threshold = "-20dB" if strict else "-60dB"
     result = subprocess.run(
         [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
          f"freezedetect=n={noise_threshold}:d=2", "-an", "-f", "null", "-"],
