@@ -67,8 +67,8 @@ jobs:
 
       - name: Test Vietnamese subtitle synchronization
         run: |
-          cd /tmp
-          python -m pytest ${{ github.workspace }}/tests/integration/test_vn_subtitle_sync.py -v --tb=short
+          cd ${{ github.workspace }}
+          python -m pytest tests/integration/test_vn_subtitle_sync.py -v --tb=short
           
       - name: Test subtitle generation script
         run: |
