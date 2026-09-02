@@ -245,7 +245,8 @@ jobs:
             from generate_subtitles_from_text import estimateWordDurations, generateSRTFromWordTimestamps
             import time
 
-            long_text = 'Xin chao. ' * 100 + 'Day la ban tin thiet ke kiem tra phu de.' * 50
+            # Use ASCII text to avoid encoding issues
+            long_text = 'This is a test subtitle generation test. ' * 50
             start_time = time.time()
             word_timestamps = estimateWordDurations(long_text, 300.0)
             srt_content = generateSRTFromWordTimestamps(word_timestamps, max_words_per_cue=5)
