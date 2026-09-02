@@ -235,139 +235,39 @@ materialize_hyperframes_assets() {
   fi
 
   # Generate Vietnamese subtitles with word timestamps for caption synchronization
-  if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
-    local subtitle_text="$narration_text.prepared"
-    [ -s "$subtitle_text" ] || subtitle_text="$narration_text"
+if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
+  local subtitle_text="$narration_text.prepared"
+  [ -s "$subtitle_text" ] || subtitle_text="$narration_text"
 
-    # Use Python to generate basic subtitles with estimated word timestamps
-    echo "[$(date -u +%FT%TZ)] Generating Vietnamese subtitles..."
-    if ! python3 -c "
-import json, math, os
-from pathlib import Path
-
-def estimate_subtitles(text, audio_duration, max_words=3):
-    '''Generate basic SRT subtitles with estimated timing for Vietnamese text'''
-    words = text.split()
-    if not words or audio_duration <= 0:
-        return [], {}
+  echo "[$(date -u +%FT%TZ)] Generating Vietnamese subtitles..."
+  if [ -s "$subtitle_text" ]; then
+    mkdir -p "$project_root/hyperframes/assets"
+    python3 "$ROOT/scripts/generate_vn_subtitles.py" \
+      "$subtitle_text" \
+      "$narration" \
+      "$project_root/hyperframes/assets/subtitles.srt" \
+      "$project_root/hyperframes/assets/word_timestamps.json" \
+      3 || echo "[$(date -u +%FT%TZ)] WARNING: Python subtitle generation failed" >&2
     
-    avg_duration = audio_duration / max(1, len(words))
-    word_timestamps = []
-    current_time = 0.0
-    
-    for word in words:
-        # Longer Vietnamese words get more time
-        duration_factor = min(len(word) / 4, 2.0) if len(word) > 1 else 1.0
-        word_duration = avg_duration * duration_factor
-        
-        word_timestamps.append({
-            'word': word,
-            'start': round(current_time, 3),
-            'end': round(current_time + word_duration, 3)
-        })
-        current_time += word_duration
-    
-    # Generate SRT subtitles
-    cues = []
-    current_cue_words = []
-    current_start = 0.0
-    cue_number = 1
-    
-    for i, timestamp in enumerate(word_timestamps):
-        current_cue_words.append(timestamp)
-        
-        # Split cues by max words or timing
-        if (len(current_cue_words) >= max_words or 
-            (current_time - current_start) >= 4.0):  # Max 4 seconds per cue
-            cues.append({
-                'number': cue_number,
-                'start': current_cue_words[0]['start'],
-                'end': current_cue_words[-1]['end'],
-                'text': ' '.join(w['word'] for w in current_cue_words)
-            })
-            cue_number += 1
-            current_cue_words = []
-            current_start = current_time
-    
-    # Add last cue
-    if current_cue_words:
-        cues.append({
-            'number': cue_number,
-            'start': current_cue_words[0]['start'],
-            'end': current_cue_words[-1]['end'],
-            'text': ' '.join(w['word'] for w in current_cue_words)
-        })
-    
-    return cues, word_timestamps
-
-# Read narration text
-try:
-    with open('$subtitle_text', 'r', encoding='utf-8') as f:
-        text = f.read().strip()
-except:
-    text = ''
-
-if text:
-    # Get audio duration
-    import subprocess
-    try:
-        result = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', '$narration'], 
-                              capture_output=True, text=True, timeout=30)
-        duration = float(result.stdout.strip()) if result.stdout.strip() else 10.0
-    except:
-        duration = max(10.0, len(text) * 0.15)  # 0.15s per character fallback
-    
-    cues, word_timestamps = estimate_subtitles(text, duration, max_words=3)
-    
-    # Save SRT
-    srt_content = ''
-    for cue in cues:
-        start_ms = int(cue['start'] * 1000)
-        end_ms = int(cue['end'] * 1000)
-        
-        start_str = f\"{int(cue['start'] // 3600):02d}:{int((cue['start'] % 3600) // 60):02d}:{int(cue['start'] % 60):02d},{start_ms % 1000:03d}\"
-        end_str = f\"{int(cue['end'] // 3600):02d}:{int((cue['end'] % 3600) // 60):02d}:{int(cue['end'] % 60):02d},{end_ms % 1000:03d}\"
-        
-        srt_content += f\"{cue['number']}\\n{start_str} --> {end_str}\\n{cue['text']}\\n\\n\"
-    
-    # Save files
-    assets_dir = Path('$project_root/hyperframes/assets')
-    assets_dir.mkdir(parents=True, exist_ok=True)
-    
-    with open(assets_dir / 'subtitles.srt', 'w', encoding='utf-8') as f:
-        f.write(srt_content)
-    
-    with open(assets_dir / 'word_timestamps.json', 'w', encoding='utf-8') as f:
-        json.dump({'word_timestamps': word_timestamps, 'duration_seconds': round(duration, 3), 'language': 'vi-VN'}, f, indent=2, ensure_ascii=False)
-    
-    # Also generate reels subtitles if needed
-    if os.path.exists('$project_root/hyperframes_reels/assets'):
-        reels_assets_dir = Path('$project_root/hyperframes_reels/assets')
-        reels_assets_dir.mkdir(parents=True, exist_ok=True)
-        with open(reels_assets_dir / 'subtitles.srt', 'w', encoding='utf-8') as f:
-            f.write(srt_content)
-        with open(reels_assets_dir / 'word_timestamps.json', 'w', encoding='utf-8') as f:
-            json.dump({'word_timestamps': word_timestamps, 'duration_seconds': round(duration, 3), 'language': 'vi-VN'}, f, indent=2, ensure_ascii=False)
-    
-    print('Subtitles generated successfully')
-else:
-    print('No valid narration text found, creating empty subtitle files')
-    import os
-    assets_dir = Path('$project_root/hyperframes/assets')
-    assets_dir.mkdir(parents=True, exist_ok=True)
-    with open(assets_dir / 'subtitles.srt', 'w') as f:
-        f.write('')
-    with open(assets_dir / 'word_timestamps.json', 'w') as f:
-        json.dump({'word_timestamps': [], 'duration_seconds': 0, 'language': 'vi-VN'}, f)
-" 2>/dev/null; then
-      echo "[$(date -u +%FT%TZ)] Subtitle generation completed"
-    else
-      echo "[$(date -u +%FT%TZ)] WARNING: Python subtitle generation failed, continuing without subtitles" >&2
-      # Ensure empty files exist so pipeline doesn't crash
-      mkdir -p "$project_root/hyperframes/assets"
-      touch "$project_root/hyperframes/assets/subtitles.srt" "$project_root/hyperframes/assets/word_timestamps.json"
+    # Also generate for reels
+    if [ -s "$reels_narration" ]; then
+      python3 "$ROOT/scripts/generate_vn_subtitles.py" \
+        "$reels_narration_text" \
+        "$reels_narration" \
+        "$project_root/hyperframes_reels/assets/subtitles.srt" \
+        "$project_root/hyperframes_reels/assets/word_timestamps.json" \
+        3 || echo "[$(date -u +%FT%TZ)] WARNING: Reels subtitle generation failed" >&2
     fi
+    
+    echo "[$(date -u +%FT%TZ)] Subtitle generation completed"
+  else
+    echo "[$(date -u +%FT%TZ)] WARNING: No subtitle text available" >&2
+    # Ensure files exist for pipeline continuity
+    mkdir -p "$project_root/hyperframes/assets"
+    touch "$project_root/hyperframes/assets/subtitles.srt" \
+          "$project_root/hyperframes/assets/word_timestamps.json"
   fi
+fi
   if [ ! -s "$narration" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
     exit 1
