@@ -66,6 +66,7 @@ jobs:
           pip install pytest pytest-cov fastapi python-multipart
 
       - name: Test Vietnamese subtitle synchronization
+        timeout-minutes: 20
         run: |
           cd ${{ github.workspace }}
           python -m pytest tests/integration/test_vn_subtitle_sync.py -v --tb=short
