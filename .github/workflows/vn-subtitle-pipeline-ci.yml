@@ -79,7 +79,7 @@ jobs:
       - name: Test import functionality
         run: |
           cd ${{ github.workspace }}
-          python3 -c "
+          python3 -c ""
             import sys
             sys.path.insert(0, 'scripts')
             from generate_subtitles_from_text import splitTextToWords, estimateWordDurations, generateSRTFromWordTimestamps
@@ -89,7 +89,7 @@ jobs:
             srt = generateSRTFromWordTimestamps(durations)
             print('✅ Imports work correctly')
             print(f'Generated {len(words)} words and {len(durations)} durations')
-          "
+          """
 
   docker-subtitle-integration:
     name: Docker Subtitle Integration Test
