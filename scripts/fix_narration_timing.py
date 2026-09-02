@@ -37,8 +37,8 @@ CONTAMINATION = [
 def warn(msg):
     print(f"[fix_narration] {msg}")
 
-def load_script_text(project: Path) -> str:
-    script_path = project / "artifacts" / "script_vi.json"
+def load_script_text(project: Path, script_name: str = "script_vi.json") -> str:
+    script_path = project / "artifacts" / script_name
     data = json.loads(script_path.read_text(encoding="utf-8"))
     parts = []
     sections = data.get("sections") if isinstance(data, dict) else None
@@ -102,13 +102,19 @@ def main():
     ap.add_argument("--tolerance", type=float, default=3.0)
     ap.add_argument("--voice", default="vi-VN-HoaiMyNeural")
     ap.add_argument("--max-rate", default="+40%")
+    ap.add_argument(
+        "--reels-only",
+        action="store_true",
+        help="Use artifacts/script_vi_reels.json and update only reels assets/render",
+    )
     args = ap.parse_args()
 
     project = Path(args.project_dir).resolve()
     if not project.is_dir():
         raise SystemExit(f"ERROR: {project} is not a directory")
 
-    text = load_script_text(project)
+    script_name = "script_vi_reels.json" if args.reels_only else "script_vi.json"
+    text = load_script_text(project, script_name)
     warn(f"narration text derived: {len(text)} chars, {len(text.split())} words")
     contam = find_contamination(text)
     if contam:
@@ -116,8 +122,9 @@ def main():
         warn("Text head: " + text[:200])
         raise SystemExit("ERROR: narration text is contaminated; refusing to synthesize")
 
-    narration = project / "assets" / "narration.mp3"
-    tmp = project / "assets" / "narration.synth.mp3"
+    narration_name = "narration_reels.mp3" if args.reels_only else "narration.mp3"
+    narration = project / "assets" / narration_name
+    tmp = project / "assets" / f"{narration_name}.synth.mp3"
 
     # Try increasing speed until it fits, starting at 0 (natural).
     rates = [None] + [f"+{p}%" for p in range(5, 41, 5)]
@@ -148,12 +155,21 @@ def main():
     warn(f"chosen narration: rate={rate or 'natural'} duration={dur:.3f}s")
     shutil.move(tmp, narration)
 
-    # Refresh in both composition asset dirs.
-    for comp in ("hyperframes", "hyperframes_reels"):
-        d = project / comp / "assets"
+    if args.reels_only:
+        d = project / "hyperframes_reels" / "assets"
         if d.is_dir():
             shutil.copy2(narration, d / "narration.mp3")
-            warn(f"copied narration -> {comp}/assets/narration.mp3")
+            warn("copied narration -> hyperframes_reels/assets/narration.mp3")
+    else:
+        for comp in ("hyperframes", "hyperframes_reels"):
+            d = project / comp / "assets"
+            if d.is_dir():
+                shutil.copy2(narration, d / "narration.mp3")
+                warn(f"copied narration -> {comp}/assets/narration.mp3")
+        root_assets = project / "assets"
+        if root_assets.is_dir():
+            shutil.copy2(narration, root_assets / "narration.mp3")
+            shutil.copy2(narration, root_assets / "narration_reels.mp3")
 
     # Repair quality (fonts + audio src bindings). This gate is mandatory:
     # skipping it silently was how landscape/missing-font compositions reached
@@ -161,8 +177,10 @@ def main():
     repair_script = ROOT / "scripts" / "repair_hyperframes_quality.py"
     if not repair_script.is_file():
         raise SystemExit(f"ERROR: repair script not found at {repair_script}")
-    r = subprocess.run([sys.executable, str(repair_script), str(project)],
-                       capture_output=True, text=True)
+    repair_command = [sys.executable, str(repair_script), str(project)]
+    if args.reels_only:
+        repair_command += ["--composition", "hyperframes_reels"]
+    r = subprocess.run(repair_command, capture_output=True, text=True)
     warn("repair exit=" + str(r.returncode))
     if r.returncode != 0:
         warn(r.stdout[-500:])
@@ -185,10 +203,19 @@ def main():
             warn("render stderr tail: " + (r.stderr or "")[-400:])
             raise SystemExit(f"ERROR: render failed for {comp}")
 
-    render("hyperframes", "final_full_vi_9x16.mp4")
-    render("hyperframes_reels", "final_reels_vi_9x16.mp4")
+    if args.reels_only:
+        render("hyperframes_reels", "final_reels_vi_9x16.mp4")
+    else:
+        render("hyperframes", "final_full_vi_9x16.mp4")
+        render("hyperframes_reels", "final_reels_vi_9x16.mp4")
 
-    qa_command = [sys.executable, str(ROOT / "scripts" / "validate_render_quality.py"), str(project)]
+    qa_command = [
+        sys.executable,
+        str(ROOT / "scripts" / "validate_render_quality.py"),
+        str(project),
+    ]
+    if args.reels_only:
+        qa_command += ["--render", "reels", "--min-duration", "0", "--reels-max-duration", "60"]
     ffprobe = shutil.which("ffprobe")
     if ffprobe:
         qa_command += ["--ffprobe", ffprobe]

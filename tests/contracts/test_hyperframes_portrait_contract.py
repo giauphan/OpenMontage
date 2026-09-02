@@ -158,3 +158,31 @@ def test_main_accepts_portrait_project(tmp_path, monkeypatch):
     monkeypatch.setattr(repair, "probe_duration", lambda path: 0.0)
     monkeypatch.setattr(sys, "argv", ["repair_hyperframes_quality.py", str(project)])
     assert repair.main() == 0
+
+
+def test_main_repairs_only_selected_composition(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    for name in ("hyperframes", "hyperframes_reels"):
+        assets = project / name / "assets"
+        assets.mkdir(parents=True)
+        for font in repair.REQUIRED_FONTS:
+            (assets / font).write_bytes(b"font")
+        (assets / "narration.mp3").write_bytes(b"audio")
+        write_composition(project / name, composition_html(1080, 1920))
+
+    monkeypatch.setattr(repair, "probe_duration", lambda path: 45.0)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "repair_hyperframes_quality.py",
+            str(project),
+            "--composition",
+            "hyperframes_reels",
+        ],
+    )
+    assert repair.main() == 0
+    assert 'data-duration="5"' in (project / "hyperframes" / "index.html").read_text()
+    assert 'data-duration="45.000"' in (
+        project / "hyperframes_reels" / "index.html"
+    ).read_text()
