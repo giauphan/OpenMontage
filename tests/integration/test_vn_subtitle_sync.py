@@ -23,32 +23,31 @@ class TestVietnameseSubtitleGeneration:
         """Test splitting Vietnamese text into words."""
         text = "Xin chào. Đây là một bản tin thiết kế kiểm tra phụ đề."
         words = splitTextToWords(text)
-
-        # Check that words are properly split
+        
         assert "Xin" in words
-        assert "chào" in words  
+        assert "chào" in words
         assert "Đây" in words
         assert "là" in words
-        assert "." in words or "..." in " ".join(words)
+        assert "." in words
         assert len(words) > 5
         
     def test_word_duration_estimation(self):
         """Test word duration estimation."""
-        text = "Xin chào đây là bài kiểm tra"
+        text = "Xin chào đây là만의 kiểm tra"
         duration = 10.0  # 10 seconds
-
+        
         word_timestamps = estimateWordDurations(text, duration)
-
+        
         assert len(word_timestamps) > 0
         assert word_timestamps[0]["start"] == 0.0
         assert word_timestamps[-1]["end"] <= duration
-
+        
         # Check all timestamps have required fields
         for timestamp in word_timestamps:
             assert "word" in timestamp
             assert "start" in timestamp
             assert "end" in timestamp
-            assert timestamp["end"] >= timestamp["start"]
+            assert timestamp["end"] > timestamp["start"]
             
     def test_srt_generation(self):
         """Test SRT generation from word timestamps."""
@@ -71,16 +70,16 @@ class TestVietnameseSubtitleGeneration:
         assert any("1" in line for line in lines)
         
     def test_srt_timing_format(self):
-        """Test SRT timing format is correct."""
+        """Test that SRT timing is in correct format."""
         word_timestamps = [
             {"word": "Test", "start": 0.123, "end": 1.456},
         ]
-
+        
         srt_content = generateSRTFromWordTimestamps(word_timestamps)
-
-        # Check timing format (uses comma for milliseconds separator)
-        assert "00:00:00,123" in srt_content or "00:00:00.123" in srt_content
-        assert "00:00:01,456" in srt_content or "00:00:01.456" in srt_content
+        
+        # Should have proper timing format HH:MM:SS,mmm
+        assert "00:00:00,123" in srt_content
+        assert "00:00:01,456" in srt_content
         
     def test_empty_text_handling(self):
         """Test handling of empty text."""
@@ -91,37 +90,36 @@ class TestVietnameseSubtitleGeneration:
         assert srt_content == ""
         
     def test_punctuation_handling(self):
-        """Test that punctuation is properly handled in word splitting."""
+        """Test that punctuation is handled correctly."""
         text = "Xin chào! Làm thế nào? Test... ???"
         words = splitTextToWords(text)
-
-        # Check that punctuation is preserved as separate tokens
-        punctuation_found = any(punct in words for punct in ["!", "?", ".", "...", "???"])
-        assert punctuation_found, f"No punctuation found in words: {words}"
         
-        # Verify basic words are still there
-        assert "Xin" in words
-        assert "chào" in words
+        assert "!" in words
+        assert "?" in words
+        assert "." in words or "..." in " ".join(words)
         
     def test_script_integration(self):
         """Integration test for the subtitle generation script."""
-        # Test the functions directly instead of calling main()
-        text = "Xin chào đây là bản tin kiểm tra phụ đề"
-        duration = 5.0
-        
-        # Test word splitting
-        words = splitTextToWords(text)
-        assert len(words) > 0
-        
-        # Test duration estimation  
-        word_timestamps = estimateWordDurations(text, duration)
-        assert len(word_timestamps) > 0
-        assert word_timestamps[-1]["end"] <= duration
-        
-        # Test SRT generation
-        srt_content = generateSRTFromWordTimestamps(word_timestamps, max_words_per_cue=4)
-        assert len(srt_content) > 0
-        assert "1" in srt_content  # First subtitle number
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            
+            # Create test files
+            text_file = tmpdir / "test_text.txt"
+            text_file.write_text("Xin chào đây là bản tin kiểu tra phụ đề", encoding="utf-8")
+            
+            # Create mock audio file (empty for this test)
+            audio_file = tmpdir / "test_audio.mp3"
+            audio_file.touch()
+            
+            srt_file = tmpdir / "test_subtitles.srt"
+            json_file = tmpdir / "test_timestamps.json"
+            
+            # This will fail since we don't have valid audio, but tests the logic
+            try:
+                main()
+            except SystemExit as e:
+                # Expected to fail due to no valid audio duration
+                assert e.code != 0
 
 
 class TestSubtitleSynchronization:

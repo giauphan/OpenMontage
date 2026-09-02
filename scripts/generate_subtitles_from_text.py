@@ -36,27 +36,23 @@ def get_audio_duration(audio_path: Path) -> float:
 
 def splitTextToWords(text: str) -> List[str]:
     """Split Vietnamese text into words, preserving punctuation."""
-    # Simple space-based splitting for Vietnamese text
-    # Split on whitespace and extract words and punctuation separately
-    import re
-    
-    # Split text into tokens (words and punctuation)
-    tokens = re.findall(r'\S+', text)
+    # Handle Vietnamese text - it uses spaces but also has some special cases
+    # For now, simple space-based splitting should work for most cases
     words = []
+    current_word = ""
     
-    for token in tokens:
-        # Check if token ends with punctuation
-        if re.match(r'.*[.!?,;]$', token):
-            # Split word from punctuation
-            word_part = re.sub(r'[.!?,;]+$', '', token)
-            punct_part = re.findall(r'[.!?,;]+$', token)[0] if re.findall(r'[.!?,;]+$', token) else ''
-            
-            if word_part:
-                words.append(word_part)
-            if punct_part:
-                words.append(punct_part)
+    for char in text:
+        if char.isalnum() or char in "àáâãăăivalentu السفلا":
+            current_word += char
         else:
-            words.append(token)
+            if current_word:
+                words.append(current_word)
+                current_word = ""
+            if char in ".!?,;":
+                words.append(char)
+    
+    if current_word:
+        words.append(current_word)
     
     return words
 
@@ -64,40 +60,36 @@ def splitTextToWords(text: str) -> List[str]:
 def estimateWordDurations(text: str, total_duration: float) -> List[Dict]:
     """Estimate word durations based on text length and total audio duration."""
     words = splitTextToWords(text)
-
+    
     if not words or total_duration <= 0:
         return []
-
+    
+    # Estimate average word duration
+    avg_duration = total_duration / len(words)
+    
     word_timestamps = []
     current_time = 0.0
     
-    # Calculate base duration per word
-    total_word_weight = sum(max(len(word), 1) if word.strip() and word not in ".!?,;:" else 0.5 for word in words)
-    
     for i, word in enumerate(words):
-        # Calculate proportional duration based on word length
-        if word.strip() and word not in ".!?,;:":
-            word_weight = max(len(word), 1)
-        else:
-            word_weight = 0.5  # Short duration for punctuation
-            
-        word_duration = (word_weight / total_word_weight) * total_duration
+        # Estimate this word's duration
+        # Longer words get slightly more time
+        word_length_factor = min(len(word) / 5, 1.5) if word.strip() else 0.5
+        word_duration = avg_duration * word_length_factor
         
-        # Ensure we don't exceed total duration
-        end_time = min(current_time + word_duration, total_duration)
+        # Punctuation marks get shorter duration
+        if word in ".!?":
+            word_duration = avg_duration * 0.3
+        elif word in ",;:":
+            word_duration = avg_duration * 0.5
         
         word_timestamps.append({
             "word": word,
             "start": round(current_time, 3),
-            "end": round(end_time, 3)
+            "end": round(current_time + word_duration, 3)
         })
-
-        current_time = end_time
         
-        # Stop if we've reached the total duration
-        if current_time >= total_duration:
-            break
-
+        current_time += word_duration
+    
     return word_timestamps
 
 
@@ -146,13 +138,9 @@ def generateSRTFromWordTimestamps(word_timestamps: List[Dict], max_words_per_cue
     
     # Format SRT content
     for cue in cues:
-        # Proper rounding to avoid floating point precision issues
-        start_ms = round(cue['start'] * 1000)
-        end_ms = round(cue['end'] * 1000)
+        start_str = f"{int(cue['start'] // 3600):02d}:{int((cue['start'] % 3600) // 60):02d}:{int(cue['start'] % 60):02d},{int((cue['start'] % 1) * 1000):03d}"
+        end_str = f"{int(cue['end'] // 3600):02d}:{int((cue['end'] % 3600) // 60):02d}:{int(cue['end'] % 60):02d},{int((cue['end'] % 1) * 1000):03d}"
         
-        start_str = f"{int(cue['start'] // 3600):02d}:{int((cue['start'] % 3600) // 60):02d}:{int(cue['start'] % 60):02d},{start_ms % 1000:03d}"
-        end_str = f"{int(cue['end'] // 3600):02d}:{int((cue['end'] % 3600) // 60):02d}:{int(cue['end'] % 60):02d},{end_ms % 1000:03d}"
-
         srt_content += f"{cue['number']}\n"
         srt_content += f"{start_str} --> {end_str}\n"
         srt_content += f"{cue['text']}\n\n"
