@@ -211,7 +211,7 @@ jobs:
                 print('✅ transcriber available')
             except ImportError:
                 print('⚠️  transcriber not available')
-
+            
             try:
                 import subtitle_gen
                 print('✅ subtitle_gen available')
@@ -248,7 +248,7 @@ jobs:
             # Test with long Vietnamese text
             long_text = 'Xin chào. ' * 100 + 'Đây là bản tin thiết kế kiểm tra phụ đề.' * 50
             start_time = time.time()
-            word_timestamps = estimateWordDurations(long_text, 300.0)  # 5 minutes
+            word_timestamps = estimateWordDurations(long_text, 300.0)
             srt_content = generateSRTFromWordTimestamps(word_timestamps, max_words_per_cue=5)
 
             print(f'✅ Generated {len(word_timestamps)} word timestamps')
