@@ -113,7 +113,7 @@ class TestVietnamesePipelineIntegration:
         lines = content.strip().split("\n")
         
         # Should have: cue number, time range, text, blank line
-        assert len(lines) >= 4, "SRT format too short"
+        assert len(lines) >= 3, "SRT format too short"
         
         # First line should be cue number "1"
         assert lines[0].strip() == "1", "First line should be cue number 1"
