@@ -116,10 +116,11 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def measure_static_ratio(path: Path, ffmpeg: str, duration: float) -> float | None:
+def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool = False) -> float | None:
+    noise_threshold = "-30dB" if strict else "-60dB"
     result = subprocess.run(
         [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
-         "freezedetect=n=-60dB:d=2", "-an", "-f", "null", "-"],
+         f"freezedetect=n={noise_threshold}:d=2", "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
     )
     stderr = result.stderr or ""
@@ -247,7 +248,7 @@ def validate_content(
                         f"{path}: {edge_ratio:.4%} edge density < {MIN_EDGE_DENSITY:.4%} — missing text/graphics"
                     )
                 # Motion variance gate (frozen canvas)
-                static_ratio = measure_static_ratio(path, ffmpeg, duration)
+                static_ratio = measure_static_ratio(path, ffmpeg, duration, strict=strict)
                 if static_ratio is None:
                     errors.append(f"{path}: could not measure static ratio")
                 elif static_ratio > MAX_STATIC_RATIO:
@@ -280,6 +281,11 @@ def main() -> int:
     parser.add_argument("--tolerance", type=float, default=3.0)
     parser.add_argument("--reels-max-duration", type=float, default=None)
     parser.add_argument(
+        "--render",
+        choices=("full", "reels"),
+        help="Validate only one render instead of both",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Enable strict visual content checks (enhanced black/detect, edge + motion variance)",
@@ -293,11 +299,14 @@ def main() -> int:
     full_narration = resolve_narration(args.project_dir, "narration.mp3")
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
 
+    renders = (
+        ("full", FULL_RENDER, full_narration, None),
+        ("reels", REELS_RENDER, reels_narration, args.reels_max_duration),
+    )
     errors: list[str] = []
-    for render_name, narration, max_duration in (
-        (FULL_RENDER, full_narration, None),
-        (REELS_RENDER, reels_narration, args.reels_max_duration),
-    ):
+    for render_kind, render_name, narration, max_duration in renders:
+        if args.render and render_kind != args.render:
+            continue
         errors.extend(
             validate_video(
                 args.project_dir / "renders" / render_name,
