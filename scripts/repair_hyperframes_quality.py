@@ -177,14 +177,14 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
 
     def scale_attr(match: re.Match[str]) -> str:
         value = float(match.group(2))
-        return f'{match.group(1)}="{round(value * scale, 3)}"'
+        return f'{match.group(1)}="{value * scale:.3f}"'
 
     head = html[:root_open.start()]
     body = html[root_open.start():]
     body = re.sub(r"\b(data-start|data-duration)=[\"']([0-9.]+)[\"']", scale_attr, body)
     body = re.sub(
         r"(const\s+totalDuration\s*=\s*)[0-9.]+",
-        lambda m: f"{m.group(1)}{target}",
+        lambda m: f"{m.group(1)}{target:.3f}",
         body,
     )
     return head + body
