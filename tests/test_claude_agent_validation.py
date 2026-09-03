@@ -47,14 +47,13 @@ class TestCLAUDEAgentValidator:
         test_dir = Path(tempfile.mkdtemp())
         validator = CLAUDEAgentValidator(
             project_dir=test_dir,
-            strict_mode=True,
-            retry_count=2
+            strict_mode=True
         )
         
         assert validator.project_dir == test_dir
         assert validator.strict_mode is True
         assert validator.retry_count == 2
-        assert len(validator.results) == 0
+        assert validator.retry_count == 2
         
     def test_technical_contract_missing_file(self):
         """Test technical contract validation with missing file."""

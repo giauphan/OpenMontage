@@ -83,7 +83,7 @@ class TestCLAUDEAgentValidation:
         """Test technical contract validation."""
         print("Testing Technical Contract Validation...")
         
-        validator = CLAUDEAgentValidator(self.project_dir, strict_mode=True, retry_count=1)
+        validator = CLAUDEAgentValidator(self.project_dir, strict_mode=True)
         
         # Create a mock video file with filename indicating valid specs
         video_path = self.project_dir / "renders" / "final_full_vi_9x16.mp4"
@@ -230,7 +230,7 @@ class TestCLAUDEAgentValidation:
         """Test the complete validation pipeline with mocked subprocess."""
         print("Testing Full Validation Pipeline...")
         
-        validator = CLAUDEAgentValidator(self.project_dir, strict_mode=True, retry_count=2)
+        validator = CLAUDEAgentValidator(self.project_dir, strict_mode=True)
         
         # Mock all subprocess calls
         with patch('subprocess.run') as mock_run:

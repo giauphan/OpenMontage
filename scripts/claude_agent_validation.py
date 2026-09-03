@@ -30,12 +30,14 @@ except ImportError:
     ValidationStatusLogger = None
 
 # Strict Quality Thresholds
-SILENCE_MEAN_DB = -50.0
-MAX_BLACK_RATIO = 0.30
-MIN_EDGE_DENSITY = 0.005
-MAX_STATIC_RATIO = 0.50
-MIN_DURATION = 30.0
-REQUIRED_HASHTAGS = {"#tintuc", "#congnghe", "#ai"}
+# Note: Currently only MIN_DURATION is used in CLAUDE agent prompts
+# Other thresholds are reserved for future strict validation implementation
+SILENCE_MEAN_DB = -50.0  # dBFS - silence threshold for audio detection
+MAX_BLACK_RATIO = 0.30  # Maximum percentage of black frames allowed
+MIN_EDGE_DENSITY = 0.005  # Minimum edge density for motion detection
+MAX_STATIC_RATIO = 0.50  # Maximum percentage of static frames allowed
+MIN_DURATION = 30.0  # Minimum video duration in seconds
+REQUIRED_HASHTAGS = {"#tintuc", "#congnghe", "#ai"}  # Required hashtags for social media
 
 
 @dataclass
@@ -225,15 +227,30 @@ class CLAUDEAgentValidator:
                         details={"output": result.stdout}
                     ))
                 else:
-                    error_lines = result.stderr.strip().split('\n') if result.stderr else []
-                    for error in error_lines:
-                        if error:
-                            results.append(ValidationResult(
-                                check_name="Metadata Validation",
-                                passed=False,
-                                message=f"Metadata validation failed: {error}",
-                                details={"stderr": result.stderr}
-                            ))
+                    # Handle empty stderr case
+                    error_lines = []
+                    if result.stderr and result.stderr.strip():
+                        error_lines = result.stderr.strip().split('\n')
+                    elif result.stdout and result.stdout.strip():
+                        error_lines = result.stdout.strip().split('\n')
+                    
+                    if not error_lines:
+                        # If both stderr and stdout are empty or only whitespace
+                        results.append(ValidationResult(
+                            check_name="Metadata Validation",
+                            passed=False,
+                            message="Metadata validation failed with no error details",
+                            details={"stdout": result.stdout, "stderr": result.stderr}
+                        ))
+                    else:
+                        for error in error_lines:
+                            if error.strip():  # Skip empty lines
+                                results.append(ValidationResult(
+                                    check_name="Metadata Validation",
+                                    passed=False,
+                                    message=f"Metadata validation failed: {error.strip()}",
+                                    details={"stderr": result.stderr}
+                                ))
             else:
                 results.append(ValidationResult(
                     check_name="Metadata File",
@@ -262,13 +279,16 @@ As a strict quality assurance agent, analyze the video at {video_path} with meta
 PERFORM STRICT QUALITY VALIDATION on the following criteria:
 
 1. VISUAL QUALITY: Check for visual artifacts, compression issues, color consistency
-2. AUDIO SYNC: Verify voice-over synchronization and clarity  
+2. AUDIO SYNC: Verify voice-over synchronization and clarity
 3. CONTENT APPROPRIATENESS: Ensure content is safe, appropriate, and aligned with guidelines
 4. BRAND COMPLIANCE: Verify adherence to brand style guidelines
 
 REQUIREMENTS:
 - Dimensions must be 1080x1920 (portrait)
-- Video must exceed {MIN_DURATION} seconds
+- Video must exceed {MIN_DURATION:.0f} seconds
+- Must contain Vietnamese narration with hook in first 3 seconds
+- Must have synchronized dynamic captions
+- Required hashtags: #tintuc #congnghe #ai
 - Must contain Vietnamese narration with hook in first 3 seconds
 - Must have synchronized dynamic captions
 - Required hashtags: #tintuc #congnghe #ai
@@ -467,27 +487,22 @@ def main():
     # Handle default: if neither --strict nor --no-strict was specified, default to True
     if args.strict is None:
         args.strict = True
-    
+
     project_dir = Path(args.project_dir)
     if not project_dir.exists():
         print(f"Error: Project directory not found: {project_dir}")
         sys.exit(1)
-    
+
     # Define video paths and metadata path
     video_paths = [
         project_dir / "renders" / "final_full_vi_9x16.mp4",
         project_dir / "renders" / "final_reels_vi_9x16.mp4"
     ]
-    
+
     metadata_path = project_dir / "publish_metadata.json"
-    
-    # Handle --strict and --no-strict arguments properly
-    # --strict defaults to False (use default), --no-strict sets it to False explicitly
-    # If neither is specified, we want True (strict by default)
-    strict_mode = True  # default to True as requested in review
-    if hasattr(args, 'strict'):
-        strict_mode = args.strict
-    
+
+    # Create validator with handled strict_mode
+    strict_mode = args.strict
     validator = CLAUDEAgentValidator(
         project_dir=project_dir,
         strict_mode=strict_mode
