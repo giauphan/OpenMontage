@@ -44,10 +44,13 @@ class TestCLAUDEAgentValidation:
         (self.project_dir / "renders").mkdir()
         (self.project_dir / "artifacts").mkdir()
         
-        # Create test video files (minimal valid files for testing)
+        # Create test video files (minimal non-empty files for testing)
         # These are just placeholders - real tests would use actual video files
         for video_file in ["final_full_vi_9x16.mp4", "final_reels_vi_9x16.mp4"]:
-            (self.project_dir / "renders" / video_file).touch()
+            video_path = self.project_dir / "renders" / video_file
+            # Create non-empty placeholder files (1MB of zeros)
+            with open(video_path, 'wb') as f:
+                f.write(b'\x00' * 1024 * 1024)  # 1MB file
         
         # Create test metadata
         metadata = {
