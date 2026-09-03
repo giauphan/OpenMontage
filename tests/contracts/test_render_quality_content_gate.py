@@ -117,9 +117,11 @@ def test_dark_blue_blank_video_fails_in_strict_mode(tmp_path, capsys):
     dark_video = f"color=c=0x0a0e1a:size={DIMENSIONS}:duration={DURATION}:rate=30"
     audio = f"sine=frequency=440:duration={DURATION}"
     for name in ("final_full_vi_9x16.mp4", "final_reels_vi_9x16.mp4"):
+        path = project / "renders" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         _run(["ffmpeg", "-y", "-f", "lavfi", "-i", dark_video, "-f", "lavfi", "-i", audio,
               "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", "30",
-              "-c:a", "aac", "-shortest", str(project / "renders" / name)])
+              "-c:a", "aac", "-shortest", str(path)])
 
     argv = [
         "validate_render_quality.py",
@@ -136,7 +138,7 @@ def test_dark_blue_blank_video_fails_in_strict_mode(tmp_path, capsys):
         assert validate_render_quality.main() == 1
     finally:
         sys.argv = original
-    assert "dark/near-black" in capsys.readouterr().err
+    assert "edge density" in capsys.readouterr().err
 
 
 def test_production_min_duration_rejects_short_render(tmp_path):
