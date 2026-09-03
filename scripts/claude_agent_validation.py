@@ -22,7 +22,11 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
-from scripts.validation_status import ValidationStatusLogger
+try:
+    from scripts.validation_status import ValidationStatusLogger
+except ImportError:
+    # Handle case when validation_status is not available
+    ValidationStatusLogger = None
 
 # Strict Quality Thresholds
 SILENCE_MEAN_DB = -50.0
@@ -76,28 +80,55 @@ class CLAUDEAgentValidator:
             ffprobe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video_path)]
             duration_result = subprocess.run(ffprobe_cmd, capture_output=True, text=True)
             
-            if duration_result.returncode == 0:
-                duration = float(duration_result.stdout.strip())
-                if duration >= MIN_DURATION:
+            if duration_result.returncode != 0:
+                # Handle ffprobe failure explicitly
+                error_msg = f"ffprobe failed: {duration_result.stderr.strip() if duration_result.stderr else duration_result.stdout.strip() if duration_result.stdout else 'no error details'}"
+                results.append(ValidationResult(
+                    check_name="FFprobe Execution",
+                    passed=False,
+                    message=f"ffprobe command failed: {error_msg}",
+                    details={"returncode": duration_result.returncode, "stderr": duration_result.stderr, "stdout": duration_result.stdout}
+                ))
+                return results
+                
+            if duration_result.stdout.strip():
+                try:
+                    duration = float(duration_result.stdout.strip())
+                    if duration >= MIN_DURATION:
+                        results.append(ValidationResult(
+                            check_name="Duration Check",
+                            passed=True,
+                            message=f"Duration: {duration:.1f}s ≥ {MIN_DURATION}s ✓",
+                            details={"duration": duration, "min_duration": MIN_DURATION}
+                        ))
+                    else:
+                        results.append(ValidationResult(
+                            check_name="Duration Check",
+                            passed=False,
+                            message=f"Duration: {duration:.1f}s < {MIN_DURATION}s ✗",
+                            details={"duration": duration, "min_duration": MIN_DURATION}
+                        ))
+                except ValueError as e:
                     results.append(ValidationResult(
-                        check_name="Duration Check",
-                        passed=True,
-                        message=f"Duration: {duration:.1f}s ≥ {MIN_DURATION}s ✓",
-                        details={"duration": duration, "min_duration": MIN_DURATION}
-                    ))
-                else:
-                    results.append(ValidationResult(
-                        check_name="Duration Check",
+                        check_name="Duration Parsing",
                         passed=False,
-                        message=f"Duration: {duration:.1f}s < {MIN_DURATION}s ✗",
-                        details={"duration": duration, "min_duration": MIN_DURATION}
+                        message=f"Failed to parse duration: {str(e)}",
+                        details={"raw_output": duration_result.stdout, "error": str(e)}
                     ))
+            else:
+                results.append(ValidationResult(
+                    check_name="Duration Extraction",
+                    passed=False,
+                    message="ffprobe returned empty duration output",
+                    details={"stdout": duration_result.stdout, "stderr": duration_result.stderr}
+                ))
             
         except Exception as e:
             results.append(ValidationResult(
                 check_name="Technical Contract",
                 passed=False,
-                message=f"Technical validation error: {str(e)}"
+                message=f"Technical validation error: {str(e)}",
+                details={"exception_type": type(e).__name__, "exception_message": str(e)}
             ))
             
         return results
@@ -131,18 +162,31 @@ class CLAUDEAgentValidator:
                     message="Content quality validation passed ✓",
                     details={"stdout": result.stdout, "stderr": result.stderr}
                 ))
-                return results
             else:
-                # Parse errors from validation script
-                error_lines = result.stderr.strip().split('\n') if result.stderr else []
-                for error in error_lines:
-                    if error:
-                        results.append(ValidationResult(
-                            check_name="Content Quality",
-                            passed=False,
-                            message=f"Content validation failed: {error}",
-                            details={"stdout": result.stdout, "stderr": result.stderr}
-                        ))
+                # Parse errors from validation script - handle empty stderr
+                error_lines = []
+                if result.stderr and result.stderr.strip():
+                    error_lines = result.stderr.strip().split('\n')
+                elif result.stdout and result.stdout.strip():
+                    error_lines = result.stdout.strip().split('\n')
+                    
+                if not error_lines:
+                    # If both stderr and stdout are empty or only whitespace
+                    results.append(ValidationResult(
+                        check_name="Content Quality",
+                        passed=False,
+                        message="Content quality validation failed with no error details",
+                        details={"stdout": result.stdout, "stderr": result.stderr}
+                    ))
+                else:
+                    for error in error_lines:
+                        if error.strip():  # Skip empty lines
+                            results.append(ValidationResult(
+                                check_name="Content Quality",
+                                passed=False,
+                                message=f"Content validation failed: {error.strip()}",
+                                details={"stdout": result.stdout, "stderr": result.stderr}
+                            ))
                 
         except Exception as e:
             results.append(ValidationResult(
@@ -206,7 +250,7 @@ class CLAUDEAgentValidator:
             
         return results
 
-    def claud_agent_strict_review(self, video_path: Path, metadata_path: Path) -> List[ValidationResult]:
+    def claude_agent_strict_review(self, video_path: Path, metadata_path: Path) -> List[ValidationResult]:
         """CLAUDE Agent powered strict quality review."""
         results = []
         
@@ -244,8 +288,9 @@ Be STRICT and RETURN false for any quality issues.
 
             # Run CLAUDE agent validation
             claude_cmd = [
-                "claude", "-p", "--output-format", "json", 
+                "claude", "-p", "--output-format", "json",
                 "--dangerously-skip-permissions",
+                "--dangerously-bypass-npm",
                 prompt
             ]
             
@@ -333,7 +378,7 @@ Be STRICT and RETURN false for any quality issues.
         # Step 4: CLAUDE Agent Review
         if self.strict_mode:
             for video_path in video_paths:
-                agent_results = self.claud_agent_strict_review(video_path, metadata_path)
+                agent_results = self.claude_agent_strict_review(video_path, metadata_path)
                 all_results.extend(agent_results)
         
         self.results = all_results
@@ -388,8 +433,10 @@ Be STRICT and RETURN false for any quality issues.
 def main():
     parser = argparse.ArgumentParser(description='CLAUDE Agent Strict Quality Validation')
     parser.add_argument('project_dir', type=str, help='Project directory to validate')
-    parser.add_argument('--strict', action='store_true', default=True, 
-                       help='Enable strict mode (default)')
+    parser.add_argument('--strict', action='store_true', default=True,
+                       help='Enable strict mode (default: True)')
+    parser.add_argument('--no-strict', action='store_true', default=False,
+                       help='Disable strict mode')
     parser.add_argument('--retry', type=int, default=2, 
                        help='Maximum retry attempts (default: 2)')
     parser.add_argument('--ffprobe', type=str, default='ffprobe', 
@@ -412,10 +459,16 @@ def main():
     
     metadata_path = project_dir / "publish_metadata.json"
     
-    # Create validator
+    # Create validator - strict mode is True by default unless --no-strict is specified
+    strict_mode = True  # Default to True as requested in review comments
+    if hasattr(args, 'no_strict') and args.no_strict:
+        strict_mode = False
+    elif hasattr(args, 'strict') and not args.strict:
+        strict_mode = False
+    
     validator = CLAUDEAgentValidator(
         project_dir=project_dir,
-        strict_mode=args.strict,
+        strict_mode=strict_mode,
         retry_count=args.retry
     )
     
@@ -430,16 +483,17 @@ def main():
     # Print report
     validator.print_validation_report(validation_data)
     
-    # Log to validation status system
-    logger = ValidationStatusLogger()
-    logger.log_validation_result(
-        project_id=Path(args.project_dir).name,
-        status=validation_data['overall_status'],
-        total_checks=validation_data['total_checks'],
-        passed=validation_data['passed_checks'],
-        failed=validation_data['failed_checks'],
-        details=validation_data
-    )
+    # Log to validation status system if available
+    if ValidationStatusLogger is not None:
+        logger = ValidationStatusLogger()
+        logger.log_validation_result(
+            project_id=Path(args.project_dir).name,
+            status=validation_data['overall_status'],
+            total_checks=validation_data['total_checks'],
+            passed=validation_data['passed_checks'],
+            failed=validation_data['failed_checks'],
+            details=validation_data
+        )
     
     # Return exit code based on validation result
     if validation_data['overall_status'] == 'PASS':

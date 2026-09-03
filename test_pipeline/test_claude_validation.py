@@ -12,6 +12,9 @@ import tempfile
 import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+# Fix import path to work from root directory
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from scripts.claude_agent_validation import CLAUDEAgentValidator, ValidationResult
 
 
