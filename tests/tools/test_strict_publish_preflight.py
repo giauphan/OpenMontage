@@ -215,7 +215,7 @@ def test_youtube_scheduler_validates_project_before_store_claim(tmp_path, monkey
     monkeypatch.setattr(
         module,
         "validate_project_quality",
-        lambda _project: (_ for _ in ()).throw(ValueError("quality failed")),
+        lambda _project, strict=False: (_ for _ in ()).throw(ValueError("quality failed")),
     )
     monkeypatch.setattr(module, "validate_publish_asset", lambda *_args, **_kwargs: calls.append("asset-validation"))
     future_day = (datetime.now().date() + timedelta(days=1))
