@@ -16,10 +16,6 @@ from typing import Dict, List, Optional
 class ValidationStatusLogger:
     """Tracks and logs CLAUDE agent validation status."""
 
-    # Allow configuration of paths - defaults to /app for Docker, can be overridden
-    STATUS_FILE = Path("/app/validation_status.json")
-    LOG_FILE = Path("/app/logs/validation_log.txt")
-    
     def __init__(self, project_dir: Optional[Path] = None):
         # If project_dir is provided, use it for file locations
         self.project_dir = project_dir
@@ -28,7 +24,10 @@ class ValidationStatusLogger:
             self.logs_dir = project_dir / "logs"
             self.LOG_FILE = self.logs_dir / "validation_log.txt"
         else:
+            # Default paths for Docker container
+            self.STATUS_FILE = Path("/app/validation_status.json")
             self.logs_dir = Path("/app/logs")
+            self.LOG_FILE = Path("/app/logs/validation_log.txt")
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         
     def log_validation_result(self, project_id: str, status: str, 
