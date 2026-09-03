@@ -30,14 +30,8 @@ except ImportError:
     ValidationStatusLogger = None
 
 # Strict Quality Thresholds
-# Note: Currently only MIN_DURATION is used in CLAUDE agent prompts
-# Other thresholds are reserved for future strict validation implementation
-SILENCE_MEAN_DB = -50.0  # dBFS - silence threshold for audio detection
-MAX_BLACK_RATIO = 0.30  # Maximum percentage of black frames allowed
-MIN_EDGE_DENSITY = 0.005  # Minimum edge density for motion detection
-MAX_STATIC_RATIO = 0.50  # Maximum percentage of static frames allowed
+# Currently MIN_DURATION is used in CLAUDE agent prompts
 MIN_DURATION = 30.0  # Minimum video duration in seconds
-REQUIRED_HASHTAGS = {"#tintuc", "#congnghe", "#ai"}  # Required hashtags for social media
 
 
 @dataclass

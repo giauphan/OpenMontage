@@ -29,14 +29,20 @@ class MockProcess:
 
 class TestCLAUDEAgentValidation:
     """Test suite for CLAUDE Agent Validation."""
-    
-    def __init__(self):
+
+    def setup_method(self):
+        """Set up test environment for each test method."""
         self.test_dir = Path(tempfile.mkdtemp())
         self.project_dir = self.test_dir / "test_project"
         self.project_dir.mkdir()
-        
+
         # Create test files
         self._create_test_files()
+    
+    def teardown_method(self):
+        """Clean up test environment."""
+        import shutil
+        shutil.rmtree(self.test_dir, ignore_errors=True)
     
     def _create_test_files(self):
         """Create test project structure."""
