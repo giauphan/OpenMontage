@@ -6,6 +6,8 @@ import pytest
 from pathlib import Path
 from scripts.claude_agent_validation import CLAUDEAgentValidator, ValidationResult
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 class TestValidationResult:
     """Test ValidationResult dataclass."""
@@ -97,14 +99,15 @@ class TestCLAUDEAgentValidator:
 
 class TestCommandLineIntegration:
     """Test command line integration."""
-    
+
     def test_help_command(self):
         """Test that help command works."""
         import subprocess
+        import os
         result = subprocess.run([
             "python3", "scripts/claude_agent_validation.py", "--help"
-        ], capture_output=True, text=True, cwd="/app")
-        
+        ], capture_output=True, text=True, cwd=os.getcwd())
+
         assert result.returncode == 0
         assert "usage:" in result.stdout.lower()
 
@@ -115,16 +118,16 @@ class TestStrictMode:
     def test_strict_mode_default(self):
         """Test that strict mode defaults to True."""
         import subprocess
+        import os
         result = subprocess.run([
             "python3", "-c",
-            "import sys; sys.path.insert(0, '/app'); "
             "from scripts.claude_agent_validation import main; "
             "import argparse; parser = argparse.ArgumentParser(); "
             "parser.add_argument('--strict', action='store_true', default=True); "
             "parser.add_argument('--no-strict', action='store_true', default=False); "
             "args = parser.parse_args([]); "
             "print('strict=' + str(args.strict))"
-        ], capture_output=True, text=True, cwd="/app")
+        ], capture_output=True, text=True, cwd=os.getcwd())
         
         assert result.returncode == 0
         assert "strict=True" in result.stdout

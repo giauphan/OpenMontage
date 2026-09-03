@@ -48,6 +48,7 @@ class CLAUDEAgentValidator:
     def __init__(self, project_dir: Path, strict_mode: bool = True):
         self.project_dir = project_dir
         self.strict_mode = strict_mode
+        self.retry_count = 2
         self.results: List[ValidationResult] = []
         
     def validate_technical_contract(self, video_path: Path) -> List[ValidationResult]:
