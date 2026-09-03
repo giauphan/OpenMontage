@@ -279,20 +279,17 @@ PERFORM STRICT QUALITY VALIDATION on the following criteria:
 
 REQUIREMENTS:
 - Dimensions must be 1080x1920 (portrait)
-- Video must exceed {MIN_DURATION:.0f} seconds
-- Must contain Vietnamese narration with hook in first 3 seconds
-- Must have synchronized dynamic captions
-- Required hashtags: #tintuc #congnghe #ai
+- Video must exceed {int(MIN_DURATION)} seconds
 - Must contain Vietnamese narration with hook in first 3 seconds
 - Must have synchronized dynamic captions
 - Required hashtags: #tintuc #congnghe #ai
 
 RESPONSE: Return ONLY JSON with structure:
 {{
-  "visual_quality": {{{"passed": true/false, "score": 0-100, "notes": "string"}}},
-  "audio_sync": {{{"passed": true/false, "score": 0-100, "notes": "string"}}},
-  "content_appropriateness": {{{"passed": true/false, "score": 0-100, "notes": "string"}}},
-  "brand_compliance": {{{"passed": true/false, "score": 0-100, "notes": "string"}}},
+  "visual_quality": {{"passed": true/false, "score": 0-100, "notes": "string"}},
+  "audio_sync": {{"passed": true/false, "score": 0-100, "notes": "string"}},
+  "content_appropriateness": {{"passed": true/false, "score": 0-100, "notes": "string"}},
+  "brand_compliance": {{"passed": true/false, "score": 0-100, "notes": "string"}},
   "overall_passed": true/false,
   "summary": "string"
 }}
