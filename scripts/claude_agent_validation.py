@@ -310,7 +310,6 @@ Be STRICT and RETURN false for any quality issues.
             claude_cmd = [
                 "claude", "-p", "--output-format", "json",
                 "--dangerously-skip-permissions",
-                "--dangerously-bypass-npm",
                 prompt
             ]
             
