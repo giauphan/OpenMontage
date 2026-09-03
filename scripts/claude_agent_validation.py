@@ -133,13 +133,15 @@ class CLAUDEAgentValidator:
     def validate_content_quality(self, video_path: Path, ffprobe_bin: str = "ffprobe", ffmpeg_bin: str = "ffmpeg") -> List[ValidationResult]:
         """Validate content quality: audio volume, black frames, edge density."""
         results = []
-        
+
         try:
-            # Use existing validation script with specific video path
+            render_arg = "reels" if "reels" in video_path.name else "full"
+            # Use existing validation script with project directory path
             validate_cmd = [
                 sys.executable,
                 "scripts/validate_render_quality.py",
-                str(video_path),  # Use the specific video_path parameter
+                str(self.project_dir),
+                "--render", render_arg,
                 "--ffprobe", ffprobe_bin,
                 "--ffmpeg", ffmpeg_bin,
                 "--strict"
@@ -197,14 +199,14 @@ class CLAUDEAgentValidator:
     def validate_metadata(self, metadata_path: Path) -> List[ValidationResult]:
         """Validate metadata: hashtags, shell syntax, placeholders."""
         results = []
-        
+
         try:
             if metadata_path.exists():
-                # Use existing metadata validation
+                # Use existing metadata validation with project directory path
                 validate_cmd = [
                     sys.executable,
                     "scripts/validate_publish_metadata.py",
-                    str(metadata_path)
+                    str(self.project_dir)
                 ]
                 
                 result = subprocess.run(
