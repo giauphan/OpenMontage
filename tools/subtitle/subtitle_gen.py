@@ -269,6 +269,7 @@ class SubtitleGen(BaseTool):
                 lines.append(f"{self._ts_srt(cue['start'])} --> {self._ts_srt(cue['end'])}")
                 lines.append(cue["text"])
                 lines.append("")
+        
         return "\n".join(lines)
 
     def _render_vtt(self, cues: list[dict], highlight_style: str = "none") -> str:

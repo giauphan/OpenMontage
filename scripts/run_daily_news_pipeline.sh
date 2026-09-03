@@ -233,6 +233,37 @@ materialize_hyperframes_assets() {
     edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
+
+  # Generate Vietnamese subtitles with word timestamps for caption synchronization
+if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
+  local subtitle_text="$narration_text.prepared"
+  [ -s "$subtitle_text" ] || subtitle_text="$narration_text"
+  
+  echo "[$(date -u +%FT%TZ)] Generating Vietnamese subtitles..."
+  mkdir -p "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
+  
+  if [ -s "$subtitle_text" ]; then
+    python3 "$ROOT/scripts/generate_vn_subtitles.py" \
+      "$subtitle_text" \
+      "$narration" \
+      "$project_root/hyperframes/assets/subtitles.srt" \
+      "$project_root/hyperframes/assets/word_timestamps.json" \
+      3 && echo "[$(date -u +%FT%TZ)] Vietnamese subtitles generated" || \
+      echo "[$(date -u +%FT%TZ)] WARNING: Subtitle generation failed, continuing..." >&2
+
+    # Generate reels subtitles if audio exists
+    if [ -s "$reels_narration" ]; then
+      python3 "$ROOT/scripts/generate_vn_subtitles.py" \
+        "$reels_narration_text.prepared" \
+        "$reels_narration" \
+        "$project_root/hyperframes_reels/assets/subtitles.srt" \
+        "$project_root/hyperframes_reels/assets/word_timestamps.json" \
+        3 || echo "[$(date -u +%FT%TZ)] WARNING: Reels subtitle generation failed" >&2
+    fi
+  else
+    echo "[$(date -u +%FT%TZ)] WARNING: No subtitle text available" >&2
+  fi
+fi
   if [ ! -s "$narration" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
     exit 1
