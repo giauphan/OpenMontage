@@ -90,7 +90,7 @@ install-gpu: ensure-venv
 # ---- Testing ----
 
 test: ensure-venv
-	$(RUN_PYTHON) -m pytest tests/ -v
+	$(RUN_PYTHON) -m pytest tests/ -v --ignore=tests/contracts/
 
 test-contracts: ensure-venv
 	$(RUN_PYTHON) -m pytest tests/contracts/ -v
@@ -128,11 +128,13 @@ lint: ensure-venv
 	$(RUN_PYTHON) -m py_compile scripts/repair_hyperframes_quality.py
 	$(RUN_PYTHON) -m py_compile scripts/check_qa.py
 	$(RUN_PYTHON) -m py_compile scripts/fix_narration_timing.py
+	$(RUN_PYTHON) -m py_compile scripts/claude_agent_validation.py
+	$(RUN_PYTHON) -m py_compile scripts/validation_status.py
 
 # Pipeline shell entrypoints are load-bearing: a syntax error only surfaces at
 # 3am in cron. Parse them in CI.
 lint-shell:
-	@for script in scripts/*.sh; do \
+	@for script in scripts/*.sh test_pipeline/*.sh docker-validation-run.sh test_validation_integration.sh; do \
 		echo "==> bash -n $$script"; \
 		bash -n "$$script" || exit 1; \
 	done

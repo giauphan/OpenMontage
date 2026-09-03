@@ -338,10 +338,94 @@ sed -i 's|\.\./assets/|assets/|g' "$FULL_COMP/index.html" "$REELS_COMP/index.htm
 rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
+
+# ===== CLAUDE AGENT STRICT QUALITY VALIDATION =====
+echo "[$(date -u +%FT%TZ)] CLAUDE Agent Strict Quality Validation Started"
+
+# Step 1: Base render quality validation (existing)
 "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60
+VALIDATE_RENDER_EXIT=$?
+
+if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Base render validation failed" >&2
+  exit 1
+fi
+
+# Check if videos exist
 for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
   [ -s "$render" ] || { echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render" >&2; exit 1; }
 done
+
+# Step 2: Create publish_metadata.json first (needed for CLAUDE validation)
+TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+if [ -z "$TITLE" ]; then
+  TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
+fi
+if [ -z "$TITLE" ]; then
+  TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
+fi
+
+# Ensure title contains required hashtags
+if [[ ! "$TITLE" =~ "#tintuc" || ! "$TITLE" =~ "#congnghe" || ! "$TITLE" =~ "#ai" ]]; then
+  TITLE="$TITLE #tintuc #congnghe #ai"
+fi
+
+# Create basic publish_metadata.json for validation
+jq -n \
+  --arg title "$TITLE" \
+  --arg desc "$(jq -r '.description // ""' artifacts/script_vi.json 2>/dev/null || echo "")" \
+  --arg yt_shorts "$TITLE" \
+  --arg tiktok "$TITLE" \
+  --arg fb_video "$TITLE" \
+  --arg ig_reels "$TITLE" \
+  '{
+    title: $title,
+    description: $desc,
+    yt_shorts: {title: $yt_shorts},
+    tiktok: {title: $tiktok},
+    fb_video: {title: $fb_video},
+    ig_reels: {title: $ig_reels}
+  }' > publish_metadata.json
+
+# Step 3: CLAUDE Agent Strict Quality Validation (NEW FEATURE)
+echo "[$(date -u +%FT%TZ)] Running CLAUDE Agent validation..."
+
+# Set max retry attempts
+MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-2}"
+VALIDATION_PASSED=0
+
+for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
+  echo "[$(date -u +%FT%TZ)] CLAUDE Validation Attempt $retry/$MAX_RETRIES"
+  
+  "$PY" "$ROOT/scripts/claude_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
+    --strict \
+    --retry "$MAX_RETRIES" \
+    --ffprobe "$FFPROBE_BIN" \
+    --ffmpeg "$FFMPEG_BIN"
+  
+  VALIDATION_EXIT=$?
+  
+  if [ $VALIDATION_EXIT -eq 0 ]; then
+    echo "[$(date -u +%FT%TZ)] 🟢 CLAUDE Agent Strict Quality Validation PASSED"
+    VALIDATION_PASSED=1
+    break
+  else
+    echo "[$(date -u +%FT%TZ)] ❌ CLAUDE Agent validation failed (attempt $retry/$MAX_RETRIES)"
+    
+    # Only retry if we haven't exhausted attempts
+    if [ $retry -lt $MAX_RETRIES ]; then
+      echo "[$(date -u +%FT%TZ)] Retrying validation..."
+      sleep 5  # Brief pause before retry
+    fi
+  fi
+done
+
+if [ $VALIDATION_PASSED -eq 0 ]; then
+  echo "[$(date -u +%FT%TZ)] 🔴 FINAL: CLAUDE Agent Strict Quality Validation FAILED after $MAX_RETRIES attempts" >&2
+  echo "[$(date -u +%FT%TZ)] Project: $PROJECT_ID" >&2
+  echo "[$(date -u +%FT%TZ)] Check validation reports in project directory" >&2
+  exit 1
+fi
 
 if [ "$FEED_STALE" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] NOTICE: Render completed using STALE feed data."
