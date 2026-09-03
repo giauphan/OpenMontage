@@ -191,8 +191,8 @@ class TestCLAUDEAgentValidation:
             mock_run.return_value = mock_result
             
             video_path = self.project_dir / "renders" / "final_full_vi_9x16.mp4"
-            results = validator.claud_agent_strict_review(video_path, self.project_dir / "publish_metadata.json")
-            
+            results = validator.claude_agent_strict_review(video_path, self.project_dir / "publish_metadata.json")
+
             assert len(results) == 4  # Should have 4 check results
             assert all(r.passed for r in results)
             print(f"✅ CLAUDE agent pass test: {len(results)} checks all passed")
@@ -214,8 +214,8 @@ class TestCLAUDEAgentValidation:
             mock_result.stderr = ""
             mock_run.return_value = mock_result
             
-            results = validator.claud_agent_strict_review(video_path, self.project_dir / "publish_metadata.json")
-            
+            results = validator.claude_agent_strict_review(video_path, self.project_dir / "publish_metadata.json")
+
             assert len(results) == 4
             failed_results = [r for r in results if not r.passed]
             assert len(failed_results) == 2  # visual_quality and brand_compliance failed
@@ -236,15 +236,21 @@ class TestCLAUDEAgentValidation:
                 mock_result = MagicMock()
                 
                 # Different commands return different results
-                if 'validate_render_quality.py' in ' '.join(cmd):
+                cmd_str = ' '.join(cmd)
+                if 'validate_render_quality.py' in cmd_str:
                     mock_result.returncode = 0
                     mock_result.stdout = "Render validation passed"
                     mock_result.stderr = ""
-                elif 'validate_publish_metadata.py' in ' '.join(cmd):
+                elif 'validate_publish_metadata.py' in cmd_str:
                     mock_result.returncode = 0
                     mock_result.stdout = "Metadata validation passed"
                     mock_result.stderr = ""
-                elif 'claude' in cmd[0] or 'claude' in ' '.join(cmd):  # CLAUDE agent
+                elif 'ffprobe' in cmd[0] or 'ffprobe' in cmd_str:
+                    # Handle ffprobe calls - return valid duration
+                    mock_result.returncode = 0
+                    mock_result.stdout = "45.5"  # Valid duration in seconds
+                    mock_result.stderr = ""
+                elif 'claude' in cmd[0] or 'claude' in cmd_str:  # CLAUDE agent
                     mock_result.returncode = 0
                     mock_result.stdout = json.dumps({
                         "visual_quality": {"passed": True, "score": 95, "notes": "Excellent"},
