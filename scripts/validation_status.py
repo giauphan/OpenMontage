@@ -20,6 +20,9 @@ class ValidationStatusLogger:
         # If project_dir is provided, use it for file locations
         self.project_dir = project_dir
         if project_dir is not None:
+            # Convert string to Path if needed
+            if isinstance(project_dir, str):
+                project_dir = Path(project_dir)
             self.STATUS_FILE = project_dir / "validation_status.json"
             self.logs_dir = project_dir / "logs"
             self.LOG_FILE = self.logs_dir / "validation_log.txt"
