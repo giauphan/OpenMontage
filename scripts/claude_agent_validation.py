@@ -451,7 +451,7 @@ Be STRICT and RETURN false for any quality issues.
 def main():
     parser = argparse.ArgumentParser(description='CLAUDE Agent Strict Quality Validation')
     parser.add_argument('project_dir', type=str, help='Project directory to validate')
-    parser.add_argument('--strict', action='store_true', default=False,
+    parser.add_argument('--strict', action='store_true', default=None,
                        help='Enable strict mode')
     parser.add_argument('--no-strict', dest='strict', action='store_false',
                        help='Disable strict mode')
@@ -463,6 +463,10 @@ def main():
                        help='Path to ffmpeg binary')
     
     args = parser.parse_args()
+
+    # Handle default: if neither --strict nor --no-strict was specified, default to True
+    if args.strict is None:
+        args.strict = True
     
     project_dir = Path(args.project_dir)
     if not project_dir.exists():
