@@ -506,7 +506,7 @@ def main():
     
     # Log to validation status system if available
     if ValidationStatusLogger is not None:
-        logger = ValidationStatusLogger()
+        logger = ValidationStatusLogger(project_dir=project_dir)
         logger.log_validation_result(
             project_id=Path(args.project_dir).name,
             status=validation_data['overall_status'],
