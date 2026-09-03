@@ -138,11 +138,11 @@ class CLAUDEAgentValidator:
         results = []
         
         try:
-            # Use existing validation script
+            # Use existing validation script with specific video path
             validate_cmd = [
-                sys.executable, 
+                sys.executable,
                 "scripts/validate_render_quality.py",
-                str(self.project_dir),
+                str(video_path),  # Use the specific video_path parameter
                 "--ffprobe", ffprobe_bin,
                 "--ffmpeg", ffmpeg_bin,
                 "--strict"
