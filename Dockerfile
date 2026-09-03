@@ -38,4 +38,7 @@ RUN npm install -g @anthropic-ai/claude-code
 COPY . .
 ENV PYTHONPATH=/app
 
+# Make validation scripts executable
+RUN chmod +x scripts/claude_agent_validation.py scripts/validate_render_quality.py scripts/validate_publish_metadata.py
+
 CMD ["bash"]
