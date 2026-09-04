@@ -88,14 +88,30 @@ def schedule_day(day, strict=False):
             continue
         topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
+        # Block publishing if metadata shows already published or scheduled
+        meta_status = topic_meta.get("status", "")
+        if meta_status in ("published", "scheduled"):
+            print(f"skip {proj}: project status is already '{meta_status}'")
+            continue
+
+        # Ensure YouTube asset file exists before running quality validation
+        yt_rel = topic_meta.get("yt_shorts")
+        if not yt_rel:
+            print(f"skip {proj}: missing 'yt_shorts' in publish_metadata.json")
+            continue
+        asset_path = project_dir / yt_rel
+        if not asset_path.is_file():
+            print(f"skip {proj}: missing YouTube asset file {asset_path}")
+            continue
+
         # Enable strict validation when strict=True to invoke CLAUDE agent validation
         validate_project_quality(project_dir, strict=strict)
 
-        asset_path = project_dir / topic_meta["yt_shorts"]
         validate_publish_asset(asset_path, project_dir, "youtube", strict=True)
         if cfg.get("meta", {}).get("page_id"):
-            fb_asset_path = project_dir / topic_meta["fb_video"]
-            validate_publish_asset(fb_asset_path, project_dir, "facebook", strict=True)
+            fb_rel = topic_meta.get("fb_video", topic_meta.get("fb_reels"))
+            if fb_rel and (project_dir / fb_rel).is_file():
+                validate_publish_asset(project_dir / fb_rel, project_dir, "facebook", strict=True)
         slot_time = slot_times[idx % len(slot_times)]
         dt = datetime.combine(day, slot_time, tz)
         planned.append((proj, project_dir, topic_meta, "yt_shorts", dt))
