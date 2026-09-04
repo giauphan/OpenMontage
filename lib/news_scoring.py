@@ -18,8 +18,15 @@ class NewsCandidateScorer:
     # Keyword matches for visualizable content (images, charts, UI, physical objects)
     VISUAL_KEYWORDS = {"chart", "graph", "photo", "video", "announced", "design", "prototype", "revealed", "leaked", "interface", "hardware"}
 
-    # Keyword matches for high audience interest
-    INTEREST_KEYWORDS = {"ai", "apple", "google", "microsoft", "tesla", "openai", "meta", "crypto", "hack", "security", "vulnerability"}
+    # Keyword matches for high audience interest (Tech & AI focused)
+    INTEREST_KEYWORDS = {
+        "ai", "artificial intelligence", "tech", "technology", "software", "hardware",
+        "robot", "robotics", "machine learning", "deep learning", "llm", "model",
+        "gpt", "claude", "gemini", "openai", "google", "microsoft", "apple", "nvidia",
+        "chip", "semiconductor", "cyber", "security", "code", "coding", "developer",
+        "app", "application", "data", "computing", "algorithm", "startup", "web",
+        "digital", "cloud", "quantum", "browser", "linux", "open-source", "git", "api"
+    }
 
     def __init__(self, reference_time: datetime.datetime | None = None) -> None:
         if reference_time is None:
@@ -107,11 +114,13 @@ class NewsCandidateScorer:
         return min(1.0, score)
 
     def score_audience_interest(self, title: str, body: str) -> float:
-        """Score based on broad appeal topics."""
+        """Score based on Tech/AI keywords. Non-tech content gets heavily penalized."""
         text = f"{title} {body}".lower()
 
         match_count = sum(1 for kw in self.INTEREST_KEYWORDS if kw in text)
-        if match_count >= 2:
+        if match_count == 0:
+            return 0.05  # Non-tech topics get extremely low score
+        elif match_count >= 2:
             return 1.0
         elif match_count == 1:
             return 0.8

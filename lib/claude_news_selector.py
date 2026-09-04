@@ -145,6 +145,8 @@ class ClaudeNewsSelector:
         return f"""You are a senior news producer for OpenMontage. Select the best candidate for short-form video.
 Output ONLY valid JSON object. No markdown, no preamble, no commentary.
 
+CRITICAL SELECTION RULE: Select ONLY candidates whose topic/content is directly related to Technology, AI, Software, Machine Learning, Robotics, Computing, or Tech Industry developments. Reject candidates about politics, entertainment, sports, lifestyle, general news unless they have a significant tech angle.
+
 Requirements for research_draft:
 - existing_content: Array of 3 items minimum; every url must be copied verbatim from an input candidate URL
 - data_points: Array of 3 items minimum; every source_url must be copied verbatim from an input candidate URL
