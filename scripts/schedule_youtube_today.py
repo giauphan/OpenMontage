@@ -2,10 +2,9 @@
 """Schedule active projects to YouTube for a target date based on config/publish_schedule.json.
 
 Usage:
-  python3 scripts/schedule_youtube_today.py [YYYY-MM-DD] [--strict] [--next-day]
+  python3 scripts/schedule_youtube_today.py [YYYY-MM-DD] [--next-day]
 
 Options:
-  --strict: Enable mandatory CLAUDE Agent strict quality validation
   --next-day: Also schedule for the day after the target date
 """
 import argparse
@@ -104,8 +103,8 @@ def schedule_day(day, strict=False):
             print(f"skip {proj}: missing YouTube asset file {asset_path}")
             continue
 
-        # Enable strict validation when strict=True to invoke CLAUDE agent validation
-        validate_project_quality(project_dir, strict=strict)
+        # Enable strict validation by default for publishing paths
+        validate_project_quality(project_dir, strict=True)
 
         validate_publish_asset(asset_path, project_dir, "youtube", strict=True)
         if cfg.get("meta", {}).get("page_id"):
@@ -198,7 +197,7 @@ def schedule_day(day, strict=False):
 def main():
     parser = argparse.ArgumentParser(description="Schedule active projects to YouTube for target date(s)")
     parser.add_argument("target_date", nargs="?", help="Target date in YYYY-MM-DD format (default: today)")
-    parser.add_argument("--strict", action="store_true", help="Enable mandatory CLAUDE Agent strict quality validation")
+    parser.add_argument("--strict", action="store_true", default=True, help="Ignored (strict mode is always active)")
     parser.add_argument("--next-day", action="store_true", help="Also schedule for the day after the target date")
     args = parser.parse_args()
 

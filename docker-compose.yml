@@ -21,6 +21,7 @@ services:
       - ~/.openmontage:/root/.openmontage
     environment:
       - PYTHONPATH=/app
+      - OPENMONTAGE_PYTHON=/usr/bin/python3
     stdin_open: true
     tty: true
 
@@ -37,6 +38,7 @@ services:
         required: false
     environment:
       - PYTHONPATH=/app
+      - OPENMONTAGE_PYTHON=/usr/bin/python3
     volumes:
       - .:/app
       - /app/node_modules

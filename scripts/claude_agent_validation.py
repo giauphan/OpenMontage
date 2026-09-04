@@ -366,18 +366,18 @@ Be STRICT and RETURN false for any quality issues.
             else:
                 results.append(ValidationResult(
                     check_name="CLAUDE Agent Review Gate",
-                    passed=True,
-                    message="Strict Contract Gate: Technical, visual & metadata quality checks verified ✓",
+                    passed=False,
+                    message="Strict Contract Gate: Technical, visual & metadata quality checks verified ✗ (CLI error)",
                     details={"mode": "headless_strict_verification"}
                 ))
                 
         except subprocess.TimeoutExpired:
-            # Headless fallback - CLAUDE CLI timed out, use structural validation
+            # Timeout is a failure - do not fallback to pass
             results.append(ValidationResult(
                 check_name="CLAUDE Agent Review Gate",
-                passed=True,
-                message="Strict Contract Gate: Technical, visual & metadata quality checks verified ✓",
-                details={"mode": "headless_timeout_fallback"}
+                passed=False,
+                message="Strict Contract Gate: CLAUDE CLI timeout - quality review incomplete ✗",
+                details={"mode": "timeout_failure"}
             ))
         except Exception as e:
             results.append(ValidationResult(

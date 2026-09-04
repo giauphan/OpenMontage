@@ -451,7 +451,7 @@ def main():
         sys.exit(1)
 
     try:
-        validate_project_quality(project_path)
+        validate_project_quality(project_path, strict=True)
     except Exception as exc:
         print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
         print(str(exc), file=sys.stderr)

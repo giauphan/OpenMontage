@@ -28,18 +28,13 @@
   "active_projects": [
     {
       "project_id": "cand_80136a0e2ec3829c",
-      "publish_date": "2026-09-01",
+      "publish_date": "2026-09-05",
       "publish_time": "09:15"
     },
     {
       "project_id": "cand_2ea8dd2abd94305d",
-      "publish_date": "2026-09-01",
+      "publish_date": "2026-09-05",
       "publish_time": "14:15"
-    },
-    {
-      "project_id": "cand_10a7c768f3a3a190",
-      "publish_date": "2026-09-01",
-      "publish_time": "21:15"
     }
   ]
 }

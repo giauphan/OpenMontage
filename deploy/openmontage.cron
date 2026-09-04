@@ -9,13 +9,13 @@ PATH_TO_OPENMONTAGE=/app
 0 23 * * * cd /app && ./scripts/run_daily_news_pipeline.sh >> logs/cron_pipeline.log 2>&1
 
 # 02:15 UTC (09:15 Vietnam) — Publish slot 1
-15 2 * * * cd /app && PYTHONPATH=/app python3 scripts/publish_active_projects.py --slot 09:15 >> logs/cron_publish.log 2>&1
+15 2 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 PYTHONPATH=/app /usr/bin/python3 scripts/publish_active_projects.py --slot 09:15 >> logs/cron_publish.log 2>&1
 
 # 07:15 UTC (14:15 Vietnam) — Publish slot 2
-15 7 * * * cd /app && PYTHONPATH=/app python3 scripts/publish_active_projects.py --slot 14:15 >> logs/cron_publish.log 2>&1
+15 7 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 PYTHONPATH=/app /usr/bin/python3 scripts/publish_active_projects.py --slot 14:15 >> logs/cron_publish.log 2>&1
 
 # 14:15 UTC (21:15 Vietnam) — Publish slot 3
-15 14 * * * cd /app && PYTHONPATH=/app python3 scripts/publish_active_projects.py --slot 21:15 >> logs/cron_publish.log 2>&1
+15 14 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 PYTHONPATH=/app /usr/bin/python3 scripts/publish_active_projects.py --slot 21:15 >> logs/cron_publish.log 2>&1
 
 # Fully published projects are removed from projects/ and deactivated from the
 # schedule by publish_active_projects.py. Failed or partial batches remain for retry.
