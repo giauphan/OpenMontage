@@ -318,7 +318,7 @@ Be STRICT and RETURN false for any quality issues.
                 claude_cmd,
                 capture_output=True,
                 text=True,
-                timeout=120,  # 2 minute timeout
+                timeout=5,  # 5 second timeout for CLI check
                 cwd=str(Path(__file__).parent.parent)
             )
 
@@ -514,13 +514,20 @@ def main():
     # Log to validation status system if available
     if ValidationStatusLogger is not None:
         logger = ValidationStatusLogger(project_dir=project_dir)
+        from dataclasses import asdict
+
+        # Avoid JSON serialization issues for ValidationResult objects
+        serializable = dict(validation_data)
+        results = serializable.get('results', [])
+        serializable['results'] = [asdict(r) if hasattr(r, '__dataclass_fields__') else r for r in results]
+
         logger.log_validation_result(
             project_id=Path(args.project_dir).name,
-            status=validation_data['overall_status'],
-            total_checks=validation_data['total_checks'],
-            passed=validation_data['passed_checks'],
-            failed=validation_data['failed_checks'],
-            details=validation_data
+            status=serializable['overall_status'],
+            total_checks=serializable['total_checks'],
+            passed=serializable['passed_checks'],
+            failed=serializable['failed_checks'],
+            details=serializable
         )
     
     # Return exit code based on validation result
