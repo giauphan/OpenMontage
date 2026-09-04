@@ -179,7 +179,7 @@ def schedule_day(day, strict=False):
             raise
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Schedule active projects to YouTube for target date(s)")
     parser.add_argument("target_date", nargs="?", help="Target date in YYYY-MM-DD format (default: today)")
     parser.add_argument("--strict", action="store_true", help="Enable mandatory CLAUDE Agent strict quality validation")
@@ -201,3 +201,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
