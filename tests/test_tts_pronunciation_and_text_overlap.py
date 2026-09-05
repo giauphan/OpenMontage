@@ -1,0 +1,49 @@
+import re
+from pathlib import Path
+import pytest
+
+from tools.narration_text import prepare_narration, _DEFAULT_TERMS
+
+
+def test_tts_terminology_pronunciation_lexicon():
+    """Verify CPU, GPU, and CUDA are correctly mapped in Vietnamese TTS lexicon."""
+    assert "CPU" in _DEFAULT_TERMS
+    assert _DEFAULT_TERMS["CPU"] == "Xi-Pi-Yu"
+
+    assert "GPU" in _DEFAULT_TERMS
+    assert _DEFAULT_TERMS["GPU"] == "Ghi-Pi-Yu"
+
+    assert "CUDA" in _DEFAULT_TERMS
+    assert _DEFAULT_TERMS["CUDA"] == "Ki-Đa"
+
+
+def test_prepare_narration_with_terminology():
+    """Verify sentences with CPU, GPU, CUDA produce expected phonetic transcriptions."""
+    text = "Hệ thống AI chạy trên GPU với CUDA và CPU hiệu năng cao."
+    prepared = prepare_narration(text)
+
+    assert "Ghi-Pi-Yu" in prepared
+    assert "Ki-Đa" in prepared
+    assert "Xi-Pi-Yu" in prepared
+    assert "ây-ai" in prepared
+
+
+def test_titled_video_tsx_prevents_text_overlap():
+    """Verify TitledVideo.tsx styles use safe line-height and text wrapping for Vietnamese text."""
+    titled_video_path = Path(__file__).resolve().parents[1] / "remotion-composer" / "src" / "TitledVideo.tsx"
+    assert titled_video_path.is_file(), f"Expected {titled_video_path} to exist"
+
+    content = titled_video_path.read_text(encoding="utf-8")
+
+    # Verify line-height is at least 1.2 for Vietnamese diacritics
+    line_height_match = re.search(r"lineHeight:\s*([0-9\.]+)", content)
+    assert line_height_match is not None, "lineHeight style property not found in TitledVideo.tsx"
+    line_height = float(line_height_match.group(1))
+    assert line_height >= 1.2, f"Expected lineHeight >= 1.2 to prevent diacritic overlap, got {line_height}"
+
+    # Verify text wrapping is enabled (no whiteSpace: 'nowrap')
+    assert "whiteSpace: \"pre-wrap\"" in content or "whiteSpace: 'pre-wrap'" in content or "whiteSpace: \"normal\"" in content
+    assert "flexWrap: \"wrap\"" in content or "flexWrap: 'wrap'" in content
+
+    # Verify maxWidth constraint prevents edge overflowing
+    assert "maxWidth:" in content
