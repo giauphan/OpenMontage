@@ -35,6 +35,21 @@ def resolve_ffprobe_ffmpeg() -> tuple[str, str]:
         ffmpeg = str(candidates[0]) if candidates else ""
     return ffprobe or "ffprobe", ffmpeg or "ffmpeg"
 
+
+def parse_claude_review(response_text: str) -> dict:
+    envelope = json.loads(response_text)
+    if not isinstance(envelope, dict):
+        raise ValueError("Claude CLI response invalid")
+    if envelope.get("is_error"):
+        raise ValueError("Claude CLI error")
+    result = envelope.get("result")
+    if not isinstance(result, str):
+        raise ValueError("Claude CLI result missing")
+    review = json.loads(result)
+    if not isinstance(review, dict):
+        raise ValueError("Claude CLI review invalid")
+    return review
+
 try:
     from scripts.validation_status import ValidationStatusLogger
 except ImportError:
@@ -292,15 +307,16 @@ class CLAUDEAgentValidator:
         results = []
 
         if os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1":
+            # Keep tests fast without skipping subprocess discovery/validation gating.
+            # Mock only Claude review gate itself.
             return [
                 ValidationResult(
                     check_name="CLAUDE Agent Review Gate",
                     passed=True,
-                    message="Strict Contract Gate: Visual, audio, content & brand quality verified ✓ (Mocked)",
-                    details={"mode": "mock_strict_verification"}
+                    message="Strict Contract Gate: Visual, audio, content & brand quality verified ✓ (Mocked)"
                 )
             ]
-        
+
         try:
             # Prepare prompt for CLAUDE agent review
             prompt = f"""
@@ -349,17 +365,16 @@ Be STRICT and RETURN false for any quality issues.
 
             result = subprocess.run(
                 claude_cmd,
-                input="",
                 capture_output=True,
                 text=True,
-                timeout=15,  # 15 second timeout for CLI check
+                timeout=120,  # Real rendered-video review can exceed one minute
                 cwd=str(Path(__file__).parent.parent)
             )
 
             if result.returncode == 0:
                 try:
-                    # Parse CLAUDE response
-                    response_data = json.loads(result.stdout.strip())
+                    # Parse Claude CLI envelope and its JSON review result.
+                    response_data = parse_claude_review(result.stdout)
 
                     # Extract results
                     checks = [
@@ -536,12 +551,18 @@ def main():
         strict_mode=strict_mode
     )
     
+    ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
+    if args.ffprobe != "ffprobe":
+        ffprobe_bin = args.ffprobe
+    if args.ffmpeg != "ffmpeg":
+        ffmpeg_bin = args.ffmpeg
+
     # Execute validation
     validation_data = validator.execute_validation(
         video_paths=video_paths,
         metadata_path=metadata_path,
-        ffprobe_bin=args.ffprobe,
-        ffmpeg_bin=args.ffmpeg
+        ffprobe_bin=ffprobe_bin,
+        ffmpeg_bin=ffmpeg_bin
     )
     
     # Print report

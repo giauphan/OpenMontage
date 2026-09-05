@@ -149,6 +149,19 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         raise ValueError("\n".join(errors))
 
 
+def canonical_platform_records_published(store: PublishStore, *, date: str, topic: str) -> bool:
+    routes = (("youtube", "short"), ("instagram", "reels"), ("facebook", "reels"))
+    try:
+        return all(
+            (record := store.get(publish_key(date, topic, platform, kind)))
+            and record.get("status") == "published"
+            for platform, kind in routes
+        )
+    except Exception as exc:
+        print(f"Failed to verify Firebase publish completion: {exc}", file=sys.stderr)
+        return False
+
+
 def publish_batch(
     metadata: dict,
     project_dir: Path,
@@ -366,14 +379,14 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
     root = Path(__file__).resolve().parents[1]
 
     # Step 1: Validate metadata text fields (hashtags, shell syntax, placeholders)
-    metadata_validator = root / "scripts" / "validate_publish_metadata.py"
-    if not metadata_validator.is_file():
-        raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: metadata validator required")
-
     try:
         youtube_shorts_title(load_metadata(project_path)["title"])
     except (KeyError, ValueError) as exc:
         raise RuntimeError(f"YouTube Shorts title validation failed: {exc}") from exc
+
+    metadata_validator = root / "scripts" / "validate_publish_metadata.py"
+    if not metadata_validator.is_file():
+        raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: metadata validator required")
 
     result = subprocess.run(
         [sys.executable, str(metadata_validator), str(project_path)],
@@ -529,26 +542,17 @@ def main():
         print(f"\n✅ Dry run completed for {len(results['platforms'])} platform uploads")
         return 0
 
-    # Return success if all platform uploads completed or were confirmed already published.
-    completed_count = sum(
-        1 for s in results["platforms"].values()
-        if s.get("status") in ("published", "skipped")
-    )
     total_platforms = len(results["platforms"])
-    if completed_count == total_platforms and not results["errors"]:
+    if canonical_platform_records_published(store, date=today, topic=metadata["id"]):
         published_now = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
-        print(f"\n✅ All {total_platforms} platform uploads verified ({published_now} published, {completed_count - published_now} already published)")
+        print(f"\n✅ All {total_platforms} canonical Firebase platform records verified ({published_now} uploaded now)")
         if not args.dry_run:
             from scripts.publish_active_projects import deactivate_project
             deactivate_project(metadata["id"])
         return 0
 
     published_count = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
-    if published_count > 0:
-        print(f"\n⚠️  Partial batch completed: {published_count}/{total_platforms} platforms published (some failed)")
-        return 0
-
-    print("\n❌ Batch failed: no platforms published")
+    print(f"\n❌ Incomplete batch: {published_count}/{total_platforms} uploads and Firebase records not all published; project retained")
     return 1
 
 

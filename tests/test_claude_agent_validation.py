@@ -131,3 +131,32 @@ class TestStrictMode:
         
         assert result.returncode == 0
         assert "strict=True" in result.stdout
+
+
+class TestClaudeReviewEnvelope:
+    def test_parse_claude_review_unwraps_result_json(self):
+        from scripts.claude_agent_validation import parse_claude_review
+
+        review = {
+            "visual_quality": {"passed": True, "score": 94, "notes": "clear"},
+            "audio_sync": {"passed": True, "score": 92, "notes": "aligned"},
+            "content_appropriateness": {"passed": True, "score": 96, "notes": "safe"},
+            "brand_compliance": {"passed": True, "score": 91, "notes": "consistent"},
+            "overall_passed": True,
+            "summary": "approved",
+        }
+        envelope = json.dumps({"is_error": False, "result": json.dumps(review)})
+
+        assert parse_claude_review(envelope) == review
+
+    def test_parse_claude_review_rejects_error_envelope(self):
+        from scripts.claude_agent_validation import parse_claude_review
+
+        with pytest.raises(ValueError, match="Claude CLI error"):
+            parse_claude_review(json.dumps({"is_error": True, "result": "failure"}))
+
+    def test_parse_claude_review_rejects_missing_result(self):
+        from scripts.claude_agent_validation import parse_claude_review
+
+        with pytest.raises(ValueError, match="result missing"):
+            parse_claude_review(json.dumps({"is_error": False}))

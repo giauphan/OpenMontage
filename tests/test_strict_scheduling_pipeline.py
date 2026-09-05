@@ -253,11 +253,13 @@ class TestStrictValidationGates:
         validation_script = SCRIPTS / "claude_agent_validation.py"
 
         # Run validation - expect it to execute but may fail on CLAUDE agent
+        env = {**os.environ, "CLAUDE_AGENT_VALIDATION_MOCK": "1"}
         result = subprocess.run(
             ["python3", str(validation_script), str(mock_project_dir)],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
+            env=env,
         )
 
         # Should produce output (even if validation fails)
@@ -267,12 +269,15 @@ class TestStrictValidationGates:
         """Test that --strict flag enables strict mode checks"""
         validation_script = SCRIPTS / "claude_agent_validation.py"
 
+        env = {**os.environ, "CLAUDE_AGENT_VALIDATION_MOCK": "1"}
+
         # Run with strict flag
         result_strict = subprocess.run(
             ["python3", str(validation_script), str(mock_project_dir), "--strict"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
+            env=env,
         )
 
         # Run without strict flag
@@ -280,7 +285,8 @@ class TestStrictValidationGates:
             ["python3", str(validation_script), str(mock_project_dir)],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
+            env=env,
         )
 
         # Both should produce output

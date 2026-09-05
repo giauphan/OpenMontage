@@ -113,8 +113,6 @@ def main() -> int:
         result = subprocess.run(command, cwd=ROOT, env=env)
         if result.returncode:
             exit_code = result.returncode
-        elif not args.dry_run:
-            deactivate_project(project_id)
     return exit_code
 
 
