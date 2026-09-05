@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 import pytest
 
-from tools.narration_text import prepare_narration, _DEFAULT_TERMS
+from tools.narration_text import prepare_narration, _DEFAULT_TERMS, _IPA_TERMS
 
 
 def test_tts_terminology_pronunciation_lexicon():
@@ -14,18 +14,29 @@ def test_tts_terminology_pronunciation_lexicon():
     assert _DEFAULT_TERMS["GPU"] == "Ghi-Pi-Yu"
 
     assert "CUDA" in _DEFAULT_TERMS
-    assert _DEFAULT_TERMS["CUDA"] == "Ki-Đa"
+    assert _DEFAULT_TERMS["CUDA"] == "Cu-đa"  # Updated to more accurate Vietnamese phonetics
+
+    assert "CUDA" in _IPA_TERMS
+    assert _IPA_TERMS["CUDA"] == "ˈkuː.də"
 
 
 def test_prepare_narration_with_terminology():
-    """Verify sentences with CPU, GPU, CUDA produce expected phonetic transcriptions."""
+    """Verify sentences with terminology produce expected phonetic transcriptions."""
     text = "Hệ thống AI chạy trên GPU với CUDA và CPU hiệu năng cao."
-    prepared = prepare_narration(text)
 
+    # Vietnamese phonetic mode (default)
+    prepared = prepare_narration(text)
     assert "Ghi-Pi-Yu" in prepared
-    assert "Ki-Đa" in prepared
+    assert "Cu-đa" in prepared
     assert "Xi-Pi-Yu" in prepared
     assert "ây-ai" in prepared
+
+    # True IPA SSML mode
+    ssml = prepare_narration(text, use_ssml=True)
+    assert '<phoneme alphabet="ipa" ph="ˈkuː.də">CUDA</phoneme>' in ssml
+    assert '<phoneme alphabet="ipa" ph="ˌdʒiː piː ˈjuː">GPU</phoneme>' in ssml
+    assert '<phoneme alphabet="ipa" ph="ˌsiː piː ˈjuː">CPU</phoneme>' in ssml
+    assert ssml.startswith('<speak>') and ssml.endswith('</speak>')
 
 
 def test_titled_video_tsx_prevents_text_overlap():

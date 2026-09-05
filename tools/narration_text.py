@@ -1,8 +1,14 @@
 """Shared preparation of Vietnamese narration and on-screen display text.
 
 The stored editorial script keeps its original wording. Only the text handed to
-the Vietnamese TTS voice is rewritten, so that English technical terminology is
-spoken with Vietnamese phonetics instead of switching to an English voice.
+the Vietnamese TTS voice is rewritten to handle English technical terminology.
+
+Two modes:
+1. Vietnamese phonetics (default): Transliterates English terms to Vietnamese spelling
+   so Vietnamese-only TTS engines (FPT, VBee, Edge) can pronounce them.
+2. SSML with IPA (premium): Uses true International Phonetic Alphabet in <phoneme>
+   tags for authentic English pronunciation with multilingual TTS (Google Cloud,
+   ElevenLabs, Azure Speech).
 """
 
 from __future__ import annotations
@@ -48,12 +54,45 @@ _DEFAULT_TERMS: dict[str, str] = {
     "AI": "ây-ai",
     "CPU": "Xi-Pi-Yu",
     "GPU": "Ghi-Pi-Yu",
-    "CUDA": "Ki-Đa",
+    "CUDA": "Cu-đa",
     "machine learning": "meo-sin lơ-ning",
     "cloud": "cờ-lao",
     "framework": "phrêm-uốc",
     "backend": "béc-en",
     "frontend": "phờ-ron-en",
+}
+
+# True International Phonetic Alphabet (IPA) for English technical terms.
+# Used when TTS engine supports SSML <phoneme> tags for authentic English voice.
+_IPA_TERMS: dict[str, str] = {
+    "CUDA": "ˈkuː.də",
+    "CPU": "ˌsiː piː ˈjuː",
+    "GPU": "ˌdʒiː piː ˈjuː",
+    "AI": "eɪ aɪ",
+    "API": "ˌeɪ piː ˈaɪ",
+    "Python": "ˈpaɪ.θɑːn",
+    "JavaScript": "ˈdʒɑː.və.skrɪpt",
+    "TypeScript": "ˈtaɪp.skrɪpt",
+    "React": "riːˈækt",
+    "Docker": "ˈdɑː.kɚ",
+    "Kubernetes": "ˌkuː.bɚˈneɪ.tiːz",
+    "OpenAI": "ˈoʊ.pən eɪ aɪ",
+    "ChatGPT": "ˌtʃæt dʒiː piː ˈtiː",
+    "PostgreSQL": "ˈpoʊst.ɡrɛs ˌɛs kjuː ˈɛl",
+    "MySQL": "maɪ ˌɛs kjuː ˈɛl",
+    "GraphQL": "ˈɡræf kjuː ˈɛl",
+    "JSON": "ˈdʒeɪ.sən",
+    "SQL": "ˌɛs kjuː ˈɛl",
+    "HTTP": "ˌeɪtʃ tiː tiː ˈpiː",
+    "HTTPS": "ˌeɪtʃ tiː tiː ˈpiː ɛs",
+    "URL": "ˌjuː ɑːr ˈɛl",
+    "SDK": "ˌɛs diː ˈkeɪ",
+    "CLI": "ˌsiː ɛl ˈaɪ",
+    "GitHub": "ˈɡɪt.hʌb",
+    "machine learning": "məˈʃiːn ˈlɝː.nɪŋ",
+    "framework": "ˈfreɪm.wɝːk",
+    "backend": "ˈbæk.ɛnd",
+    "frontend": "ˈfrʌnt.ɛnd",
 }
 
 # Characters that never belong in narration or rendered text: C0/C1 controls
@@ -127,8 +166,54 @@ def localize_pronunciation(text: str, lexicon: list[tuple[str, str]] | None = No
     return re.sub(r"(\d+)", lambda m: protected[int(m.group(1))], localized)
 
 
-def prepare_narration(text: str) -> str:
-    """Full narration preparation: normalise, localise, then re-fold spacing."""
+def prepare_narration_ssml(text: str, ipa_lexicon: list[tuple[str, str]] | None = None) -> str:
+    """Full narration preparation with SSML <phoneme> tags for true English pronunciation.
+
+    Returns SSML with <phoneme alphabet="ipa" ph="..."> tags for English technical terms,
+    compatible with Google Cloud TTS, Azure Speech, and ElevenLabs multilingual models.
+    """
+    normalized = normalize_text(text)
+    if not normalized:
+        raise ValueError("narration text is empty after normalization")
+
+    # Use IPA lexicon for SSML phoneme tags
+    entries = [(src, ipa) for src, ipa in _IPA_TERMS.items()] if ipa_lexicon is None else ipa_lexicon
+    entries = [(src, ipa) for src, ipa in entries if src and ipa]
+
+    if not entries:
+        return normalized
+
+    def one_pattern(src: str) -> str:
+        left = r"\b" if src[0].isalnum() else ""
+        right = r"\b" if src[-1].isalnum() else ""
+        return left + re.escape(src) + right
+
+    combined = re.compile("|".join(one_pattern(src) for src, _ in entries), re.IGNORECASE)
+    ipa_by_lower = {src.lower(): ipa for src, ipa in entries}
+
+    def replace_with_phoneme(match: re.Match[str]) -> str:
+        original = match.group(0)
+        ipa = ipa_by_lower[original.lower()]
+        return f'<phoneme alphabet="ipa" ph="{ipa}">{original}</phoneme>'
+
+    # Apply SSML phoneme tags and spell out remaining acronyms
+    ssml_text = combined.sub(replace_with_phoneme, normalized)
+    ssml_text = _ACRONYM_PATTERN.sub(_spell_acronym, ssml_text)
+
+    return f'<speak>{re.sub(r" {{2,}}", " ", ssml_text).strip()}</speak>'
+
+
+def prepare_narration(text: str, use_ssml: bool = False) -> str:
+    """Full narration preparation: normalise, localise, then re-fold spacing.
+
+    Args:
+        text: Input text to prepare
+        use_ssml: If True, returns SSML with IPA phoneme tags for true English pronunciation.
+                 If False (default), uses Vietnamese phonetic approximations.
+    """
+    if use_ssml:
+        return prepare_narration_ssml(text)
+
     normalized = normalize_text(text)
     if not normalized:
         raise ValueError("narration text is empty after normalization")
