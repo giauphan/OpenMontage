@@ -44,6 +44,9 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
         if "total_duration_seconds" not in normalized:
             normalized["total_duration_seconds"] = 60.0
 
+        if "sections" not in normalized and "scenes" in normalized and isinstance(normalized["scenes"], list):
+            normalized["sections"] = normalized["scenes"]
+
         valid_root_keys = {"version", "title", "total_duration_seconds", "sections", "metadata", "voice_performance"}
         normalized = {k: v for k, v in normalized.items() if k in valid_root_keys}
 
@@ -57,12 +60,12 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
         valid_sec_keys = {"id", "label", "text", "start_seconds", "end_seconds", "speaker_directions",
                           "delivery_cues", "enhancement_cues", "pronunciation_guides", "source_ref"}
         accumulated_time = 0.0
-        for sec in normalized.get("sections", []):
+        for idx, sec in enumerate(normalized.get("sections", [])):
             if not isinstance(sec, dict):
                 continue
 
-            sec["id"] = str(sec.get("id"))
-            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration")
+            sec["id"] = str(sec.get("id") or f"sec_{idx}")
+            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration_vi") or sec.get("narration")
             duration = sec.get("duration", sec.get("duration_secs", sec.get("duration_seconds")))
             if duration is not None:
                 duration = float(duration)
