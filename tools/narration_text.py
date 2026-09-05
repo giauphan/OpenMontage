@@ -64,35 +64,59 @@ _DEFAULT_TERMS: dict[str, str] = {
 
 # True International Phonetic Alphabet (IPA) for English technical terms.
 # Used when TTS engine supports SSML <phoneme> tags for authentic English voice.
+# IPA source: Standard American English pronunciation (GA), verified against major dictionaries.
 _IPA_TERMS: dict[str, str] = {
+    # Hardware & Architecture
     "CUDA": "ˈkuː.də",
     "CPU": "ˌsiː piː ˈjuː",
     "GPU": "ˌdʒiː piː ˈjuː",
-    "AI": "eɪ aɪ",
-    "API": "ˌeɪ piː ˈaɪ",
+
+    # Programming Languages
     "Python": "ˈpaɪ.θɑːn",
     "JavaScript": "ˈdʒɑː.və.skrɪpt",
     "TypeScript": "ˈtaɪp.skrɪpt",
+    "Node.js": "noʊd dʒeɪ ɛs",
     "React": "riːˈækt",
-    "Docker": "ˈdɑː.kɚ",
-    "Kubernetes": "ˌkuː.bɚˈneɪ.tiːz",
-    "OpenAI": "ˈoʊ.pən eɪ aɪ",
-    "ChatGPT": "ˌtʃæt dʒiː piː ˈtiː",
+
+    # Databases
     "PostgreSQL": "ˈpoʊst.ɡrɛs ˌɛs kjuː ˈɛl",
     "MySQL": "maɪ ˌɛs kjuː ˈɛl",
     "GraphQL": "ˈɡræf kjuː ˈɛl",
-    "JSON": "ˈdʒeɪ.sən",
     "SQL": "ˌɛs kjuː ˈɛl",
+
+    # APIs & Protocols
+    "API": "ˌeɪ piː ˈaɪ",
+    "REST API": "ɹɛst ˌeɪ piː ˈaɪ",
     "HTTP": "ˌeɪtʃ tiː tiː ˈpiː",
     "HTTPS": "ˌeɪtʃ tiː tiː ˈpiː ɛs",
     "URL": "ˌjuː ɑːr ˈɛl",
+
+    # Tools & Platforms
+    "Docker": "ˈdɑː.kɚ",
+    "GitHub": "ˈɡɪt.hʌb",
+    "Kubernetes": "ˌkuː.bɚˈneɪ.tiːz",
+
+    # Markup & Data Formats
+    "JSON": "ˈdʒeɪ.sən",
+    "HTML": "ˌeɪtʃ tiː ɛm ˈɛl",
+    "CSS": "ˌsiː ɛs ˈɛs",
+    "XML": "ˌɛks ɛm ˈɛl",
+
+    # Tools & Frameworks
     "SDK": "ˌɛs diː ˈkeɪ",
     "CLI": "ˌsiː ɛl ˈaɪ",
-    "GitHub": "ˈɡɪt.hʌb",
-    "machine learning": "məˈʃiːn ˈlɝː.nɪŋ",
     "framework": "ˈfreɪm.wɝːk",
     "backend": "ˈbæk.ɛnd",
     "frontend": "ˈfrʌnt.ɛnd",
+
+    # AI & ML
+    "AI": "eɪ aɪ",
+    "machine learning": "məˈʃiːn ˈlɝː.nɪŋ",
+    "OpenAI": "ˈoʊ.pən eɪ aɪ",
+    "ChatGPT": "ˌtʃæt dʒiː piː ˈtiː",
+
+    # Cloud & Infrastructure
+    "cloud": "klaʊd",
 }
 
 # Characters that never belong in narration or rendered text: C0/C1 controls
@@ -191,16 +215,24 @@ def prepare_narration_ssml(text: str, ipa_lexicon: list[tuple[str, str]] | None 
     combined = re.compile("|".join(one_pattern(src) for src, _ in entries), re.IGNORECASE)
     ipa_by_lower = {src.lower(): ipa for src, ipa in entries}
 
+    protected: list[str] = []
+
     def replace_with_phoneme(match: re.Match[str]) -> str:
         original = match.group(0)
         ipa = ipa_by_lower[original.lower()]
-        return f'<phoneme alphabet="ipa" ph="{ipa}">{original}</phoneme>'
+        protected.append(f'<phoneme alphabet="ipa" ph="{ipa}">{original}</phoneme>')
+        return f"{len(protected) - 1}"
 
-    # Apply SSML phoneme tags and spell out remaining acronyms
+    # Apply SSML phoneme tags as protected replacements
     ssml_text = combined.sub(replace_with_phoneme, normalized)
+
+    # Spell out any remaining unknown ALL-CAPS acronyms
     ssml_text = _ACRONYM_PATTERN.sub(_spell_acronym, ssml_text)
 
-    return f'<speak>{re.sub(r" {{2,}}", " ", ssml_text).strip()}</speak>'
+    # Restore the protected SSML phoneme tags
+    ssml_text = re.sub(r"(\d+)", lambda m: protected[int(m.group(1))], ssml_text)
+
+    return f'<speak>{re.sub(r" {2,}", " ", ssml_text).strip()}</speak>'
 
 
 def prepare_narration(text: str, use_ssml: bool = False) -> str:
