@@ -365,7 +365,7 @@ Return ONLY valid JSON matching this schema:
             claude_bin = shutil.which("claude") or "claude"
             claude_cmd = [
                 claude_bin, "-p", prompt,
-                "--append-system-prompt", "You are a non-interactive reviewer. Do NOT call any tools or request permissions. Immediately output the JSON review response based strictly on the user prompt text.",
+                "--dangerously-skip-permissions",
                 "--output-format", "json"
             ]
 
