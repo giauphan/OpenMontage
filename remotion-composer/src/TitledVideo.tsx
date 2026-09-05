@@ -114,7 +114,7 @@ const EditorialTagline: React.FC<{
             fontFamily,
             fontWeight: 900,
             fontSize,
-            lineHeight: 1.02,
+            lineHeight: 1.25,
             letterSpacing: "-0.015em",
             color: "#FFF8EC",
             textAlign: "center",
@@ -127,8 +127,9 @@ const EditorialTagline: React.FC<{
             `,
             display: "flex",
             justifyContent: "center",
-            flexWrap: "nowrap",
-            whiteSpace: "nowrap",
+            flexWrap: "wrap",
+            whiteSpace: "pre-wrap",
+            maxWidth: "90%",
           }}
         >
           {chars.map((char, i) => {
