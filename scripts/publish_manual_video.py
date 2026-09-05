@@ -214,6 +214,8 @@ def publish_batch(
         publish_at = cfg["publish_at"]
 
         if force and store and not dry_run:
+            from scripts.clear_uniqueness import clear_uniqueness
+            clear_uniqueness(store, metadata["id"])
             key = publish_key(today, metadata["id"], platform, kind)
             store.session.delete(store._url(key), timeout=30)
 
@@ -519,11 +521,25 @@ def main():
         print(f"\n✅ Dry run completed for {len(results['platforms'])} platform uploads")
         return 0
 
-    # Return success if at least one platform published.
+    # Return success if all platform uploads completed or were confirmed already published.
+    completed_count = sum(
+        1 for s in results["platforms"].values()
+        if s.get("status") in ("published", "skipped")
+    )
+    total_platforms = len(results["platforms"])
+    if completed_count == total_platforms and not results["errors"]:
+        published_now = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
+        print(f"\n✅ All {total_platforms} platform uploads verified ({published_now} published, {completed_count - published_now} already published)")
+        if not args.dry_run:
+            from scripts.publish_active_projects import deactivate_project
+            deactivate_project(metadata["id"])
+        return 0
+
     published_count = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
     if published_count > 0:
-        print(f"\n✅ Batch completed with {published_count} successful uploads")
+        print(f"\n⚠️  Partial batch completed: {published_count}/{total_platforms} platforms published (some failed)")
         return 0
+
     print("\n❌ Batch failed: no platforms published")
     return 1
 

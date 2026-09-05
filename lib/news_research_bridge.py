@@ -204,10 +204,15 @@ class NewsResearchBridge:
         for item in angles:
             if not isinstance(item, dict):
                 raise ValueError("each angle must be an object")
+            raw_type = self._require_string(item.get("type"), "angle type")
+            if raw_type not in {"trending", "evergreen", "contrarian", "narrative", "data_driven"}:
+                angle_type = "data_driven" if "tech" in raw_type or "data" in raw_type else "trending"
+            else:
+                angle_type = raw_type
             normalized_item = {
                 "name": self._require_string(item.get("name"), "angle name"),
                 "hook": self._require_string(item.get("hook"), "angle hook"),
-                "type": self._require_string(item.get("type"), "angle type"),
+                "type": angle_type,
                 "why_now": self._require_string(item.get("why_now"), "angle why_now"),
             }
             if "grounded_in" in item:

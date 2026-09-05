@@ -5,6 +5,10 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from publish_config import load_config
 from publish_manual_video import validate_project_quality
 from tools.publishers.platform_routes import youtube_shorts_title

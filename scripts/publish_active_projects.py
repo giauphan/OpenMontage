@@ -60,6 +60,8 @@ def deactivate_project(project_id: str) -> None:
         print(f"✓ Deactivated published project: {project_id}")
 
     project_dir = ROOT / "projects" / project_id
+    if not project_dir.exists():
+        project_dir = ROOT / "projects_news" / project_id
     if project_dir.exists():
         shutil.rmtree(project_dir)
         print(f"✓ Removed published project directory: {project_dir}")
@@ -111,6 +113,8 @@ def main() -> int:
         result = subprocess.run(command, cwd=ROOT, env=env)
         if result.returncode:
             exit_code = result.returncode
+        elif not args.dry_run:
+            deactivate_project(project_id)
     return exit_code
 
 

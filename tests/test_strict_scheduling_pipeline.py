@@ -2,6 +2,7 @@
 """Test strict scheduling pipeline with mock projects and CLAUDE agent validation"""
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -143,8 +144,9 @@ class TestStrictSchedulingPipeline:
         scheduler_script = SCRIPTS / "schedule_youtube_today.py"
         assert scheduler_script.exists(), "Scheduler script not found"
 
+        python_bin = os.environ.get("OPENMONTAGE_PYTHON") or sys.executable
         result = subprocess.run(
-            ["python3", str(scheduler_script), "--help"],
+            [python_bin, str(scheduler_script), "--help"],
             capture_output=True,
             text=True,
             timeout=10
