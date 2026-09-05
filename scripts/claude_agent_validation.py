@@ -323,17 +323,25 @@ class CLAUDEAgentValidator:
 
         try:
             # Prepare prompt for CLAUDE agent review
+            abs_video_path = Path(video_path).resolve()
+            abs_metadata_path = Path(metadata_path).resolve()
             metadata_str = "{}"
-            if Path(metadata_path).is_file():
+            if abs_metadata_path.is_file():
                 try:
-                    metadata_str = Path(metadata_path).read_text(encoding="utf-8")
+                    metadata_str = abs_metadata_path.read_text(encoding="utf-8")
                 except Exception:
                     pass
+
+            file_exists = abs_video_path.is_file()
+            file_size = abs_video_path.stat().st_size if file_exists else 0
 
             prompt = f"""
 Validate candidate video asset for OpenMontage automated publishing pipeline.
 
-Target Asset: {video_path}
+Target Asset Path: {abs_video_path}
+File Exists: {file_exists}
+File Size Bytes: {file_size}
+
 Metadata Content:
 {metadata_str}
 
