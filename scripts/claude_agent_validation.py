@@ -358,16 +358,17 @@ Be STRICT and RETURN false for any quality issues.
             # - Credentials are mounted via volumes only
             # This is considered safe for this pipeline, but these flags should never
             # be used in production systems with untrusted input.
+            claude_bin = shutil.which("claude") or "claude"
             claude_cmd = [
-                "claude", "-p", "--output-format", "json",
-                prompt
+                claude_bin, "-p", prompt, "--output-format", "json"
             ]
 
             result = subprocess.run(
                 claude_cmd,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
-                timeout=120,  # Real rendered-video review can exceed one minute
+                timeout=180,  # Real rendered-video review can exceed two minutes
                 cwd=str(Path(__file__).parent.parent)
             )
 
