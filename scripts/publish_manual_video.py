@@ -543,6 +543,7 @@ def main():
         return 0
 
     total_platforms = len(results["platforms"])
+    today = datetime.now(timezone.utc).date().isoformat()
     if canonical_platform_records_published(store, date=today, topic=metadata["id"]):
         published_now = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
         print(f"\n✅ All {total_platforms} canonical Firebase platform records verified ({published_now} uploaded now)")
