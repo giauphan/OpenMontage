@@ -390,10 +390,18 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
         if not claude_validator.is_file():
             raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: CLAUDE agent validator required")
 
+        env = dict(os.environ)
+        ffprobe = shutil.which("ffprobe") or ""
+        if not ffprobe:
+            candidates = list(Path.home().glob(".local/share/uv/**/ffprobe"))
+            if candidates:
+                env["PATH"] = str(candidates[0].parent) + ":" + env.get("PATH", "")
+
         claude_result = subprocess.run(
             [sys.executable, str(claude_validator), str(project_path), "--strict"],
             capture_output=True,
             text=True,
+            env=env,
         )
         if claude_result.returncode:
             diagnostic = "\n".join(part.strip() for part in (claude_result.stdout, claude_result.stderr) if part.strip())
