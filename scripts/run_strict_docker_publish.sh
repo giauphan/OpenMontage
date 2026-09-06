@@ -108,7 +108,6 @@ if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
   [ "$TODAY_PUBLISHED_PIDS" ] || true
   [ ${#TODAY_PUBLISHED_PIDS[@]} -eq ${#TODAY_PROJECT_IDS[@]} ] || TODAY_OK=0
   [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today publish failed"; }
-  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today publish failed"; }
 
   for PID in "${TODAY_PUBLISHED_PIDS[@]}"; do
     [ ! -d "$ROOT/projects/$PID" ] || { log "FAIL today $PID: project dir remains"; TODAY_OK=0; }
@@ -131,7 +130,7 @@ bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
 write_state "generate" "ok"
 
 # Collect the 3 newly generated project IDs from the latest produce log.
-mapfile -t PROJECT_IDS < <(grep -h '^PROJECT_ID=' "$GENERATE_LOG" | tail -3 | cut -d= -f2)
+mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | tail -3)
 [ "${#PROJECT_IDS[@]}" -eq 3 ] || fail "expected 3 projects from generation, got ${#PROJECT_IDS[@]}"
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"
