@@ -106,6 +106,12 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             )
         else:
             raise ValueError(f"{path}: missing style element for font bindings")
+    html = re.sub(r"<div\b[^>]*\bid=[\"']source-badge[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
+    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bsource-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
+    hide_css = "#source-badge, .source, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }"
+    if hide_css not in html and "<style>" in html:
+        html = html.replace("<style>", "<style>\n    " + hide_css, 1)
+
     if "overflow: hidden" not in html:
         root_match = re.search(r"(#root|body|html)\s*\{[^{}]*\}", html)
         if root_match:
