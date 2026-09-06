@@ -2,8 +2,12 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Define age threshold: 2 days
-MIN_AGE_MINUTES=$(( 48 * 60 ))
+# Default: only remove if older than 2 hours to avoid race with concurrent runs,
+# or all unscheduled if --all passed.
+MIN_AGE_MINUTES=120
+if [ "${1:-}" = "--all" ]; then
+    MIN_AGE_MINUTES=0
+fi
 CONFIG="$ROOT/config/publish_schedule.json"
 
 if [ ! -f "$CONFIG" ]; then

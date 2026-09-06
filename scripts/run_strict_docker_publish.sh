@@ -215,16 +215,8 @@ for PID in "${PROJECT_IDS[@]}"; do
 done
 [ "$FINAL_OK" -eq 1 ] || { write_state "final-state" "failed"; fail "generated publish cleanup incomplete"; }
 
-for PDIR in "$ROOT/projects"/cand_*; do
-  [ -d "$PDIR" ] || continue
-  PID="$(basename "$PDIR")"
-  SCHEDULE_HAS=$(jq --arg pid "$PID" \
-    'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
-  if [ "$SCHEDULE_HAS" = "false" ]; then
-    log "removing unreferenced project: $PID"
-    rm -rf "$PDIR"
-  fi
-done
+log "removing stale orphaned projects"
+"$ROOT/scripts/clear_stale_projects.sh" --all | tee -a "$RUN_LOG"
 
 RETAINED=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 2>/dev/null | wc -l)
 ACTIVE=$(jq '.active_projects | length' "$SCHEDULE")
