@@ -42,23 +42,16 @@ write_state "preflight" "ok"
 # ===== STAGE 1: PREPARE — clear stale projects + orphan schedule entries =====
 stage 1 "prepare"
 
-# 1a. Clear all existing project directories (we only want the new project after generation).
-CLEANED_COUNT=0
-if [ -d "$ROOT/projects" ]; then
-  CLEANED_COUNT=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' | wc -l)
-  find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' -exec rm -rf {} +
-fi
-[ -d "$ROOT/projects_news" ] && rm -rf "$ROOT/projects_news"/* 2>/dev/null || true
-log "cleared $CLEANED_COUNT stale project directories"
-write_state "prepare-clear-projects" "ok" "removed=$CLEANED_COUNT"
-
-# 1b. Reset schedule's active_projects to empty (orphans removed).
+# 1a. Preserve every existing candidate until canonical Firebase records prove it published.
 SCHEDULE="$ROOT/config/publish_schedule.json"
-TMP=$(mktemp)
-jq '.active_projects = []' "$SCHEDULE" > "$TMP"
-mv "$TMP" "$SCHEDULE"
-log "schedule active_projects cleared"
-write_state "prepare-clear-schedule" "ok"
+RETAINED_COUNT=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 2>/dev/null | wc -l)
+log "retained $RETAINED_COUNT existing candidate project directories pending canonical Firebase verification"
+write_state "prepare-retain-projects" "ok" "retained=$RETAINED_COUNT"
+
+# 1b. Preserve active schedule entries; failed, duplicate, and scheduled candidates remain retriable.
+SCHEDULE_COUNT=$(jq '.active_projects | length' "$SCHEDULE")
+log "retained $SCHEDULE_COUNT active schedule entries pending canonical Firebase verification"
+write_state "prepare-retain-schedule" "ok" "retained=$SCHEDULE_COUNT"
 
 # 1c. Clear stale publish state files (logs / state dirs).
 rm -rf "$ROOT"/logs/news_produce_*.log "$ROOT"/logs/directors_*_result.json 2>/dev/null || true
@@ -68,6 +61,7 @@ write_state "prepare-clear-state" "ok"
 # ===== STAGE 2: GENERATE — produce the video and all publish assets =====
 stage 2 "generate"
 GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}.log"
+export OPENMONTAGE_PYTHON=/usr/bin/python3
 bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
 [ ${PIPESTATUS[0]} -eq 0 ] || fail "generation pipeline failed (see $GENERATE_LOG)"
 write_state "generate" "ok"

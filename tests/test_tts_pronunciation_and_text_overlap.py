@@ -20,6 +20,14 @@ def test_tts_terminology_pronunciation_lexicon():
     assert _IPA_TERMS["CUDA"] == "ˈkuː.də"
 
 
+def test_all_lexicon_terms_have_valid_ipa():
+    """Verify all default terms have an accurate, non-empty IPA mapping."""
+    for term in _DEFAULT_TERMS:
+        assert term in _IPA_TERMS, f"Missing IPA mapping for term: {term}"
+        assert len(_IPA_TERMS[term]) > 0, f"Empty IPA mapping for term: {term}"
+
+
+
 def test_prepare_narration_with_terminology():
     """Verify sentences with terminology produce expected phonetic transcriptions."""
     text = "Hệ thống AI chạy trên GPU với CUDA và CPU hiệu năng cao."

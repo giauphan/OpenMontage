@@ -68,6 +68,10 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             new_tag = new_tag.replace("<div", '<div data-width="1080"', 1)
         if "data-height" not in new_tag:
             new_tag = new_tag.replace("<div", '<div data-height="1920"', 1)
+        if "data-duration" not in new_tag:
+            new_tag = new_tag.replace("<div", f'<div data-duration="{narration_duration:.3f}"', 1)
+        if "data-start" not in new_tag:
+            new_tag = new_tag.replace("<div", '<div data-start="0"', 1)
         if new_tag != tag:
             html = html[:root_open.start()] + new_tag + html[root_open.end():]
 
@@ -110,13 +114,40 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             html = html[:root_match.start()] + rule + html[root_match.end():]
         else:
             raise ValueError(f"{path}: missing viewport CSS rule for clipping guard")
-    # For reels composition, bind to reels narration file
-    narration_src = "assets/narration_reels.mp3" if "hyperframes_reels" in str(path) else "assets/narration.mp3"
+    # For reels composition, bind to reels narration file if present, else fallback to narration.mp3
+    narration_src = (
+        "assets/narration_reels.mp3"
+        if "hyperframes_reels" in str(path) and (path.parent / "assets" / "narration_reels.mp3").is_file()
+        else "assets/narration.mp3"
+    )
     html = re.sub(
         r"(<audio\b(?=[^>]*\bid=[\"']narration[\"'])[^>]*\bsrc=)[\"'][^\"']*[\"']",
         rf'\1"{narration_src}"',
         html,
     )
+    # Remove individual narration tags that lack materialized assets
+    html = re.sub(r"<audio\b[^>]*\bid=[\"']narration_\d+[\"'][^>]*>\s*(?:</audio>)?\s*", "", html)
+
+    # Handle background audio: if music-bg.mp3 exists, point to it; otherwise remove bg-audio
+    has_bg = (path.parent / "assets" / "music-bg.mp3").is_file()
+    if has_bg:
+        html = re.sub(
+            r'(<audio\b(?=[^>]*\bid=["\']bg-audio["\'])[^>]*\bsrc=)["\'][^"\']*["\']',
+            r'\1"assets/music-bg.mp3"',
+            html,
+        )
+        # Ensure track index and data-start
+        def fix_bg_tag(match):
+            tag = match.group(0)
+            if "data-track-index" not in tag:
+                tag = tag.replace("<audio", '<audio data-track-index="1"', 1)
+            if "data-start" not in tag:
+                tag = tag.replace("<audio", '<audio data-start="0"', 1)
+            return tag
+        html = re.sub(r'<audio\b[^>]*\bid=["\']bg-audio["\'][^>]*>', fix_bg_tag, html)
+    else:
+        html = re.sub(r'<audio\b[^>]*\bid=["\']bg-audio["\'][^>]*>\s*(?:</audio>)?\s*', '', html)
+
     if not re.search(r"<audio\b[^>]*\bid=[\"']narration[\"']", html):
         root_open = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root_open:
@@ -124,6 +155,16 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         # Use reels narration for reels composition
         narration_tag = NARRATION_TAG.replace('assets/narration.mp3', narration_src)
         html = html[:root_open.end()] + "\n    " + narration_tag + html[root_open.end():]
+
+    # Ensure all remaining audio tags have data-start="0" if missing
+    def add_data_start(match):
+        tag = match.group(0)
+        if "data-start=" not in tag:
+            tag = tag.replace("<audio", '<audio data-start="0"', 1)
+        return tag
+
+    html = re.sub(r"<audio\b[^>]*>", add_data_start, html)
+
     html = align_timeline(path, html, narration_duration)
 
     # Remove GSAP display tweens that break HyperFrames internal visibility engine
@@ -315,7 +356,8 @@ def main() -> int:
             font_path = assets / font
             if not font_path.is_file() or font_path.stat().st_size == 0:
                 composition_errors.append(f"{font_path}: missing or empty Vietnamese font asset")
-        narration = assets / "narration.mp3"
+        narration_src = "narration_reels.mp3" if ("hyperframes_reels" in str(index) and (assets / "narration_reels.mp3").is_file()) else "narration.mp3"
+        narration = assets / narration_src
         if not narration.is_file() or narration.stat().st_size == 0:
             composition_errors.append(f"{narration}: missing or empty narration audio asset")
         narration_duration = 0.0

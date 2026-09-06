@@ -549,7 +549,9 @@ def main():
         print(f"\n✅ All {total_platforms} canonical Firebase platform records verified ({published_now} uploaded now)")
         if not args.dry_run:
             from scripts.publish_active_projects import deactivate_project
-            deactivate_project(metadata["id"])
+            if not deactivate_project(metadata["id"], store=store, date=today):
+                print("\n❌ Cleanup blocked: canonical Firebase publish records are incomplete; project retained")
+                return 1
         return 0
 
     published_count = sum(1 for s in results["platforms"].values() if s.get("status") == "published")

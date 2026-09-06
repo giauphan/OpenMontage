@@ -186,3 +186,39 @@ def test_main_repairs_only_selected_composition(tmp_path, monkeypatch):
     assert 'data-duration="45.000"' in (
         project / "hyperframes_reels" / "index.html"
     ).read_text()
+
+def test_removes_unmaterialized_individual_narration_tags(tmp_path):
+    project = tmp_path / "cand_test"
+    project.mkdir()
+    
+    html_with_multiple_audio = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=1080, height=1920">
+    <style>
+        #root { width: 1080px; height: 1920px; overflow: hidden; }
+        :root { --font-heading: 'BeVietnamPro', Arial, sans-serif; --font-body: 'BeVietnamPro', Arial, sans-serif; }
+@font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
+@font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
+@font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-ExtraBold.ttf') format('truetype'); font-weight: 800; font-style: normal; font-display: block; }
+    </style>
+</head>
+<body>
+    <div data-composition-id="main" data-width="1080" data-height="1920" data-start="0" data-duration="45.000">
+        <h1>Tiếng Việt Example</h1>
+        <audio id="narration" src="assets/narration.mp3" data-start="0.000" data-track-index="10" data-volume="1"></audio>
+        <audio id="narration_1" src="assets/s1_vi.wav" data-start="0.000" data-track-index="10" data-volume="1"></audio>
+        <audio id="narration_2" src="assets/s2_vi.wav" data-start="14.502" data-track-index="10" data-volume="1"></audio>
+        <audio id="bg-audio" src="assets/tech_thriller_bg.mp3" loop="true"></audio>
+    </div>
+</body>
+</html>"""
+    
+    comp = write_composition(tmp_path, html_with_multiple_audio)
+    repair.patch_html(comp, 45.0)
+    
+    patched_html = comp.read_text()
+    assert 'id="narration"' in patched_html, "Unified track must be preserved"
+    assert 'id="narration_1"' not in patched_html, "Missing asset narration_1 must be removed"
+    assert 'id="narration_2"' not in patched_html, "Missing asset narration_2 must be removed"
+    assert 'src="assets/music-bg.mp3"' not in patched_html, "Missing background asset must be removed"

@@ -130,14 +130,19 @@ def main():
     
     # Save JSON if requested
     if output_json:
-        Path(output_json).parent.mkdir(parents=True, exist_ok=True)
+        json_p = Path(output_json)
+        json_p.parent.mkdir(parents=True, exist_ok=True)
         data = {
             'word_timestamps': word_timestamps,
             'duration_seconds': round(duration, 3),
             'language': 'vi-VN'
         }
-        with open(output_json, 'w', encoding='utf-8') as f:
+        with open(json_p, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+
+        # Also write narration_words.js for direct HTML inclusion
+        js_p = json_p.parent / "narration_words.js"
+        js_p.write_text(f"window.__narrationWords = {json.dumps(word_timestamps, ensure_ascii=False)};\n", encoding="utf-8")
     
     print(f"Generated {len(cues)} subtitle cues")
     return 0

@@ -87,6 +87,7 @@ DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 
 set +e
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
+DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-40}"
 PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Write the Production Script as a flat JSON file at projects/$PROJECT_ID/artifacts/script_vi.json, not embedded in a checkpoint file. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Do not ask for confirmation between stages. Do not stop until script_vi.json and both index.html files exist."
 DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop."
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
@@ -137,7 +138,13 @@ elif jq empty "$DIRECTORS_JSON" 2>/dev/null; then
     "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   jq -r '.result // ""' "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   if [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON")" = "true" ]; then
-    CLAUDE_EXIT=3
+    # Check if artifacts exist and validate despite budget exhaustion error
+    if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" 2>/dev/null && [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
+      echo "[$(date -u +%FT%TZ)] WARN: claude reported error (likely budget), but required artifacts exist and validate OK" >> "$DIRECTORS_LOG"
+      CLAUDE_EXIT=0
+    else
+      CLAUDE_EXIT=3
+    fi
   fi
 else
   echo "[$(date -u +%FT%TZ)] WARN: claude produced no valid JSON result" >> "$DIRECTORS_LOG"
@@ -300,7 +307,7 @@ fi
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
     if [ "$composition" = "hyperframes_reels" ]; then
-      cp "$reels_narration" "$target/narration.mp3"
+      cp "$reels_narration" "$target/narration_reels.mp3"
     else
       cp "$narration" "$target/narration.mp3"
     fi

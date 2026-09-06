@@ -42,8 +42,15 @@ def scheduled_projects_for_slot(projects: list[object], slot: str, local_date: s
     return queued_projects
 
 
-def deactivate_project(project_id: str) -> None:
-    """Remove a fully published project from the schedule and disk."""
+def deactivate_project(project_id: str, *, store=None, date: str | None = None) -> bool:
+    """Remove a project only after canonical platform records are published."""
+    if store is not None:
+        from scripts.publish_manual_video import canonical_platform_records_published
+
+        if not date or not canonical_platform_records_published(store, date=date, topic=project_id):
+            print(f"Project retained: canonical Firebase publish records are incomplete for {project_id}")
+            return False
+
     schedule = json.loads(CONFIG.read_text(encoding="utf-8"))
     active_projects = schedule.get("active_projects", [])
     if any((item.get("project_id") if isinstance(item, dict) else item) == project_id for item in active_projects):
@@ -65,6 +72,7 @@ def deactivate_project(project_id: str) -> None:
     if project_dir.exists():
         shutil.rmtree(project_dir)
         print(f"✓ Removed published project directory: {project_dir}")
+    return True
 
 
 def main() -> int:
