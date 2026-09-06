@@ -213,11 +213,23 @@ for PID in "${PROJECT_IDS[@]}"; do
     FINAL_OK=0
   fi
 done
+[ "$FINAL_OK" -eq 1 ] || { write_state "final-state" "failed"; fail "generated publish cleanup incomplete"; }
+
+for PDIR in "$ROOT/projects"/cand_*; do
+  [ -d "$PDIR" ] || continue
+  PID="$(basename "$PDIR")"
+  SCHEDULE_HAS=$(jq --arg pid "$PID" \
+    'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
+  if [ "$SCHEDULE_HAS" = "false" ]; then
+    log "removing unreferenced project: $PID"
+    rm -rf "$PDIR"
+  fi
+done
+
 RETAINED=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 2>/dev/null | wc -l)
 ACTIVE=$(jq '.active_projects | length' "$SCHEDULE")
-log "retained unverified cand_* dirs: $RETAINED"
-log "unrelated active_projects count: $ACTIVE"
-[ "$FINAL_OK" -eq 1 ] || { write_state "final-state" "failed"; fail "generated publish cleanup incomplete"; }
+log "retained scheduled cand_* dirs: $RETAINED"
+log "active_projects count: $ACTIVE"
 log "final state clean for generated projects"
 write_state "final-state" "ok"
 

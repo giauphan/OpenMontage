@@ -154,7 +154,7 @@ def canonical_platform_records_published(store: PublishStore, *, date: str, topi
     try:
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
-            and record.get("status") in ("published", "scheduled")
+            and record.get("status") == "published"
             for platform, kind in routes
         )
     except Exception as exc:
