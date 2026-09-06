@@ -515,4 +515,5 @@ mv "$TMP" config/publish_schedule.json
 
 echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE)"
 # Trigger strict publish for next day.
-"$PY" "$ROOT/scripts/schedule_youtube_today.py" "$PUBLISH_DATE"
+# Removed native scheduling to enforce strict orchestrator gating
+# "$PY" "$ROOT/scripts/schedule_youtube_today.py" "$PUBLISH_DATE"

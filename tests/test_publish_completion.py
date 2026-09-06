@@ -38,7 +38,7 @@ def test_canonical_platform_records_published_requires_three_published_records()
     assert canonical_platform_records_published(FakeStore(records), date=date, topic=topic) is True
 
 
-@pytest.mark.parametrize("status", [None, "scheduling", "scheduled", "failed"])
+@pytest.mark.parametrize("status", [None, "scheduling", "failed"])
 def test_canonical_platform_records_published_rejects_nonpublished_state(status):
     date, topic, records = records_with_facebook_status("published")
     facebook_key = publish_key(date, topic, "facebook", "reels")

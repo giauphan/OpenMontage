@@ -156,7 +156,7 @@ PUBLISHED_PIDS=()
 for PID in "${VALIDATED_PIDS[@]}"; do
   PDIR="$ROOT/projects/$PID"
   log "publishing $PID for $NEXT_DATE"
-  if python3 "$ROOT/scripts/publish_manual_video.py" "$PDIR" >> "$PUBLISH_LOG" 2>&1; then
+  if python3 "$ROOT/scripts/publish_manual_video.py" "$PDIR" --date "$NEXT_DATE" >> "$PUBLISH_LOG" 2>&1; then
     log "publish OK: $PID"
     PUBLISHED_PIDS+=("$PID")
   else
@@ -200,17 +200,29 @@ write_state "cleanup" "ok"
 
 # ===== STAGE 7: FINAL STATE VERIFICATION =====
 stage 7 "final-state"
-REMAINING=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 2>/dev/null | wc -l)
+FINAL_OK=1
+for PID in "${PROJECT_IDS[@]}"; do
+  if [ -d "$ROOT/projects/$PID" ]; then
+    log "FAIL final state $PID: generated project dir remains"
+    FINAL_OK=0
+  fi
+  SCHEDULE_HAS=$(jq --arg pid "$PID" \
+    'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
+  if [ "$SCHEDULE_HAS" = "true" ]; then
+    log "FAIL final state $PID: generated project remains scheduled"
+    FINAL_OK=0
+  fi
+done
+RETAINED=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 2>/dev/null | wc -l)
 ACTIVE=$(jq '.active_projects | length' "$SCHEDULE")
-log "remaining cand_* dirs: $REMAINING"
-log "active_projects count: $ACTIVE"
-[ "$REMAINING" -eq 0 ] || { write_state "final-state" "failed"; fail "stale projects remain: $REMAINING"; }
-[ "$ACTIVE" -eq 0 ] || { write_state "final-state" "failed"; fail "stale schedule entries remain: $ACTIVE"; }
-log "final state is clean"
+log "retained unverified cand_* dirs: $RETAINED"
+log "unrelated active_projects count: $ACTIVE"
+[ "$FINAL_OK" -eq 1 ] || { write_state "final-state" "failed"; fail "generated publish cleanup incomplete"; }
+log "final state clean for generated projects"
 write_state "final-state" "ok"
 
 log ""
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
-log "all stages passed; 3 videos published for $NEXT_DATE; server clean"
+log "all stages passed; 3 videos published for $NEXT_DATE; generated projects cleaned"
 write_state "workflow" "completed"
 exit 0

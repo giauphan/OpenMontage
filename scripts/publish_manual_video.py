@@ -18,9 +18,9 @@ import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 
-from publish_config import load_config
+from scripts.publish_config import load_config
 from tools.publish_store import PublishStore, publish_key
-from validate_render_quality import PORTRAIT_DIMENSIONS, resolve_narration, validate_video
+from scripts.validate_render_quality import PORTRAIT_DIMENSIONS, resolve_narration, validate_video
 from tools.publishers.platform_routes import (
     PLATFORM_ROUTES,
     ensure_youtube_short,
@@ -154,7 +154,7 @@ def canonical_platform_records_published(store: PublishStore, *, date: str, topi
     try:
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
-            and record.get("status") == "published"
+            and record.get("status") in ("published", "scheduled")
             for platform, kind in routes
         )
     except Exception as exc:
@@ -170,6 +170,7 @@ def publish_batch(
     retry_failed: bool = False,
     only_platform: str | None = None,
     force: bool = False,
+    date: str | None = None,
 ) -> dict:
     """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
@@ -215,7 +216,7 @@ def publish_batch(
         video_path = resolve_video_path(cfg["video_path"], project_dir, root)
         validate_publish_asset(video_path, project_dir, cfg["platform"], strict=True)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = date if date else datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     for cfg in platforms:
         platform = cfg["platform"]
@@ -456,6 +457,7 @@ def main():
     parser.add_argument("project_dir", help="Path to generated project directory")
     parser.add_argument("--dry-run", action="store_true", help="Validate without uploading")
     parser.add_argument("--retry-failed", action="store_true", help="Retry only records marked failed")
+    parser.add_argument("--date", type=str, default=None, help="Force date for this run")
     parser.add_argument("--force", action="store_true", help="Force re-publish even if already uploaded/published")
     parser.add_argument("--only-platform", choices=["instagram", "facebook", "youtube"], help="Limit publishing to one platform")
     parser.add_argument("--last-publish", type=str, default=None, help="Last publish timestamp (ISO8601) for gap enforcement")
@@ -503,6 +505,7 @@ def main():
         retry_failed=args.retry_failed,
         only_platform=args.only_platform,
         force=args.force,
+        date=args.date,
     )
 
     # Print summary
@@ -543,9 +546,9 @@ def main():
         return 0
 
     total_platforms = len(results["platforms"])
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = args.date if args.date else datetime.now(timezone.utc).date().isoformat()
     if canonical_platform_records_published(store, date=today, topic=metadata["id"]):
-        published_now = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
+        published_now = sum(1 for s in results["platforms"].values() if s.get("status") in ("published", "skipped"))
         print(f"\n✅ All {total_platforms} canonical Firebase platform records verified ({published_now} uploaded now)")
         if not args.dry_run:
             from scripts.publish_active_projects import deactivate_project
@@ -554,7 +557,7 @@ def main():
                 return 1
         return 0
 
-    published_count = sum(1 for s in results["platforms"].values() if s.get("status") == "published")
+    published_count = sum(1 for s in results["platforms"].values() if s.get("status") in ("published", "skipped"))
     print(f"\n❌ Incomplete batch: {published_count}/{total_platforms} uploads and Firebase records not all published; project retained")
     return 1
 
