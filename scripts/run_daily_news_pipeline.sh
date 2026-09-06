@@ -255,8 +255,8 @@ if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
       "$narration" \
       "$project_root/hyperframes/assets/subtitles.srt" \
       "$project_root/hyperframes/assets/word_timestamps.json" \
-      3 && echo "[$(date -u +%FT%TZ)] Vietnamese subtitles generated" || \
-      echo "[$(date -u +%FT%TZ)] WARNING: Subtitle generation failed, continuing..." >&2
+      3 || { echo "[$(date -u +%FT%TZ)] ERROR: Subtitle generation failed" >&2; exit 1; }
+    echo "[$(date -u +%FT%TZ)] Vietnamese subtitles generated"
 
     # Generate reels subtitles if audio exists
     if [ -s "$reels_narration" ]; then
@@ -265,7 +265,7 @@ if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
         "$reels_narration" \
         "$project_root/hyperframes_reels/assets/subtitles.srt" \
         "$project_root/hyperframes_reels/assets/word_timestamps.json" \
-        3 || echo "[$(date -u +%FT%TZ)] WARNING: Reels subtitle generation failed" >&2
+        3 || { echo "[$(date -u +%FT%TZ)] ERROR: Reels subtitle generation failed"; exit 1; }
     fi
   else
     echo "[$(date -u +%FT%TZ)] WARNING: No subtitle text available" >&2
