@@ -16,18 +16,19 @@ if [ ! -f "$CONFIG" ]; then
 fi
 
 # Build a list of active project IDs
-ACTIVE_IDS=$(jq -r '.active_projects[] | (.project_id // .)' "$CONFIG" 2>/dev/null || echo "")
+ACTIVE_IDS=$(jq -r '.active_projects[]? | (.project_id // .)' "$CONFIG" 2>/dev/null || echo "")
 
-for PDIR in "$ROOT"/projects/cand_*; do
-    [ -d "$PDIR" ] || continue
-    PID=$(basename "$PDIR")
+# Clean up projects and projects_news dirs
+for DIR in "$ROOT"/projects/cand_* "$ROOT"/projects_news/cand_*; do
+    [ -d "$DIR" ] || continue
+    PID=$(basename "$DIR")
     # Check if this PID is active
     if echo "$ACTIVE_IDS" | grep -qx "$PID"; then
         continue
     fi
     # Delete if older than minimum age
-    if [ -z "$(find "$PDIR" -maxdepth 0 -mmin -${MIN_AGE_MINUTES})" ]; then
+    if [ -z "$(find "$DIR" -maxdepth 0 -mmin -${MIN_AGE_MINUTES})" ]; then
         echo "Removing stale orphaned project: $PID"
-        rm -rf "$PDIR"
+        rm -rf "$DIR"
     fi
 done

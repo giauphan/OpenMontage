@@ -80,6 +80,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Validate without uploading or touching Firebase")
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed Firebase records")
     parser.add_argument("--slot", choices=["09:15", "14:15", "21:15"], help="Run only queued VN slot")
+    parser.add_argument("--date", help="Filter projects by exactly this YYYY-MM-DD date and pass to publisher")
     args = parser.parse_args()
 
     schedule = load_config()
@@ -90,21 +91,33 @@ def main() -> int:
     if args.slot:
         local_date = datetime.now(publish_timezone(schedule)).date().isoformat()
         projects = scheduled_projects_for_slot(projects, args.slot, local_date)
+
+    if args.date:
+        projects = [
+            p for p in projects
+            if isinstance(p, dict) and p.get("publish_date") == args.date
+        ]
+
     if not projects:
-        print("No active projects configured")
-        return 1
+        print("No active projects configured for requested filters")
+        return 0
 
     exit_code = 0
     eligible_projects = 0
     for project in projects:
         if isinstance(project, dict):
             project_id = project.get("project_id")
+            publish_date = project.get("publish_date")
             if not project_id:
                 print(f"WARNING: skipping malformed project entry: {project!r}")
                 continue
         else:
             project_id = project
+            publish_date = None
+
         project_dir = ROOT / "projects" / project_id
+        if not project_dir.exists():
+            project_dir = ROOT / "projects_news" / project_id
         metadata_path = project_dir / "publish_metadata.json"
         if not metadata_path.is_file():
             print(f"WARNING: skipping {project_id}: missing {metadata_path}")
@@ -115,6 +128,11 @@ def main() -> int:
             command.append("--dry-run")
         if args.retry_failed:
             command.append("--retry-failed")
+        if publish_date:
+            command.extend(["--date", publish_date])
+        elif args.date:
+            command.extend(["--date", args.date])
+
         print(f"\n=== Publishing {project_id} ===")
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT) + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")

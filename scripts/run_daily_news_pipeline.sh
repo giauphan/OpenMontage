@@ -509,7 +509,8 @@ PROJECT_JSON=$(printf '%s\n' "${PROJECT_IDS[@]}" | jq -R . | jq -s .)
 SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' config/publish_schedule.json)
 TMP=$(mktemp)
 jq --argjson projects "$PROJECT_JSON" --arg publish_date "$PUBLISH_DATE" --argjson slots "$SLOTS_JSON" \
-  '.active_projects = [range($projects | length) as $i | {project_id: $projects[$i], publish_date: $publish_date, publish_time: $slots[$i]}]' \
+  '.active_projects = (.active_projects // [] | map(select(.publish_date != $publish_date))) + \
+   [range($projects | length) as $i | {project_id: $projects[$i], publish_date: $publish_date, publish_time: $slots[$i]}]' \
   config/publish_schedule.json > "$TMP"
 mv "$TMP" config/publish_schedule.json
 

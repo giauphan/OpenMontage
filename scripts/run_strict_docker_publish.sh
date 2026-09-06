@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Strict Docker publish workflow orchestrator.
 # Runs entirely inside the openmontage_worker container on the server.
-# Stages: prepare -> generate -> verify -> claude-validate -> publish -> cleanup.
+# Stages: prepare -> today-batch -> generate -> verify -> claude-validate -> publish -> cleanup -> final-state.
 # Each stage is a hard gate; any failure stops the workflow before publishing.
 set -euo pipefail
 
@@ -39,27 +39,91 @@ command -v claude   >/dev/null  || fail "claude CLI missing"
 log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), claude=$(claude --version 2>&1 | head -1))"
 write_state "preflight" "ok"
 
-# ===== STAGE 1: PREPARE — clear stale projects + orphan schedule entries =====
+# ===== STAGE 1: PREPARE — isolate due-today batch from next-day generation =====
 stage 1 "prepare"
-
-# 1a. Preserve every existing candidate until canonical Firebase records prove it published.
 SCHEDULE="$ROOT/config/publish_schedule.json"
-RETAINED_COUNT=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 2>/dev/null | wc -l)
-log "retained $RETAINED_COUNT existing candidate project directories pending canonical Firebase verification"
-write_state "prepare-retain-projects" "ok" "retained=$RETAINED_COUNT"
+[ -f "$SCHEDULE" ] || fail "publish schedule missing: $SCHEDULE"
+jq -e '.active_projects and (.active_projects | type == "array")' "$SCHEDULE" >/dev/null \
+  || fail "schedule invalid"
 
-# 1b. Preserve active schedule entries; failed, duplicate, and scheduled candidates remain retriable.
-SCHEDULE_COUNT=$(jq '.active_projects | length' "$SCHEDULE")
-log "retained $SCHEDULE_COUNT active schedule entries pending canonical Firebase verification"
-write_state "prepare-retain-schedule" "ok" "retained=$SCHEDULE_COUNT"
+TODAY=$(TZ="$PUBLISH_TZ" date +%F)
+NEXT_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
+mapfile -t TODAY_PROJECT_IDS < <(jq -r --arg d "$TODAY" \
+  '.active_projects[]? | select((.publish_date // "") == $d) | (.project_id // empty)' "$SCHEDULE")
+log "today publish date (local $PUBLISH_TZ): $TODAY"
+log "next publish date (local $PUBLISH_TZ): $NEXT_DATE"
+log "due today projects: ${TODAY_PROJECT_IDS[*]:-none}"
+write_state "prepare" "ok" "today=$TODAY next=$NEXT_DATE due=$(IFS=,; echo "${TODAY_PROJECT_IDS[*]}")"
 
-# 1c. Clear stale publish state files (logs / state dirs).
-rm -rf "$ROOT"/logs/news_produce_*.log "$ROOT"/logs/directors_*_result.json 2>/dev/null || true
-log "stale publish state cleared"
-write_state "prepare-clear-state" "ok"
+# ===== STAGE 2: TODAY BATCH — verify, Claude validate, publish, cleanup =====
+stage 2 "today-batch"
+TODAY_PUBLISHED_PIDS=()
+if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
+  TODAY_VERIFY_LOG="$LOG_DIR/today_verify_${RUN_TS}.log"
+  TODAY_CLAUDE_LOG="$LOG_DIR/today_claude_validate_${RUN_TS}.log"
+  TODAY_PUBLISH_LOG="$LOG_DIR/today_publish_${RUN_TS}.log"
+  : > "$TODAY_VERIFY_LOG"
+  : > "$TODAY_CLAUDE_LOG"
+  : > "$TODAY_PUBLISH_LOG"
+  TODAY_OK=1
 
-# ===== STAGE 2: GENERATE — produce the video and all publish assets =====
-stage 2 "generate"
+  for PID in "${TODAY_PROJECT_IDS[@]}"; do
+    PDIR="$ROOT/projects/$PID"
+    [ -d "$PDIR" ] || { log "FAIL today $PID: project dir missing"; TODAY_OK=0; continue; }
+    META="$PDIR/publish_metadata.json"
+    [ -f "$META" ] || { log "FAIL today $PID: publish_metadata.json missing"; TODAY_OK=0; continue; }
+    jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
+      || { log "FAIL today $PID: publish_metadata invalid"; TODAY_OK=0; continue; }
+    python3 "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
+      || { log "FAIL today $PID: validate_render_quality failed"; TODAY_OK=0; continue; }
+    python3 "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
+      || { log "FAIL today $PID: validate_publish_metadata failed"; TODAY_OK=0; continue; }
+    VALIDATION_PASSED=0
+    for ((retry=1; retry<=MAX_RETRIES; retry++)); do
+      if python3 "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
+          >> "$TODAY_CLAUDE_LOG" 2>&1; then
+        VALIDATION_PASSED=1
+        break
+      fi
+      log "today Claude validation attempt $retry/$MAX_RETRIES failed for $PID"
+    done
+    if [ "$VALIDATION_PASSED" -ne 1 ]; then
+      log "FAIL today $PID: Claude validation failed"
+      TODAY_OK=0
+    fi
+  done
+  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today validation failed"; }
+
+  for PID in "${TODAY_PROJECT_IDS[@]}"; do
+    PDIR="$ROOT/projects/$PID"
+    log "publishing today $PID for $TODAY"
+    if python3 "$ROOT/scripts/publish_manual_video.py" "$PDIR" --date "$TODAY" >> "$TODAY_PUBLISH_LOG" 2>&1; then
+      TODAY_PUBLISHED_PIDS+=("$PID")
+    else
+      log "FAIL today $PID: publish failed"
+      TODAY_OK=0
+    fi
+  done
+
+  [ "$TODAY_PUBLISHED_PIDS" ] || true
+  [ ${#TODAY_PUBLISHED_PIDS[@]} -eq ${#TODAY_PROJECT_IDS[@]} ] || TODAY_OK=0
+  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today publish failed"; }
+  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today publish failed"; }
+
+  for PID in "${TODAY_PUBLISHED_PIDS[@]}"; do
+    [ ! -d "$ROOT/projects/$PID" ] || { log "FAIL today $PID: project dir remains"; TODAY_OK=0; }
+    SCHEDULE_HAS=$(jq --arg pid "$PID" 'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
+    [ "$SCHEDULE_HAS" = "false" ] || { log "FAIL today $PID: still scheduled"; TODAY_OK=0; }
+  done
+  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today cleanup failed"; }
+  log "today batch completed: ${TODAY_PUBLISHED_PIDS[*]}"
+else
+  log "no due projects for today"
+fi
+write_state "today-batch" "ok" "published=$(IFS=,; echo "${TODAY_PUBLISHED_PIDS[*]}")"
+
+# ===== STAGE 3: GENERATE — produce next-day video and assets =====
+stage 3 "generate"
 GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}.log"
 export OPENMONTAGE_PYTHON=/usr/bin/python3
 bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
@@ -72,37 +136,33 @@ mapfile -t PROJECT_IDS < <(grep -h '^PROJECT_ID=' "$GENERATE_LOG" | tail -3 | cu
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"
 
-# ===== STAGE 3: STRICT VERIFICATION — video + metadata + schedule =====
-stage 3 "strict-verification"
+# ===== STAGE 4: STRICT VERIFICATION — next-day video + metadata + schedule =====
+stage 4 "strict-verification"
 VERIFY_LOG="$LOG_DIR/verify_${RUN_TS}.log"
 : > "$VERIFY_LOG"
 VERIFY_OK=1
 
-# Determine the next intended publish date: tomorrow in PUBLISH_TZ.
-NEXT_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
-log "next publish date (local $PUBLISH_TZ): $NEXT_DATE"
-
 for PID in "${PROJECT_IDS[@]}"; do
   PDIR="$ROOT/projects/$PID"
   log "verifying $PID"
-  # 3a. Project directory exists.
+  # 4a. Project directory exists.
   [ -d "$PDIR" ] || { log "FAIL $PID: project dir missing"; VERIFY_OK=0; continue; }
-  # 3b. publish_metadata.json exists + valid JSON + has required fields.
+  # 4b. publish_metadata.json exists + valid JSON + has required fields.
   META="$PDIR/publish_metadata.json"
   [ -f "$META" ] || { log "FAIL $PID: publish_metadata.json missing"; VERIFY_OK=0; continue; }
   jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
     || { log "FAIL $PID: publish_metadata.json invalid/missing fields"; VERIFY_OK=0; continue; }
-  # 3c. Render files exist and non-empty.
+  # 4c. Render files exist and non-empty.
   for R in "renders/final_full_vi_9x16.mp4" "renders/final_reels_vi_9x16.mp4"; do
     [ -s "$PDIR/$R" ] || { log "FAIL $PID: render $R missing/empty"; VERIFY_OK=0; }
   done
-  # 3d. Technical quality validation via validate_render_quality.py.
+  # 4d. Technical quality validation via validate_render_quality.py.
   python3 "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
     || { log "FAIL $PID: validate_render_quality failed"; VERIFY_OK=0; }
-  # 3e. publish_metadata validation.
+  # 4e. publish_metadata validation.
   python3 "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
     || { log "FAIL $PID: validate_publish_metadata failed"; VERIFY_OK=0; }
-  # 3f. Schedule has this project registered for NEXT_DATE.
+  # 4f. Schedule has this project registered for NEXT_DATE.
   SCHEDULE_HAS=$(jq --arg pid "$PID" --arg d "$NEXT_DATE" \
     'any(.active_projects[]?; (.project_id // .) == $pid and (.publish_date // "") == $d)' \
     "$SCHEDULE" 2>/dev/null || echo false)
@@ -113,8 +173,8 @@ done
 log "strict verification PASSED for all 3 projects"
 write_state "verify" "ok"
 
-# ===== STAGE 4: STRICT CLAUDE AGENT VALIDATION =====
-stage 4 "claude-agent-validation"
+# ===== STAGE 5: STRICT CLAUDE AGENT VALIDATION =====
+stage 5 "claude-agent-validation"
 CLAUDE_LOG="$LOG_DIR/claude_validate_${RUN_TS}.log"
 : > "$CLAUDE_LOG"
 CLAUDE_OK=1
@@ -146,8 +206,8 @@ done
 log "claude agent strict validation PASSED for all projects: ${VALIDATED_PIDS[*]}"
 write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 
-# ===== STAGE 5: PUBLISH — for next intended publish date =====
-stage 5 "publish"
+# ===== STAGE 6: PUBLISH — next-day batch =====
+stage 6 "publish"
 PUBLISH_LOG="$LOG_DIR/publish_${RUN_TS}.log"
 : > "$PUBLISH_LOG"
 PUBLISH_OK=1
@@ -170,8 +230,8 @@ done
 log "all 3 projects published: ${PUBLISHED_PIDS[*]}"
 write_state "publish" "ok" "published=$(IFS=,; echo "${PUBLISHED_PIDS[*]}")"
 
-# ===== STAGE 6: POST-PUBLISH CLEANUP =====
-stage 6 "cleanup"
+# ===== STAGE 7: POST-PUBLISH CLEANUP =====
+stage 7 "cleanup"
 CLEANUP_LOG="$LOG_DIR/cleanup_${RUN_TS}.log"
 : > "$CLEANUP_LOG"
 CLEANUP_OK=1
@@ -198,8 +258,8 @@ done
 log "cleanup verified for all published projects"
 write_state "cleanup" "ok"
 
-# ===== STAGE 7: FINAL STATE VERIFICATION =====
-stage 7 "final-state"
+# ===== STAGE 8: FINAL STATE VERIFICATION =====
+stage 8 "final-state"
 FINAL_OK=1
 for PID in "${PROJECT_IDS[@]}"; do
   if [ -d "$ROOT/projects/$PID" ]; then
@@ -227,6 +287,6 @@ write_state "final-state" "ok"
 
 log ""
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
-log "all stages passed; 3 videos published for $NEXT_DATE; generated projects cleaned"
+log "all stages passed; today and next-day videos published; generated projects cleaned"
 write_state "workflow" "completed"
 exit 0
