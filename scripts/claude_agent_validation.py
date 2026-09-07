@@ -42,6 +42,8 @@ def parse_claude_review(response_text: str) -> dict:
         raise ValueError("Claude CLI response invalid")
     if envelope.get("is_error"):
         raise ValueError("Claude CLI error")
+    if "is_error" in envelope and "result" not in envelope:
+        raise ValueError("Claude CLI result missing")
     result = envelope.get("result", envelope)
     if not isinstance(result, (str, dict)):
         raise ValueError("Claude CLI result missing")
