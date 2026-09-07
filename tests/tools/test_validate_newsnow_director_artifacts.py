@@ -28,6 +28,35 @@ def test_validator_accepts_valid_flat_artifact(tmp_path):
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
 
+def test_validator_promotes_fresh_artifacts_script(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script.json"
+    script.write_text(json.dumps({
+        "version": "1.0",
+        "title": "Tiêu đề",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text_vi": "Nội dung", "start_seconds": 0, "end_seconds": 10}],
+    }), encoding="utf-8")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path, min_mtime_ns=script.stat().st_mtime_ns - 1)
+    assert json.loads((artifacts / "script_vi.json").read_text(encoding="utf-8"))["sections"][0]["text"] == "Nội dung"
+
+
+def test_validator_rejects_stale_artifacts_script(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script.json"
+    script.write_text(json.dumps({
+        "version": "1.0",
+        "title": "Tiêu đề",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "Nội dung", "start_seconds": 0, "end_seconds": 10}],
+    }), encoding="utf-8")
+
+    assert not helper.validate_and_promote_director_artifacts(tmp_path, min_mtime_ns=script.stat().st_mtime_ns + 1)
+
+
 def test_validator_accepts_comparison_enhancement_cue(tmp_path):
     arts = tmp_path / "artifacts"
     arts.mkdir()

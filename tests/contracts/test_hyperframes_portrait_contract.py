@@ -58,6 +58,22 @@ def test_portrait_composition_passes(tmp_path):
     assert repair.validate_html(index) == []
 
 
+def test_nfd_vietnamese_text_passes_glyph_validation(tmp_path):
+    html = composition_html(1080, 1920).replace("Điểm thi giảm", "Tiếng Việt")
+    assert repair.validate_html(write_composition(tmp_path, html)) == []
+
+
+def test_html_escaped_vietnamese_text_passes_glyph_validation(tmp_path):
+    html = composition_html(1080, 1920).replace("Điểm thi giảm", "Ti&#7871;ng Vi&#7879;t")
+    assert repair.validate_html(write_composition(tmp_path, html)) == []
+
+
+def test_english_only_text_fails_glyph_validation(tmp_path):
+    html = composition_html(1080, 1920).replace("Điểm thi giảm", "OpenAI Research")
+    errors = repair.validate_html(write_composition(tmp_path, html))
+    assert any("no Vietnamese diacritic text found" in error for error in errors)
+
+
 def test_landscape_composition_fails(tmp_path):
     index = write_composition(tmp_path, composition_html(1920, 1080))
     errors = repair.validate_html(index)

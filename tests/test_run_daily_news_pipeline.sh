@@ -40,8 +40,13 @@ if grep -q 'echo.*WARNING: Subtitle generation failed, continuing' "$ROOT/script
     exit 1
 fi
 
-if ! grep -q 'python3 "$ROOT/scripts/generate_vn_subtitles.py".*|| exit' "$ROOT/scripts/run_daily_news_pipeline.sh" && ! grep -E -q '(set -e |python3 "\$ROOT/scripts/generate_vn_subtitles\.py")' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
-    echo "FAIL: Failed to find fail-fast enforcement for subtitle generation."
+if ! grep -q '"$PY" "$ROOT/scripts/generate_vn_subtitles.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Subtitle generation does not use resolved Python interpreter."
+    exit 1
+fi
+
+if grep -E -q '^[[:space:]]*python3 "\$ROOT/(tools/narration_text\.py|scripts/generate_vn_subtitles\.py|scripts/repair_hyperframes_quality\.py)' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Daily pipeline has bare python3 calls that bypass OPENMONTAGE_PYTHON."
     exit 1
 fi
 

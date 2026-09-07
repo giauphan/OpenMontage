@@ -125,6 +125,12 @@ def _load_nested_checkpoint_script(project_dir: Path, min_mtime_ns: int = 0) -> 
     return None
 
 
+def _promote_to_canonical(canonical_script: Path, normalized: Dict[str, Any]) -> None:
+    tmp = canonical_script.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(canonical_script)
+
+
 def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int = 0) -> bool:
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -134,19 +140,32 @@ def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int
         try:
             normalized = _normalize_script_payload(json.loads(canonical_script.read_text(encoding="utf-8")))
             if normalized is not None:
-                tmp = canonical_script.with_suffix(".json.tmp")
-                tmp.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                tmp.replace(canonical_script)
+                _promote_to_canonical(canonical_script, normalized)
                 return True
         except (OSError, json.JSONDecodeError):
             pass
 
+    # Fresh noncanonical script artifacts from the current director run.
+    # Every promotion source is mtime-gated so stale output cannot pass.
+    fallback_candidates = [artifacts_dir / "script.json"]
+    for candidate in fallback_candidates:
+        if not candidate.is_file():
+            continue
+        if min_mtime_ns and candidate.stat().st_mtime_ns < min_mtime_ns:
+            continue
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        normalized = _normalize_script_payload(payload)
+        if normalized is not None:
+            _promote_to_canonical(canonical_script, normalized)
+            return True
+
     # Attempt promotion from a current nested checkpoint
     promoted_payload = _load_nested_checkpoint_script(project_dir, min_mtime_ns=min_mtime_ns)
     if promoted_payload:
-        tmp = canonical_script.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(promoted_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(canonical_script)
+        _promote_to_canonical(canonical_script, promoted_payload)
         return True
 
     return False

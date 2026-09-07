@@ -28,9 +28,10 @@ def test_stage3_failure_cleans_unscheduled_generated_folders(tmp_path: Path):
     )
 
     # Mock claude CLI in PATH
-    claude_bin = bin_dir / "claude"
-    claude_bin.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    claude_bin.chmod(0o755)
+    for name in ("claude", "ffmpeg", "ffprobe"):
+        mock_bin = bin_dir / name
+        mock_bin.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        mock_bin.chmod(0o755)
 
     # Mock daily pipeline: emits 3 project IDs (2 unscheduled, 1 scheduled), creates folders, then fails
     mock_pipeline = scripts_dir / "run_daily_news_pipeline.sh"

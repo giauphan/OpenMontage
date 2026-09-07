@@ -101,13 +101,13 @@ if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
     [ -f "$META" ] || { log "FAIL today $PID: publish_metadata.json missing"; TODAY_OK=0; continue; }
     jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
       || { log "FAIL today $PID: publish_metadata invalid"; TODAY_OK=0; continue; }
-    python3 "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
+    "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
       || { log "FAIL today $PID: validate_render_quality failed"; TODAY_OK=0; continue; }
-    python3 "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
+    "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
       || { log "FAIL today $PID: validate_publish_metadata failed"; TODAY_OK=0; continue; }
     VALIDATION_PASSED=0
     for ((retry=1; retry<=MAX_RETRIES; retry++)); do
-      if python3 "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
+      if "$PY" "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
           >> "$TODAY_CLAUDE_LOG" 2>&1; then
         VALIDATION_PASSED=1
         break
@@ -124,7 +124,7 @@ if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
   for PID in "${TODAY_PROJECT_IDS[@]}"; do
     PDIR="$ROOT/projects/$PID"
     log "publishing today $PID for $TODAY"
-    if python3 "$ROOT/scripts/publish_manual_video.py" "$PDIR" --date "$TODAY" >> "$TODAY_PUBLISH_LOG" 2>&1; then
+    if "$PY" "$ROOT/scripts/publish_manual_video.py" "$PDIR" --date "$TODAY" >> "$TODAY_PUBLISH_LOG" 2>&1; then
       TODAY_PUBLISHED_PIDS+=("$PID")
     else
       log "FAIL today $PID: publish failed"
@@ -132,8 +132,8 @@ if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
     fi
   done
 
-  [ "$TODAY_PUBLISHED_PIDS" ] || true
-  [ ${#TODAY_PUBLISHED_PIDS[@]} -eq ${#TODAY_PROJECT_IDS[@]} ] || TODAY_OK=0
+  [ "${#TODAY_PUBLISHED_PIDS[@]}" -gt 0 ] || true
+  [ "${#TODAY_PUBLISHED_PIDS[@]}" -eq "${#TODAY_PROJECT_IDS[@]}" ] || TODAY_OK=0
   [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today publish failed"; }
 
   for PID in "${TODAY_PUBLISHED_PIDS[@]}"; do
@@ -191,16 +191,11 @@ for PID in "${PROJECT_IDS[@]}"; do
     [ -s "$PDIR/$R" ] || { log "FAIL $PID: render $R missing/empty"; VERIFY_OK=0; }
   done
   # 4d. Technical quality validation via validate_render_quality.py.
-  python3 "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
     || { log "FAIL $PID: validate_render_quality failed"; VERIFY_OK=0; }
   # 4e. publish_metadata validation.
-  python3 "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
+  "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
     || { log "FAIL $PID: validate_publish_metadata failed"; VERIFY_OK=0; }
-  # 4f. Schedule has this project registered for NEXT_DATE.
-  SCHEDULE_HAS=$(jq --arg pid "$PID" --arg d "$NEXT_DATE" \
-    'any(.active_projects[]?; (.project_id // .) == $pid and (.publish_date // "") == $d)' \
-    "$SCHEDULE" 2>/dev/null || echo false)
-  [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL $PID: not scheduled for $NEXT_DATE"; VERIFY_OK=0; }
 done
 
 [ "$VERIFY_OK" -eq 1 ] || { write_state "verify" "failed"; fail "verification failed (see $VERIFY_LOG)"; }
@@ -220,7 +215,7 @@ for PID in "${PROJECT_IDS[@]}"; do
   VALIDATION_PASSED=0
   for ((retry=1; retry<=MAX_RETRIES; retry++)); do
     log "attempt $retry/$MAX_RETRIES for $PID"
-    if python3 "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
+    if "$PY" "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
         >> "$CLAUDE_LOG" 2>&1; then
       VALIDATION_PASSED=1
       break
@@ -240,87 +235,79 @@ done
 log "claude agent strict validation PASSED for all projects: ${VALIDATED_PIDS[*]}"
 write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 
-# ===== STAGE 6: PUBLISH — next-day batch =====
-stage 6 "publish"
-PUBLISH_LOG="$LOG_DIR/publish_${RUN_TS}.log"
-: > "$PUBLISH_LOG"
-PUBLISH_OK=1
-PUBLISHED_PIDS=()
+# ===== STAGE 6: QUEUE — register validated projects for tomorrow's slots =====
+# Publishing happens tomorrow via slot cron (publish_active_projects.py --slot).
+# This stage only queues; project dirs are retained for the slot publisher.
+stage 6 "queue-next-day"
+QUEUE_OK=1
+QUEUED_PIDS=()
 
+SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
+mapfile -t SLOTS < <(jq -r '.[]' <<< "$SLOTS_JSON")
+[ "${#SLOTS[@]}" -ge "${#VALIDATED_PIDS[@]}" ] \
+  || { write_state "queue-next-day" "failed"; fail "not enough publish slots (${#SLOTS[@]}) for ${#VALIDATED_PIDS[@]} projects"; }
+
+TMP_QUEUE=$(mktemp)
+jq --arg date "$NEXT_DATE" \
+   '.active_projects = ((.active_projects // []) | map(select(.publish_date != $date)))' \
+   "$SCHEDULE" > "$TMP_QUEUE"
+
+IDX=0
 for PID in "${VALIDATED_PIDS[@]}"; do
-  PDIR="$ROOT/projects/$PID"
-  log "publishing $PID for $NEXT_DATE"
-  if python3 "$ROOT/scripts/publish_manual_video.py" "$PDIR" --date "$NEXT_DATE" >> "$PUBLISH_LOG" 2>&1; then
-    log "publish OK: $PID"
-    PUBLISHED_PIDS+=("$PID")
-  else
-    log "publish FAILED: $PID"
-    PUBLISH_OK=0
-  fi
+  SLOT="${SLOTS[$IDX]}"
+  jq --arg pid "$PID" --arg date "$NEXT_DATE" --arg time "$SLOT" \
+     '.active_projects += [{project_id: $pid, publish_date: $date, publish_time: $time}]' \
+     "$TMP_QUEUE" > "$TMP_QUEUE.new" && mv "$TMP_QUEUE.new" "$TMP_QUEUE"
+  log "queued $PID for $NEXT_DATE slot $SLOT"
+  QUEUED_PIDS+=("$PID")
+  IDX=$((IDX + 1))
 done
 
-[ "$PUBLISH_OK" -eq 1 ] || { write_state "publish" "failed"; fail "publish failed (see $PUBLISH_LOG)"; }
-[ "${#PUBLISHED_PIDS[@]}" -eq 3 ] || { write_state "publish" "partial"; fail "published ${#PUBLISHED_PIDS[@]}/3"; }
-log "all 3 projects published: ${PUBLISHED_PIDS[*]}"
-write_state "publish" "ok" "published=$(IFS=,; echo "${PUBLISHED_PIDS[*]}")"
+jq -e '.active_projects and (.active_projects | type == "array")' "$TMP_QUEUE" >/dev/null 2>&1 \
+  || { rm -f "$TMP_QUEUE"; write_state "queue-next-day" "failed"; fail "queued schedule invalid"; }
+mv "$TMP_QUEUE" "$SCHEDULE"
 
-# ===== STAGE 7: POST-PUBLISH CLEANUP =====
+[ "${#QUEUED_PIDS[@]}" -eq 3 ] || { write_state "queue-next-day" "partial"; fail "queued ${#QUEUED_PIDS[@]}/3"; }
+
+# Queue verification: every validated project scheduled for NEXT_DATE with a slot.
+for PID in "${VALIDATED_PIDS[@]}"; do
+  SCHEDULE_HAS=$(jq --arg pid "$PID" --arg d "$NEXT_DATE" \
+    'any(.active_projects[]?; (.project_id // .) == $pid and (.publish_date // "") == $d)' \
+    "$SCHEDULE" 2>/dev/null || echo false)
+  [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL queue $PID: not scheduled for $NEXT_DATE"; QUEUE_OK=0; }
+  [ -d "$ROOT/projects/$PID" ] || { log "FAIL queue $PID: project dir must be retained for slot publisher"; QUEUE_OK=0; }
+done
+[ "$QUEUE_OK" -eq 1 ] || { write_state "queue-next-day" "failed"; fail "queue verification failed"; }
+
+log "all 3 projects queued for $NEXT_DATE: ${QUEUED_PIDS[*]}"
+write_state "queue-next-day" "ok" "queued=$(IFS=,; echo "${QUEUED_PIDS[*]}")"
+
+# ===== STAGE 7: STALE CLEANUP — remove obsolete unscheduled candidate dirs =====
 stage 7 "cleanup"
-CLEANUP_LOG="$LOG_DIR/cleanup_${RUN_TS}.log"
-: > "$CLEANUP_LOG"
-CLEANUP_OK=1
-
-for PID in "${PUBLISHED_PIDS[@]}"; do
-  PDIR="$ROOT/projects/$PID"
-  if [ -d "$PDIR" ]; then
-    log "FAIL cleanup $PID: project dir still exists"
-    CLEANUP_OK=0
-  else
-    log "cleanup OK: $PID project dir removed"
-  fi
-  SCHEDULE_HAS=$(jq --arg pid "$PID" \
-    'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
-  if [ "$SCHEDULE_HAS" = "true" ]; then
-    log "FAIL cleanup $PID: still in active_projects"
-    CLEANUP_OK=0
-  else
-    log "cleanup OK: $PID removed from schedule"
-  fi
-done
-
-[ "$CLEANUP_OK" -eq 1 ] || { write_state "cleanup" "failed"; fail "cleanup verification failed"; }
-log "cleanup verified for all published projects"
-write_state "cleanup" "ok"
+log "removing stale orphaned projects"
+"$ROOT/scripts/clear_stale_projects.sh" --all | tee -a "$RUN_LOG"
 
 # ===== STAGE 8: FINAL STATE VERIFICATION =====
 stage 8 "final-state"
 FINAL_OK=1
-for PID in "${PROJECT_IDS[@]}"; do
-  if [ -d "$ROOT/projects/$PID" ]; then
-    log "FAIL final state $PID: generated project dir remains"
-    FINAL_OK=0
-  fi
-  SCHEDULE_HAS=$(jq --arg pid "$PID" \
-    'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
-  if [ "$SCHEDULE_HAS" = "true" ]; then
-    log "FAIL final state $PID: generated project remains scheduled"
-    FINAL_OK=0
-  fi
+for PID in "${QUEUED_PIDS[@]}"; do
+  [ -d "$ROOT/projects/$PID" ] || { log "FAIL final state $PID: queued project dir missing"; FINAL_OK=0; }
+  SCHEDULE_HAS=$(jq --arg pid "$PID" --arg d "$NEXT_DATE" \
+    'any(.active_projects[]?; (.project_id // .) == $pid and (.publish_date // "") == $d)' \
+    "$SCHEDULE" 2>/dev/null || echo false)
+  [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL final state $PID: queued project not scheduled for $NEXT_DATE"; FINAL_OK=0; }
 done
-[ "$FINAL_OK" -eq 1 ] || { write_state "final-state" "failed"; fail "generated publish cleanup incomplete"; }
-
-log "removing stale orphaned projects"
-"$ROOT/scripts/clear_stale_projects.sh" --all | tee -a "$RUN_LOG"
+[ "$FINAL_OK" -eq 1 ] || { write_state "final-state" "failed"; fail "queued state incomplete"; }
 
 RETAINED=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 2>/dev/null | wc -l)
 ACTIVE=$(jq '.active_projects | length' "$SCHEDULE")
 log "retained scheduled cand_* dirs: $RETAINED"
 log "active_projects count: $ACTIVE"
-log "final state clean for generated projects"
+log "final state queued for tomorrow"
 write_state "final-state" "ok"
 
 log ""
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
-log "all stages passed; today and next-day videos published; generated projects cleaned"
+log "all stages passed; today's videos published; next-day videos queued for slot cron"
 write_state "workflow" "completed"
 exit 0

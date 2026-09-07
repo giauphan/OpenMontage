@@ -236,13 +236,13 @@ materialize_hyperframes_assets() {
     narration_stale=1
   fi
   if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk "BEGIN{exit !($narration_duration <= 30)}" || [ "$narration_stale" = 1 ]; }; then
-    python3 "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
+    "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
     edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
 
   # Generate Vietnamese subtitles with word timestamps for caption synchronization
-if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
+if [ -s "$narration" ] && command -v "$PY" >/dev/null 2>&1; then
   local subtitle_text="$narration_text.prepared"
   [ -s "$subtitle_text" ] || subtitle_text="$narration_text"
   
@@ -250,7 +250,7 @@ if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
   mkdir -p "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
   
   if [ -s "$subtitle_text" ]; then
-    python3 "$ROOT/scripts/generate_vn_subtitles.py" \
+    "$PY" "$ROOT/scripts/generate_vn_subtitles.py" \
       "$subtitle_text" \
       "$narration" \
       "$project_root/hyperframes/assets/subtitles.srt" \
@@ -260,7 +260,7 @@ if [ -s "$narration" ] && command -v python3 >/dev/null 2>&1; then
 
     # Generate reels subtitles if audio exists
     if [ -s "$reels_narration" ]; then
-      python3 "$ROOT/scripts/generate_vn_subtitles.py" \
+      "$PY" "$ROOT/scripts/generate_vn_subtitles.py" \
         "$reels_narration_text.prepared" \
         "$reels_narration" \
         "$project_root/hyperframes_reels/assets/subtitles.srt" \
@@ -316,7 +316,7 @@ fi
     if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
   done
-  python3 "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
+  "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
 }
 materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
 
@@ -502,19 +502,8 @@ fi
 
 done
 
-# Step 5: Atomically activate projects with next-day local publish metadata.
+# Step 5: (Removed atomic activation; now handled strictly by run_strict_docker_publish.sh's queue-next-day stage)
 cd "$ROOT"
-PUBLISH_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
-PROJECT_JSON=$(printf '%s\n' "${PROJECT_IDS[@]}" | jq -R . | jq -s .)
-SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' config/publish_schedule.json)
-TMP=$(mktemp)
-jq --argjson projects "$PROJECT_JSON" --arg publish_date "$PUBLISH_DATE" --argjson slots "$SLOTS_JSON" \
-  '.active_projects = (.active_projects // [] | map(select(.publish_date != $publish_date))) + 
-   [range($projects | length) as $i | {project_id: $projects[$i], publish_date: $publish_date, publish_time: $slots[$i]}]' \
-  config/publish_schedule.json > "$TMP"
-mv "$TMP" config/publish_schedule.json
 
 echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE)"
-# Trigger strict publish for next day.
-# Removed native scheduling to enforce strict orchestrator gating
-# "$PY" "$ROOT/scripts/schedule_youtube_today.py" "$PUBLISH_DATE"
+# Next-day scheduling and publishing is now fully managed by the strict orchestrator.

@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import html as html_lib
 import json
 import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -328,7 +330,10 @@ def validate_html(path: Path) -> list[str]:
             errors.append(f"{path}: narration audio src is empty or wrong")
     if "overflow: hidden" not in html:
         errors.append(f"{path}: missing viewport clipping guard")
-    if VIETNAMESE_GLYPH_SENTINELS and not any(ch in html for ch in VIETNAMESE_GLYPH_SENTINELS):
+    # NFD-decomposed text and HTML entities still count as genuine Vietnamese
+    # on-screen content; normalize before the glyph smoke check.
+    visible_text = unicodedata.normalize("NFC", html_lib.unescape(html))
+    if VIETNAMESE_GLYPH_SENTINELS and not any(ch in visible_text for ch in VIETNAMESE_GLYPH_SENTINELS):
         errors.append(f"{path}: no Vietnamese diacritic text found for glyph smoke validation")
     malformed = sorted(set(_MALFORMED_TEXT_PATTERN.findall(html)))
     if malformed:
