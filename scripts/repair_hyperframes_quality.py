@@ -59,6 +59,14 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
     if narration_duration <= 0:
         narration_duration = 60.0
 
+    # Calculate original duration of scenes to avoid incorrectly skipping timeline alignment
+    # when data-duration is missing from the root element
+    max_end = 0.0
+    for match in re.finditer(r'data-start=["\']([0-9.]+)["\'][^>]*data-duration=["\']([0-9.]+)["\']', html):
+        max_end = max(max_end, float(match.group(1)) + float(match.group(2)))
+    for match in re.finditer(r'data-duration=["\']([0-9.]+)["\'][^>]*data-start=["\']([0-9.]+)["\']', html):
+        max_end = max(max_end, float(match.group(1)) + float(match.group(2)))
+
     # Ensure composition root has required attributes
     root_open = re.search(r"<div\b[^>]*>", html)
     if root_open:
@@ -71,7 +79,8 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         if "data-height" not in new_tag:
             new_tag = new_tag.replace("<div", '<div data-height="1920"', 1)
         if "data-duration" not in new_tag:
-            new_tag = new_tag.replace("<div", f'<div data-duration="{narration_duration:.3f}"', 1)
+            initial_dur = max_end if max_end > 0 else narration_duration
+            new_tag = new_tag.replace("<div", f'<div data-duration="{initial_dur:.3f}"', 1)
         if "data-start" not in new_tag:
             new_tag = new_tag.replace("<div", '<div data-start="0"', 1)
         if new_tag != tag:
@@ -204,7 +213,7 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         )
         pulse_css = (
             "\n@keyframes hf-live-pulse { 0% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(1deg); } 100% { filter: hue-rotate(0deg); } }\n"
-            "#root, body { animation: hf-live-pulse 0.5s infinite linear !important; }\n"
+            "#root, body { animation: hf-live-pulse 0.5s infinite linear !important; background: radial-gradient(circle at 10% 20%, #1e2235 0%, #171b2b 100%) !important; }\n"
         )
         html = html[:style_match.end()] + pulse_css + html[style_match.end():]
     if strict:

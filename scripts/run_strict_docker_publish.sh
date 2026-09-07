@@ -17,6 +17,11 @@ STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-2}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
+PY="${OPENMONTAGE_PYTHON:-$(command -v python3 || command -v python || true)}"
+if [ -z "$PY" ] && [ -x "$ROOT/.venv/bin/python" ]; then
+  PY="$ROOT/.venv/bin/python"
+fi
+[ -n "$PY" ] || fail "python interpreter not found"
 
 log()  { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$RUN_LOG"; }
 fail() { log "ERROR: $*"; exit 1; }

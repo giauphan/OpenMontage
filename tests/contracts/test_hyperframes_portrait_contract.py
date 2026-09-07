@@ -238,3 +238,45 @@ def test_removes_unmaterialized_individual_narration_tags(tmp_path):
     assert 'id="narration_1"' not in patched_html, "Missing asset narration_1 must be removed"
     assert 'id="narration_2"' not in patched_html, "Missing asset narration_2 must be removed"
     assert 'src="assets/music-bg.mp3"' not in patched_html, "Missing background asset must be removed"
+
+def test_repair_calculates_data_duration_from_scenes(tmp_path):
+    project = tmp_path / "cand_test"
+    project.mkdir()
+    
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=1080, height=1920">
+    <style>
+        #root { width: 1080px; height: 1920px; overflow: hidden; }
+        :root { --font-heading: 'BeVietnamPro', Arial, sans-serif; --font-body: 'BeVietnamPro', Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <div data-composition-id="main" data-width="1080" data-height="1920" data-start="0">
+        <div id="scene-0" class="scene" data-start="0.000" data-duration="15.5"></div>
+        <div id="scene-1" class="scene" data-start="15.500" data-duration="10.0"></div>
+<!-- Total scene end is 25.5 -->
+    </div>
+</body>
+</html>"""
+    
+    comp = write_composition(tmp_path, html)
+    repair.patch_html(comp, 45.0)
+    
+    patched_html = comp.read_text()
+    
+    # Root should first receive data-duration="25.500" because calculated max_end=25.5, 
+    # then align_timeline computes scale = 45.0 / 25.500 = 1.764
+    # Scene 1 start remains 0, dur = 15.5 * 1.7647 = 27.353
+    # Scene 2 start = 15.5 * 1.7647 = 27.353, dur = 10 * 1.7647 = 17.647
+    # So max end becomes exactly 45.0
+    
+    # We just explicitly assert the root has duration 45.000 (after scaling),
+    # but more importantly that the scene durations were multiplied!
+    assert 'data-duration="45.000"' in patched_html, "Root duration is scaled to narration"
+    
+    import re
+    scene1_dur_match = re.search(r'id="scene-0" class="scene" data-start="0.000" data-duration="(27\.35[0-9])"', patched_html)
+    assert scene1_dur_match is not None, "Scene 1 duration scaled up"
+
