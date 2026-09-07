@@ -152,8 +152,12 @@ write_state "today-batch" "ok" "published=$(IFS=,; echo "${TODAY_PUBLISHED_PIDS[
 stage 3 "generate"
 GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}.log"
 export OPENMONTAGE_PYTHON=/usr/bin/python3
+set +e
 bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
+GEN_STATUS="${PIPESTATUS[0]}"
+set -e
+
+if [ "$GEN_STATUS" -ne 0 ]; then
   cleanup_failed_generation "$GENERATE_LOG"
   write_state "generate" "failed"
   fail "generation pipeline failed (see $GENERATE_LOG)"
