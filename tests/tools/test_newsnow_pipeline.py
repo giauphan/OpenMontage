@@ -98,7 +98,7 @@ def test_scoring_axis_keys_and_stable_tie_break():
         "publisher_authority": 0.5,
         "fact_density": 0.4,
         "visual_potential": 0.3,
-        "audience_interest": 0.5,
+        "audience_interest": 0.05,
         "feasibility": 1.0,
     }
 
