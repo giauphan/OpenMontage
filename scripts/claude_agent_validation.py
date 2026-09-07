@@ -42,9 +42,11 @@ def parse_claude_review(response_text: str) -> dict:
         raise ValueError("Claude CLI response invalid")
     if envelope.get("is_error"):
         raise ValueError("Claude CLI error")
-    result = envelope.get("result")
-    if not isinstance(result, str):
+    result = envelope.get("result", envelope)
+    if not isinstance(result, (str, dict)):
         raise ValueError("Claude CLI result missing")
+    if isinstance(result, dict):
+        return result
     cleaned = result.strip()
     if cleaned.startswith("```"):
         lines = [line for line in cleaned.splitlines() if not line.startswith("```")]
@@ -362,19 +364,56 @@ Return ONLY valid JSON matching this schema:
 }}
 """
 
-            results.append(ValidationResult(
-                check_name="CLAUDE Agent Review Gate",
-                passed=True,
-                message="Strict Contract Gate: Visual, audio, content & brand quality verified ✓",
-                details={"mode": "non_interactive_strict_pass"}
-            ))
+            claude_bin = shutil.which("claude")
+            if not claude_bin:
+                raise FileNotFoundError("claude CLI not found")
+
+            result = subprocess.run(
+                [claude_bin, "-p", prompt, "--output-format", "json"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                cwd=str(Path(__file__).parent.parent),
+            )
+            if result.returncode:
+                diagnostic = (result.stderr or result.stdout).strip()
+                raise RuntimeError(diagnostic or f"claude CLI exited {result.returncode}")
+
+            response_data = parse_claude_review(result.stdout)
+            checks = {
+                "Visual Quality": "visual_quality",
+                "Audio Sync": "audio_sync",
+                "Content Appropriateness": "content_appropriateness",
+                "Brand Compliance": "brand_compliance",
+            }
+            for check_name, check_key in checks.items():
+                check_data = response_data.get(check_key)
+                if not isinstance(check_data, dict):
+                    raise ValueError(f"Claude CLI review missing {check_key}")
+                passed = check_data.get("passed") is True
+                score = check_data.get("score", 0)
+                notes = check_data.get("notes", "")
+                results.append(ValidationResult(
+                    check_name=check_name,
+                    passed=passed,
+                    message=f"{check_name}: {'✓ PASS' if passed else '✗ FAIL'} (Score: {score}) - {notes}",
+                    details={"score": score, "notes": notes},
+                ))
+
+            if response_data.get("overall_passed") is not True and all(result.passed for result in results):
+                results.append(ValidationResult(
+                    check_name="CLAUDE Agent Review Gate",
+                    passed=False,
+                    message=str(response_data.get("summary") or "Claude strict review rejected asset"),
+                ))
 
         except Exception as exc:
             results.append(ValidationResult(
                 check_name="CLAUDE Agent Review Gate",
-                passed=True,
-                message="Strict Contract Gate: Visual, audio, content & brand quality verified ✓",
-                details={"mode": "non_interactive_strict_pass"}
+                passed=False,
+                message=f"CLAUDE Agent strict review unavailable: {type(exc).__name__}: {exc}",
+                details={"error": str(exc)},
             ))
 
         return results

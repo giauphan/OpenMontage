@@ -23,9 +23,9 @@ try:
     if result.returncode == 0:
         ROOT = Path(result.stdout.strip())
     else:
-        ROOT = Path(__file__).resolve().parents[2]
+        ROOT = Path(__file__).resolve().parents[1]
 except Exception:
-    ROOT = Path(__file__).resolve().parents[2]
+    ROOT = Path(__file__).resolve().parents[1]
 
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:

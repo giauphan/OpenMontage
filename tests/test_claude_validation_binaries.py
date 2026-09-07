@@ -1,5 +1,8 @@
 """Regression tests for direct strict-validator media binary discovery."""
+import json
+import subprocess
 from pathlib import Path
+
 import scripts.claude_agent_validation as validation
 
 def test_main_passes_discovered_media_binaries(monkeypatch, tmp_path):
@@ -40,10 +43,38 @@ def test_main_passes_discovered_media_binaries(monkeypatch, tmp_path):
     assert captured["ffprobe_bin"] == str(ffprobe)
     assert captured["ffmpeg_bin"] == str(ffmpeg)
 
-def test_strict_review_is_non_interactive_pass(tmp_path):
+def test_strict_review_fails_closed_when_claude_cli_is_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setattr(validation.shutil, "which", lambda _: None)
+
     validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
     results = validator.claude_agent_strict_review(tmp_path / "video.mp4", tmp_path / "publish_metadata.json")
+
     assert len(results) == 1
     assert results[0].check_name == "CLAUDE Agent Review Gate"
-    assert results[0].passed is True
-    assert results[0].details == {"mode": "non_interactive_strict_pass"}
+    assert results[0].passed is False
+    assert "claude CLI not found" in results[0].message
+
+
+def test_strict_review_uses_claude_result(monkeypatch, tmp_path):
+    def run(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({
+                "visual_quality": {"passed": True, "score": 95, "notes": "ok"},
+                "audio_sync": {"passed": True, "score": 95, "notes": "ok"},
+                "content_appropriateness": {"passed": True, "score": 95, "notes": "ok"},
+                "brand_compliance": {"passed": True, "score": 95, "notes": "ok"},
+                "overall_passed": True,
+                "summary": "passed",
+            }),
+            stderr="",
+        )
+
+    monkeypatch.setattr(validation.shutil, "which", lambda _: "/usr/bin/claude")
+    monkeypatch.setattr(validation.subprocess, "run", run)
+
+    validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
+    results = validator.claude_agent_strict_review(tmp_path / "video.mp4", tmp_path / "publish_metadata.json")
+
+    assert [result.passed for result in results] == [True, True, True, True]

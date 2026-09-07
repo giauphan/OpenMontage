@@ -89,10 +89,10 @@ def main() -> int:
         print("ERROR: active_projects must be a list")
         return 1
     if args.slot:
-        local_date = datetime.now(publish_timezone(schedule)).date().isoformat()
+        local_date = args.date or datetime.now(publish_timezone(schedule)).date().isoformat()
         projects = scheduled_projects_for_slot(projects, args.slot, local_date)
 
-    if args.date:
+    if args.date and not args.slot:
         projects = [
             p for p in projects
             if isinstance(p, dict) and p.get("publish_date") == args.date

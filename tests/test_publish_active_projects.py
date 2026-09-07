@@ -50,6 +50,35 @@ def test_publish_active_projects_forwards_date_and_strict(mock_run, tmp_path, mo
     assert called_args[date_idx + 1] == "2026-09-06"
 
 @patch("subprocess.run")
+def test_slot_publish_uses_explicit_date(mock_run, tmp_path, monkeypatch):
+    config_file = tmp_path / "publish_schedule.json"
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+
+    project_dir = projects_dir / "cand_test1"
+    project_dir.mkdir()
+    (project_dir / "publish_metadata.json").write_text("{}")
+    schedule = {
+        "timezone": "Asia/Ho_Chi_Minh",
+        "active_projects": [
+            {"project_id": "cand_test1", "publish_date": "2026-09-08", "publish_time": "09:15"}
+        ],
+    }
+    config_file.write_text(json.dumps(schedule), encoding="utf-8")
+
+    monkeypatch.setattr(pap, "CONFIG", config_file)
+    monkeypatch.setattr(pap, "ROOT", tmp_path)
+    monkeypatch.setattr(pap, "load_config", lambda: schedule)
+    monkeypatch.setattr(pap, "PUBLISHER", tmp_path / "scripts" / "publish_manual_video.py")
+    mock_run.return_value = MagicMock(returncode=0)
+
+    with patch("sys.argv", ["publish_active_projects.py", "--slot", "09:15", "--date", "2026-09-08"]):
+        assert pap.main() == 0
+
+    assert mock_run.call_args.args[0][-2:] == ["--date", "2026-09-08"]
+
+
+@patch("subprocess.run")
 def test_publish_active_projects_filters_out_wrong_date(mock_run, tmp_path, monkeypatch):
     config_file = tmp_path / "publish_schedule.json"
     projects_dir = tmp_path / "projects"
