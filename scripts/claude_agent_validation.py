@@ -375,7 +375,7 @@ Return ONLY valid JSON matching this schema:
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
-                timeout=180,
+                timeout=480,
                 cwd=str(Path(__file__).parent.parent),
             )
             if result.returncode:
