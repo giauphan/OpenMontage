@@ -117,7 +117,7 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
 
 
 def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool = False) -> float | None:
-    noise_threshold = "-20dB" if strict else "-60dB"
+    noise_threshold = "-50dB" if strict else "-60dB"
     # In strict mode, analyze upper 80% to catch static slides with animated bottom captions
     vf = f"crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2" if strict else f"freezedetect=n={noise_threshold}:d=2"
     result = subprocess.run(
