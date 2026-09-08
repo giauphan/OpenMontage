@@ -118,19 +118,26 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
 
 def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool = False) -> float | None:
     noise_threshold = "-20dB" if strict else "-60dB"
+    # In strict mode, analyze upper 80% to catch static slides with animated bottom captions
+    vf = f"crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2" if strict else f"freezedetect=n={noise_threshold}:d=2"
     result = subprocess.run(
         [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
-         f"freezedetect=n={noise_threshold}:d=2", "-an", "-f", "null", "-"],
+         vf, "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
     )
     stderr = result.stderr or ""
     if result.returncode != 0 and "freezedetect" not in stderr:
         return None
+    freeze_starts = [float(value) for value in re.findall(r"freeze_start:\s*(\d+(?:\.\d+)?)", stderr)]
     durations = [float(value) for value in re.findall(r"freeze_duration:\s*(\d+(?:\.\d+)?)", stderr)]
-    if not durations:
+    total_freeze = sum(durations)
+    if len(freeze_starts) > len(durations) and freeze_starts:
+        last_start = freeze_starts[-1]
+        if duration > last_start:
+            total_freeze += (duration - last_start)
+    if duration <= 0:
         return 0.0
-    # caller provides duration to avoid re-probing
-    return min(sum(durations) / duration, 1.0) if duration > 0 else None
+    return min(total_freeze / duration, 1.0)
 
 
 def validate_video(

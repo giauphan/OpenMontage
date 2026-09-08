@@ -49,7 +49,7 @@ def publish_topic(topic):
         'video_path': topic['yt_shorts'],
         'title': f"{title} #Shorts"[:100],
         'description': topic['description'],
-        'privacy_status': 'public',
+        'privacy_status': 'unlisted',
         'category_id': '28',
     })
     results['youtube_shorts'] = res.success

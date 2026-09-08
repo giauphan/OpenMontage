@@ -87,7 +87,7 @@ def publish(job):
             "video_path": str(path),
             "title": youtube_shorts_title(job["title"]),
             "description": job["description"],
-            "privacy_status": "public",
+            "privacy_status": "unlisted",
             "category_id": "28",
         })
     return MetaPublisher().execute({

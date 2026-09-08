@@ -207,3 +207,36 @@ def test_check_qa_fails_on_missing_reels_render(tmp_path, capsys):
     finally:
         sys.argv = original
     assert "GATE2=FAIL" in capsys.readouterr().out
+
+
+def test_frozen_canvas_fails_in_strict_mode(tmp_path, capsys):
+    project = tmp_path / "frozen_project"
+    _narration(project / "assets" / "narration.mp3")
+    audio = f"sine=frequency=440:duration={DURATION}"
+    for name in ("final_full_vi_9x16.mp4", "final_reels_vi_9x16.mp4"):
+        path = project / "renders" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Use loop/still image encoding to generate truly frozen frames
+        _run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=blue:size={DIMENSIONS}:duration={DURATION}:rate=30",
+              "-f", "lavfi", "-i", audio,
+              "-vf", "drawbox=x=100:y=100:w=800:h=400:color=white:t=fill",
+              "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", "30",
+              "-c:a", "aac", "-shortest", str(path)])
+
+    argv = [
+        "validate_render_quality.py",
+        str(project),
+        "--ffprobe", shutil.which("ffprobe"),
+        "--ffmpeg", shutil.which("ffmpeg"),
+        "--min-duration", MIN_DURATION,
+        "--tolerance", TOLERANCE,
+        "--strict",
+    ]
+    original = sys.argv
+    sys.argv = argv
+    try:
+        assert validate_render_quality.main() == 1
+    finally:
+        sys.argv = original
+    assert "frozen canvas" in capsys.readouterr().err
+

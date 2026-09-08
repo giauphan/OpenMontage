@@ -345,25 +345,47 @@ class CLAUDEAgentValidator:
             file_exists = abs_video_path.is_file()
             file_size = abs_video_path.stat().st_size if file_exists else 0
 
+            # Inspect composition and script artifacts to verify scene diversity
+            comp_path = self.project_dir / ("hyperframes_reels/index.html" if "reels" in video_path.name else "hyperframes/index.html")
+            script_path = self.project_dir / "artifacts" / "script_vi.json"
+            comp_summary = "Composition: not found"
+            if comp_path.is_file():
+                try:
+                    comp_text = comp_path.read_text(encoding="utf-8")
+                    scene_matches = re.findall(r'class="[^"]*scene', comp_text)
+                    comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {len(scene_matches)}"
+                except Exception:
+                    pass
+            script_summary = "Script: not found"
+            if script_path.is_file():
+                try:
+                    script_data = json.loads(script_path.read_text(encoding="utf-8"))
+                    sections = script_data.get("sections", [])
+                    script_summary = f"Script Sections: {len(sections)}"
+                except Exception:
+                    pass
+
             prompt = f"""
 Validate candidate video asset for OpenMontage automated publishing pipeline.
 
 Target Asset Path: {abs_video_path}
 File Exists: {file_exists}
 File Size Bytes: {file_size}
+Composition Info: {comp_summary}
+Script Info: {script_summary}
 
 Metadata Content:
 {metadata_str}
 
 PERFORM STRICT QUALITY VALIDATION on the following criteria:
-1. VISUAL QUALITY: Verify resolution (1080x1920 portrait) and absence of corrupt frames
-2. AUDIO SYNC: Verify narration and dynamic captions synchronization
-3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance
-4. BRAND COMPLIANCE: Verify no forbidden brand names ("Montage", "OpenMontage") appear in text or narration
+1. VISUAL QUALITY & DIVERSITY: Verify resolution (1080x1920 portrait), absence of corrupt/static frozen frames, and presence of multiple distinct visual scenes (>= 4 scenes, no single static scene > 8s).
+2. AUDIO SYNC & TYPOGRAPHY: Verify narration and dynamic captions synchronization and absence of spelling errors on on-screen text.
+3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance.
+4. BRAND COMPLIANCE: Verify no forbidden brand names ("Montage", "OpenMontage") appear in text or narration.
 
 Return ONLY valid JSON matching this schema:
 {{
-  "visual_quality": {{"passed": true, "score": 95, "notes": "1080x1920 portrait layout verified"}},
+  "visual_quality": {{"passed": true, "score": 95, "notes": "1080x1920 portrait layout and scene transitions verified"}},
   "audio_sync": {{"passed": true, "score": 95, "notes": "Vietnamese audio sync verified"}},
   "content_appropriateness": {{"passed": true, "score": 95, "notes": "Content safe and policy compliant"}},
   "brand_compliance": {{"passed": true, "score": 95, "notes": "No prohibited brand names detected"}},

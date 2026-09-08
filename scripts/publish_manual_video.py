@@ -293,7 +293,7 @@ def publish_batch(
                 "title": title,
                 "description": description,
                 "tags": ["tintuc", "congnghe", "ai", "tuonglai", "vietnam"],
-                "privacy_status": "private" if publish_at else "public",
+                "privacy_status": "private" if publish_at else "unlisted",
                 "publish_at": publish_at,
             }
             if dry_run:

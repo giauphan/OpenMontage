@@ -186,6 +186,9 @@ class YoutubePublisher(BaseTool):
         description = inputs.get("description", "")
         tags = inputs.get("tags", [])
         privacy_status = inputs.get("privacy_status", "unlisted")
+        if privacy_status == "public":
+            # Public publishing disallowed by policy — default to unlisted (draft mode)
+            privacy_status = "unlisted"
         publish_at = inputs.get("publish_at")
         if publish_at:
             privacy_status = "private"
