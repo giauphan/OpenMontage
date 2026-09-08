@@ -280,3 +280,18 @@ def test_repair_calculates_data_duration_from_scenes(tmp_path):
     scene1_dur_match = re.search(r'id="scene-0" class="scene" data-start="0.000" data-duration="(27\.35[0-9])"', patched_html)
     assert scene1_dur_match is not None, "Scene 1 duration scaled up"
 
+
+def test_removes_clip_visibility_hidden_rule(tmp_path):
+    import re
+    html = composition_html(1080, 1920)
+    html = html.replace(
+        "#root { position: relative;",
+        ".clip { visibility: hidden; }\n      #root { position: relative;",
+    )
+    comp = write_composition(tmp_path, html)
+    repair.patch_html(comp, 10.0)
+    patched = comp.read_text()
+    assert re.search(r"\.clip[^{}]*\{[^{}]*visibility:\s*hidden", patched) is None
+
+
+

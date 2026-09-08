@@ -119,7 +119,11 @@ def test_selector_rejects_foreign_source_url_and_shells_out_with_print():
             run.return_value.stdout = "{}"
             selector._run_claude("prompt")
 
-    assert run.call_args.args[0] == ["bash", "-c", "claude-test -p prompt"]
+    assert run.call_args.args[0] == [
+        "bash",
+        "-c",
+        "env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL claude-test -p --model claude-opus-4-7 --dangerously-skip-permissions prompt",
+    ]
 
 
 def test_selector_extracts_markdown_wrapped_json():
