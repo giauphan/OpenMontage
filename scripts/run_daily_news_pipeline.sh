@@ -88,8 +88,8 @@ DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 set +e
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-40}"
-PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Write the Production Script as a flat JSON file at projects/$PROJECT_ID/artifacts/script_vi.json, not embedded in a checkpoint file. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Ensure every scene uses high-contrast editorial imagery, animated visual elements, and large readable captions so the finished video meets the strict 0.5000% edge-density quality threshold. Never include on-screen source badges, watermarks, or text overlays indicating source URLs (e.g. 'Nguồn:' or '#source-badge'). Do not ask for confirmation between stages. Do not stop until script_vi.json and both index.html files exist."
-DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop."
+PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Write the Production Script as a flat JSON file at projects/$PROJECT_ID/artifacts/script_vi.json, not embedded in a checkpoint file. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Ensure every scene uses high-contrast editorial imagery, animated visual elements, and large readable captions so the finished video meets the strict 0.5000% edge-density quality threshold. Never include on-screen source badges, watermarks, or text overlays indicating source URLs (e.g. 'Nguồn:' or '#source-badge'). Do not ask for confirmation between stages. Do not stop until script_vi.json and both index.html files exist. If the compositions are not generated within the timeout, the pipeline will fail and retry once with this same prompt."
+DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop. Do not start background agents or background shell commands. Complete all work in this foreground turn. Before responding, run test -s on artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html inside the project. Return a non-success result if any required file is missing or empty."
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
 DIRECTOR_ARTIFACTS_READY=0
@@ -97,15 +97,16 @@ DIRECTOR_ARTIFACTS_READY=0
 # A director timeout must fail closed rather than publishing stale content.
 
 run_directors() {
+  local prompt="${1:-$PROMPT_STR}"
   if [ "$(id -u)" -eq 0 ]; then
     su node -s /bin/bash -c "
       export PATH=\"$PATH\"
       export PYTHONPATH=\"$PYTHONPATH\"
       cd \"$ROOT\"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" claude -p --dangerously-skip-permissions --max-budget-usd \"${DIRECTORS_MAX_BUDGET_USD:-20}\" --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" --output-format json \"$PROMPT_STR\"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" claude -p --model claude-opus-4-7 --dangerously-skip-permissions --max-budget-usd \"${DIRECTORS_MAX_BUDGET_USD:-20}\" --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" --output-format json \"$prompt\"
     "
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --model claude-opus-4-7 --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
   fi
 }
 
@@ -154,9 +155,18 @@ fi
 END_TS=$(date -u +%s)
 ELAPSED=$((END_TS - START_TS))
 
-if [ "$CLAUDE_EXIT" -eq 0 ] && ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000"; then
-  echo "[$(date -u +%FT%TZ)] ERROR: missing canonical script artifact after director run" >> "$DIRECTORS_LOG"
-  CLAUDE_EXIT=6
+if [ "$CLAUDE_EXIT" -eq 0 ] && ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
+  echo "[$(date -u +%FT%TZ)] WARN: incomplete director artifacts; retrying once" >> "$DIRECTORS_LOG"
+  RETRY_PROMPT="Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Required files are incomplete. In this foreground turn, finish artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. Do not start background work. Before responding, verify all three with test -s."
+  run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG"
+  RETRY_EXIT=$?
+  if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
+    mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
+    CLAUDE_EXIT=0
+  else
+    echo "[$(date -u +%FT%TZ)] ERROR: director artifacts incomplete after retry" >> "$DIRECTORS_LOG"
+    CLAUDE_EXIT=6
+  fi
 fi
 
 if [ $CLAUDE_EXIT -eq 0 ]; then

@@ -131,7 +131,14 @@ def _promote_to_canonical(canonical_script: Path, normalized: Dict[str, Any]) ->
     tmp.replace(canonical_script)
 
 
-def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int = 0) -> bool:
+def _has_required_compositions(project_dir: Path) -> bool:
+    return all((project_dir / path).is_file() and (project_dir / path).stat().st_size > 0 for path in (
+        "hyperframes/index.html",
+        "hyperframes_reels/index.html",
+    ))
+
+
+def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int = 0, require_compositions: bool = False) -> bool:
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     canonical_script = artifacts_dir / "script_vi.json"
@@ -141,7 +148,7 @@ def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int
             normalized = _normalize_script_payload(json.loads(canonical_script.read_text(encoding="utf-8")))
             if normalized is not None:
                 _promote_to_canonical(canonical_script, normalized)
-                return True
+                return not require_compositions or _has_required_compositions(project_dir)
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -160,13 +167,13 @@ def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int
         normalized = _normalize_script_payload(payload)
         if normalized is not None:
             _promote_to_canonical(canonical_script, normalized)
-            return True
+            return not require_compositions or _has_required_compositions(project_dir)
 
     # Attempt promotion from a current nested checkpoint
     promoted_payload = _load_nested_checkpoint_script(project_dir, min_mtime_ns=min_mtime_ns)
     if promoted_payload:
         _promote_to_canonical(canonical_script, promoted_payload)
-        return True
+        return not require_compositions or _has_required_compositions(project_dir)
 
     return False
 
@@ -175,6 +182,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Ensure NewsNow director artifacts exist at canonical paths")
     parser.add_argument("project_dir", type=Path, help="Path to project directory")
     parser.add_argument("--min-mtime-ns", type=int, default=0, help="Minimum allowed checkpoint mtime nanoseconds")
+    parser.add_argument("--require-compositions", action="store_true", help="Require both canonical HyperFrames compositions")
     args = parser.parse_args()
 
     project_dir = args.project_dir.resolve()
@@ -182,9 +190,14 @@ def main() -> int:
         print(f"ERROR: project directory does not exist: {project_dir}", file=sys.stderr)
         return 1
 
-    ok = validate_and_promote_director_artifacts(project_dir, min_mtime_ns=args.min_mtime_ns)
+    ok = validate_and_promote_director_artifacts(
+        project_dir,
+        min_mtime_ns=args.min_mtime_ns,
+        require_compositions=args.require_compositions,
+    )
     if not ok:
-        print(f"ERROR: missing or invalid canonical script artifact for {project_dir.name}", file=sys.stderr)
+        required = "script artifact and both compositions" if args.require_compositions else "canonical script artifact"
+        print(f"ERROR: missing or invalid {required} for {project_dir.name}", file=sys.stderr)
         return 1
 
     print(f"✓ Validated director artifacts for {project_dir.name}")

@@ -37,7 +37,13 @@ def resolve_ffprobe_ffmpeg() -> tuple[str, str]:
 
 
 def parse_claude_review(response_text: str) -> dict:
-    envelope = json.loads(response_text)
+    if not response_text or not response_text.strip():
+        raise ValueError("Claude CLI output was empty")
+
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Claude CLI output not valid JSON: {str(e)} - Output prefix: {repr(response_text[:100])}")
     if not isinstance(envelope, dict):
         raise ValueError("Claude CLI response invalid")
     if envelope.get("is_error"):

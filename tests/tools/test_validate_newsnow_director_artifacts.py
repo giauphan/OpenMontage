@@ -28,6 +28,26 @@ def test_validator_accepts_valid_flat_artifact(tmp_path):
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
 
+def test_validator_requires_both_compositions_when_requested(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "script_vi.json").write_text(json.dumps({
+        "version": "1.0",
+        "title": "T",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "A", "start_seconds": 0, "end_seconds": 10}],
+    }))
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path, require_compositions=True) is False
+
+    (tmp_path / "hyperframes").mkdir()
+    (tmp_path / "hyperframes_reels").mkdir()
+    (tmp_path / "hyperframes" / "index.html").write_text("full")
+    (tmp_path / "hyperframes_reels" / "index.html").write_text("reels")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path, require_compositions=True) is True
+
+
 def test_validator_promotes_fresh_artifacts_script(tmp_path):
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
