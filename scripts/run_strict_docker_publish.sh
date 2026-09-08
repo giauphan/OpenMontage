@@ -15,7 +15,7 @@ RUN_LOG="$LOG_DIR/run_${RUN_TS}.log"
 STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
-MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-2}"
+MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3 || command -v python || true)}"
 if [ -z "$PY" ] && [ -x "$ROOT/.venv/bin/python" ]; then
@@ -24,8 +24,20 @@ fi
 [ -n "$PY" ] || fail "python interpreter not found"
 
 log()  { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$RUN_LOG"; }
-fail() { log "ERROR: $*"; exit 1; }
-stage() { log ""; log "===== STAGE $1: $2 ====="; }
+fail() {
+  local msg="$*"
+  log "ERROR: $msg"
+  if [ -n "${CURRENT_STAGE:-}" ] && [ -n "${PY:-}" ]; then
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "$CURRENT_STAGE" \
+      --error-type "STAGE_FAILURE" --message "$msg" || true
+  fi
+  exit 1
+}
+stage() {
+  CURRENT_STAGE="$2"
+  log ""
+  log "===== STAGE $1: $2 ====="
+}
 
 write_state() {
   local stage_name="$1" status="$2" extra="${3:-}"

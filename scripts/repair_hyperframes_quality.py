@@ -37,6 +37,101 @@ PORTRAIT_WIDTH = 1080
 PORTRAIT_HEIGHT = 1920
 
 
+def generate_fallback_visual_asset(target_path: Path, label: str = "Editorial Visual") -> None:
+    """Generate high-contrast editorial fallback SVG asset so Chromium never throws 404."""
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#818cf8" />
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)" />
+  <circle cx="540" cy="800" r="280" fill="url(#accent)" opacity="0.15" />
+  <rect x="140" y="700" width="800" height="400" rx="32" fill="#1e293b" opacity="0.85" stroke="#38bdf8" stroke-width="4" />
+  <text x="540" y="880" font-family="'BeVietnamPro', Arial, sans-serif" font-size="48" font-weight="bold" fill="#f8fafc" text-anchor="middle">{label}</text>
+  <text x="540" y="960" font-family="'BeVietnamPro', Arial, sans-serif" font-size="28" fill="#38bdf8" text-anchor="middle">Tin Tức Công Nghệ AI</text>
+</svg>"""
+    target_path.write_text(svg_content, encoding="utf-8")
+
+
+def repair_missing_composition_assets(path: Path, html: str) -> str:
+    """Detect missing local asset references (img src, css url) and materialize fallbacks to prevent 404."""
+    composition_dir = path.parent
+    project_root = composition_dir.parent
+    assets_dir = composition_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Match img src
+    def fix_img_src(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        src = match.group(1).strip()
+        if not src or src.startswith("data:"):
+            return tag
+
+        # Check if local relative path
+        if not src.startswith(("http://", "https://", "//")):
+            clean_src = src.split("?")[0].split("#")[0]
+            target = (composition_dir / clean_src).resolve()
+            if not target.is_file() or target.stat().st_size == 0:
+                # Look for matching filename in project assets
+                filename = Path(clean_src).name
+                candidates = list(project_root.glob(f"**/{filename}"))
+                found = False
+                for cand in candidates:
+                    if cand.is_file() and cand.stat().st_size > 0 and cand != target:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(cand, target)
+                        found = True
+                        break
+                if not found:
+                    # Materialize fallback SVG
+                    fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
+                    label = Path(clean_src).stem.replace("_", " ").replace("-", " ").title()
+                    generate_fallback_visual_asset(fallback_file, label=label or "Visual Asset")
+                    if fallback_file != target:
+                        return tag.replace(src, str(fallback_file.relative_to(composition_dir)))
+        return tag
+
+    html = re.sub(r'<img\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*>', fix_img_src, html, flags=re.IGNORECASE)
+
+    # 2. Match background url(...)
+    def fix_css_url(match: re.Match[str]) -> str:
+        full_match = match.group(0)
+        url_target = match.group(2).strip()
+        if not url_target or url_target.startswith("data:"):
+            return full_match
+        if not url_target.startswith(("http://", "https://", "//")):
+            clean_url = url_target.split("?")[0].split("#")[0]
+            target = (composition_dir / clean_url).resolve()
+            if not target.is_file() or target.stat().st_size == 0:
+                filename = Path(clean_url).name
+                candidates = list(project_root.glob(f"**/{filename}"))
+                found = False
+                for cand in candidates:
+                    if cand.is_file() and cand.stat().st_size > 0 and cand != target:
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(cand, target)
+                        found = True
+                        break
+                if not found:
+                    fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
+                    generate_fallback_visual_asset(fallback_file, label="Background Visual")
+                    if fallback_file != target:
+                        rel_path = str(fallback_file.relative_to(composition_dir))
+                        return full_match.replace(url_target, rel_path)
+        return full_match
+
+    html = re.sub(r'url\((["\']?)([^"\'\)]+)\1\)', fix_css_url, html, flags=re.IGNORECASE)
+    return html
+
+
 def probe_duration(path: Path) -> float:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
@@ -183,6 +278,7 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
     html = re.sub(r"<audio\b[^>]*>", add_data_start, html)
 
     html = align_timeline(path, html, narration_duration)
+    html = repair_missing_composition_assets(path, html)
 
     # Remove GSAP display tweens that break HyperFrames internal visibility engine
     # HyperFrames controls visibility based on timeline, GSAP tweens override this and cause blank renders

@@ -54,10 +54,14 @@ NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
 if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 3; then
   if [ ! -f data/newsnow_feed.json ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: NewsNow fetch failed and no prior feed exists."
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
+      --error-type "NEWSNOW_FETCH_FAILED" --message "NewsNow fetch failed and no prior feed exists" || true
     exit 1
   fi
   FEED_STALE=1
   echo "[$(date -u +%FT%TZ)] WARN: NewsNow fetch failed; using existing feed."
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "news_fetch" \
+    --reason "NewsNow fetch failed, using fallback feed" --attempt 1 --max-attempts 1 || true
 fi
 
 # Step 1: Select and initialize exactly three distinct current topics.
@@ -139,13 +143,8 @@ elif jq empty "$DIRECTORS_JSON" 2>/dev/null; then
     "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   jq -r '.result // ""' "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   if [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON")" = "true" ]; then
-    # Check if artifacts exist and validate despite budget exhaustion error
-    if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" 2>/dev/null && [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
-      echo "[$(date -u +%FT%TZ)] WARN: claude reported error (likely budget), but required artifacts exist and validate OK" >> "$DIRECTORS_LOG"
-      CLAUDE_EXIT=0
-    else
-      CLAUDE_EXIT=3
-    fi
+    echo "[$(date -u +%FT%TZ)] ERROR: claude director reported execution error in output JSON" >> "$DIRECTORS_LOG"
+    CLAUDE_EXIT=3
   fi
 else
   echo "[$(date -u +%FT%TZ)] WARN: claude produced no valid JSON result" >> "$DIRECTORS_LOG"
@@ -155,23 +154,38 @@ fi
 END_TS=$(date -u +%s)
 ELAPSED=$((END_TS - START_TS))
 
-if [ "$CLAUDE_EXIT" -eq 0 ] && ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
-  echo "[$(date -u +%FT%TZ)] WARN: incomplete director artifacts; retrying once" >> "$DIRECTORS_LOG"
-  RETRY_PROMPT="Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Required files are incomplete. In this foreground turn, finish artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. Do not start background work. Before responding, verify all three with test -s."
+MAX_DIRECTOR_RETRIES="${MAX_DIRECTOR_RETRIES:-3}"
+DIRECTOR_ATTEMPT=1
+
+while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; do
+  if [ "$DIRECTOR_ATTEMPT" -ge "$MAX_DIRECTOR_RETRIES" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: director artifacts incomplete or failed after $MAX_DIRECTOR_RETRIES attempts" >> "$DIRECTORS_LOG"
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
+      --error-type "DIRECTOR_INCOMPLETE" --message "Director artifacts incomplete after $MAX_DIRECTOR_RETRIES attempts" \
+      --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
+    CLAUDE_EXIT=6
+    break
+  fi
+  DIRECTOR_ATTEMPT=$((DIRECTOR_ATTEMPT + 1))
+  echo "[$(date -u +%FT%TZ)] WARN: director artifacts incomplete/error (attempt $DIRECTOR_ATTEMPT/$MAX_DIRECTOR_RETRIES); retrying" >> "$DIRECTORS_LOG"
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "directors" --project-id "$PROJECT_ID" \
+    --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
+  RETRY_PROMPT="Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Required files are incomplete or failed. In this foreground turn, finish artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. Do not start background work. Before responding, verify all three with test -s."
   run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG"
   RETRY_EXIT=$?
   if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
     mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
     CLAUDE_EXIT=0
   else
-    echo "[$(date -u +%FT%TZ)] ERROR: director artifacts incomplete after retry" >> "$DIRECTORS_LOG"
     CLAUDE_EXIT=6
   fi
-fi
+done
 
 if [ $CLAUDE_EXIT -eq 0 ]; then
   echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID exit=0 elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
+    --message "Director artifacts generated and validated" || true
   # Hard gate: both compositions must exist at canonical paths before render.
   HYPER_FULL="$PROJECT_DIR/hyperframes/index.html"
   HYPER_REELS="$PROJECT_DIR/hyperframes_reels/index.html"
@@ -181,10 +195,14 @@ if [ $CLAUDE_EXIT -eq 0 ]; then
     if [ ! -s "$HYPER_FULL" ]; then
       echo "[$(date -u +%FT%TZ)] FATAL type=no_full_composition PROJECT_ID=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
       echo "[$(date -u +%FT%TZ)] FATAL type=no_full_composition PROJECT_ID=$PROJECT_ID" >&2
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
+        --error-type "MISSING_FULL_COMPOSITION" --message "Full composition index.html missing or empty" || true
     fi
     if [ ! -s "$HYPER_REELS" ]; then
       echo "[$(date -u +%FT%TZ)] FATAL type=no_reels_composition PROJECT_ID=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
       echo "[$(date -u +%FT%TZ)] FATAL type=no_reels_composition PROJECT_ID=$PROJECT_ID" >&2
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
+        --error-type "MISSING_REELS_COMPOSITION" --message "Reels composition index.html missing or empty" || true
     fi
     exit 2
   fi
@@ -192,6 +210,8 @@ else
   echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$CLAUDE_EXIT elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   echo "  see full transcript: $DIRECTORS_LOG" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
+    --error-type "DIRECTOR_FAILURE" --message "Director run failed with exit code $CLAUDE_EXIT" || true
   exit $CLAUDE_EXIT
 fi
 
@@ -408,27 +428,31 @@ jq -n \
 echo "[$(date -u +%FT%TZ)] Running CLAUDE Agent validation..."
 
 # Set max retry attempts
-MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-2}"
+MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 VALIDATION_PASSED=0
 
 for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
   echo "[$(date -u +%FT%TZ)] CLAUDE Validation Attempt $retry/$MAX_RETRIES"
-  
+
   "$PY" "$ROOT/scripts/claude_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
     --strict \
     --retry "$MAX_RETRIES" \
     --ffprobe "$FFPROBE_BIN" \
     --ffmpeg "$FFMPEG_BIN"
-  
+
   VALIDATION_EXIT=$?
-  
+
   if [ $VALIDATION_EXIT -eq 0 ]; then
     echo "[$(date -u +%FT%TZ)] 🟢 CLAUDE Agent Strict Quality Validation PASSED"
     VALIDATION_PASSED=1
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "claude_validation" --project-id "$PROJECT_ID" \
+      --message "Claude agent validation passed on attempt $retry/$MAX_RETRIES" || true
     break
   else
     echo "[$(date -u +%FT%TZ)] ❌ CLAUDE Agent validation failed (attempt $retry/$MAX_RETRIES)"
-    
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "claude_validation" --project-id "$PROJECT_ID" \
+      --reason "Claude agent validation failed, retrying" --attempt "$retry" --max-attempts "$MAX_RETRIES" || true
+
     # Only retry if we haven't exhausted attempts
     if [ $retry -lt $MAX_RETRIES ]; then
       echo "[$(date -u +%FT%TZ)] Retrying validation..."
@@ -441,6 +465,9 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
   echo "[$(date -u +%FT%TZ)] 🔴 FINAL: CLAUDE Agent Strict Quality Validation FAILED after $MAX_RETRIES attempts" >&2
   echo "[$(date -u +%FT%TZ)] Project: $PROJECT_ID" >&2
   echo "[$(date -u +%FT%TZ)] Check validation reports in project directory" >&2
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "claude_validation" --project-id "$PROJECT_ID" \
+    --error-type "VALIDATION_FAILED" --message "Claude agent validation failed after $MAX_RETRIES attempts" \
+    --attempt "$MAX_RETRIES" --max-attempts "$MAX_RETRIES" || true
   exit 1
 fi
 

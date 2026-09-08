@@ -17,6 +17,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,14 +41,22 @@ def parse_claude_review(response_text: str) -> dict:
     if not response_text or not response_text.strip():
         raise ValueError("Claude CLI output was empty")
 
+    envelope = None
     try:
         envelope = json.loads(response_text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Claude CLI output not valid JSON: {str(e)} - Output prefix: {repr(response_text[:100])}")
-    if not isinstance(envelope, dict):
-        raise ValueError("Claude CLI response invalid")
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]*\}", response_text)
+        if match:
+            try:
+                envelope = json.loads(match.group(0))
+            except Exception:
+                pass
+
+    if envelope is None or not isinstance(envelope, dict):
+        raise ValueError(f"Claude CLI output not valid JSON - Output prefix: {repr(response_text[:100])}")
+
     if envelope.get("is_error"):
-        raise ValueError("Claude CLI error")
+        raise ValueError(f"Claude CLI error: {envelope.get('result') or 'unknown error'}")
     if "is_error" in envelope and "result" not in envelope:
         raise ValueError("Claude CLI result missing")
     result = envelope.get("result", envelope)
@@ -59,6 +68,9 @@ def parse_claude_review(response_text: str) -> dict:
     if cleaned.startswith("```"):
         lines = [line for line in cleaned.splitlines() if not line.startswith("```")]
         cleaned = "\n".join(lines).strip()
+    match = re.search(r"\{[\s\S]*\}", cleaned)
+    if match:
+        cleaned = match.group(0)
     review = json.loads(cleaned)
     if not isinstance(review, dict):
         raise ValueError("Claude CLI review invalid")
@@ -69,6 +81,13 @@ try:
 except ImportError:
     # Handle case when validation_status is not available
     ValidationStatusLogger = None
+
+try:
+    from scripts.pipeline_monitoring import log_pipeline_error, log_pipeline_retry, log_pipeline_success
+except ImportError:
+    log_pipeline_error = None
+    log_pipeline_retry = None
+    log_pipeline_success = None
 
 # Strict Quality Thresholds
 # Currently MIN_DURATION is used in CLAUDE agent prompts
@@ -316,7 +335,7 @@ class CLAUDEAgentValidator:
             
         return results
 
-    def claude_agent_strict_review(self, video_path: Path, metadata_path: Path) -> List[ValidationResult]:
+    def claude_agent_strict_review(self, video_path: Path, metadata_path: Path, prior_results: Optional[List[ValidationResult]] = None) -> List[ValidationResult]:
         """CLAUDE Agent powered strict quality review."""
         results = []
 
@@ -365,6 +384,13 @@ class CLAUDEAgentValidator:
                 except Exception:
                     pass
 
+            # Summarize prior technical & content QA results
+            qa_summary = "Technical & Content QA: All prior checks passed."
+            if prior_results:
+                failed_prior = [r for r in prior_results if not r.passed]
+                if failed_prior:
+                    qa_summary = "Technical & Content QA FAILURES detected:\n" + "\n".join(f"- {r.check_name}: {r.message}" for r in failed_prior)
+
             prompt = f"""
 Validate candidate video asset for OpenMontage automated publishing pipeline.
 
@@ -373,6 +399,8 @@ File Exists: {file_exists}
 File Size Bytes: {file_size}
 Composition Info: {comp_summary}
 Script Info: {script_summary}
+QA Verification Data:
+{qa_summary}
 
 Metadata Content:
 {metadata_str}
@@ -500,17 +528,17 @@ Return ONLY valid JSON matching this schema:
         # Step 4: CLAUDE Agent Review
         if self.strict_mode:
             for video_path in video_paths:
-                agent_results = self.claude_agent_strict_review(video_path, metadata_path)
+                agent_results = self.claude_agent_strict_review(video_path, metadata_path, prior_results=all_results)
                 all_results.extend(agent_results)
-        
+
         self.results = all_results
-        
+
         # Determine overall status
         failed_checks = [r for r in all_results if not r.passed]
         passed_checks = [r for r in all_results if r.passed]
-        
+
         overall_passed = len(failed_checks) == 0
-        
+
         return {
             "overall_status": "PASS" if overall_passed else "FAIL",
             "total_checks": len(all_results),
@@ -526,15 +554,15 @@ Return ONLY valid JSON matching this schema:
         print("\n" + "="*60)
         print("CLAUDE AGENT STRICT QUALITY VALIDATION REPORT")
         print("="*60)
-        
+
         print(f"Overall Status: {validation_data['color']} {validation_data['overall_status']}")
         print(f"Total Checks: {validation_data['total_checks']}")
         print(f"Passed: {validation_data['passed_checks']}, Failed: {validation_data['failed_checks']}")
-        
+
         print("\n" + "-"*60)
         print("DETAILED RESULTS:")
         print("-"*60)
-        
+
         for result in validation_data['results']:
             status = "✅ PASS" if result.passed else "❌ FAIL"
             print(f"{status} | {result.check_name}")
@@ -543,7 +571,7 @@ Return ONLY valid JSON matching this schema:
                 for key, value in result.details.items():
                     print(f"       └─ {key}: {value}")
             print()
-        
+
         print("="*60)
         if validation_data['overall_status'] == 'PASS':
             print("🎉 STRICT QUALITY VALIDATION PASSED - Ready for Platform Publishing")
@@ -559,13 +587,13 @@ def main():
                        help='Enable strict mode')
     parser.add_argument('--no-strict', dest='strict', action='store_false',
                        help='Disable strict mode')
-    parser.add_argument('--retry', type=int, default=2, 
+    parser.add_argument('--retry', type=int, default=3,
                        help='Maximum retry attempts (handled by shell wrapper)')
-    parser.add_argument('--ffprobe', type=str, default='ffprobe', 
+    parser.add_argument('--ffprobe', type=str, default='ffprobe',
                        help='Path to ffprobe binary')
-    parser.add_argument('--ffmpeg', type=str, default='ffmpeg', 
+    parser.add_argument('--ffmpeg', type=str, default='ffmpeg',
                        help='Path to ffmpeg binary')
-    
+
     args = parser.parse_args()
 
     # Handle default: if neither --strict nor --no-strict was specified, default to True
@@ -591,7 +619,7 @@ def main():
         project_dir=project_dir,
         strict_mode=strict_mode
     )
-    
+
     ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
     if args.ffprobe != "ffprobe":
         ffprobe_bin = args.ffprobe
@@ -605,10 +633,10 @@ def main():
         ffprobe_bin=ffprobe_bin,
         ffmpeg_bin=ffmpeg_bin
     )
-    
+
     # Print report
     validator.print_validation_report(validation_data)
-    
+
     # Log to validation status system if available
     if ValidationStatusLogger is not None:
         logger = ValidationStatusLogger(project_dir=project_dir)
@@ -627,12 +655,29 @@ def main():
             failed=serializable['failed_checks'],
             details=serializable
         )
-    
-    # Return exit code based on validation result
+
+    # Log to pipeline monitoring
     if validation_data['overall_status'] == 'PASS':
+        if log_pipeline_success is not None:
+            log_pipeline_success(
+                stage="claude_validation",
+                project_id=Path(args.project_dir).name,
+                message=f"Strict validation passed ({validation_data['passed_checks']}/{validation_data['total_checks']} checks)",
+            )
         print(f"Result: {validation_data['color']} STRICT QUALITY PASS")
         sys.exit(0)
     else:
+        if log_pipeline_error is not None:
+            failed_msgs = [r.message for r in validation_data['results'] if not r.passed]
+            log_pipeline_error(
+                stage="claude_validation",
+                project_id=Path(args.project_dir).name,
+                error_type="VALIDATION_FAILED",
+                message=f"Validation failed: {'; '.join(failed_msgs[:3])}",
+                details={"failed_checks": failed_msgs},
+                attempt=1,
+                max_attempts=args.retry,
+            )
         print(f"Result: {validation_data['color']} VALIDATION FAILED")
         # Print specific failures for debugging
         failed_checks = [r.message for r in validation_data['results'] if not r.passed]
