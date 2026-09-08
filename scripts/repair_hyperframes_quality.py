@@ -226,12 +226,15 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
         html = re.sub(r"\bopacity\s*:\s*0\s*;?", "opacity: 1;", html)
         html = re.sub(r"\bvisibility\s*:\s*hidden\s*;?", "visibility: visible;", html)
+        # Enforce exact 1080x1920 portrait
+        html = re.sub(r"#root\s*\{\s*width:\s*\d+px;\s*height:\s*\d+px;", "#root { width: 1080px; height: 1920px;", html)
+        html = re.sub(r"meta\s+name=\"viewport\"[^>]*", 'meta name="viewport" content="width=1080, height=1920"', html)
 
     path.write_text(html, encoding="utf-8")
 
 
 def align_timeline(path: Path, html: str, narration_duration: float) -> str:
-    """Scale composition timings so the visual timeline matches the narration length."""
+    """Scale composition timings and GSAP animations so visual timeline matches narration length."""
     root_open = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
     if not root_open:
         raise ValueError(f"{path}: missing composition root for timeline alignment")
@@ -239,14 +242,11 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     if not root_duration_match:
         raise ValueError(f"{path}: composition root has no data-duration")
     root_duration = float(root_duration_match.group(1))
-    target = round(narration_duration, 2)
+    target = round(narration_duration, 3)
     if root_duration <= 0:
         raise ValueError(f"{path}: composition root has a non-positive data-duration")
-    # Keep visual and narration timelines exactly aligned. A tolerance here can
-    # leave a dead tail that the post-render duration gate correctly rejects.
-    if abs(root_duration - target) < 0.01:
-        return html
-    scale = target / root_duration
+
+    scale = target / root_duration if root_duration > 0 else 1.0
 
     def scale_attr(match: re.Match[str]) -> str:
         value = float(match.group(2))
@@ -254,12 +254,78 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
 
     head = html[:root_open.start()]
     body = html[root_open.start():]
-    body = re.sub(r"\b(data-start|data-duration)=[\"']([0-9.]+)[\"']", scale_attr, body)
+    if abs(root_duration - target) >= 0.01:
+        body = re.sub(r"\b(data-start|data-duration)=[\"']([0-9.]+)[\"']", scale_attr, body)
+
+    body = re.sub(
+        r'(<div\b[^>]*\bdata-composition-id=[\'"][^\'"]+[\'"][^>]*\bdata-duration=)[\'"][0-9.]+[\'"]',
+        rf'\1"{target:.3f}"',
+        body,
+        count=1,
+    )
+
     body = re.sub(
         r"(const\s+totalDuration\s*=\s*)[0-9.]+",
         lambda m: f"{m.group(1)}{target:.3f}",
         body,
     )
+
+    if "tl.duration(" in body:
+        body = re.sub(r"tl\.duration\(\s*[0-9.]+\s*\);?", f"tl.duration({target:.3f});", body)
+    elif "window.__timelines" in body:
+        body = re.sub(
+            r"(window\.__timelines\[[\"']main[\"']\]\s*=)",
+            f"tl.duration({target:.3f});\n          \\1",
+            body,
+        )
+
+    cues_match = re.search(r"var\s+cues\s*=\s*(\[[^;]+\]);", body)
+    if cues_match:
+        try:
+            cues = json.loads(cues_match.group(1))
+            if cues and isinstance(cues, list):
+                max_end = max(float(c.get("end", 0.0)) for c in cues)
+                if max_end > 0:
+                    c_scale = target / max_end
+                    for c in cues:
+                        if "start" in c:
+                            c["start"] = round(float(c["start"]) * c_scale, 3)
+                        if "end" in c:
+                            c["end"] = round(float(c["end"]) * c_scale, 3)
+                    body = body[:cues_match.start()] + f"var cues = {json.dumps(cues, ensure_ascii=False)};" + body[cues_match.end():]
+        except Exception:
+            pass
+
+    scene_nums = sorted(list(set(int(x) for x in re.findall(r"id=[\"']scene(\d+)-inner[\"']", body))))
+    if not scene_nums:
+        scene_nums = sorted(list(set(int(x) for x in re.findall(r"id=[\"']scene(\d+)[\"']", body))))
+
+    if scene_nums and "gsap.timeline(" in body:
+        num_scenes = len(scene_nums)
+        scene_dur = target / num_scenes
+        scenes_code = []
+        for idx, s_num in enumerate(scene_nums):
+            s_start = idx * scene_dur
+            s_end = (idx + 1) * scene_dur
+            intro_dur = min(0.8, scene_dur * 0.15)
+            exit_dur = min(0.4, scene_dur * 0.10)
+            drift_dur = max(0.1, s_end - exit_dur - (s_start + intro_dur))
+            scenes_code.append(
+                f'          // Scene {s_num}\n'
+                f'          tl.fromTo("#scene{s_num}-inner", {{ opacity: 0, scale: 0.96, y: 15 }}, {{ opacity: 1, scale: 1.0, y: 0, duration: {intro_dur:.3f}, ease: "power2.out" }}, {s_start:.3f});\n'
+                f'          tl.to("#scene{s_num}-inner", {{ scale: 1.03, y: -10, duration: {drift_dur:.3f}, ease: "none" }}, {s_start + intro_dur:.3f});\n'
+                f'          tl.to("#scene{s_num}-inner", {{ opacity: 0, scale: 1.05, duration: {exit_dur:.3f}, ease: "power2.in" }}, {s_end - exit_dur:.3f});\n'
+                f'          tl.set("#scene{s_num}-inner", {{ opacity: 0, visibility: "hidden" }}, {s_end:.3f});'
+            )
+        new_scenes_block = "\n".join(scenes_code)
+
+        body = re.sub(
+            r"(?:(?://\s*Scene\s*\d+\s*\n)?\s*tl\.(?:fromTo|to|set)\([\"']#scene\d+-inner[\"'][^)]*\);\s*)+",
+            new_scenes_block + "\n",
+            body,
+            count=1,
+        )
+
     return head + body
 
 
