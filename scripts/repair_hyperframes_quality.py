@@ -212,14 +212,15 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             )
         else:
             raise ValueError(f"{path}: missing style element for font bindings")
+    # Strict transparency: NEVER inject display:none for news source attribution.
+    # Remove any badge nodes that remain from director artifacts, but do NOT
+    # inject a hide rule. The retired "hide all sources" behavior was the
+    # Content Appropriateness blocker (cand_adf 58/100).
     html = re.sub(r"<div\b[^>]*\bid=[\"']source-badge[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
     html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bsource-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    # Don't blanket-hide all .source elements — that violates Content Appropriateness
-    # transparency. Only hide badge variants if still present.
-    hide_css = "#source-badge, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }"
-    if hide_css not in html and "<style>" in html:
-        html = html.replace("<style>", "<style>\n    " + hide_css, 1)
-    # If someone injected a legacy .source hide, remove it so .source attribution remains visible.
+    # Strip any hide rule that was previously injected by older repair versions.
+    html = html.replace("#source-badge, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")
+    html = html.replace("#source-badge, .source, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")
     html = re.sub(r"\.source\s*,\s*", "", html)
     html = re.sub(r",\s*\.source(?=\s*\{)", "", html)
     if ".source {" in html and "display: none" in html:

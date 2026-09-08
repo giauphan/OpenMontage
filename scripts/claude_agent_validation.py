@@ -371,7 +371,7 @@ class CLAUDEAgentValidator:
             if comp_path.is_file():
                 try:
                     comp_text = comp_path.read_text(encoding="utf-8")
-                    scene_matches = re.findall(r'class="[^"]*scene', comp_text)
+                    scene_matches = re.findall(r'data-start\s*=\s*["\'][0-9.]+["\']', comp_text)
                     comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {len(scene_matches)}"
                 except Exception:
                     pass
@@ -431,6 +431,9 @@ Return ONLY valid JSON matching this schema:
             for var in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "CLAUDE_SESSION_ID", "ANTHROPIC_MODEL"):
                 env.pop(var, None)
 
+            # Real gate observed at ~371s for a single short call on sandbox-video;
+            # 480s starved the full review. Allow env override, default 900s.
+            claude_timeout = int(os.environ.get("CLAUDE_REVIEW_TIMEOUT_SECONDS", "900"))
             if os.getuid() == 0 and shutil.which("su"):
                 cmd = [
                     "su", "node", "-s", "/bin/bash", "-c",
@@ -444,7 +447,7 @@ Return ONLY valid JSON matching this schema:
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
-                    timeout=480,
+                    timeout=claude_timeout,
                     cwd=root_dir,
                 )
             else:
@@ -460,7 +463,7 @@ Return ONLY valid JSON matching this schema:
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
-                    timeout=480,
+                    timeout=claude_timeout,
                     cwd=root_dir,
                     env=env,
                 )
