@@ -261,41 +261,44 @@ def publish_batch(
     today = date if date else datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Fail-closed Meta preflight: never attempt IG/FB with a transparently-doomed token.
-    if not dry_run and any(p["platform"] in ("facebook", "instagram") for p in platforms):
+    # IMPORTANT: this must never block YouTube. Gate each platform independently and fail
+    # the blocked ones as "failed" (visible failure), while YouTube still runs.
+    def _meta_preflight_error_for_platform(platform: str) -> str | None:
         from tools.publishers.meta_publisher import MetaPublisher as _MetaPub
 
         mp = _MetaPub()
         fb_token = os.environ.get("TOKEN_FACEBOOK", "")
-        fb_needs_check = any(p["platform"] == "facebook" for p in platforms)
-        ig_needs_check = any(p["platform"] == "instagram" for p in platforms)
-        ig_acct = IG_ACCOUNT_ID
-        if fb_needs_check:
+        if platform == "facebook":
             try:
                 _ = mp._get_page_info(fb_token, FB_PAGE_ID)
             except Exception as e:
-                raise RuntimeError(
-                    f"Meta Facebook Page access unavailable for {FB_PAGE_ID}: {e}. "
-                    "Facebook uploads will fail until the Page is connected to TOKEN_FACEBOOK."
-                )
-            if ig_needs_check and not ig_acct:
+                return f"Meta Facebook Page access unavailable for {FB_PAGE_ID}: {e}"
+            return None
+        if platform == "instagram":
+            ig_acct = IG_ACCOUNT_ID
+            if not ig_acct:
                 try:
                     info = mp._get_page_info(fb_token, FB_PAGE_ID)
                     ig_acct = (info.get("instagram_business_account") or {}).get("id")
                 except Exception:
                     ig_acct = None
-        if ig_needs_check:
             if not ig_acct:
-                raise RuntimeError(
-                    "Instagram Business Account unavailable: IG_ACCOUNT_ID not configured and Page lookup failed. "
-                    "Refusing Meta uploads."
-                )
+                return "Instagram Business Account unavailable: IG_ACCOUNT_ID not configured and Page lookup failed."
             try:
                 _ = mp._get_instagram_info(fb_token, ig_acct)
             except Exception as e:
-                raise RuntimeError(
-                    f"Meta Instagram access unavailable for ig_account_id {ig_acct}: {e}. "
-                    "Instagram uploads will fail until the IG account has permissions."
-                )
+                return f"Meta Instagram access unavailable for ig_account_id {ig_acct}: {e}"
+            return None
+        return None
+
+    blocked_meta_reason: dict[str, str] = {}
+    if not dry_run:
+        for _p in platforms:
+            _plat = _p["platform"]
+            if _plat in ("facebook", "instagram") and _plat not in blocked_meta_reason:
+                _err = _meta_preflight_error_for_platform(_plat)
+                if _err:
+                    blocked_meta_reason[_plat] = _err
 
     for cfg in platforms:
         platform = cfg["platform"]
@@ -388,21 +391,10 @@ def publish_batch(
                 }
 
         elif platform in ("instagram", "facebook"):
-            publisher = MetaPublisher()
-            # Instagram uses R2 upload + Graph API media container; Facebook uses direct page video upload
-            inputs = {
-                "video_path": video_path,
-                "title": title,
-                "caption": meta_caption(title, description),
-                "page_id": FB_PAGE_ID,
-                "instagram_account_id": IG_ACCOUNT_ID,
-                "post_to_facebook": platform == "facebook",
-                "post_to_instagram": platform == "instagram",
-            }
-            if cfg.get("scheduled_epoch") and platform == "facebook":
-                # Native Graph scheduling so the post goes live at the queued VN slot.
-                inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
-            if dry_run:
+            if platform in blocked_meta_reason and not dry_run:
+                # Don't burn an API call that we already know will 400; record visible failure.
+                result = {"success": False, "error": blocked_meta_reason[platform]}
+            elif dry_run:
                 print(f"[DRY RUN] Would upload {platform} {kind}: {video_path}")
                 result = {
                     "success": True,
@@ -410,6 +402,20 @@ def publish_batch(
                     "video_url": f"https://facebook.com/{account}/videos/dry-run",
                 }
             else:
+                publisher = MetaPublisher()
+                # Instagram uses R2 upload + Graph API media container; Facebook uses direct page video upload
+                inputs = {
+                    "video_path": video_path,
+                    "title": title,
+                    "caption": meta_caption(title, description),
+                    "page_id": FB_PAGE_ID,
+                    "instagram_account_id": IG_ACCOUNT_ID,
+                    "post_to_facebook": platform == "facebook",
+                    "post_to_instagram": platform == "instagram",
+                }
+                if cfg.get("scheduled_epoch") and platform == "facebook":
+                    # Native Graph scheduling so the post goes live at the queued VN slot.
+                    inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
                 tool_result = publisher.execute(inputs)
                 data = tool_result.data or {}
                 platform_id = (

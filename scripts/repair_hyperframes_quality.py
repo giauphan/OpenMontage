@@ -214,9 +214,16 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             raise ValueError(f"{path}: missing style element for font bindings")
     html = re.sub(r"<div\b[^>]*\bid=[\"']source-badge[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
     html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bsource-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    hide_css = "#source-badge, .source, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }"
+    # Don't blanket-hide all .source elements — that violates Content Appropriateness
+    # transparency. Only hide badge variants if still present.
+    hide_css = "#source-badge, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }"
     if hide_css not in html and "<style>" in html:
         html = html.replace("<style>", "<style>\n    " + hide_css, 1)
+    # If someone injected a legacy .source hide, remove it so .source attribution remains visible.
+    html = re.sub(r"\.source\s*,\s*", "", html)
+    html = re.sub(r",\s*\.source(?=\s*\{)", "", html)
+    if ".source {" in html and "display: none" in html:
+        html = html.replace(".source { display: none", ".source-legacy-removed { display: none")
 
     if "overflow: hidden" not in html:
         root_match = re.search(r"(#root|body|html)\s*\{[^{}]*\}", html)

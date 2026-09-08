@@ -29,6 +29,8 @@ body { background: white; }
     result = index.read_text(encoding="utf-8")
     assert '<div id="source-badge"' not in result
     assert 'Nguồn:' not in result
-    assert '#source-badge, .source' in result
+    assert '#source-badge,' in result
     assert "display: none !important;" in result
+    assert ".source," not in result
+    assert ", .source" not in result
 
