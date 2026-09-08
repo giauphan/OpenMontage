@@ -83,6 +83,10 @@ class MetaPublisher(BaseTool):
                 "type": "string",
                 "description": "Facebook Page ID.",
             },
+            "instagram_account_id": {
+                "type": "string",
+                "description": "Instagram Business Account ID for Reels publishing.",
+            },
             "post_to_facebook": {
                 "type": "boolean",
                 "default": True,
@@ -122,6 +126,12 @@ class MetaPublisher(BaseTool):
 
     def _get_page_info(self, user_token: str, page_id: str) -> dict[str, Any]:
         url = f"{self.GRAPH_URL}/{page_id}?fields=access_token,instagram_business_account&access_token={user_token}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp)
+
+    def _get_instagram_info(self, user_token: str, ig_account_id: str) -> dict[str, Any]:
+        url = f"{self.GRAPH_URL}/{ig_account_id}?fields=id,username&access_token={user_token}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.load(resp)
@@ -297,19 +307,26 @@ class MetaPublisher(BaseTool):
         r2_key = None
 
         try:
-            # 1. Fetch Page Info & Access Token (if needed)
+            # 1. Fetch required account info before any upload.
             page_token = user_token
-            ig_account_id = None
-            try:
-                page_info = self._get_page_info(user_token, page_id)
-                page_token = page_info.get("access_token", user_token)
-                ig_account_id = page_info.get("instagram_business_account", {}).get("id")
-            except Exception as e:
-                print(f"Warning: Could not fetch page info: {e}. Will try to proceed with default token if page_id is actually an IG account ID.")
+            ig_account_id = inputs.get("instagram_account_id")
 
-            # If page_id is actually an IG account ID, use it directly
-            if not ig_account_id and not post_to_fb and post_to_ig:
-                ig_account_id = page_id
+            if post_to_fb:
+                try:
+                    page_info = self._get_page_info(user_token, page_id)
+                except Exception as e:
+                    return ToolResult(success=False, error=f"Facebook Page access failed for page_id {page_id}: {e}")
+                page_token = page_info.get("access_token", user_token)
+                if not ig_account_id:
+                    ig_account_id = page_info.get("instagram_business_account", {}).get("id")
+
+            if post_to_ig:
+                if not ig_account_id:
+                    ig_account_id = page_id
+                try:
+                    self._get_instagram_info(user_token, ig_account_id)
+                except Exception as e:
+                    return ToolResult(success=False, error=f"Instagram account access failed for ig_account_id {ig_account_id}: {e}")
 
             # 2. Upload to Facebook
             scheduled_epoch = inputs.get("scheduled_publish_time")
@@ -329,36 +346,31 @@ class MetaPublisher(BaseTool):
 
             # 3. Upload to Instagram
             if post_to_ig:
-                if not ig_account_id:
-                    if not publish_entries:
-                        return ToolResult(False, error="No Instagram Business Account linked to this Page.")
-                    print("Warning: No Instagram Business Account linked to Page. Skipping Instagram upload.")
-                else:
-                    video_url = inputs.get("video_url")
+                video_url = inputs.get("video_url")
 
-                    # If no video_url provided, handle temporary R2 upload
-                    if not video_url:
-                        video_url, r2_key, r2_client = self._upload_to_r2(video_path)
+                # If no video_url provided, handle temporary R2 upload
+                if not video_url:
+                    video_url, r2_key, r2_client = self._upload_to_r2(video_path)
 
-                    try:
-                        ig_id = self._upload_instagram_video(
-                            user_token,
-                            ig_account_id,
-                            video_url,
-                            caption
-                        )
-                        if ig_id:
-                            publish_entries.append({
-                                "platform": "instagram",
-                                "status": "published",
-                                "video_id": ig_id,
-                                "timestamp": timestamp,
-                                "metadata_used": {"description": caption}
-                            })
-                    finally:
-                        # Clean up temporary R2 file immediately after upload attempt
-                        if r2_client and r2_key:
-                            self._delete_from_r2(r2_client, r2_key)
+                try:
+                    ig_id = self._upload_instagram_video(
+                        user_token,
+                        ig_account_id,
+                        video_url,
+                        caption
+                    )
+                    if ig_id:
+                        publish_entries.append({
+                            "platform": "instagram",
+                            "status": "published",
+                            "video_id": ig_id,
+                            "timestamp": timestamp,
+                            "metadata_used": {"description": caption}
+                        })
+                finally:
+                    # Clean up temporary R2 file immediately after upload attempt
+                    if r2_client and r2_key:
+                        self._delete_from_r2(r2_client, r2_key)
 
             publish_log = {"version": "1.0", "entries": publish_entries}
 

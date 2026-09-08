@@ -18,7 +18,7 @@ import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 
-from scripts.publish_config import load_config
+from scripts.publish_config import load_config, publish_timezone
 from tools.publish_store import PublishStore, publish_key
 from scripts.validate_render_quality import PORTRAIT_DIMENSIONS, resolve_narration, validate_video
 from tools.publishers.platform_routes import (
@@ -37,6 +37,7 @@ _CFG = load_config()
 FB_PAGE_ID = _CFG["meta"]["page_id"]
 IG_ACCOUNT_ID = _CFG["meta"]["ig_account_id"]
 YT_ACCOUNT = _CFG["youtube"]["account"]
+PUBLISH_TZ = _CFG.get("timezone", "Asia/Ho_Chi_Minh")
 
 
 def _clear_uniqueness_for_topic(store: PublishStore, topic: str) -> int:
@@ -162,6 +163,29 @@ def canonical_platform_records_published(store: PublishStore, *, date: str, topi
         return False
 
 
+def _resolve_scheduled_publish(
+    metadata: dict,
+    publish_date: str,
+    cfg: dict,
+) -> tuple[datetime, int]:
+    """Derive publish datetime + epoch from queue metadata (next-day schedule)."""
+    publish_time = metadata.get("publish_time")
+    if not publish_time:
+        # Remaining live paths: not a queued publish — require explicit routing.
+        # Keep this non-silent: callers with publish_time=None and date=None should
+        # run in immediate-unlisted mode only by explicit opt-in (see publish_batch).
+        raise ValueError("publish_time missing from metadata; cannot derive scheduled publish time")
+
+    hh, mm = publish_time.split(":", 1)
+    tz = publish_timezone(cfg)
+    local_dt = datetime.fromisoformat(f"{publish_date}T{int(hh):02d}:{int(mm):02d}:00").replace(tzinfo=tz)
+    # If someone passes publish_time in UTC-like form, attach tz properly; no wall-clock drift.
+    # publish_date+publish_time ARE the source of truth.
+    scheduled_epoch = int(local_dt.astimezone(timezone.utc).timestamp())
+    publish_at_iso = local_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.fromisoformat(publish_at_iso.replace("Z", "+00:00")).replace(tzinfo=timezone.utc), scheduled_epoch
+
+
 def publish_batch(
     metadata: dict,
     project_dir: Path,
@@ -190,6 +214,23 @@ def publish_batch(
     missing = [field for _, _, _, field in platform_contract if field not in metadata]
     if missing:
         raise KeyError(f"publish_metadata.json missing platform video fields: {', '.join(missing)}")
+    # Publish-time IS the source of truth for queued items: derive from config/publish_schedule.json
+    # via publish_date. The metadata file is NOT the schedule — use the explicit `date` arg (which
+    # publish_active_projects forwards from the queue entry) and only fall back to metadata for
+    # legacy/manual single-project runs.
+    publish_date_for_schedule = date if date else metadata.get("publish_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    publish_at_iso: str | None = None
+    scheduled_epoch: int | None = None
+    # Derive a scheduled time only when the queue actually placed this project (publish_time present).
+    # Otherwise this is a manual/immediate run → publish_at stays None → YouTube unlisted, Facebook immediate.
+    if metadata.get("publish_time"):
+        try:
+            _, scheduled_epoch = _resolve_scheduled_publish(metadata, publish_date_for_schedule, load_config())
+            publish_at_iso = datetime.fromtimestamp(scheduled_epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        except Exception:
+            publish_at_iso = None
+            scheduled_epoch = None
+
     platforms = [
         {
             "platform": platform,
@@ -202,7 +243,8 @@ def publish_batch(
             ),
             "description": metadata["description"],
             "video_path": metadata[field],
-            "publish_at": None,
+            "publish_at": publish_at_iso,
+            "scheduled_epoch": scheduled_epoch,
         }
         for platform, account, kind, field in platform_contract
     ]
@@ -217,6 +259,43 @@ def publish_batch(
         validate_publish_asset(video_path, project_dir, cfg["platform"], strict=True)
 
     today = date if date else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Fail-closed Meta preflight: never attempt IG/FB with a transparently-doomed token.
+    if not dry_run and any(p["platform"] in ("facebook", "instagram") for p in platforms):
+        from tools.publishers.meta_publisher import MetaPublisher as _MetaPub
+
+        mp = _MetaPub()
+        fb_token = os.environ.get("TOKEN_FACEBOOK", "")
+        fb_needs_check = any(p["platform"] == "facebook" for p in platforms)
+        ig_needs_check = any(p["platform"] == "instagram" for p in platforms)
+        ig_acct = IG_ACCOUNT_ID
+        if fb_needs_check:
+            try:
+                _ = mp._get_page_info(fb_token, FB_PAGE_ID)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Meta Facebook Page access unavailable for {FB_PAGE_ID}: {e}. "
+                    "Facebook uploads will fail until the Page is connected to TOKEN_FACEBOOK."
+                )
+            if ig_needs_check and not ig_acct:
+                try:
+                    info = mp._get_page_info(fb_token, FB_PAGE_ID)
+                    ig_acct = (info.get("instagram_business_account") or {}).get("id")
+                except Exception:
+                    ig_acct = None
+        if ig_needs_check:
+            if not ig_acct:
+                raise RuntimeError(
+                    "Instagram Business Account unavailable: IG_ACCOUNT_ID not configured and Page lookup failed. "
+                    "Refusing Meta uploads."
+                )
+            try:
+                _ = mp._get_instagram_info(fb_token, ig_acct)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Meta Instagram access unavailable for ig_account_id {ig_acct}: {e}. "
+                    "Instagram uploads will fail until the IG account has permissions."
+                )
 
     for cfg in platforms:
         platform = cfg["platform"]
@@ -316,9 +395,13 @@ def publish_batch(
                 "title": title,
                 "caption": meta_caption(title, description),
                 "page_id": FB_PAGE_ID,
+                "instagram_account_id": IG_ACCOUNT_ID,
                 "post_to_facebook": platform == "facebook",
                 "post_to_instagram": platform == "instagram",
             }
+            if cfg.get("scheduled_epoch") and platform == "facebook":
+                # Native Graph scheduling so the post goes live at the queued VN slot.
+                inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
             if dry_run:
                 print(f"[DRY RUN] Would upload {platform} {kind}: {video_path}")
                 result = {
