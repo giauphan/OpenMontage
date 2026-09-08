@@ -41,7 +41,15 @@ class ClaudeNewsSelector:
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
         import os, shlex, re
         env = os.environ.copy()
-        claude_cmd = " ".join([shlex.quote(self.cli_path), "-p", shlex.quote(prompt)])
+        for var in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "CLAUDE_SESSION_ID", "ANTHROPIC_MODEL"):
+            env.pop(var, None)
+
+        claude_cmd = " ".join([
+            "env", "-u", "CLAUDECODE", "-u", "CLAUDE_CODE_ENTRYPOINT", "-u", "CLAUDE_CODE_SSE_PORT", "-u", "CLAUDE_SESSION_ID", "-u", "ANTHROPIC_MODEL",
+            shlex.quote(self.cli_path),
+            "-p", "--model", "claude-opus-4-7", "--dangerously-skip-permissions",
+            shlex.quote(prompt)
+        ])
         if os.geteuid() == 0:
             cmd = ["su", "node", "-s", "/bin/bash", "-c", claude_cmd]
         else:
