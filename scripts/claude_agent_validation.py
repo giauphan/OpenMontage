@@ -376,14 +376,44 @@ Return ONLY valid JSON matching this schema:
             if not claude_bin:
                 raise FileNotFoundError("claude CLI not found")
 
-            result = subprocess.run(
-                [claude_bin, "-p", prompt, "--output-format", "json"],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=480,
-                cwd=str(Path(__file__).parent.parent),
-            )
+            root_dir = str(Path(__file__).parent.parent)
+            env = os.environ.copy()
+            for var in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "CLAUDE_SESSION_ID", "ANTHROPIC_MODEL"):
+                env.pop(var, None)
+
+            if os.getuid() == 0 and shutil.which("su"):
+                cmd = [
+                    "su", "node", "-s", "/bin/bash", "-c",
+                    f'export PATH="$PATH"; export PYTHONPATH="$PYTHONPATH"; cd "{root_dir}"; '
+                    f'env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL '
+                    f'{claude_bin} -p --model claude-opus-4-7 --dangerously-skip-permissions --output-format json "$1"',
+                    "bash", prompt
+                ]
+                result = subprocess.run(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=480,
+                    cwd=root_dir,
+                )
+            else:
+                cmd = [
+                    claude_bin, "-p",
+                    "--model", "claude-opus-4-7",
+                    "--dangerously-skip-permissions",
+                    "--output-format", "json",
+                    prompt,
+                ]
+                result = subprocess.run(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=480,
+                    cwd=root_dir,
+                    env=env,
+                )
             if result.returncode:
                 diagnostic = (result.stderr or result.stdout).strip()
                 raise RuntimeError(diagnostic or f"claude CLI exited {result.returncode}")
