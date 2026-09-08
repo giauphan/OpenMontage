@@ -25,5 +25,21 @@
       "21:15"
     ]
   },
-  "active_projects": []
+  "active_projects": [
+    {
+      "project_id": "cand_adf110595a70f7ca",
+      "publish_date": "2026-09-09",
+      "publish_time": "09:15"
+    },
+    {
+      "project_id": "cand_e790f8b31628c143",
+      "publish_date": "2026-09-09",
+      "publish_time": "14:15"
+    },
+    {
+      "project_id": "cand_9d95d516fcc40352",
+      "publish_date": "2026-09-09",
+      "publish_time": "21:15"
+    }
+  ]
 }
