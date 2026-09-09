@@ -288,26 +288,8 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
     html = align_timeline(path, html, narration_duration)
     html = repair_missing_composition_assets(path, html)
 
-    # Remove GSAP display tweens that break HyperFrames internal visibility engine
-    # HyperFrames controls visibility based on timeline, GSAP tweens override this and cause blank renders
-    # Remove .set() calls with display property
-    html = re.sub(
-        r"\.set\(['\"]#scene-\d+['\"]\s*,\s*\{\s*display\s*:\s*['\"](?:none|flex|block)['\"]\s*\}\s*,\s*[^)]*\)",
-        "",
-        html
-    )
-    # Remove .to() calls with display property
-    html = re.sub(
-        r"\.to\(['\"]#scene-\d+['\"]\s*,\s*\{[^}]*display\s*:\s*['\"](?:none|flex|block)['\"]\s*[^}]*\}\s*,\s*[^)]*\)",
-        "",
-        html
-    )
-    # Remove tl.addLabel() calls that reference scene visibility
-    html = re.sub(r"tl\.addLabel\(['\"]#scene-\d+['\"][^)]*\);?", "", html)
     # Fix malformed GSAP syntax: "opacity: 1;," → "opacity: 1,"
     html = re.sub(r"opacity:\s*1\s*;\s*,", "opacity: 1,", html)
-    # Remove visibility: hidden on .clip elements so scene visuals render properly
-    html = re.sub(r"(\.clip\b[^{}]*\{[^{}]*)\bvisibility\s*:\s*hidden\s*;?", r"\1", html)
     # Add subtle continuous background animation to prevent false-positive static canvas detection
     style_match = re.search(r"<style[^>]*>", html)
     if style_match:
@@ -378,7 +360,7 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         body = re.sub(r"tl\.duration\(\s*[0-9.]+\s*\);?", f"tl.duration({target:.3f});", body)
     elif "window.__timelines" in body:
         body = re.sub(
-            r"(window\.__timelines\[[\"']main[\"']\]\s*=)",
+            r"(window\\.__timelines\[[^]]+\]\s*=)",
             f"tl.duration({target:.3f});\n          \\1",
             body,
         )
@@ -399,36 +381,6 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
                     body = body[:cues_match.start()] + f"var cues = {json.dumps(cues, ensure_ascii=False)};" + body[cues_match.end():]
         except Exception:
             pass
-
-    scene_nums = sorted(list(set(int(x) for x in re.findall(r"id=[\"']scene(\d+)-inner[\"']", body))))
-    if not scene_nums:
-        scene_nums = sorted(list(set(int(x) for x in re.findall(r"id=[\"']scene(\d+)[\"']", body))))
-
-    if scene_nums and "gsap.timeline(" in body:
-        num_scenes = len(scene_nums)
-        scene_dur = target / num_scenes
-        scenes_code = []
-        for idx, s_num in enumerate(scene_nums):
-            s_start = idx * scene_dur
-            s_end = (idx + 1) * scene_dur
-            intro_dur = min(0.8, scene_dur * 0.15)
-            exit_dur = min(0.4, scene_dur * 0.10)
-            drift_dur = max(0.1, s_end - exit_dur - (s_start + intro_dur))
-            scenes_code.append(
-                f'          // Scene {s_num}\n'
-                f'          tl.fromTo("#scene{s_num}-inner", {{ opacity: 0, scale: 0.96, y: 15 }}, {{ opacity: 1, scale: 1.0, y: 0, duration: {intro_dur:.3f}, ease: "power2.out" }}, {s_start:.3f});\n'
-                f'          tl.to("#scene{s_num}-inner", {{ scale: 1.03, y: -10, duration: {drift_dur:.3f}, ease: "none" }}, {s_start + intro_dur:.3f});\n'
-                f'          tl.to("#scene{s_num}-inner", {{ opacity: 0, scale: 1.05, duration: {exit_dur:.3f}, ease: "power2.in" }}, {s_end - exit_dur:.3f});\n'
-                f'          tl.set("#scene{s_num}-inner", {{ opacity: 0, visibility: "hidden" }}, {s_end:.3f});'
-            )
-        new_scenes_block = "\n".join(scenes_code)
-
-        body = re.sub(
-            r"(?:(?://\s*Scene\s*\d+\s*\n)?\s*tl\.(?:fromTo|to|set)\([\"']#scene\d+-inner[\"'][^)]*\);\s*)+",
-            new_scenes_block + "\n",
-            body,
-            count=1,
-        )
 
     return head + body
 
