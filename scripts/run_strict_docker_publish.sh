@@ -175,7 +175,7 @@ GEN_STATUS="${PIPESTATUS[0]}"
 set -e
 
 if [ "$GEN_STATUS" -ne 0 ]; then
-  cleanup_failed_generation "$GENERATE_LOG"
+  # cleanup_failed_generation "$GENERATE_LOG"
   write_state "generate" "failed"
   fail "generation pipeline failed (see $GENERATE_LOG)"
 fi
