@@ -290,6 +290,7 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
 
     # Fix malformed GSAP syntax: "opacity: 1;," → "opacity: 1,"
     html = re.sub(r"opacity:\s*1\s*;\s*,", "opacity: 1,", html)
+    html = re.sub(r"(\.clip\b[^{}]*\{[^{}]*)\bvisibility\s*:\s*hidden\s*;?", r"\1", html)
     # Add subtle continuous background animation to prevent false-positive static canvas detection
     style_match = re.search(r"<style[^>]*>", html)
     if style_match:

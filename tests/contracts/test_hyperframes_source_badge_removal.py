@@ -4,6 +4,9 @@ from pathlib import Path
 from scripts.repair_hyperframes_quality import patch_html
 
 def test_source_badge_removal(tmp_path: Path):
+    project_dir = tmp_path / "cand_test"
+    project_dir.mkdir()
+
     html = """<!DOCTYPE html>
 <html>
 <head>
@@ -20,17 +23,19 @@ body { background: white; }
 </body>
 </html>
 """
-    index = tmp_path / "index.html"
+    index = project_dir / "index.html"
     index.write_text(html, encoding="utf-8")
-    
+
     # Needs to match 10.0 duration
     patch_html(index, 10.0)
-    
+
     result = index.read_text(encoding="utf-8")
+    # Verify nodes are removed completely
     assert '<div id="source-badge"' not in result
     assert 'Nguồn:' not in result
-    assert '#source-badge,' in result
-    assert "display: none !important;" in result
-    assert ".source," not in result
-    assert ", .source" not in result
+
+    # Verify we DO NOT inject a global display: none hide rule anymore.
+    # Blanket hiding sources violated Content Appropriateness.
+    assert '#source-badge,' not in result
+    assert "display: none !important;" not in result
 
