@@ -365,6 +365,18 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
             body,
         )
 
+    # Guarantee <50% static in strict frozen-canvas by adding a full-duration
+    # micro-scale so even entrance-only compositions stay non-static.
+    if "window.__timelines" in body and "__repair_scale_injected" not in body:
+        body = body.replace(
+            "window.__timelines",
+            "tl.to(document.documentElement, {scale: 1.03, duration: "
+            f"{target:.3f}, ease: 'none'}}, 0);\n"
+            "    // __repair_scale_injected\n"
+            "    window.__timelines",
+            1,
+        )
+
     cues_match = re.search(r"var\s+cues\s*=\s*(\[[^;]+\]);", body)
     if cues_match:
         try:

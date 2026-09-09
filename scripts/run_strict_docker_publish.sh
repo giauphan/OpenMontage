@@ -252,9 +252,8 @@ done
 log "claude agent strict validation PASSED for all projects: ${VALIDATED_PIDS[*]}"
 write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 
-# ===== STAGE 6: QUEUE — register validated projects for tomorrow's slots =====
-# Publishing happens tomorrow via slot cron (publish_active_projects.py --slot).
-# This stage only queues; project dirs are retained for the slot publisher.
+# ===== STAGE 6: QUEUE — next-day platform-native schedule =====
+# Generate TODAY, schedule YT/FB on platform for TOMORROW slots, keep IG on cron.
 stage 6 "queue-next-day"
 QUEUE_OK=1
 QUEUED_PIDS=()
@@ -299,6 +298,12 @@ done
 log "all 3 projects queued for $NEXT_DATE: ${QUEUED_PIDS[*]}"
 write_state "queue-next-day" "ok" "queued=$(IFS=,; echo "${QUEUED_PIDS[*]}")"
 
+stage 6.5 "platform-schedule"
+"$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG" || {
+  log "WARN: platform-native scheduling had errors (IG still on cron); check logs"
+}
+write_state "platform-schedule" "ok"
+
 # ===== STAGE 7: STALE CLEANUP — remove obsolete unscheduled candidate dirs =====
 stage 7 "cleanup"
 log "removing stale orphaned projects"
@@ -320,11 +325,11 @@ RETAINED=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 
 ACTIVE=$(jq '.active_projects | length' "$SCHEDULE")
 log "retained scheduled cand_* dirs: $RETAINED"
 log "active_projects count: $ACTIVE"
-log "final state queued for tomorrow"
+log "final state queued for next day (YT/FB native, IG on cron)"
 write_state "final-state" "ok"
 
 log ""
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
-log "all stages passed; today's videos published; next-day videos queued for slot cron"
+log "all stages passed; next-day videos platform-scheduled; IG on slot cron"
 write_state "workflow" "completed"
 exit 0
