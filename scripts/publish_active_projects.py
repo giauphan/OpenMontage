@@ -81,6 +81,7 @@ def main() -> int:
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed Firebase records")
     parser.add_argument("--slot", choices=["09:15", "14:15", "21:15"], help="Run only queued VN slot")
     parser.add_argument("--date", help="Filter projects by exactly this YYYY-MM-DD date and pass to publisher")
+    parser.add_argument("--only-platform", choices=["youtube", "facebook", "instagram"], help="Limit publishing to one platform")
     args = parser.parse_args()
 
     schedule = load_config()
@@ -132,6 +133,9 @@ def main() -> int:
             command.extend(["--date", publish_date])
         elif args.date:
             command.extend(["--date", args.date])
+
+        if hasattr(args, "only_platform") and args.only_platform:
+            command.extend(["--only-platform", args.only_platform])
 
         print(f"\n=== Publishing {project_id} ===")
         env = dict(os.environ)
