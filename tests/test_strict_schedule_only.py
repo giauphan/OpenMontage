@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_strict_run_queues_tomorrow_without_platform_upload(tmp_path: Path):
+def test_strict_run_fails_when_native_platform_schedule_fails(tmp_path: Path):
     scripts_dir = tmp_path / "scripts"
     config_dir = tmp_path / "config"
     projects_dir = tmp_path / "projects"
@@ -69,6 +69,10 @@ done
 
     for name in ("validate_render_quality.py", "validate_publish_metadata.py", "claude_agent_validation.py"):
         (scripts_dir / name).write_text("", encoding="utf-8")
+    (scripts_dir / "schedule_today_native.py").write_text(
+        "import sys\nfrom pathlib import Path\nPath('platform-schedule-called').write_text(' '.join(sys.argv))\nraise SystemExit(7)\n",
+        encoding="utf-8",
+    )
     (scripts_dir / "clear_stale_projects.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     (scripts_dir / "clear_stale_projects.sh").chmod(0o755)
     (scripts_dir / "publish_manual_video.py").write_text(
@@ -101,8 +105,11 @@ raise SystemExit(0)
         text=True,
     )
 
-    assert result.returncode == 0, result.stderr + result.stdout
-    assert not (tmp_path / "platform-upload-called").exists()
+    assert result.returncode != 0
+    platform_command = (tmp_path / "platform-schedule-called").read_text(encoding="utf-8")
+    assert "--date" in platform_command
+    assert tomorrow in platform_command
+    assert "platform-native scheduling failed" in result.stdout
     assert all((projects_dir / pid).is_dir() for pid in ("cand_one", "cand_two", "cand_three"))
 
     schedule = json.loads((config_dir / "publish_schedule.json").read_text(encoding="utf-8"))

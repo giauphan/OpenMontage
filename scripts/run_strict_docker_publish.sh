@@ -5,6 +5,8 @@
 # Each stage is a hard gate; any failure stops the workflow before publishing.
 set -euo pipefail
 
+export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:/app/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -299,9 +301,10 @@ log "all 3 projects queued for $NEXT_DATE: ${QUEUED_PIDS[*]}"
 write_state "queue-next-day" "ok" "queued=$(IFS=,; echo "${QUEUED_PIDS[*]}")"
 
 stage 6.5 "platform-schedule"
-"$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG" || {
-  log "WARN: platform-native scheduling had errors (IG still on cron); check logs"
-}
+if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
+  write_state "platform-schedule" "failed"
+  fail "platform-native scheduling failed; queued projects retained"
+fi
 write_state "platform-schedule" "ok"
 
 # ===== STAGE 7: STALE CLEANUP — remove obsolete unscheduled candidate dirs =====

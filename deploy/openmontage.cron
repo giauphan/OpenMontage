@@ -3,6 +3,7 @@
 # Times are in UTC. Vietnam local slots run next day at 09:15/14:15/21:15 ICT.
 # Pipeline runs 06:00 VN (23:00 UTC previous day). Slots fire 02:15/07:15/14:15 UTC.
 
+PATH=/usr/local/bin:/usr/bin:/bin
 PATH_TO_OPENMONTAGE=/app
 
 # 23:00 UTC (06:00 Vietnam next day) — Strict orchestrator: publish today's slots,
