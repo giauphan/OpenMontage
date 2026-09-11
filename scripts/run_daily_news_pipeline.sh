@@ -102,15 +102,20 @@ DIRECTOR_ARTIFACTS_READY=0
 
 run_directors() {
   local prompt="${1:-$PROMPT_STR}"
+  local session_id="${2:-}"
+  local resume_flag=""
+  if [ -n "$session_id" ] && [ "$session_id" != "?" ] && [ "$session_id" != "null" ]; then
+    resume_flag="--resume $session_id"
+  fi
   if [ "$(id -u)" -eq 0 ]; then
-    su node -s /bin/bash -c "
-      export PATH=\"$PATH\"; export HOME=\"/home/node\"
-      export PYTHONPATH=\"$PYTHONPATH\"
-      cd \"$ROOT\"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" claude -p --dangerously-skip-permissions --max-budget-usd \"${DIRECTORS_MAX_BUDGET_USD:-20}\" --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" --output-format json \"$prompt\"
-    "
+    PROMPT_STR="$prompt" DIRECTOR_SYSTEM_NOTE="$DIRECTOR_SYSTEM_NOTE" su node -s /bin/bash -c '
+      export PATH="$PATH"; export HOME="/home/node"
+      export PYTHONPATH="$PYTHONPATH"
+      cd "$ROOT"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s '"$DIRECTORS_TIMEOUT_SECONDS"' claude -p $resume_flag --dangerously-skip-permissions --max-budget-usd '"${DIRECTORS_MAX_BUDGET_USD:-20}"' --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
+    '
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p $resume_flag --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
   fi
 }
 
@@ -171,7 +176,8 @@ while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_direct
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "directors" --project-id "$PROJECT_ID" \
     --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
   RETRY_PROMPT="Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Required files are incomplete or failed. In this foreground turn, finish artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. Do not start background work. Before responding, verify all three with test -s."
-  run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG"
+  PREV_SESSION_ID="$(jq -r '.session_id // empty' "$DIRECTORS_JSON" 2>/dev/null || true)"
+  run_directors "$RETRY_PROMPT" "$PREV_SESSION_ID" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG"
   RETRY_EXIT=$?
   if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
     mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
