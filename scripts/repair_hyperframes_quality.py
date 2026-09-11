@@ -78,14 +78,18 @@ def repair_missing_composition_assets(path: Path, html: str) -> str:
         # Check if local relative path
         if not src.startswith(("http://", "https://", "//")):
             clean_src = src.split("?")[0].split("#")[0]
+            if not clean_src or clean_src in (".", "./", "/"):
+                return tag
             target = (composition_dir / clean_src).resolve()
+            if target.is_dir():
+                return tag
             if not target.is_file() or target.stat().st_size == 0:
                 # Look for matching filename in project assets
                 filename = Path(clean_src).name
-                candidates = list(project_root.glob(f"**/{filename}"))
+                candidates = [c for c in project_root.glob(f"**/{filename}") if c.is_file()]
                 found = False
                 for cand in candidates:
-                    if cand.is_file() and cand.stat().st_size > 0 and cand != target:
+                    if cand.stat().st_size > 0 and cand != target:
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(cand, target)
                         found = True
@@ -93,6 +97,8 @@ def repair_missing_composition_assets(path: Path, html: str) -> str:
                 if not found:
                     # Materialize fallback SVG
                     fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
+                    if fallback_file.is_dir():
+                        return tag
                     label = Path(clean_src).stem.replace("_", " ").replace("-", " ").title()
                     generate_fallback_visual_asset(fallback_file, label=label or "Visual Asset")
                     if fallback_file != target:
@@ -109,19 +115,25 @@ def repair_missing_composition_assets(path: Path, html: str) -> str:
             return full_match
         if not url_target.startswith(("http://", "https://", "//")):
             clean_url = url_target.split("?")[0].split("#")[0]
+            if not clean_url or clean_url in (".", "./", "/"):
+                return full_match
             target = (composition_dir / clean_url).resolve()
+            if target.is_dir():
+                return full_match
             if not target.is_file() or target.stat().st_size == 0:
                 filename = Path(clean_url).name
-                candidates = list(project_root.glob(f"**/{filename}"))
+                candidates = [c for c in project_root.glob(f"**/{filename}") if c.is_file()]
                 found = False
                 for cand in candidates:
-                    if cand.is_file() and cand.stat().st_size > 0 and cand != target:
+                    if cand.stat().st_size > 0 and cand != target:
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(cand, target)
                         found = True
                         break
                 if not found:
                     fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
+                    if fallback_file.is_dir():
+                        return full_match
                     generate_fallback_visual_asset(fallback_file, label="Background Visual")
                     if fallback_file != target:
                         rel_path = str(fallback_file.relative_to(composition_dir))
@@ -225,6 +237,16 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
     html = re.sub(r",\s*\.source(?=\s*\{)", "", html)
     if ".source {" in html and "display: none" in html:
         html = html.replace(".source { display: none", ".source-legacy-removed { display: none")
+
+
+    # Enforce text wrapping and container bounds to fix misaligned yellow boxes
+    if "overflow-wrap: break-word" not in html:
+        wrap_css_rule = """
+
+/* Enforce text wrapping and dynamic bounds for text containers */
+h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [class*='caption'], [class*='text'] { overflow-wrap: break-word !important; word-wrap: break-word !important; word-break: break-word !important; max-width: 100%; box-sizing: border-box; }
+</style>"""
+        html = html.replace("</style>", wrap_css_rule, 1)
 
     if "overflow: hidden" not in html:
         root_match = re.search(r"(#root|body|html)\s*\{[^{}]*\}", html)
@@ -474,6 +496,16 @@ def validate_html(path: Path) -> list[str]:
     for tag in narration_tags:
         if not re.search(r"\bsrc=[\"']assets/narration(_reels)?\.mp3[\"']", tag):
             errors.append(f"{path}: narration audio src is empty or wrong")
+
+    # Enforce text wrapping and container bounds to fix misaligned yellow boxes
+    if "overflow-wrap: break-word" not in html:
+        wrap_css_rule = """
+
+/* Enforce text wrapping and dynamic bounds for text containers */
+h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [class*='caption'], [class*='text'] { overflow-wrap: break-word !important; word-wrap: break-word !important; word-break: break-word !important; max-width: 100%; box-sizing: border-box; }
+</style>"""
+        html = html.replace("</style>", wrap_css_rule, 1)
+
     if "overflow: hidden" not in html:
         errors.append(f"{path}: missing viewport clipping guard")
     # NFD-decomposed text and HTML entities still count as genuine Vietnamese

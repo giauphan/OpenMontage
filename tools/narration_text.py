@@ -55,6 +55,11 @@ _DEFAULT_TERMS: dict[str, str] = {
     "CPU": "Xi-Pi-Yu",
     "GPU": "Ghi-Pi-Yu",
     "CUDA": "Cu-đa",
+    "3D": "ba đê",
+    "2.5D": "hai phẩy năm đê",
+    "HBM": "hê-bê-em",
+    "HBM3": "hê-bê-em ba",
+    "zHBM": "di-hê-bê-em",
     "machine learning": "meo-sin lơ-ning",
     "cloud": "cờ-lao",
     "framework": "phrêm-uốc",
@@ -70,6 +75,11 @@ _IPA_TERMS: dict[str, str] = {
     "CUDA": "ˈkuː.də",
     "CPU": "ˌsiː piː ˈjuː",
     "GPU": "ˌdʒiː piː ˈjuː",
+    "3D": "θriː diː",
+    "2.5D": "tuː pɔɪnt faɪv diː",
+    "HBM": "eɪtʃ biː em",
+    "HBM3": "eɪtʃ biː em θriː",
+    "zHBM": "ziː eɪtʃ biː em",
 
     # Programming Languages
     "Python": "ˈpaɪ.θɑːn",
@@ -128,7 +138,7 @@ _FORBIDDEN_PATTERN = re.compile(
     "﻿�]"
 )
 
-_ACRONYM_PATTERN = re.compile(r"\b[A-Z][A-Z0-9]{1,5}\b")
+_ACRONYM_PATTERN = re.compile(r"\b(?:[A-Z][A-Z0-9]{0,5}|[A-Z]\d[A-Z]?\d?)\b")
 
 
 def _load_lexicon() -> list[tuple[str, str]]:

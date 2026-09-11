@@ -33,6 +33,7 @@ def main():
     date = today.isoformat()
     # Only schedule queued projects whose publish_date matches the requested date
     queue = [p for p in cfg.get("active_projects",[]) if isinstance(p,dict) and p.get("publish_date")==date]
+
     if not queue:
         print(f"No queued projects for {date}")
         return 0

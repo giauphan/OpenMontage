@@ -92,7 +92,7 @@ DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 set +e
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-40}"
-PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Write the Production Script as a flat JSON file at projects/$PROJECT_ID/artifacts/script_vi.json, not embedded in a checkpoint file. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 30 seconds. Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Ensure every scene uses high-contrast editorial imagery, animated visual elements, and large readable captions so the finished video meets the strict 0.5000% edge-density quality threshold. You MUST use GSAP to animate scenes and transitions. You MUST define a master gsap.timeline({paused: true}) and expose it to the rendering engine exactly like this: \`window.__timelines = window.__timelines || {}; window.__timelines['main'] = tl;\` otherwise the video will fail validation as a frozen canvas. Do not use CSS transitions for timeline animation. Make sure to actually animate elements visually with .to() and .fromTo(). To prevent the video from failing the 50% static frozen canvas check, you MUST add a slow, continuous movement (like scale: 1.05 or panning) spanning the ENTIRE duration of EVERY scene, rather than just an entrance animation. Every scene must have elements moving constantly. Do NOT use <video> elements or CSS @keyframes/animations, because they will desync from the frame-by-frame renderer and freeze; use ONLY GSAP for all movement. Never include on-screen source badges, watermarks, or text overlays indicating source URLs (e.g. 'Nguồn:' or '#source-badge'). Do not ask for confirmation between stages. Do not stop until script_vi.json and both index.html files exist. If the compositions are not generated within the timeout, the pipeline will fail and retry once with this same prompt."
+PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, then execute Proposal -> Script -> Scene -> Asset -> Compose directors in sequence. Write the Production Script as a flat JSON file at projects/$PROJECT_ID/artifacts/script_vi.json, not embedded in a checkpoint file. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 30 seconds. Ensure 100% correct Vietnamese spelling, exact grammatical tone marks, and correct technical terminology in all scripts and on-screen text (e.g. "PHẦN CỨNG" not "PHÂN CỨNG", "KHÔNG CẦN" not "KHÔNG CÂN"). Use Vietnamese narration with a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Ensure every scene uses high-contrast editorial imagery, animated visual elements, and large readable captions so the finished video meets the strict 0.5000% edge-density quality threshold. You MUST use GSAP to animate scenes and transitions. You MUST define a master gsap.timeline({paused: true}) and expose it to the rendering engine exactly like this: \\\`window.__timelines = window.__timelines || {}; window.__timelines['main'] = tl;\\\` otherwise the video will fail validation as a frozen canvas. Do not use CSS transitions for timeline animation. Make sure to actually animate elements visually with .to() and .fromTo(). To prevent the video from failing the 50% static frozen canvas check, you MUST add a slow, continuous movement (like scale: 1.05 or panning) spanning the ENTIRE duration of EVERY scene, rather than just an entrance animation. Every scene must have elements moving constantly. Do NOT use <video> elements or CSS @keyframes/animations, because they will desync from the frame-by-frame renderer and freeze; use ONLY GSAP for all movement. Never use fixed width or height on text containers like highlight boxes, badges, or title cards; always use CSS width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box; display: inline-block; padding: 10px 20px; so Vietnamese text does not overflow or misalign. Never include on-screen source badges, watermarks, or text overlays indicating source URLs (e.g. 'Nguồn:' or '#source-badge'). Do not ask for confirmation between stages. Do not stop until script_vi.json and both index.html files exist. If the compositions are not generated within the timeout, the pipeline will fail and retry once with this same prompt."
 DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop. Do not start background agents or background shell commands. Complete all work in this foreground turn. Before responding, run test -s on artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html inside the project. Return a non-success result if any required file is missing or empty."
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
@@ -104,13 +104,13 @@ run_directors() {
   local prompt="${1:-$PROMPT_STR}"
   if [ "$(id -u)" -eq 0 ]; then
     su node -s /bin/bash -c "
-      export PATH=\"$PATH\"
+      export PATH=\"$PATH\"; export HOME=\"/home/node\"
       export PYTHONPATH=\"$PYTHONPATH\"
       cd \"$ROOT\"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" claude -p --model claude-opus-4-7 --dangerously-skip-permissions --max-budget-usd \"${DIRECTORS_MAX_BUDGET_USD:-20}\" --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" --output-format json \"$prompt\"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s \"$DIRECTORS_TIMEOUT_SECONDS\" claude -p --dangerously-skip-permissions --max-budget-usd \"${DIRECTORS_MAX_BUDGET_USD:-20}\" --append-system-prompt \"$DIRECTOR_SYSTEM_NOTE\" --output-format json \"$prompt\"
     "
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --model claude-opus-4-7 --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
   fi
 }
 
@@ -265,7 +265,7 @@ materialize_hyperframes_assets() {
   if [ ! -s "$narration" ] || { [ -s "$narration_text" ] && [ "$narration_text" -nt "$narration" ]; }; then
     narration_stale=1
   fi
-  if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk "BEGIN{exit !($narration_duration <= 30)}" || [ "$narration_stale" = 1 ]; }; then
+  if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 30)}' || [ "$narration_stale" = 1 ]; }; then
     "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
     edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
@@ -306,7 +306,7 @@ fi
     exit 1
   fi
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
-  if ! awk "BEGIN{exit !($narration_duration > 30)}"; then
+  if ! awk -v d="$narration_duration" 'BEGIN{exit !(d > 30)}'; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration duration ${narration_duration}s <=30s for $PROJECT_ID"
     exit 1
   fi
@@ -316,7 +316,7 @@ fi
   fi
   local music_duration
   music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
-  if ! awk "BEGIN{exit !($music_duration > 30)}"; then
+  if ! awk -v d="$music_duration" 'BEGIN{exit !(d > 30)}'; then
     echo "[$(date -u +%FT%TZ)] WARN: background music duration ${music_duration}s <=30s for $PROJECT_ID, using fallback"
     cp "$ROOT/tests/qa/output/e2e_assets/music_bg.mp3" "$project_root/assets/music-bg.mp3"
     music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
@@ -328,7 +328,7 @@ fi
   # Reels/Shorts must stay under the 60s platform limit. Derive a capped
   # narration for the reels composition so its aligned timeline is <=60s.
   local reels_cap=58
-  if awk "BEGIN{exit !($narration_duration > $reels_cap)}"; then
+  if awk -v d="$narration_duration" -v c="$reels_cap" 'BEGIN{exit !(d > c)}'; then
     "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
       || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"
   else
@@ -403,7 +403,7 @@ if [ -z "$TITLE" ]; then
 fi
 
 # Ensure title contains required hashtags
-if [[ ! "$TITLE" =~ "#tintuc" || ! "$TITLE" =~ "#congnghe" || ! "$TITLE" =~ "#ai" ]]; then
+if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
   TITLE="$TITLE #tintuc #congnghe #ai"
 fi
 
@@ -485,7 +485,7 @@ if [ -z "$TITLE" ]; then
 fi
 
 # Ensure title contains required hashtags (#tintuc #congnghe #ai)
-if [[ ! "$TITLE" =~ "#tintuc" && ! "$TITLE" =~ "#congnghe" && ! "$TITLE" =~ "#ai" ]]; then
+if [[ "$TITLE" != *"#tintuc"* && "$TITLE" != *"#congnghe"* && "$TITLE" != *"#ai"* ]]; then
   TITLE="$TITLE #tintuc #congnghe #ai"
 fi
 # Safeguard: ensure it fits within 100 chars for YT Shorts

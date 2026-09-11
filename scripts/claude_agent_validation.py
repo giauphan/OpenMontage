@@ -376,11 +376,14 @@ class CLAUDEAgentValidator:
                 except Exception:
                     pass
             script_summary = "Script: not found"
+            script_full_text = ""
             if script_path.is_file():
                 try:
                     script_data = json.loads(script_path.read_text(encoding="utf-8"))
                     sections = script_data.get("sections", [])
                     script_summary = f"Script Sections: {len(sections)}"
+                    script_full_text = "
+".join([s.get("text_vi", "") for s in sections])
                 except Exception:
                     pass
 
@@ -399,6 +402,9 @@ File Exists: {file_exists}
 File Size Bytes: {file_size}
 Composition Info: {comp_summary}
 Script Info: {script_summary}
+Script Text Extract (Vietnamese):
+{script_full_text}
+
 QA Verification Data:
 {qa_summary}
 
@@ -407,14 +413,14 @@ Metadata Content:
 
 PERFORM STRICT QUALITY VALIDATION on the following criteria:
 1. VISUAL QUALITY & DIVERSITY: Verify resolution (1080x1920 portrait), absence of corrupt/static frozen frames, and presence of multiple distinct visual scenes (>= 4 scenes, no single static scene > 8s).
-2. AUDIO SYNC & TYPOGRAPHY: Verify narration and dynamic captions synchronization and absence of spelling errors on on-screen text.
+2. AUDIO SYNC & TYPOGRAPHY: Verify narration and dynamic captions synchronization. CRITICAL: Scrutinize the Script Text Extract and Metadata for Vietnamese typographical errors (e.g. incorrect tone marks like "PHÂN CỨNG" instead of "PHẦN CỨNG", or "KHÔNG CÂN" instead of "KHÔNG CẦN"). If any Vietnamese spelling or grammatical diacritic mistakes are found, YOU MUST FAIL THE ASSET and explain the typo clearly in 'notes'.
 3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance.
 4. BRAND COMPLIANCE: Verify no forbidden brand names ("Montage", "OpenMontage") appear in text or narration.
 
 Return ONLY valid JSON matching this schema:
 {{
   "visual_quality": {{"passed": true, "score": 95, "notes": "1080x1920 portrait layout and scene transitions verified"}},
-  "audio_sync": {{"passed": true, "score": 95, "notes": "Vietnamese audio sync verified"}},
+  "audio_sync": {{"passed": true, "score": 95, "notes": "Vietnamese audio sync verified. No spelling errors detected."}},
   "content_appropriateness": {{"passed": true, "score": 95, "notes": "Content safe and policy compliant"}},
   "brand_compliance": {{"passed": true, "score": 95, "notes": "No prohibited brand names detected"}},
   "overall_passed": true,
@@ -437,9 +443,9 @@ Return ONLY valid JSON matching this schema:
             if os.getuid() == 0 and shutil.which("su"):
                 cmd = [
                     "su", "node", "-s", "/bin/bash", "-c",
-                    f'export PATH="$PATH"; export PYTHONPATH="$PYTHONPATH"; cd "{root_dir}"; '
+                    f'export PATH="$PATH"; export HOME="/home/node"; export PYTHONPATH="$PYTHONPATH"; cd "{root_dir}"; '
                     f'env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL '
-                    f'{claude_bin} -p --model claude-opus-4-7 --dangerously-skip-permissions --output-format json "$1"',
+                    f'{claude_bin} -p --dangerously-skip-permissions --output-format json "$1"',
                     "bash", prompt
                 ]
                 result = subprocess.run(
@@ -453,7 +459,6 @@ Return ONLY valid JSON matching this schema:
             else:
                 cmd = [
                     claude_bin, "-p",
-                    "--model", "claude-opus-4-7",
                     "--dangerously-skip-permissions",
                     "--output-format", "json",
                     prompt,
