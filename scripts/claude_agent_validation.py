@@ -37,6 +37,29 @@ def resolve_ffprobe_ffmpeg() -> tuple[str, str]:
     return ffprobe or "ffprobe", ffmpeg or "ffmpeg"
 
 
+def resolve_claude_cli() -> str:
+    """Robustly resolve claude CLI binary path, even in cron environments without full PATH."""
+    candidates = [
+        shutil.which("claude"),
+        "/usr/local/bin/claude",
+        "/home/node/.npm-global/bin/claude",
+        "/root/.npm-global/bin/claude",
+    ]
+    for cand in candidates:
+        if cand and os.path.exists(cand) and os.access(cand, os.X_OK):
+            return cand
+            
+    # Try finding it in node_modules if globally installed fallback
+    try:
+        npm_global = subprocess.check_output(["npm", "root", "-g"], text=True).strip()
+        cand = os.path.join(npm_global, "claude-code", "bin", "claude.js")
+        if os.path.exists(cand):
+            return cand
+    except Exception:
+        pass
+        
+    return ""
+
 def parse_claude_review(response_text: str) -> dict:
     if not response_text or not response_text.strip():
         raise ValueError("Claude CLI output was empty")
@@ -427,7 +450,7 @@ Return ONLY valid JSON matching this schema:
 }}
 """
 
-            claude_bin = shutil.which("claude")
+            claude_bin = resolve_claude_cli()
             if not claude_bin:
                 raise FileNotFoundError("claude CLI not found")
 

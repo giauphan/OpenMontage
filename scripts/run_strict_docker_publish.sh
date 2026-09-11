@@ -48,6 +48,21 @@ write_state() {
        '{stage:$stage, status:$status, ts:$ts, extra:$extra}' >> "$STATE_FILE"
 }
 
+cleanup_system_disk_space() {
+  log "running pre-flight disk cleanup to prevent low-disk failures..."
+  # Clean old temporary directories in /tmp produced by puppeteer / chromium inside worker
+  rm -rf /tmp/puppeteer_dev_chrome_profile-* 2>/dev/null || true
+  rm -rf /tmp/hyperframes-* 2>/dev/null || true
+  rm -rf /tmp/temp_ig_* 2>/dev/null || true
+
+  # Clean old temporary logs in /app/logs
+  find "$ROOT/logs" -type f -name "*.log" -mtime +7 -delete 2>/dev/null || true
+
+  local avail_mb
+  avail_mb=$(df -m /tmp | awk 'NR==2 {print $4}')
+  log "available disk space on /tmp: ${avail_mb}MB"
+}
+
 cleanup_failed_generation() {
   local generate_log="$1"
   local pid dir schedule_has
@@ -75,6 +90,7 @@ cleanup_failed_generation() {
 
 # ===== Pre-flight: confirm we're inside Docker =====
 stage 0 "preflight"
+cleanup_system_disk_space
 if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
   [ -f /.dockerenv ] || grep -qE 'docker|containerd' /proc/1/cgroup 2>/dev/null || fail "must run inside Docker container"
 fi
