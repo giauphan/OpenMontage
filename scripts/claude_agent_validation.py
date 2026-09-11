@@ -382,8 +382,7 @@ class CLAUDEAgentValidator:
                     script_data = json.loads(script_path.read_text(encoding="utf-8"))
                     sections = script_data.get("sections", [])
                     script_summary = f"Script Sections: {len(sections)}"
-                    script_full_text = "
-".join([s.get("text_vi", "") for s in sections])
+                    script_full_text = "\\n".join([s.get("text_vi", "") for s in sections])
                 except Exception:
                     pass
 
