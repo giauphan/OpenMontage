@@ -60,22 +60,56 @@ def resolve_claude_cli() -> str:
         
     return ""
 
+REVIEW_KEYS = ("visual_quality", "audio_sync", "content_appropriateness", "brand_compliance", "overall_passed")
+
+
+def _json_values(text: str) -> list:
+    """Decode every complete JSON value in text, tolerating concatenated objects and surrounding noise."""
+    decoder = json.JSONDecoder()
+    values = []
+    idx = 0
+    length = len(text)
+    while idx < length:
+        start = -1
+        for i in range(idx, length):
+            if text[i] in "{[":
+                start = i
+                break
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            idx = start + 1
+            continue
+        values.append(value)
+        idx = end
+    return values
+
+
+def _pick_review_dict(values: list):
+    for value in values:
+        if isinstance(value, dict) and any(key in value for key in REVIEW_KEYS):
+            return value
+    for value in values:
+        if isinstance(value, dict):
+            return value
+    return None
+
+
 def parse_claude_review(response_text: str) -> dict:
     if not response_text or not response_text.strip():
         raise ValueError("Claude CLI output was empty")
 
+    values = _json_values(response_text)
     envelope = None
-    try:
-        envelope = json.loads(response_text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{[\s\S]*\}", response_text)
-        if match:
-            try:
-                envelope = json.loads(match.group(0))
-            except Exception:
-                pass
+    for value in values:
+        if isinstance(value, dict) and ("result" in value or "is_error" in value):
+            envelope = value
+    if envelope is None:
+        envelope = _pick_review_dict(values)
 
-    if envelope is None or not isinstance(envelope, dict):
+    if envelope is None:
         raise ValueError(f"Claude CLI output not valid JSON - Output prefix: {repr(response_text[:100])}")
 
     if envelope.get("is_error"):
@@ -86,15 +120,15 @@ def parse_claude_review(response_text: str) -> dict:
     if not isinstance(result, (str, dict)):
         raise ValueError("Claude CLI result missing")
     if isinstance(result, dict):
-        return result
-    cleaned = result.strip()
-    if cleaned.startswith("```"):
-        lines = [line for line in cleaned.splitlines() if not line.startswith("```")]
-        cleaned = "\n".join(lines).strip()
-    match = re.search(r"\{[\s\S]*\}", cleaned)
-    if match:
-        cleaned = match.group(0)
-    review = json.loads(cleaned)
+        review = result
+    else:
+        cleaned = result.strip()
+        if cleaned.startswith("```"):
+            cleaned = "\n".join(line for line in cleaned.splitlines() if not line.startswith("```")).strip()
+        review = _pick_review_dict(_json_values(cleaned))
+
+    if review is None:
+        review = _pick_review_dict(values)
     if not isinstance(review, dict):
         raise ValueError("Claude CLI review invalid")
     return review
