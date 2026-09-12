@@ -79,6 +79,8 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   if [ -d "$PROJECT_DIR" ]; then
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
+  mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
+  chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
 
 # Step 2.5: Run Directors pipeline via Claude CLI (unattended, logged) (P2)
@@ -175,7 +177,7 @@ while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_direct
   echo "[$(date -u +%FT%TZ)] WARN: director artifacts incomplete/error (attempt $DIRECTOR_ATTEMPT/$MAX_DIRECTOR_RETRIES); retrying" >> "$DIRECTORS_LOG"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "directors" --project-id "$PROJECT_ID" \
     --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
-  RETRY_PROMPT="Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Required files are incomplete or failed. In this foreground turn, finish artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. Do not start background work. Before responding, verify all three with test -s."
+  RETRY_PROMPT="CRITICAL: You MUST write the files to disk right now using file tools. Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Missing or incomplete files: artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. In this foreground turn, write all three files directly. Do not stop and do not ask for confirmation. Before finishing, verify all three exist with test -s."
   PREV_SESSION_ID="$(jq -r '.session_id // empty' "$DIRECTORS_JSON" 2>/dev/null || true)"
   run_directors "$RETRY_PROMPT" "$PREV_SESSION_ID" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG"
   RETRY_EXIT=$?
