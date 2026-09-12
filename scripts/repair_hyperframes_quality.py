@@ -399,12 +399,15 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         )
 
     # Guarantee <50% static in strict frozen-canvas by adding a full-duration
-    # micro-scale so even entrance-only compositions stay non-static.
+    # breathing zoom. A single slow linear ramp moves sub-pixel per frame and
+    # still trips freezedetect, so oscillate instead: each 1.6s half-cycle
+    # shifts several pixels per frame and never freezes for the 2s window.
     if "window.__timelines" in body and "__repair_scale_injected" not in body:
+        cycles = max(1, int(round(target / 1.6)))
         body = body.replace(
             "window.__timelines",
-            "tl.to(document.documentElement, {scale: 1.03, duration: "
-            f"{target:.3f}, ease: 'none'}}, 0);\n"
+            "tl.fromTo('#root', {scale: 1.0}, {scale: 1.06, transformOrigin: '50% 50%', "
+            f"force3D: true, duration: 1.6, yoyo: true, repeat: {cycles}, ease: 'sine.inOut'}}, 0);\n"
             "    // __repair_scale_injected\n"
             "    window.__timelines",
             1,
