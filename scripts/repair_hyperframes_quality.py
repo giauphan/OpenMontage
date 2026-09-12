@@ -80,12 +80,17 @@ def repair_missing_composition_assets(path: Path, html: str) -> str:
             clean_src = src.split("?")[0].split("#")[0]
             if not clean_src or clean_src in (".", "./", "/"):
                 return tag
-            target = (composition_dir / clean_src).resolve()
-            if target.is_dir():
+            try:
+                target = (composition_dir / clean_src).resolve()
+            except Exception:
+                return tag
+            if target.is_dir() or target == composition_dir:
                 return tag
             if not target.is_file() or target.stat().st_size == 0:
                 # Look for matching filename in project assets
                 filename = Path(clean_src).name
+                if not filename or filename.startswith("."):
+                    return tag
                 candidates = [c for c in project_root.glob(f"**/{filename}") if c.is_file()]
                 found = False
                 for cand in candidates:
@@ -97,7 +102,7 @@ def repair_missing_composition_assets(path: Path, html: str) -> str:
                 if not found:
                     # Materialize fallback SVG
                     fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
-                    if fallback_file.is_dir():
+                    if fallback_file.is_dir() or fallback_file == composition_dir:
                         return tag
                     label = Path(clean_src).stem.replace("_", " ").replace("-", " ").title()
                     generate_fallback_visual_asset(fallback_file, label=label or "Visual Asset")
@@ -117,11 +122,16 @@ def repair_missing_composition_assets(path: Path, html: str) -> str:
             clean_url = url_target.split("?")[0].split("#")[0]
             if not clean_url or clean_url in (".", "./", "/"):
                 return full_match
-            target = (composition_dir / clean_url).resolve()
-            if target.is_dir():
+            try:
+                target = (composition_dir / clean_url).resolve()
+            except Exception:
+                return full_match
+            if target.is_dir() or target == composition_dir:
                 return full_match
             if not target.is_file() or target.stat().st_size == 0:
                 filename = Path(clean_url).name
+                if not filename or filename.startswith("."):
+                    return full_match
                 candidates = [c for c in project_root.glob(f"**/{filename}") if c.is_file()]
                 found = False
                 for cand in candidates:
@@ -132,7 +142,7 @@ def repair_missing_composition_assets(path: Path, html: str) -> str:
                         break
                 if not found:
                     fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
-                    if fallback_file.is_dir():
+                    if fallback_file.is_dir() or fallback_file == composition_dir:
                         return full_match
                     generate_fallback_visual_asset(fallback_file, label="Background Visual")
                     if fallback_file != target:
