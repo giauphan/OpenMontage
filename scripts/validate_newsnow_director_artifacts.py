@@ -56,6 +56,7 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
             if "provider_notes" in vp and isinstance(vp["provider_notes"], dict):
                 vp["provider_notes"] = {k: str(v) for k, v in vp["provider_notes"].items()}
 
+        valid_paces = {"slow", "measured", "conversational", "brisk", "fast", "custom"}
         valid_enhancement_types = {"overlay", "broll", "diagram", "stat_card", "code_snippet", "animation"}
         valid_sec_keys = {"id", "label", "text", "start_seconds", "end_seconds", "speaker_directions",
                           "delivery_cues", "enhancement_cues", "pronunciation_guides", "source_ref"}
@@ -75,6 +76,10 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
                 sec["start_seconds"] = float(sec.get("start_seconds", accumulated_time))
                 sec["end_seconds"] = float(sec.get("end_seconds", sec["start_seconds"]))
             accumulated_time = sec["end_seconds"]
+
+            delivery_cues = sec.get("delivery_cues")
+            if isinstance(delivery_cues, dict) and delivery_cues.get("pace") not in valid_paces:
+                delivery_cues["pace"] = "custom"
 
             if isinstance(sec.get("enhancement_cues"), list):
                 for cue in sec["enhancement_cues"]:
