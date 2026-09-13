@@ -110,7 +110,13 @@ run_directors() {
     resume_flag="--resume $session_id"
   fi
   if [ "$(id -u)" -eq 0 ]; then
-    PROMPT_STR="$prompt" DIRECTOR_SYSTEM_NOTE="$DIRECTOR_SYSTEM_NOTE" ROOT="$ROOT" DIRECTORS_TIMEOUT_SECONDS="$DIRECTORS_TIMEOUT_SECONDS" DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-20}" RESUME_FLAG="$resume_flag" su node -s /bin/bash -c '
+    export PROMPT_STR="$prompt"
+    export DIRECTOR_SYSTEM_NOTE
+    export ROOT
+    export DIRECTORS_TIMEOUT_SECONDS
+    export DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-20}"
+    export RESUME_FLAG="$resume_flag"
+    su node -p -s /bin/bash -c '
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
       cd "$ROOT"
