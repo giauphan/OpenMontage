@@ -442,13 +442,15 @@ VALIDATION_PASSED=0
 for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
   echo "[$(date -u +%FT%TZ)] CLAUDE Validation Attempt $retry/$MAX_RETRIES"
 
-  "$PY" "$ROOT/scripts/claude_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
+  if "$PY" "$ROOT/scripts/claude_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
     --strict \
     --retry "$MAX_RETRIES" \
     --ffprobe "$FFPROBE_BIN" \
-    --ffmpeg "$FFMPEG_BIN"
-
-  VALIDATION_EXIT=$?
+    --ffmpeg "$FFMPEG_BIN"; then
+    VALIDATION_EXIT=0
+  else
+    VALIDATION_EXIT=$?
+  fi
 
   if [ $VALIDATION_EXIT -eq 0 ]; then
     echo "[$(date -u +%FT%TZ)] 🟢 CLAUDE Agent Strict Quality Validation PASSED"
