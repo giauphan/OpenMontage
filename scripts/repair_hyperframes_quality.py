@@ -361,7 +361,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         root = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root:
             raise ValueError(f"{path}: missing composition root for strict timeline repair")
-        if "data-no-timeline" not in root.group(0):
+        if "data-no-timeline" not in root.group(0) and "window.__timelines[" not in html:
             html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
         html = re.sub(r"\bopacity\s*:\s*0\s*;?", "opacity: 1;", html)
         html = re.sub(r"\bvisibility\s*:\s*hidden\s*;?", "visibility: visible;", html)
