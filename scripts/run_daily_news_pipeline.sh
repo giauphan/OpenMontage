@@ -120,10 +120,10 @@ run_directors() {
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
       cd "$ROOT"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --add-dir "$ROOT" --dangerously-skip-permissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --add-dir "$ROOT" --permission-mode bypassPermissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
     '
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p $resume_flag --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p $resume_flag --permission-mode bypassPermissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
   fi
 }
 
@@ -184,9 +184,8 @@ while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_direct
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "directors" --project-id "$PROJECT_ID" \
     --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
   RETRY_PROMPT="CRITICAL: You MUST write the files to disk right now using file tools. Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Missing or incomplete files: artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. In this foreground turn, write all three files directly. Do not stop and do not ask for confirmation. Before finishing, verify all three exist with test -s."
-  PREV_SESSION_ID="$(jq -r '.session_id // empty' "$DIRECTORS_JSON" 2>/dev/null || true)"
-  run_directors "$RETRY_PROMPT" "$PREV_SESSION_ID" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG" || RETRY_EXIT=$?
-  RETRY_EXIT=$?
+  RETRY_EXIT=0
+  run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG" || RETRY_EXIT=$?
   if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
     mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
     CLAUDE_EXIT=0
