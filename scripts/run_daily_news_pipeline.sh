@@ -120,7 +120,7 @@ run_directors() {
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
       cd "$ROOT"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --cwd "$ROOT" -p $RESUME_FLAG --dangerously-skip-permissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --add-dir "$ROOT" --dangerously-skip-permissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
     '
   else
     env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p $resume_flag --dangerously-skip-permissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
