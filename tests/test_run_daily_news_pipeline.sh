@@ -50,5 +50,15 @@ if grep -E -q '^[[:space:]]*python3 "\$ROOT/(tools/narration_text\.py|scripts/ge
     exit 1
 fi
 
+if ! grep -q 'if "\$PY" "\$ROOT/scripts/claude_agent_validation.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Claude validation is not guarded against errexit."
+    exit 1
+fi
+
+if ! grep -q 'VALIDATION_EXIT=\$?' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Claude validation exit status is not captured."
+    exit 1
+fi
+
 echo "PASS"
 exit 0

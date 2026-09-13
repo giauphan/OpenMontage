@@ -149,6 +149,12 @@ class TestClaudeReviewEnvelope:
 
         assert parse_claude_review(envelope) == review
 
+    def test_parse_claude_review_rejects_plain_text_result(self):
+        from scripts.claude_agent_validation import parse_claude_review
+
+        with pytest.raises(ValueError, match="review invalid"):
+            parse_claude_review(json.dumps({"is_error": False, "result": "Looks good. Approved."}))
+
     def test_parse_claude_review_rejects_error_envelope(self):
         from scripts.claude_agent_validation import parse_claude_review
 
