@@ -337,4 +337,32 @@ def test_removes_clip_visibility_hidden_rule(tmp_path):
     assert re.search(r"\.clip[^{}]*\{[^{}]*visibility:\s*hidden", patched) is None
 
 
+def test_repair_injects_valid_breathing_zoom_and_preserves_registered_timeline(tmp_path):
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=1080, height=1920">
+    <style>#root { width: 1080px; height: 1920px; }</style>
+</head>
+<body>
+    <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-start="0" data-duration="10.0"></div>
+    <script>
+        const tl = gsap.timeline();
+        window.__timelines = window.__timelines || {};
+        window.__timelines['main'] = tl;
+    </script>
+</body>
+</html>"""
+    comp = write_composition(tmp_path, html)
+    repair.patch_html(comp, 10.0, strict=True)
+    patched = comp.read_text()
+
+    # Must inject breathing scale with valid JS syntax (no extra braces)
+    assert "// __repair_scale_injected" in patched
+    assert "tl.fromTo('#root', {scale: 1.0}, {scale: 1.06, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: 6, ease: 'sine.inOut'}, 0);" in patched
+    # Timeline should not be marked data-no-timeline if it registered timelines
+    assert "data-no-timeline" not in patched
+
+
+
 
