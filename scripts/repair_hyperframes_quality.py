@@ -340,8 +340,8 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     html = align_timeline(path, html, narration_duration)
     html = repair_missing_composition_assets(path, html)
 
-    # Fix malformed GSAP syntax: "opacity: 1;," → "opacity: 1,"
-    html = re.sub(r"opacity:\s*1\s*;\s*,", "opacity: 1,", html)
+    # Fix malformed GSAP object syntax without changing CSS declarations.
+    html = re.sub(r"(\bopacity\s*:\s*[^,{};]+)\s*;\s*,", r"\1,", html)
     html = re.sub(r"(\.clip\b[^{}]*\{[^{}]*)\bvisibility\s*:\s*hidden\s*;?", r"\1", html)
     # Add subtle continuous background animation to prevent false-positive static canvas detection
     style_match = re.search(r"<style[^>]*>", html)
@@ -363,8 +363,8 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
             raise ValueError(f"{path}: missing composition root for strict timeline repair")
         if "data-no-timeline" not in root.group(0) and "window.__timelines[" not in html:
             html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
-        html = re.sub(r"\bopacity\s*:\s*0\s*;?", "opacity: 1;", html)
-        html = re.sub(r"\bvisibility\s*:\s*hidden\s*;?", "visibility: visible;", html)
+        html = re.sub(r"\bopacity\s*:\s*0(\s*;?)", r"opacity: 1\1", html)
+        html = re.sub(r"\bvisibility\s*:\s*hidden(\s*;?)", r"visibility: visible\1", html)
         # Enforce exact 1080x1920 portrait
         html = re.sub(r"#root\s*\{\s*width:\s*\d+px;\s*height:\s*\d+px;", "#root { width: 1080px; height: 1920px;", html)
         html = re.sub(r"meta\s+name=\"viewport\"[^>]*", 'meta name="viewport" content="width=1080, height=1920"', html)

@@ -364,5 +364,34 @@ def test_repair_injects_valid_breathing_zoom_and_preserves_registered_timeline(t
     assert "data-no-timeline" not in patched
 
 
+def test_strict_repair_preserves_css_semicolons_and_js_object_commas(tmp_path):
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=1080, height=1920">
+    <style>
+        #root { width: 1080px; height: 1920px; }
+        .scene { opacity: 0; visibility: hidden; }
+    </style>
+</head>
+<body>
+    <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-start="0" data-duration="10.0"></div>
+    <script>
+        const tl = gsap.timeline();
+        tl.set('#root', { opacity: 0, visibility: 'hidden' });
+        window.__timelines = window.__timelines || {};
+        window.__timelines['main'] = tl;
+    </script>
+</body>
+</html>"""
+    comp = write_composition(tmp_path, html)
+    repair.patch_html(comp, 10.0, strict=True)
+    patched = comp.read_text()
+
+    assert ".scene { opacity: 1; visibility: visible; }" in patched
+    assert "{ opacity: 1, visibility: 'hidden' }" in patched
+    assert "opacity: 1;," not in patched
+
+
 
 
