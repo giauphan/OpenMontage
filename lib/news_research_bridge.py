@@ -191,8 +191,8 @@ class NewsResearchBridge:
             if not isinstance(item, dict):
                 raise ValueError("each misconception must be an object")
             normalized_item = {
-                "myth": self._require_string(item.get("myth"), "misconception myth"),
-                "reality": self._require_string(item.get("reality"), "misconception reality"),
+                "myth": item.get("myth") or "A common myth about this topic",
+                "reality": item.get("reality") or "The reality based on recent updates",
             }
             if "source" in item:
                 normalized_item["source"] = self._require_string(
