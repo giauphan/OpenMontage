@@ -260,7 +260,7 @@ materialize_hyperframes_assets() {
     cp "$project_root/assets/voice/narration.mp3" "$narration"
   fi
   if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
-    jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
+    jq -r 'if (.sections // null) then [.sections[]? | .text // .text_vi // .narration // .narration_vi // empty] | join(" ") else (.text // .text_vi // .narration // .script // empty) end' "$script_json" > "$narration_text"
   fi
   if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
     tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
@@ -296,10 +296,10 @@ if [ -s "$narration" ] && command -v "$PY" >/dev/null 2>&1; then
       3 || { echo "[$(date -u +%FT%TZ)] ERROR: Subtitle generation failed" >&2; exit 1; }
     echo "[$(date -u +%FT%TZ)] Vietnamese subtitles generated"
 
-    # Generate reels subtitles if audio exists
+    # Generate reels subtitles if audio exists.
     if [ -s "$reels_narration" ]; then
       "$PY" "$ROOT/scripts/generate_vn_subtitles.py" \
-        "$reels_narration_text.prepared" \
+        "$subtitle_text" \
         "$reels_narration" \
         "$project_root/hyperframes_reels/assets/subtitles.srt" \
         "$project_root/hyperframes_reels/assets/word_timestamps.json" \

@@ -71,7 +71,7 @@ def test_strict_review_uses_claude_result(monkeypatch, tmp_path):
             stderr="",
         )
 
-    monkeypatch.setattr(validation.shutil, "which", lambda _: "/usr/bin/claude")
+    monkeypatch.setattr(validation, "resolve_claude_cli", lambda: "/usr/bin/claude")
     monkeypatch.setattr(validation.subprocess, "run", run)
 
     validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
