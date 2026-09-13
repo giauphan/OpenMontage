@@ -221,3 +221,33 @@ def test_validator_normalizes_director_schema_variants(tmp_path):
     assert sec["end_seconds"] == 10.0
     assert "scene_type" not in sec # Extraneous section key removed
     assert "narration" not in sec
+
+
+def test_validator_normalizes_missing_version_scene_payload(tmp_path):
+    arts = tmp_path / "artifacts"
+    arts.mkdir()
+    script = arts / "script_vi.json"
+    script.write_text(json.dumps({
+        "title": "Test title",
+        "duration_seconds": 8,
+        "scenes": [
+            {
+                "id": 1,
+                "start_time": 0,
+                "duration": 8,
+                "narration": "Hello world",
+            }
+        ],
+    }))
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is True
+
+    data = json.loads(script.read_text())
+    assert data["version"] == "1.0"
+    assert data["total_duration_seconds"] == 8.0
+    assert data["sections"] == [{
+        "id": "1",
+        "text": "Hello world",
+        "start_seconds": 0.0,
+        "end_seconds": 8.0,
+    }]
