@@ -561,6 +561,7 @@ def main() -> int:
         choices=("hyperframes", "hyperframes_reels"),
         help="Repair only one composition instead of both",
     )
+    parser.add_argument("--strict", action="store_true", help="Apply strict timeline compatibility repairs")
     args = parser.parse_args()
 
     project_dir = args.project_dir
@@ -587,7 +588,7 @@ def main() -> int:
             narration_duration = probe_duration(narration)
         if not composition_errors:
             try:
-                patch_html(index, narration_duration)
+                patch_html(index, narration_duration, strict=args.strict)
             except ValueError as exc:
                 composition_errors.append(str(exc))
             else:

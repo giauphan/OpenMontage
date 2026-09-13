@@ -360,7 +360,7 @@ fi
     if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
   done
-  "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root"
+  "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict
 }
 materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
 
