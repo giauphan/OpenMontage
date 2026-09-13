@@ -39,6 +39,8 @@ PORTRAIT_HEIGHT = 1920
 
 def generate_fallback_visual_asset(target_path: Path, label: str = "Editorial Visual") -> None:
     """Generate high-contrast editorial fallback SVG asset so Chromium never throws 404."""
+    if target_path.is_dir():
+        return
     target_path.parent.mkdir(parents=True, exist_ok=True)
     svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
   <defs>
@@ -177,12 +179,23 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         narration_duration = 60.0
 
     # Calculate original duration of scenes to avoid incorrectly skipping timeline alignment
-    # when data-duration is missing from the root element
+    # when data-duration is missing or stale on the root element
     max_end = 0.0
-    for match in re.finditer(r'data-start=["\']([0-9.]+)["\'][^>]*data-duration=["\']([0-9.]+)["\']', html):
-        max_end = max(max_end, float(match.group(1)) + float(match.group(2)))
-    for match in re.finditer(r'data-duration=["\']([0-9.]+)["\'][^>]*data-start=["\']([0-9.]+)["\']', html):
-        max_end = max(max_end, float(match.group(1)) + float(match.group(2)))
+    for match in re.finditer(r'<[a-zA-Z]+\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\'][^>]*>', html):
+        tag = match.group(0)
+        s_match = re.search(r'\bdata-start=["\']([0-9.]+)[\"\']', tag)
+        d_match = re.search(r'\bdata-duration=["\']([0-9.]+)[\"\']', tag)
+        if s_match and d_match:
+            max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
+    if max_end == 0.0:
+        for match in re.finditer(r'<[a-zA-Z]+\b(?!data-composition-id)[^>]*>', html):
+            tag = match.group(0)
+            if "data-composition-id" in tag:
+                continue
+            s_match = re.search(r'\bdata-start=["\']([0-9.]+)[\"\']', tag)
+            d_match = re.search(r'\bdata-duration=["\']([0-9.]+)[\"\']', tag)
+            if s_match and d_match:
+                max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
 
     # Ensure composition root has required attributes
     root_open = re.search(r"<div\b[^>]*>", html)
@@ -198,6 +211,13 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         if "data-duration" not in new_tag:
             initial_dur = max_end if max_end > 0 else narration_duration
             new_tag = new_tag.replace("<div", f'<div data-duration="{initial_dur:.3f}"', 1)
+        elif max_end > 0:
+            new_tag = re.sub(
+                r'\bdata-duration=["\'][0-9.]+["\']',
+                f'data-duration="{max_end:.3f}"',
+                new_tag,
+                count=1,
+            )
         if "data-start" not in new_tag:
             new_tag = new_tag.replace("<div", '<div data-start="0"', 1)
         if new_tag != tag:

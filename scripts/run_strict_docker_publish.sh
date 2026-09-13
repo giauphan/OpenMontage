@@ -67,6 +67,11 @@ cleanup_failed_generation() {
   local generate_log="$1"
   local pid dir schedule_has
 
+  if [ "${STRICT_PUBLISH_PRESERVE_FAILED_GENERATION:-0}" = "1" ]; then
+    log "preserving failed-generation projects for diagnosis"
+    return
+  fi
+
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
     schedule_has=$(jq --arg pid "$pid" \
@@ -275,6 +280,7 @@ write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]
 stage 6 "queue-next-day"
 QUEUE_OK=1
 QUEUED_PIDS=()
+BACKFILLED_PIDS=()
 
 SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
 mapfile -t SLOTS < <(jq -r '.[]' <<< "$SLOTS_JSON")
@@ -288,6 +294,18 @@ jq --arg date "$NEXT_DATE" \
 
 IDX=0
 for PID in "${VALIDATED_PIDS[@]}"; do
+  if [ "${#TODAY_PROJECT_IDS[@]}" -eq 0 ] && [ "${#TODAY_PUBLISHED_PIDS[@]}" -eq 0 ]; then
+    log "backfilling today with validated project $PID"
+    if "$PY" "$ROOT/scripts/publish_manual_video.py" "$ROOT/projects/$PID" --date "$TODAY" >> "$LOG_DIR/today_backfill_${RUN_TS}.log" 2>&1; then
+      TODAY_PUBLISHED_PIDS+=("$PID")
+      BACKFILLED_PIDS+=("$PID")
+      log "today backfill completed: $PID"
+      continue
+    fi
+    rm -f "$TMP_QUEUE"
+    write_state "today-backfill" "failed"
+    fail "today backfill publish failed (see $LOG_DIR/today_backfill_${RUN_TS}.log)"
+  fi
   SLOT="${SLOTS[$IDX]}"
   jq --arg pid "$PID" --arg date "$NEXT_DATE" --arg time "$SLOT" \
      '.active_projects += [{project_id: $pid, publish_date: $date, publish_time: $time}]' \
@@ -301,10 +319,18 @@ jq -e '.active_projects and (.active_projects | type == "array")' "$TMP_QUEUE" >
   || { rm -f "$TMP_QUEUE"; write_state "queue-next-day" "failed"; fail "queued schedule invalid"; }
 mv "$TMP_QUEUE" "$SCHEDULE"
 
-[ "${#QUEUED_PIDS[@]}" -eq 3 ] || { write_state "queue-next-day" "partial"; fail "queued ${#QUEUED_PIDS[@]}/3"; }
+EXPECTED_QUEUED=$((${#VALIDATED_PIDS[@]} - ${#BACKFILLED_PIDS[@]}))
+[ "${#QUEUED_PIDS[@]}" -eq "$EXPECTED_QUEUED" ] \
+  || { write_state "queue-next-day" "partial"; fail "queued ${#QUEUED_PIDS[@]}/$EXPECTED_QUEUED next-day projects"; }
 
 # Queue verification: every validated project scheduled for NEXT_DATE with a slot.
 for PID in "${VALIDATED_PIDS[@]}"; do
+  BACKFILL_HAS=false
+  for BACKFILL_PID in "${BACKFILLED_PIDS[@]}"; do
+    [ "$BACKFILL_PID" = "$PID" ] && BACKFILL_HAS=true
+  done
+  [ "$BACKFILL_HAS" = "true" ] && continue
+
   SCHEDULE_HAS=$(jq --arg pid "$PID" --arg d "$NEXT_DATE" \
     'any(.active_projects[]?; (.project_id // .) == $pid and (.publish_date // "") == $d)' \
     "$SCHEDULE" 2>/dev/null || echo false)
@@ -313,8 +339,8 @@ for PID in "${VALIDATED_PIDS[@]}"; do
 done
 [ "$QUEUE_OK" -eq 1 ] || { write_state "queue-next-day" "failed"; fail "queue verification failed"; }
 
-log "all 3 projects queued for $NEXT_DATE: ${QUEUED_PIDS[*]}"
-write_state "queue-next-day" "ok" "queued=$(IFS=,; echo "${QUEUED_PIDS[*]}")"
+log "queued $EXPECTED_QUEUED projects for $NEXT_DATE: ${QUEUED_PIDS[*]:-none}; backfilled today: ${BACKFILLED_PIDS[*]:-none}"
+write_state "queue-next-day" "ok" "queued=$(IFS=,; echo "${QUEUED_PIDS[*]}") backfilled=$(IFS=,; echo "${BACKFILLED_PIDS[*]}")"
 
 stage 6.5 "platform-schedule"
 if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then

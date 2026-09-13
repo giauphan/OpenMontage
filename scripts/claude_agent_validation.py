@@ -87,13 +87,37 @@ def _json_values(text: str) -> list:
     return values
 
 
+def _is_review_dict(value) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if not all(key in value for key in REVIEW_KEYS):
+        return False
+    return all(isinstance(value.get(key), dict) for key in REVIEW_KEYS if key != "overall_passed")
+
+
 def _pick_review_dict(values: list):
     for value in values:
-        if isinstance(value, dict) and any(key in value for key in REVIEW_KEYS):
+        if _is_review_dict(value):
             return value
-    for value in values:
         if isinstance(value, dict):
-            return value
+            for nested in value.values():
+                if isinstance(nested, dict) and _is_review_dict(nested):
+                    return nested
+                if isinstance(nested, list):
+                    for item in nested:
+                        if _is_review_dict(item):
+                            return item
+                        if isinstance(item, str):
+                            try:
+                                decoded = json.loads(item)
+                                if _is_review_dict(decoded):
+                                    return decoded
+                            except json.JSONDecodeError:
+                                continue
+        if isinstance(value, list):
+            for item in value:
+                if _is_review_dict(item):
+                    return item
     return None
 
 
@@ -101,6 +125,7 @@ def parse_claude_review(response_text: str) -> dict:
     if not response_text or not response_text.strip():
         raise ValueError("Claude CLI output was empty")
 
+    # Fallback to older matching logic
     values = _json_values(response_text)
     envelope = None
     for value in values:
@@ -428,8 +453,12 @@ class CLAUDEAgentValidator:
             if comp_path.is_file():
                 try:
                     comp_text = comp_path.read_text(encoding="utf-8")
-                    scene_matches = re.findall(r'data-start\s*=\s*["\'][0-9.]+["\']', comp_text)
-                    comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {len(scene_matches)}"
+                    scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
+                    if scene_ids:
+                        scene_count = len(scene_ids)
+                    else:
+                        scene_count = len(re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text))
+                    comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {scene_count}"
                 except Exception:
                     pass
             script_summary = "Script: not found"
@@ -439,7 +468,17 @@ class CLAUDEAgentValidator:
                     script_data = json.loads(script_path.read_text(encoding="utf-8"))
                     sections = script_data.get("sections", [])
                     script_summary = f"Script Sections: {len(sections)}"
-                    script_full_text = "\n".join([s.get("text", s.get("text_vi", "")) for s in sections])
+                    script_full_text = "\n".join(
+                        str(section.get("text") or section.get("text_vi") or section.get("narration") or "")
+                        for section in sections
+                    ).strip()
+                    if not script_full_text:
+                        script_full_text = str(
+                            script_data.get("text")
+                            or script_data.get("text_vi")
+                            or script_data.get("narration")
+                            or ""
+                        ).strip()
                 except Exception:
                     pass
 
@@ -466,6 +505,8 @@ QA Verification Data:
 
 Metadata Content:
 {metadata_str}
+
+IMPORTANT: You are a strict metadata and semantic reviewer. Evaluate the criteria purely using the provided Composition Info, Script Info, QA Verification Data, Metadata Content, and Script Text Extract fields above. DO NOT attempt to open or view the actual video or HTML files directly.
 
 PERFORM STRICT QUALITY VALIDATION on the following criteria:
 1. VISUAL QUALITY & DIVERSITY: Verify resolution (1080x1920 portrait), absence of corrupt/static frozen frames, and presence of multiple distinct visual scenes (>= 4 scenes, no single static scene > 8s).

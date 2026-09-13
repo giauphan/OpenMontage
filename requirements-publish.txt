@@ -5,3 +5,4 @@ google-api-python-client>=2.100   # YouTube Data API v3
 google-auth-oauthlib>=1.2         # YouTube OAuth installed-app flow
 google-auth>=2.0                  # Firestore service-account auth (PublishStore)
 requests>=2.31                    # Meta Graph API calls
+firebase-admin>=6.0

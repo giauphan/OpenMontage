@@ -281,6 +281,49 @@ def test_repair_calculates_data_duration_from_scenes(tmp_path):
     assert scene1_dur_match is not None, "Scene 1 duration scaled up"
 
 
+def test_repair_uses_scene_end_when_root_duration_is_stale(tmp_path):
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=1080, height=1920">
+    <style>
+        #root { width: 1080px; height: 1920px; overflow: hidden; }
+        :root { --font-heading: 'BeVietnamPro', Arial, sans-serif; --font-body: 'BeVietnamPro', Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <div data-composition-id="main" data-width="1080" data-height="1920" data-start="0" data-duration="56.5">
+        <div id="scene-0" class="scene" data-start="0.000" data-duration="20.0"></div>
+        <div id="scene-1" class="scene" data-start="20.000" data-duration="15.0"></div>
+        <h1>Tiếng Việt Example</h1>
+    </div>
+</body>
+</html>"""
+    comp = write_composition(tmp_path, html)
+
+    repair.patch_html(comp, 56.5)
+
+    patched_html = comp.read_text()
+    assert 'data-duration="56.500"' in patched_html
+    assert 'id="scene-1" class="scene" data-start="32.286" data-duration="24.214"' in patched_html
+
+
+def test_repair_ignores_directory_asset_targets(tmp_path):
+    composition_dir = tmp_path / "cand_test" / "hyperframes"
+    composition_dir.mkdir(parents=True)
+    (composition_dir / "assets").mkdir()
+    html = """<html><head><style>
+.hero { background-image: url('.'); }
+</style></head><body>
+<div data-composition-id="main"><img src="assets"></div>
+</body></html>"""
+
+    repaired = repair.repair_missing_composition_assets(composition_dir / "index.html", html)
+
+    assert "url('.')" in repaired
+    assert 'src="assets"' in repaired
+
+
 def test_removes_clip_visibility_hidden_rule(tmp_path):
     import re
     html = composition_html(1080, 1920)
