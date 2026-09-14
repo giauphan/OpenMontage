@@ -11,13 +11,13 @@ PATH_TO_OPENMONTAGE=/app
 0 23 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 ./scripts/run_strict_docker_publish.sh >> logs/cron_pipeline.log 2>&1
 
 # 02:15 UTC (09:15 Vietnam) — Publish slot 1 (Instagram only)
-15 2 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 PYTHONPATH=/app /usr/bin/python3 scripts/publish_active_projects.py --slot 09:15 --only-platform instagram >> logs/cron_publish.log 2>&1
+15 2 * * * cd /app && export PYTHONPATH=/app && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 09:15 --only-platform instagram >> logs/cron_publish.log 2>&1
 
 # 07:15 UTC (14:15 Vietnam) — Publish slot 2 (Instagram only)
-15 7 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 PYTHONPATH=/app /usr/bin/python3 scripts/publish_active_projects.py --slot 14:15 --only-platform instagram >> logs/cron_publish.log 2>&1
+15 7 * * * cd /app && export PYTHONPATH=/app && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 14:15 --only-platform instagram >> logs/cron_publish.log 2>&1
 
 # 14:15 UTC (21:15 Vietnam) — Publish slot 3 (Instagram only)
-15 14 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 PYTHONPATH=/app /usr/bin/python3 scripts/publish_active_projects.py --slot 21:15 --only-platform instagram >> logs/cron_publish.log 2>&1
+15 14 * * * cd /app && export PYTHONPATH=/app && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 21:15 --only-platform instagram >> logs/cron_publish.log 2>&1
 
 # Fully published projects are removed from projects/ and deactivated from the
 # schedule by publish_active_projects.py. Failed or partial batches remain for retry.

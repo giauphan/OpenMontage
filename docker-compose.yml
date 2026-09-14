@@ -49,10 +49,17 @@ services:
       - ~/.openmontage:/root/.openmontage
     command: >
       bash -c "
+        mkdir -p /app/logs &&
         apt-get update && apt-get install -y cron jq &&
         cp deploy/openmontage.cron /etc/cron.d/openmontage-cron &&
         chmod 0644 /etc/cron.d/openmontage-cron &&
         crontab /etc/cron.d/openmontage-cron &&
         cron -f
       "
+    healthcheck:
+      test: ["CMD", "pgrep", "cron"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
