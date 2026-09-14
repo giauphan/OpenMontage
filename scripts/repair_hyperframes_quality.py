@@ -337,6 +337,36 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
 
     html = re.sub(r"<audio\b[^>]*>", add_data_start, html)
 
+    if strict:
+        composition_tags = list(
+            re.finditer(
+                r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=([\"'])([^\"']+)\1[^>]*>",
+                html,
+            )
+        )
+        if composition_tags:
+            root_tag = composition_tags[0]
+            registered_ids = {
+                match.group(2)
+                for match in re.finditer(
+                    r"window\.__timelines\s*\[\s*([\"'])([^\"']+)\1\s*\]",
+                    html,
+                )
+            }
+            replacements = []
+            for tag in composition_tags[1:]:
+                composition_id = tag.group(2)
+                if composition_id not in registered_ids:
+                    cleaned = re.sub(
+                        r"\s+data-composition-id=([\"'])[^\"']+\1",
+                        "",
+                        tag.group(0),
+                        count=1,
+                    )
+                    replacements.append((tag.start(), tag.end(), cleaned))
+            for start, end, cleaned in reversed(replacements):
+                html = html[:start] + cleaned + html[end:]
+
     html = align_timeline(path, html, narration_duration)
     html = repair_missing_composition_assets(path, html)
 
