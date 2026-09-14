@@ -75,6 +75,7 @@ fi
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   cd "$ROOT"
+  chmod 777 "$ROOT" 2>/dev/null || true
   PROJECT_DIR="$ROOT/projects/$PROJECT_ID"
   if [ -d "$PROJECT_DIR" ]; then
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
