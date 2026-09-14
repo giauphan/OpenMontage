@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Publish every project listed in config/publish_schedule.json."""
+"""Publish every project listed in config/publish_schedule.json.
+
+DEFAULT: YouTube only (single-platform to prevent duplicates).
+Multi-platform mode can be enabled via MULTI_PLATFORM=1 environment variable.
+"""
 
 import argparse
 import json
@@ -25,6 +29,9 @@ def scheduled_projects_for_slot(projects: list[object], slot: str, local_date: s
 
     Legacy string entries remain supported by unfiltered publishing, but lack
     scheduling metadata and are skipped when a slot is requested.
+    
+    For Instagram slots, also check projects/instagram/ folder for projects
+    that were moved there after YouTube/Facebook scheduling.
     """
     queued_projects: list[str] = []
     for item in projects:
@@ -39,11 +46,28 @@ def scheduled_projects_for_slot(projects: list[object], slot: str, local_date: s
             continue
         if publish_date == local_date and publish_time == slot:
             queued_projects.append(project_id)
+    
+    # For Instagram slots, also add projects from projects/instagram/ folder
+    # These were moved there after YouTube/Facebook scheduling
+    instagram_dir = ROOT / "projects" / "instagram"
+    if instagram_dir.exists():
+        for project_dir in instagram_dir.iterdir():
+            if project_dir.is_dir():
+                project_id = project_dir.name
+                # Check if this project has valid metadata
+                metadata_file = project_dir / "publish_metadata.json"
+                if metadata_file.exists():
+                    queued_projects.append(project_id)
+    
     return queued_projects
 
 
-def deactivate_project(project_id: str, *, store=None, date: str | None = None) -> bool:
-    """Remove a project only after canonical platform records are published."""
+def deactivate_project(project_id: str, *, store=None, date: str | None = None, instagram_mode: bool = False) -> bool:
+    """Move project to instagram folder after YouTube/Facebook scheduling for Instagram cron jobs.
+    
+    When instagram_mode=True: delete project from instagram folder after successful Instagram publish.
+    When instagram_mode=False: move project to instagram folder after YouTube/FB scheduling.
+    """
     if store is not None:
         from scripts.publish_manual_video import canonical_platform_records_published
 
@@ -66,12 +90,32 @@ def deactivate_project(project_id: str, *, store=None, date: str | None = None) 
         temp_config.replace(CONFIG)
         print(f"✓ Deactivated published project: {project_id}")
 
-    project_dir = ROOT / "projects" / project_id
-    if not project_dir.exists():
-        project_dir = ROOT / "projects_news" / project_id
-    if project_dir.exists():
-        shutil.rmtree(project_dir)
-        print(f"✓ Removed published project directory: {project_dir}")
+    if instagram_mode:
+        # Instagram mode: delete project from instagram folder after successful Instagram publish
+        project_dir = ROOT / "projects" / "instagram" / project_id
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+            print(f"✓ Removed Instagram-published project: {project_dir}")
+    else:
+        # Find project directory in any location
+        project_dir = ROOT / "projects" / project_id
+        if not project_dir.exists():
+            project_dir = ROOT / "projects_news" / project_id
+        
+        # If project exists and is not already in instagram folder, move it there
+        if project_dir.exists() and "instagram" not in str(project_dir):
+            instagram_dir = ROOT / "projects" / "instagram"
+            instagram_dir.mkdir(parents=True, exist_ok=True)
+            
+            destination = instagram_dir / project_id
+            if destination.exists():
+                shutil.rmtree(destination)
+            
+            shutil.move(str(project_dir), str(destination))
+            print(f"✓ Moved project to Instagram folder: {destination}")
+        elif project_dir.exists():
+            # Already in instagram folder, keep it there
+            print(f"✓ Project already in Instagram folder: {project_dir}")
     return True
 
 
@@ -116,9 +160,13 @@ def main() -> int:
             project_id = project
             publish_date = None
 
+        # Check multiple possible locations for project directory
         project_dir = ROOT / "projects" / project_id
         if not project_dir.exists():
             project_dir = ROOT / "projects_news" / project_id
+        if not project_dir.exists():
+            # Check projects/instagram/ folder for Instagram cron jobs
+            project_dir = ROOT / "projects" / "instagram" / project_id
         metadata_path = project_dir / "publish_metadata.json"
         if not metadata_path.is_file():
             print(f"WARNING: skipping {project_id}: missing {metadata_path}")
@@ -140,6 +188,12 @@ def main() -> int:
         print(f"\n=== Publishing {project_id} ===")
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT) + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        # Pass through MULTI_PLATFORM setting to publisher
+        if "MULTI_PLATFORM" not in env:
+            env["MULTI_PLATFORM"] = "0"  # Default to single-platform
+        # Set INSTAGRAM_MODE for Instagram-only publishing to delete from instagram folder
+        if args.only_platform == "instagram":
+            env["INSTAGRAM_MODE"] = "1"
         result = subprocess.run(command, cwd=ROOT, env=env)
         if result.returncode:
             exit_code = result.returncode

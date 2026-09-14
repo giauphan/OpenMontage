@@ -27,16 +27,14 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
 
     try:
         normalized = json.loads(json.dumps(payload))
-        scene_variant = "sections" not in normalized and isinstance(normalized.get("scenes"), list)
-        if "version" in normalized or scene_variant:
-            normalized["version"] = "1.0"
+        normalized["version"] = "1.0"
 
         if "title_vi" in normalized and "title" not in normalized:
             normalized["title"] = normalized["title_vi"]
         if "title_en" in normalized and "title" not in normalized:
             normalized["title"] = normalized["title_en"]
         if "title" not in normalized:
-            normalized["title"] = "Untitled"
+            normalized["title"] = normalized.get("theme") or "Untitled"
 
         if "total_duration" in normalized and "total_duration_seconds" not in normalized:
             normalized["total_duration_seconds"] = float(normalized["total_duration"])
