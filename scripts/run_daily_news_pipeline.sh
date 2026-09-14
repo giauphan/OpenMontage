@@ -117,10 +117,11 @@ run_directors() {
     export DIRECTORS_TIMEOUT_SECONDS
     export DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-20}"
     export RESUME_FLAG="$resume_flag"
+    export PROJECT_DIR="$PROJECT_DIR"
     su node -p -s /bin/bash -c '
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
-      cd "'$PROJECT_DIR'"
+      cd "$PROJECT_DIR" 2>/dev/null || cd "$ROOT"
       env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --add-dir "$ROOT" --permission-mode bypassPermissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
     '
   else
