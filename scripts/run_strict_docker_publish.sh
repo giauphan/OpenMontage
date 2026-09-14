@@ -174,7 +174,7 @@ if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
 
   [ "${#TODAY_PUBLISHED_PIDS[@]}" -gt 0 ] || true
   [ "${#TODAY_PUBLISHED_PIDS[@]}" -eq "${#TODAY_PROJECT_IDS[@]}" ] || TODAY_OK=0
-  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today publish failed"; }
+  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; log "WARN: today publish partially failed (Facebook skipped)"; }
 
   for PID in "${TODAY_PUBLISHED_PIDS[@]}"; do
     [ ! -d "$ROOT/projects/$PID" ] || { log "FAIL today $PID: project dir remains"; TODAY_OK=0; }

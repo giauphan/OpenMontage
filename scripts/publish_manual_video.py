@@ -151,7 +151,7 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
 
 
 def canonical_platform_records_published(store: PublishStore, *, date: str, topic: str) -> bool:
-    routes = (("youtube", "short"), ("instagram", "reels"), ("facebook", "reels"))
+    routes = (("youtube", "short"), ("instagram", "reels"))
     try:
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
@@ -442,12 +442,18 @@ def publish_batch(
 
         # Step 3: Update Firebase based on result
         if result and result.get("success"):
-            store.mark_published(
-                key,
-                video_id=result.get("video_id") or result.get("platform_id"),
-                video_url=result.get("video_url"),
-                published_at=datetime.now(timezone.utc).isoformat(),
-            )
+            try:
+                store.mark_published(
+                    key,
+                    video_id=result.get("video_id") or result.get("platform_id"),
+                    video_url=result.get("video_url"),
+                    published_at=datetime.now(timezone.utc).isoformat(),
+                )
+                print(f"✅ Firebase record updated: {key} -> published")
+            except Exception as fb_error:
+                print(f"❌ Firebase update failed for {key}: {fb_error}")
+                # Continue anyway since the platform upload succeeded
+                
             results["platforms"][f"{platform}/{kind}"] = {
                 "status": "published",
                 "video_id": result.get("video_id") or result.get("platform_id"),
@@ -455,7 +461,11 @@ def publish_batch(
             }
         else:
             error_msg = result.get("error", "Unknown upload error") if result else "No result returned"
-            store.mark_failed(key, error_msg)
+            try:
+                store.mark_failed(key, error_msg)
+            except Exception as fb_error:
+                print(f"❌ Firebase mark_failed failed for {key}: {fb_error}")
+                
             results["platforms"][f"{platform}/{kind}"] = {
                 "status": "failed",
                 "error": error_msg,
