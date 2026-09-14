@@ -152,9 +152,7 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
 
 
 def canonical_platform_records_published(store: PublishStore, *, date: str, topic: str) -> bool:
-    # Always require YouTube + Instagram. Facebook was made non-blocking for pipeline cleanup,
-    # so it is intentionally not part of the canonical gate.
-    routes = (("youtube", "short"), ("instagram", "reels"))
+    routes = (("youtube", "short"), ("instagram", "reels"), ("facebook", "reels"))
     try:
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
