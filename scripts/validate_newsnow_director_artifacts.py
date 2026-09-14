@@ -27,7 +27,8 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
 
     try:
         normalized = json.loads(json.dumps(payload))
-        normalized["version"] = "1.0"
+        if "version" not in normalized or not isinstance(normalized.get("version"), str) or normalized.get("version") != "1.0":
+            normalized["version"] = "1.0"
 
         if "title_vi" in normalized and "title" not in normalized:
             normalized["title"] = normalized["title_vi"]

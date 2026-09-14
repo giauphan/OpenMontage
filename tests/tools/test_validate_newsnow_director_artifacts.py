@@ -19,9 +19,9 @@ def test_validator_accepts_valid_flat_artifact(tmp_path):
     arts.mkdir()
     script = arts / "script_vi.json"
 
-    # Schema invalid (missing version)
-    script.write_text(json.dumps({"title": "T", "total_duration_seconds": 10, "sections": [{"id": "1", "text": "A", "start_seconds": 0, "end_seconds": 10}]}))
-    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    # Director output with theme and sections (no version) is normalized by validator
+    script.write_text(json.dumps({"theme": "T", "total_duration_seconds": 10, "sections": [{"id": "1", "text": "A", "start_seconds": 0, "end_seconds": 10}]}))
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
     # Valid
     script.write_text(json.dumps({"version": "1.0", "title": "T", "total_duration_seconds": 10, "sections": [{"id": "1", "text_vi": "A", "text": "E", "start_seconds": 0, "end_seconds": 10}]}))

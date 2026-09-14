@@ -152,19 +152,9 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
 
 
 def canonical_platform_records_published(store: PublishStore, *, date: str, topic: str) -> bool:
-    # Check if multi-platform mode is enabled
-    multi_platform = os.environ.get("MULTI_PLATFORM", "0") == "1"
-    instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
-    
-    if instagram_mode:
-        # Instagram mode: only check Instagram records
-        routes = (("instagram", "reels"),)
-    elif multi_platform:
-        routes = (("youtube", "short"), ("instagram", "reels"))
-    else:
-        # Single-platform default: only YouTube
-        routes = (("youtube", "short"),)
-    
+    # Always require YouTube + Instagram. Facebook was made non-blocking for pipeline cleanup,
+    # so it is intentionally not part of the canonical gate.
+    routes = (("youtube", "short"), ("instagram", "reels"))
     try:
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
