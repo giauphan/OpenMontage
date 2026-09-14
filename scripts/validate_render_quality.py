@@ -126,10 +126,14 @@ def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool 
         check=False, capture_output=True, text=True,
     )
     stderr = result.stderr or ""
-    if result.returncode != 0 and "freezedetect" not in stderr:
-        return None
+
     freeze_starts = [float(value) for value in re.findall(r"freeze_start:\s*(\d+(?:\.\d+)?)", stderr)]
     durations = [float(value) for value in re.findall(r"freeze_duration:\s*(\d+(?:\.\d+)?)", stderr)]
+
+    # Fail only when freezedetect produced no usable measurements.
+    if not freeze_starts and not durations:
+        return None if result.returncode != 0 else 0.0
+
     total_freeze = sum(durations)
     if len(freeze_starts) > len(durations) and freeze_starts:
         last_start = freeze_starts[-1]

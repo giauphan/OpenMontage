@@ -67,30 +67,29 @@ cleanup_failed_generation() {
   local generate_log="$1"
   local pid dir schedule_has
 
-  if [ "${STRICT_PUBLISH_PRESERVE_FAILED_GENERATION:-0}" = "1" ]; then
-    log "preserving failed-generation projects for diagnosis"
-    return
-  fi
+  # Always preserve for debugging until issue is resolved
+  log "preserving failed-generation projects for diagnosis"
+  return
 
-  while IFS= read -r pid; do
-    [ -n "$pid" ] || continue
-    schedule_has=$(jq --arg pid "$pid" \
-      'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
-    if [ "$schedule_has" = "true" ]; then
-      log "preserving scheduled failed-generation project: $pid"
-      continue
-    fi
-    for dir in "$ROOT/projects/$pid" "$ROOT/projects_news/$pid"; do
-      if [ -d "$dir" ]; then
-        rm -rf "$dir"
-        log "cleanup failed-generation project: $pid"
-      fi
-    done
-  done < <(
-    grep -h 'PROJECT_ID=' "$generate_log" 2>/dev/null |
-      sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' |
-      sort -u
-  )
+  # while IFS= read -r pid; do
+  #   [ -n "$pid" ] || continue
+  #   schedule_has=$(jq --arg pid "$pid" \
+  #     'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
+  #   if [ "$schedule_has" = "true" ]; then
+  #     log "preserving scheduled failed-generation project: $pid"
+  #     continue
+  #   fi
+  #   for dir in "$ROOT/projects/$pid" "$ROOT/projects_news/$pid"; do
+  #     if [ -d "$dir" ]; then
+  #       rm -rf "$dir"
+  #       log "cleanup failed-generation project: $pid"
+  #     fi
+  #   done
+  # done < <(
+  #   grep -h 'PROJECT_ID=' "$generate_log" 2>/dev/null |
+  #     sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' |
+  #     sort -u
+  # )
 }
 
 # ===== Pre-flight: confirm we're inside Docker =====
@@ -198,8 +197,11 @@ GEN_STATUS="${PIPESTATUS[0]}"
 set -e
 
 if [ "$GEN_STATUS" -ne 0 ]; then
-  cleanup_failed_generation "$GENERATE_LOG"
+  # Temporarily preserve failed projects for debugging
+  log "generation pipeline failed (see $GENERATE_LOG)"
+  log "preserving failed projects for debugging"
   write_state "generate" "failed"
+  # cleanup_failed_generation "$GENERATE_LOG"
   fail "generation pipeline failed (see $GENERATE_LOG)"
 fi
 write_state "generate" "ok"
