@@ -174,7 +174,7 @@ except ImportError:
 
 # Strict Quality Thresholds
 # Currently MIN_DURATION is used in CLAUDE agent prompts
-MIN_DURATION = 30.0  # Minimum video duration in seconds
+MIN_DURATION = 14.0  # Minimum video duration in seconds
 
 
 @dataclass
