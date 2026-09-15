@@ -73,7 +73,7 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
                 continue
 
             sec["id"] = str(sec.get("id") or f"sec_{idx}")
-            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration_vi") or sec.get("narration") or ""
+            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration_vi") or sec.get("narration") or sec.get("narrator") or ""
             # Normalize Vietnamese diacritics
             if isinstance(sec["text"], str):
                 sec["text"] = _ud.normalize("NFC", sec["text"])

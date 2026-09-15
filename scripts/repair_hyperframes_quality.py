@@ -371,6 +371,11 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     html = repair_missing_composition_assets(path, html)
 
     # Fix malformed GSAP object syntax without changing CSS declarations.
+    # Normalize GSAP src to CDN — absolute /hyperframes/... is 404 on HyperFrames file_server (cwd=workspace)
+    html = re.sub(r'<script\s+[^>]*\bsrc=["\']\/hyperframes(?:_reels)?\/gsap\.min\.js["\'][^>]*>\s*</script>', '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>', html)
+    html = re.sub(r'<script\s+[^>]*\bsrc=["\']gsap\.min\.js["\'][^>]*>\s*</script>', '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>', html)
+    # Fallback if closing tag already consumed differently (e.g. no space before />)
+    html = re.sub(r'["\']\/hyperframes(?:_reels)?\/gsap\.min\.js["\']', '"https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"', html)
     html = re.sub(r"(\bopacity\s*:\s*[^,{};]+)\s*;\s*,", r"\1,", html)
     html = re.sub(r"(\.clip\b[^{}]*\{[^{}]*)\bvisibility\s*:\s*hidden\s*;?", r"\1", html)
     # Add subtle continuous background animation to prevent false-positive static canvas detection
@@ -434,34 +439,75 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     )
 
     body = re.sub(
-        r"(const\s+totalDuration\s*=\s*)[0-9.]+",
+        r"\bconst\s+",
+        r"let ",
+        body,
+    )
+    body = re.sub(
+        r"((?:let|var|const)\s+totalDur(?:ation)?\s*=\s*)[0-9.]+",
         lambda m: f"{m.group(1)}{target:.3f}",
         body,
     )
 
+    # Scale JS array of SCENE_DURATIONS or sceneStarts if it exists
+    def scale_array(match: re.Match[str]) -> str:
+        arr_str = match.group(2)
+        try:
+            import ast
+            arr = ast.literal_eval(arr_str)
+            if isinstance(arr, list) and len(arr) > 0:
+                arr_sum = sum(arr)
+                if arr_sum > 0:
+                    arr_scale = target / arr_sum
+                    new_arr = [round(x * arr_scale, 3) for x in arr]
+                    return f"{match.group(1)}[{', '.join(map(str, new_arr))}]{match.group(3)}"
+        except Exception:
+            pass
+        return match.group(0)
+
+    body = re.sub(r'((?:let|var|const)\s+SCENE_DURATIONS\s*=\s*)(\[[0-9.,\s]+\])(\s*;)', scale_array, body)
+
     if "tl.duration(" in body:
         body = re.sub(r"tl\.duration\(\s*[0-9.]+\s*\);?", f"tl.duration({target:.3f});", body)
-    elif "window.__timelines" in body:
-        body = re.sub(
-            r"(window\\.__timelines\[[^]]+\]\s*=)",
-            f"tl.duration({target:.3f});\n          \\1",
-            body,
-        )
+    else:
+        tl_decl = re.search(r"(?:const|let|var)\\s+tl\\s*=\\s*[^;]+;", body)
+        if tl_decl:
+            idx = tl_decl.end()
+            body = body[:idx] + f"\n  tl.duration({target:.3f});\n" + body[idx:]
 
     # Guarantee <50% static in strict frozen-canvas by adding a full-duration
     # breathing zoom. A single slow linear ramp moves sub-pixel per frame and
     # still trips freezedetect, so oscillate instead: each 1.6s half-cycle
     # shifts several pixels per frame and never freezes for the 2s window.
-    if "window.__timelines" in body and "__repair_scale_injected" not in body:
-        cycles = max(1, int(round(target / 1.6)))
-        body = body.replace(
-            "window.__timelines",
-            "tl.fromTo('#root', {scale: 1.0}, {scale: 1.06, transformOrigin: '50% 50%', "
+    cycles = max(1, int(round(target / 1.6)))
+    root_selector = "#root"
+    if not re.search(r"id=[\"']root[\"']", body) and re.search(r"id=[\"']stage[\"']", body):
+        root_selector = "#stage"
+
+    # If injection already exists but targets missing #root, retarget it.
+    if "__repair_scale_injected" in body and root_selector != "#root":
+        body = re.sub(r"tl\.fromTo\(['\"]#root['\"]", f"tl.fromTo('{root_selector}'", body)
+
+    if "__repair_scale_injected" not in body:
+        scale_code = (
+            f"\n  // __repair_scale_injected\n"
+            f"  if (typeof tl !== 'undefined' && tl) {{\n"
+            f"    try {{ tl.duration({target:.3f}); }} catch (e) {{}}\n"
+            f"    try {{\n"
+            f"      tl.fromTo('{root_selector}', {{scale: 1.0}}, {{scale: 1.12, transformOrigin: '50% 50%', "
             f"force3D: true, duration: 1.6, yoyo: true, repeat: {cycles}, ease: 'sine.inOut'}}, 0);\n"
-            "    // __repair_scale_injected\n"
-            "    window.__timelines",
-            1,
+            f"    }} catch (e) {{}}\n"
+            f"  }}\n"
         )
+        tl_decl = re.search(r"(?:const|let|var)\s+tl\s*=[^;]+;", body) or re.search(r"\bwindow\.__timelines\[['\"][^'\"]+['\"]\]\s*=[^;]+;", body)
+        if tl_decl:
+            idx = tl_decl.end()
+            body = body[:idx] + scale_code + body[idx:]
+        elif "</script>" in body:
+            idx = body.rfind("</script>")
+            body = body[:idx] + scale_code + body[idx:]
+        else:
+            body = body + f"\n<script>{scale_code}</script>\n"
 
     cues_match = re.search(r"var\s+cues\s*=\s*(\[[^;]+\]);", body)
     if cues_match:

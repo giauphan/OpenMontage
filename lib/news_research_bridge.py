@@ -136,13 +136,15 @@ class NewsResearchBridge:
         for item in existing_content:
             if not isinstance(item, dict):
                 raise ValueError("each existing_content entry must be an object")
+            title = item.get("title") or candidate.get("title") or "Tech News Coverage"
+            source = item.get("source") or publisher or "News Outlet"
+            angle = item.get("angle") or item.get("what_it_covers") or "standard tech coverage"
+            what_it_covers = item.get("what_it_covers") or item.get("angle") or title
             normalized_item = {
-                "title": self._require_string(item.get("title"), "existing_content title"),
-                "source": self._require_string(item.get("source"), "existing_content source"),
-                "angle": self._require_string(item.get("angle"), "existing_content angle"),
-                "what_it_covers": self._require_string(
-                    item.get("what_it_covers") or item.get("title"), "existing_content what_it_covers"
-                ),
+                "title": self._require_string(title, "existing_content title"),
+                "source": self._require_string(source, "existing_content source"),
+                "angle": self._require_string(angle, "existing_content angle"),
+                "what_it_covers": self._require_string(what_it_covers, "existing_content what_it_covers"),
             }
             for field in ("url", "what_it_misses", "engagement_signal"):
                 if field in item:

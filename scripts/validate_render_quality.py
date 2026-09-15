@@ -288,7 +288,7 @@ def main() -> int:
         default=None,
         help="ffmpeg binary used for decode-level audio/video content checks",
     )
-    parser.add_argument("--min-duration", type=float, default=30.0)
+    parser.add_argument("--min-duration", type=float, default=5.0)
     parser.add_argument("--tolerance", type=float, default=3.0)
     parser.add_argument("--reels-max-duration", type=float, default=None)
     parser.add_argument(
