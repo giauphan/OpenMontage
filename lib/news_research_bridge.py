@@ -141,7 +141,7 @@ class NewsResearchBridge:
                 "source": self._require_string(item.get("source"), "existing_content source"),
                 "angle": self._require_string(item.get("angle"), "existing_content angle"),
                 "what_it_covers": self._require_string(
-                    item.get("what_it_covers"), "existing_content what_it_covers"
+                    item.get("what_it_covers") or item.get("title"), "existing_content what_it_covers"
                 ),
             }
             for field in ("url", "what_it_misses", "engagement_signal"):

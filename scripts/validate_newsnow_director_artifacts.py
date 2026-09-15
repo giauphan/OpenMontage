@@ -13,6 +13,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+import unicodedata as _ud
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -27,6 +28,10 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
 
     try:
         normalized = json.loads(json.dumps(payload))
+        # Normalize Unicode for Vietnamese text
+        import unicodedata as _ud
+        if "title" in normalized and isinstance(normalized["title"], str):
+            normalized["title"] = _ud.normalize("NFC", normalized["title"])
         if "version" not in normalized or not isinstance(normalized.get("version"), str) or normalized.get("version") != "1.0":
             normalized["version"] = "1.0"
 
@@ -68,7 +73,10 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
                 continue
 
             sec["id"] = str(sec.get("id") or f"sec_{idx}")
-            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration_vi") or sec.get("narration")
+            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration_vi") or sec.get("narration") or ""
+            # Normalize Vietnamese diacritics
+            if isinstance(sec["text"], str):
+                sec["text"] = _ud.normalize("NFC", sec["text"])
             duration = sec.get("duration", sec.get("duration_secs", sec.get("duration_seconds")))
             if duration is not None:
                 duration = float(duration)
