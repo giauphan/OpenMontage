@@ -398,8 +398,6 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
             raise ValueError(f"{path}: missing composition root for strict timeline repair")
         if "data-no-timeline" not in root.group(0) and "window.__timelines[" not in html:
             html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
-        html = re.sub(r"\bopacity\s*:\s*0(\s*;?)", r"opacity: 1\1", html)
-        html = re.sub(r"\bvisibility\s*:\s*hidden(\s*;?)", r"visibility: visible\1", html)
         # Enforce exact 1080x1920 portrait
         html = re.sub(r"#root\s*\{\s*width:\s*\d+px;\s*height:\s*\d+px;", "#root { width: 1080px; height: 1920px;", html)
         html = re.sub(r"meta\s+name=\"viewport\"[^>]*", 'meta name="viewport" content="width=1080, height=1920"', html)
@@ -467,6 +465,29 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
 
     body = re.sub(r'((?:let|var|const)\s+SCENE_DURATIONS\s*=\s*)(\[[0-9.,\s]+\])(\s*;)', scale_array, body)
 
+    # Scale JS array of scenes = [{start: 0, duration: 4}, ...]
+    scenes_match = re.search(r"(?:let|var|const)\s+scenes\s*=\s*(\[\s*\{[^\[\]]+?\}\s*\])\s*;", body, re.DOTALL)
+    if scenes_match:
+        import json
+        json_str = scenes_match.group(1)
+        json_str = re.sub(r'([\{,]\s*)([a-zA-Z0-9_]+)\s*:', r'\1"\2":', json_str)
+        json_str = json_str.replace("'", '"')
+        try:
+            scenes_data = json.loads(json_str)
+            if isinstance(scenes_data, list) and len(scenes_data) > 0:
+                max_end = max((float(s.get("start", 0)) + float(s.get("duration", 0))) for s in scenes_data)
+                if max_end > 0:
+                    s_scale = target / max_end
+                    if abs(s_scale - 1.0) >= 0.01:
+                        for s in scenes_data:
+                            if "start" in s: s["start"] = round(float(s["start"]) * s_scale, 3)
+                            if "duration" in s: s["duration"] = round(float(s["duration"]) * s_scale, 3)
+                        new_scenes = json.dumps(scenes_data, ensure_ascii=False)
+                        new_scenes = re.sub(r'"([a-zA-Z0-9_]+)":', r'\1:', new_scenes)
+                        body = body[:scenes_match.start(1)] + new_scenes + body[scenes_match.end(1):]
+        except Exception:
+            pass
+
     if "tl.duration(" in body:
         body = re.sub(r"tl\.duration\(\s*[0-9.]+\s*\);?", f"tl.duration({target:.3f});", body)
     else:
@@ -482,22 +503,24 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     cycles = max(1, int(round(target / 1.6)))
     # Dynamically extract ID from the data-composition-id element or common fallbacks
     comp_tag = re.search(r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", body)
-    root_selector = "#root"
+    root_selector = ""
     if comp_tag:
-        id_match = re.search(r'\bid=[\"\'\']([^\"\'\']+)[\"\'\']', comp_tag.group(0))
+        id_match = re.search(r'(?<!-)id=["\']([^"\']+)["\']', comp_tag.group(0))
         if id_match:
             root_selector = f"#{id_match.group(1)}"
-    if root_selector == "#root" and not re.search(r"id=[\"']root[\"']", body):
-        for candidate_id in ("stage", "composition", "viewport", "canvas", "app", "container"):
+    if not root_selector:
+        for candidate_id in ("stage", "composition", "viewport", "canvas", "app", "container", "root", "main"):
             if re.search(rf"id=[\"']{candidate_id}[\"']", body):
                 root_selector = f"#{candidate_id}"
                 break
+    if not root_selector:
+        root_selector = "#stage"
 
-    # If injection already exists but targets wrong root, retarget it.
-    if "__repair_scale_injected" in body and root_selector != "#root":
+    # Retarget existing injection if needed
+    if "__repair_scale_injected" in body:
         body = re.sub(r"tl\.fromTo\(['\"]#[a-zA-Z0-9_-]+['\"]", f"tl.fromTo('{root_selector}'", body)
 
-    if "__repair_scale_injected" not in body:
+    if "__repair_scale_injected" not in body or not root_selector:
         scale_code = (
             f"\n  // __repair_scale_injected\n"
             f"  if (typeof tl !== 'undefined' && tl) {{\n"
