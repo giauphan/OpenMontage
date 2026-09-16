@@ -481,12 +481,16 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     # shifts several pixels per frame and never freezes for the 2s window.
     cycles = max(1, int(round(target / 1.6)))
     root_selector = "#root"
-    if not re.search(r"id=[\"']root[\"']", body) and re.search(r"id=[\"']stage[\"']", body):
-        root_selector = "#stage"
+    if not re.search(r"id=[\"']root[\"']", body):
+        if re.search(r"id=[\"']stage[\"']", body):
+            root_selector = "#stage"
+        elif re.search(r"id=[\"']composition[\"']", body):
+            root_selector = "#composition"
 
-    # If injection already exists but targets missing #root, retarget it.
+    # If injection already exists but targets wrong root, retarget it.
     if "__repair_scale_injected" in body and root_selector != "#root":
         body = re.sub(r"tl\.fromTo\(['\"]#root['\"]", f"tl.fromTo('{root_selector}'", body)
+        body = re.sub(r"tl\.fromTo\(['\"]#stage['\"]", f"tl.fromTo('{root_selector}'", body)
 
     if "__repair_scale_injected" not in body:
         scale_code = (
