@@ -480,17 +480,22 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     # still trips freezedetect, so oscillate instead: each 1.6s half-cycle
     # shifts several pixels per frame and never freezes for the 2s window.
     cycles = max(1, int(round(target / 1.6)))
+    # Dynamically extract ID from the data-composition-id element or common fallbacks
+    comp_tag = re.search(r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", body)
     root_selector = "#root"
-    if not re.search(r"id=[\"']root[\"']", body):
-        if re.search(r"id=[\"']stage[\"']", body):
-            root_selector = "#stage"
-        elif re.search(r"id=[\"']composition[\"']", body):
-            root_selector = "#composition"
+    if comp_tag:
+        id_match = re.search(r'\bid=[\"\'\']([^\"\'\']+)[\"\'\']', comp_tag.group(0))
+        if id_match:
+            root_selector = f"#{id_match.group(1)}"
+    if root_selector == "#root" and not re.search(r"id=[\"']root[\"']", body):
+        for candidate_id in ("stage", "composition", "viewport", "canvas", "app", "container"):
+            if re.search(rf"id=[\"']{candidate_id}[\"']", body):
+                root_selector = f"#{candidate_id}"
+                break
 
     # If injection already exists but targets wrong root, retarget it.
     if "__repair_scale_injected" in body and root_selector != "#root":
-        body = re.sub(r"tl\.fromTo\(['\"]#root['\"]", f"tl.fromTo('{root_selector}'", body)
-        body = re.sub(r"tl\.fromTo\(['\"]#stage['\"]", f"tl.fromTo('{root_selector}'", body)
+        body = re.sub(r"tl\.fromTo\(['\"]#[a-zA-Z0-9_-]+['\"]", f"tl.fromTo('{root_selector}'", body)
 
     if "__repair_scale_injected" not in body:
         scale_code = (
