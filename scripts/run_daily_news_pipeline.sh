@@ -149,6 +149,15 @@ for nested in "$PROJECT_DIR"/hyperframes_reels/*/index.html; do
   [ -f "$nested" ] && mv "$nested" "$PROJECT_DIR/hyperframes_reels/index.html" && rmdir "$(dirname "$nested")" 2>/dev/null || true
 done
 
+if [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
+    mkdir -p "$PROJECT_DIR/hyperframes_reels"
+    cp "$PROJECT_DIR/hyperframes/index.html" "$PROJECT_DIR/hyperframes_reels/index.html" || true
+fi
+if [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes/index.html" ]; then
+    mkdir -p "$PROJECT_DIR/hyperframes"
+    cp "$PROJECT_DIR/hyperframes_reels/index.html" "$PROJECT_DIR/hyperframes/index.html" || true
+fi
+
 # set -e moved down to protect retry loop
 
 if [ "$DIRECTOR_ARTIFACT_FALLBACK" -eq 1 ]; then
@@ -188,6 +197,14 @@ while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_direct
   RETRY_PROMPT="CRITICAL: You MUST write the files to disk right now using file tools. Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Missing or incomplete files: artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. In this foreground turn, write all three files directly. Do not stop and do not ask for confirmation. Before finishing, verify all three exist with test -s."
   RETRY_EXIT=0
   run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG" || RETRY_EXIT=$?
+  if [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
+      mkdir -p "$PROJECT_DIR/hyperframes_reels"
+      cp "$PROJECT_DIR/hyperframes/index.html" "$PROJECT_DIR/hyperframes_reels/index.html" || true
+  fi
+  if [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes/index.html" ]; then
+      mkdir -p "$PROJECT_DIR/hyperframes"
+      cp "$PROJECT_DIR/hyperframes_reels/index.html" "$PROJECT_DIR/hyperframes/index.html" || true
+  fi
   if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
     mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
     CLAUDE_EXIT=0
