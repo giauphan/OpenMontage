@@ -522,24 +522,28 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
 
     if "__repair_scale_injected" not in body or not root_selector:
         scale_code = (
-            f"\n  // __repair_scale_injected\n"
-            f"  if (typeof tl !== 'undefined' && tl) {{\n"
-            f"    try {{ tl.duration({target:.3f}); }} catch (e) {{}}\n"
+            f"\n<script>\n"
+            f"// __repair_scale_injected\n"
+            f"(function() {{\n"
+            f"  var _r_tl = (typeof tl !== 'undefined') ? tl : (window.__timelines && (window.__timelines['main'] || window.__timelines['full'] || Object.values(window.__timelines)[0]));\n"
+            f"  if (_r_tl) {{\n"
+            f"    try {{ _r_tl.duration({target:.3f}); }} catch (e) {{}}\n"
             f"    try {{\n"
-            f"      tl.fromTo('{root_selector}', {{scale: 1.0}}, {{scale: 1.12, transformOrigin: '50% 50%', "
-            f"force3D: true, duration: 1.6, yoyo: true, repeat: {cycles}, ease: 'sine.inOut'}}, 0);\n"
+            f"      _r_tl.fromTo('{root_selector}', {{scale: 1.0}}, {{scale: 1.12, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: {cycles}, ease: 'sine.inOut'}}, 0);\n"
             f"    }} catch (e) {{}}\n"
             f"  }}\n"
+            f"}})();\n"
+            f"</script>\n"
         )
-        tl_decl = re.search(r"(?:const|let|var)\s+tl\s*=[^;]+;", body) or re.search(r"\bwindow\.__timelines\[['\"][^'\"]+['\"]\]\s*=[^;]+;", body)
-        if tl_decl:
-            idx = tl_decl.end()
-            body = body[:idx] + scale_code + body[idx:]
+        if "</body>" in body:
+            body = body.replace("</body>", scale_code + "\n</body>", 1)
+        elif "</html>" in body:
+            body = body.replace("</html>", scale_code + "\n</html>", 1)
         elif "</script>" in body:
             idx = body.rfind("</script>")
-            body = body[:idx] + scale_code + body[idx:]
+            body = body[:idx+9] + scale_code + body[idx+9:]
         else:
-            body = body + f"\n<script>{scale_code}</script>\n"
+            body = body + f"\n{scale_code}\n"
 
     cues_match = re.search(r"var\s+cues\s*=\s*(\[[^;]+\]);", body)
     if cues_match:
