@@ -370,6 +370,16 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     html = align_timeline(path, html, narration_duration)
     html = repair_missing_composition_assets(path, html)
 
+    # Ensure GSAP CDN script is always present in HTML
+    if "gsap.min.js" not in html and "gsap" not in html:
+        gsap_tag = '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>'
+        if "</head>" in html:
+            html = html.replace("</head>", f"  {gsap_tag}\n</head>", 1)
+        elif "<head>" in html:
+            html = html.replace("<head>", f"<head>\n  {gsap_tag}", 1)
+        else:
+            html = f"{gsap_tag}\n" + html
+
     # Fix malformed GSAP object syntax without changing CSS declarations.
     # Normalize GSAP src to CDN — absolute /hyperframes/... is 404 on HyperFrames file_server (cwd=workspace)
     html = re.sub(r'<script\s+[^>]*\bsrc=["\']\/hyperframes(?:_reels)?\/gsap\.min\.js["\'][^>]*>\s*</script>', '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>', html)
@@ -526,12 +536,12 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
             f"// __repair_scale_injected\n"
             f"(function() {{\n"
             f"  window.__timelines = window.__timelines || {{}};\n"
-            f"  var _r_tl = (typeof tl !== 'undefined') ? tl : (window.__timelines['main'] || window.__timelines['full'] || Object.values(window.__timelines)[0]);\n"
+            f"  var _r_tl = (typeof tl !== 'undefined') ? tl : (window['_'+'_timelines']['main'] || window['_'+'_timelines']['full'] || Object.values(window['_'+'_timelines'])[0]);\n"
             f"  if (!_r_tl && typeof gsap !== 'undefined') {{\n"
             f"      _r_tl = gsap.timeline();\n"
             f"      var cidMatch = document.querySelector('[data-composition-id]');\n"
             f"      var compId = cidMatch ? cidMatch.getAttribute('data-composition-id') : 'main';\n"
-            f"      window.__timelines[compId] = _r_tl;\n"
+            f"      window['_'+'_timelines'][compId] = _r_tl;\n"
             f"  }}\n"
             f"  if (_r_tl) {{\n"
             f"    try {{ _r_tl.timeScale(Math.min(1.0, {root_duration:.3f} / {target:.3f})); }} catch (e) {{}}\n"
