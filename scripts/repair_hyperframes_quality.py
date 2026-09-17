@@ -527,6 +527,7 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
             f"(function() {{\n"
             f"  var _r_tl = (typeof tl !== 'undefined') ? tl : (window.__timelines && (window.__timelines['main'] || window.__timelines['full'] || Object.values(window.__timelines)[0]));\n"
             f"  if (_r_tl) {{\n"
+            f"    try {{ _r_tl.timeScale(Math.min(1.0, {root_duration:.3f} / {target:.3f})); }} catch (e) {{}}\n"
             f"    try {{ _r_tl.duration({target:.3f}); }} catch (e) {{}}\n"
             f"    try {{\n"
             f"      _r_tl.fromTo('{root_selector}', {{scale: 1.0}}, {{scale: 1.12, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: {cycles}, ease: 'sine.inOut'}}, 0);\n"
