@@ -147,10 +147,9 @@ def _promote_to_canonical(canonical_script: Path, normalized: Dict[str, Any]) ->
 
 
 def _has_required_compositions(project_dir: Path) -> bool:
-    return all((project_dir / path).is_file() and (project_dir / path).stat().st_size > 0 for path in (
-        "hyperframes/index.html",
-        "hyperframes_reels/index.html",
-    ))
+    has_full = any((project_dir / p / "index.html").is_file() and (project_dir / p / "index.html").stat().st_size > 0 for p in ("hyperframes", "Hyperframes"))
+    has_reels = any((project_dir / p / "index.html").is_file() and (project_dir / p / "index.html").stat().st_size > 0 for p in ("hyperframes_reels", "Hyperframes_reels"))
+    return has_full and has_reels
 
 
 def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int = 0, require_compositions: bool = False) -> bool:

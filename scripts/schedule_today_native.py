@@ -61,6 +61,23 @@ def main():
             print(f"failed {proj}: missing publish_metadata.json")
             failed = True
             continue
+        # Strict validation gate: Ensure project has passed validation_status.json in project dir
+        vstatus_path = project_dir / "validation_status.json"
+        if not vstatus_path.is_file():
+            print(f"failed {proj}: strict validation status missing ({vstatus_path})")
+            failed = True
+            continue
+        try:
+            v_data = json.loads(vstatus_path.read_text(encoding="utf-8"))
+            last_entry = v_data[-1] if isinstance(v_data, list) and v_data else v_data if isinstance(v_data, dict) else {}
+            if last_entry.get("status") != "PASS" or not last_entry.get("strict_quality_pass"):
+                print(f"failed {proj}: strict validation not passed (status={last_entry.get('status')})")
+                failed = True
+                continue
+        except Exception as err:
+            print(f"failed {proj}: error reading validation_status.json ({err})")
+            failed = True
+            continue
         topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
         meta_status = topic_meta.get("status","")
         if meta_status in ("published", "scheduled"):
@@ -68,7 +85,11 @@ def main():
             failed = True
             continue
         yt_rel = topic_meta.get("yt_shorts")
+        if isinstance(yt_rel, dict):
+            yt_rel = yt_rel.get("path") or yt_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
         fb_rel = topic_meta.get("fb_video", topic_meta.get("fb_reels"))
+        if isinstance(fb_rel, dict):
+            fb_rel = fb_rel.get("path") or fb_rel.get("file") or "renders/final_full_vi_9x16.mp4"
         asset_path = project_dir / yt_rel if yt_rel else None
         if not asset_path or not asset_path.is_file():
             print(f"failed {proj}: missing YouTube asset file {asset_path}")
@@ -101,7 +122,7 @@ def main():
                 try:
                     r = MetaPublisher().execute({"video_path":str(project_dir/fb_rel),"caption":topic_meta.get("title",""),"page_id":fb_page_id,"post_to_facebook":True,"post_to_instagram":False,"scheduled_publish_time":epoch})
                     if r.success:
-                        store.mark_scheduled(fb_key, video_id=((r.data or {}).get("publish_log",{}).get("entries",[{}])[0].get("video_id")), scheduled_for=scheduled_for)
+                        store.mark_scheduled(fb_key, video_id=((r.data or {}).get("publish_log",{}).get("entries",[{}])[0].get("video_id")), video_url=None, scheduled_for=scheduled_for)
                         print(f"FB scheduled {proj} {scheduled_for}")
                     else:
                         store.mark_failed(fb_key, r.error)
