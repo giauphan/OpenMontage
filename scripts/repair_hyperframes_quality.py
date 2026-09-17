@@ -485,13 +485,14 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         try:
             scenes_data = json.loads(json_str)
             if isinstance(scenes_data, list) and len(scenes_data) > 0:
-                max_end = max((float(s.get("start", 0)) + float(s.get("duration", 0))) for s in scenes_data)
+                max_end = max((float(s.get("start", 0)) + float(s.get("duration", s.get("end", 0) - s.get("start", 0)))) for s in scenes_data)
                 if max_end > 0:
                     s_scale = target / max_end
                     if abs(s_scale - 1.0) >= 0.01:
                         for s in scenes_data:
                             if "start" in s: s["start"] = round(float(s["start"]) * s_scale, 3)
                             if "duration" in s: s["duration"] = round(float(s["duration"]) * s_scale, 3)
+                            if "end" in s: s["end"] = round(float(s["end"]) * s_scale, 3)
                         new_scenes = json.dumps(scenes_data, ensure_ascii=False)
                         new_scenes = re.sub(r'"([a-zA-Z0-9_]+)":', r'\1:', new_scenes)
                         body = body[:scenes_match.start(1)] + new_scenes + body[scenes_match.end(1):]
