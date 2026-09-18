@@ -507,11 +507,6 @@ def publish_batch(
 
 
 def validate_project_quality(project_path: Path, strict: bool = False) -> None:
-    # TEMPORARILY DISABLE STRICT VALIDATION FOR TESTING SINGLE-PLATFORM FIX
-    print("⚠️  STRICT VALIDATION TEMPORARILY DISABLED FOR TESTING")
-    print("⚠️  Skipping all strict validation to test single-platform flow")
-    return
-    
     root = Path(__file__).resolve().parents[1]
 
     # Step 1: Validate metadata text fields (hashtags, shell syntax, placeholders)
