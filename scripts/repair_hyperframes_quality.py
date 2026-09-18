@@ -328,7 +328,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         html = re.sub(r'<audio\b[^>]*\bid=["\']bg-audio["\'][^>]*>\s*(?:</audio>)?\s*', '', html)
 
     if not re.search(r"<audio\b[^>]*\bid=[\"']narration[\"']", html):
-        root_open = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+        root_open = re.search(r"<(?:div|html)\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root_open:
             raise ValueError(f"{path}: missing composition root for narration audio binding")
         # Use reels narration for reels composition
@@ -410,7 +410,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         )
         html = html[:style_match.end()] + pulse_css + html[style_match.end():]
     if strict:
-        root = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+        root = re.search(r"<(?:div|html)\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root:
             raise ValueError(f"{path}: missing composition root for strict timeline repair")
         if "data-no-timeline" not in root.group(0) and "window.__timelines[" not in html:
@@ -424,7 +424,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
 
 def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     """Scale composition timings and GSAP animations so visual timeline matches narration length."""
-    root_open = re.search(r"<div\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+    root_open = re.search(r"<(?:div|html)\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
     if not root_open:
         raise ValueError(f"{path}: missing composition root for timeline alignment")
     root_duration_match = re.search(r"\bdata-duration=[\"']([0-9.]+)[\"']", root_open.group(0))
@@ -532,7 +532,12 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
                 root_selector = f"#{candidate_id}"
                 break
     if not root_selector:
-        root_selector = "#stage"
+        # If no explicit ID exists, target the data-composition-id attribute directly
+        # or fallback to body. Both exist and will animate the canvas successfully.
+        if comp_tag:
+            root_selector = "[data-composition-id]"
+        else:
+            root_selector = "body"
 
     # Retarget existing injection if needed
     if "__repair_scale_injected" in body:
@@ -618,12 +623,12 @@ def declared_dimensions(html: str) -> dict[str, tuple[int, int]]:
         if width and height:
             found["meta viewport"] = (int(width.group(1)), int(height.group(1)))
 
-    for index, rule in enumerate(re.finditer(r"#root\s*\{([^{}]*)\}", html), start=1):
+    for index, rule in enumerate(re.finditer(r"(?:#root|body|html)\b[^{]*\{([^{}]*)\}", html), start=1):
         body = rule.group(1)
         width = re.search(r"(?<![-\w])width\s*:\s*(\d+)px", body)
         height = re.search(r"(?<![-\w])height\s*:\s*(\d+)px", body)
         if width and height:
-            found[f"#root CSS rule {index}"] = (int(width.group(1)), int(height.group(1)))
+            found[f"CSS rule {index}"] = (int(width.group(1)), int(height.group(1)))
 
     return found
 
