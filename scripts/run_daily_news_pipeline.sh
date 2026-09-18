@@ -64,14 +64,16 @@ if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output d
     --reason "NewsNow fetch failed, using fallback feed" --attempt 1 --max-attempts 1 || true
 fi
 
-# Step 1: Select and initialize exactly three distinct current topics.
+# Step 1: Select and initialize distinct current topics.
 PRODUCE_LOG="$ROOT/logs/news_produce_$(date -u +%Y%m%dT%H%M%SZ).log"
-"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 3 2>&1 | tee "$PRODUCE_LOG"
+"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG" || true
 mapfile -t PROJECT_IDS < <(grep '^PROJECT_ID=' "$PRODUCE_LOG" | cut -d= -f2)
-if [ "${#PROJECT_IDS[@]}" -ne 3 ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: Expected three initialized projects, got ${#PROJECT_IDS[@]}."
+if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
   exit 1
 fi
+
+SUCCESSFUL_COUNT=0
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   cd "$ROOT"
@@ -577,6 +579,12 @@ if [ -f "renders/final_full_vi_9x16.mp4" ]; then
 fi
 if [ -f "renders/final_reels_vi_9x16.mp4" ]; then
   "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_reels_vi_9x16.mp4"
+fi
+
+SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))
+if [ $SUCCESSFUL_COUNT -ge 3 ]; then
+  echo "[$(date -u +%FT%TZ)] Successfully generated and validated 3 projects. Breaking loop early."
+  break
 fi
 
 done
