@@ -254,6 +254,13 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             )
         else:
             raise ValueError(f"{path}: missing style element for font bindings")
+    # Remove any header bars, logo badges, or top ticker banners
+    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bheader-bar\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
+    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bbrand-logo\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
+    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\blive-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
+    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\btag-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
+    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bbadge-label\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
+
     # Strict transparency: NEVER inject display:none for news source attribution.
     # Remove any badge nodes that remain from director artifacts, but do NOT
     # inject a hide rule. The retired "hide all sources" behavior was the
