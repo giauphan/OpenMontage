@@ -452,7 +452,7 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         body,
     )
     body = re.sub(
-        r"((?:let|var|const)\s+totalDur(?:ation)?\s*=\s*)[0-9.]+",
+        r"((?:let|var|const)\s+total(?:Dur(?:ation)?)?\s*=\s*)[0-9.]+",
         lambda m: f"{m.group(1)}{target:.3f}",
         body,
     )
@@ -476,7 +476,7 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     body = re.sub(r'((?:let|var|const)\s+SCENE_DURATIONS\s*=\s*)(\[[0-9.,\s]+\])(\s*;)', scale_array, body)
 
     # Scale JS array of scenes = [{start: 0, duration: 4}, ...]
-    scenes_match = re.search(r"(?:let|var|const)\s+scenes\s*=\s*(\[\s*\{[^\[\]]+?\}\s*\])\s*;", body, re.DOTALL)
+    scenes_match = re.search(r"(?:let|var|const)\s+(?:scenes|sections)\s*=\s*(\[\s*\{[^\[\]]+?\}\s*\])\s*;", body, re.DOTALL)
     if scenes_match:
         import json
         json_str = scenes_match.group(1)

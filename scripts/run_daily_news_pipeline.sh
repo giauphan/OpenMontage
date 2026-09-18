@@ -318,7 +318,7 @@ if [ -s "$narration" ] && command -v "$PY" >/dev/null 2>&1; then
       "$narration" \
       "$project_root/hyperframes/assets/subtitles.srt" \
       "$project_root/hyperframes/assets/word_timestamps.json" \
-      3 || { echo "[$(date -u +%FT%TZ)] ERROR: Subtitle generation failed" >&2; exit 1; }
+      3 || { echo "[$(date -u +%FT%TZ)] ERROR: Subtitle generation failed" >&2; return 1; }
     echo "[$(date -u +%FT%TZ)] Vietnamese subtitles generated"
 
     # Generate reels subtitles if audio exists.
@@ -328,7 +328,7 @@ if [ -s "$narration" ] && command -v "$PY" >/dev/null 2>&1; then
         "$reels_narration" \
         "$project_root/hyperframes_reels/assets/subtitles.srt" \
         "$project_root/hyperframes_reels/assets/word_timestamps.json" \
-        3 || { echo "[$(date -u +%FT%TZ)] ERROR: Reels subtitle generation failed"; exit 1; }
+        3 || { echo "[$(date -u +%FT%TZ)] ERROR: Reels subtitle generation failed"; return 1; }
     fi
   else
     echo "[$(date -u +%FT%TZ)] WARNING: No subtitle text available" >&2
@@ -336,12 +336,12 @@ if [ -s "$narration" ] && command -v "$PY" >/dev/null 2>&1; then
 fi
   if [ ! -s "$narration" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
-    exit 1
+    return 1
   fi
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
   if ! awk -v d="$narration_duration" 'BEGIN{exit !(d > 5)}'; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration duration ${narration_duration}s <=5s for $PROJECT_ID"
-    exit 1
+    return 1
   fi
   if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
     echo "[$(date -u +%FT%TZ)] WARN: background music asset missing for $PROJECT_ID, using fallback"
@@ -356,7 +356,7 @@ fi
   fi
   if cmp -s "$narration" "$project_root/assets/music-bg.mp3"; then
     echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID"
-    exit 1
+    return 1
   fi
   # Reels/Shorts must stay under the 60s platform limit. Derive a capped
   # narration for the reels composition so its aligned timeline is <=60s.
@@ -417,14 +417,21 @@ echo "[$(date -u +%FT%TZ)] CLAUDE Agent Strict Quality Validation Started"
 VALIDATE_RENDER_EXIT=$?
 
 if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: Base render validation failed" >&2
-  exit 1
+  echo "[$(date -u +%FT%TZ)] ERROR: Base render validation failed for $PROJECT_ID" >&2
+  continue
 fi
 
 # Check if videos exist
+RENDER_MISSING=0
 for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
-  [ -s "$render" ] || { echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render" >&2; exit 1; }
+  if [ ! -s "$render" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render for $PROJECT_ID" >&2
+    RENDER_MISSING=1
+  fi
 done
+if [ $RENDER_MISSING -ne 0 ]; then
+  continue
+fi
 
 # Step 2: Create publish_metadata.json first (needed for CLAUDE validation)
 TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
@@ -503,7 +510,7 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "claude_validation" --project-id "$PROJECT_ID" \
     --error-type "VALIDATION_FAILED" --message "Claude agent validation failed after $MAX_RETRIES attempts" \
     --attempt "$MAX_RETRIES" --max-attempts "$MAX_RETRIES" || true
-  exit 1
+  continue
 fi
 
 if [ "$FEED_STALE" -eq 1 ]; then

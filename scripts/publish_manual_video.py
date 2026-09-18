@@ -154,10 +154,19 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
 def canonical_platform_records_published(store: PublishStore, *, date: str, topic: str) -> bool:
     routes = (("youtube", "short"), ("instagram", "reels"), ("facebook", "reels"))
     try:
+        # return all(
+        multi_platform = os.environ.get("MULTI_PLATFORM", "0") == "1"
+        instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
+        if instagram_mode:
+            enabled_routes = (("instagram", "reels"),)
+        elif multi_platform:
+            enabled_routes = (("youtube", "short"), ("instagram", "reels"), ("facebook", "reels"))
+        else:
+            enabled_routes = (("youtube", "short"),)
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
             and record.get("status") == "published"
-            for platform, kind in routes
+            for platform, kind in enabled_routes
         )
     except Exception as exc:
         print(f"Failed to verify Firebase publish completion: {exc}", file=sys.stderr)

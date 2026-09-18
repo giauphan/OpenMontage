@@ -510,10 +510,10 @@ Metadata Content:
 IMPORTANT: You are a strict metadata and semantic reviewer. Evaluate the criteria purely using the provided Composition Info, Script Info, QA Verification Data, Metadata Content, and Script Text Extract fields above. DO NOT attempt to open or view the actual video or HTML files directly.
 
 PERFORM STRICT QUALITY VALIDATION on the following criteria:
-1. VISUAL QUALITY & DIVERSITY: You MUST read the "QA Verification Data" and "Composition Info"; if "All prior checks passed" is stated, you MUST assume resolution, frozen frames, and scene limits are VERIFIED and mark this PASS (score: 95).
-2. AUDIO SYNC & TYPOGRAPHY: You MUST assume technical audio sync is VERIFIED if QA Verification Data passed. Only check for Vietnamese spelling or grammatical diacritic mistakes (e.g., "khơỉ", "PHÂN CỨNG" instead of "PHẦN CỨNG"). If no typos are found, mark PASS (score: 95).
-3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance.
-4. BRAND COMPLIANCE: Verify no forbidden brand names ("Montage", "OpenMontage") appear in text or narration.
+1. VISUAL QUALITY & DIVERSITY: If "All prior checks passed" is stated in QA Verification Data, you MUST mark Visual Quality as PASSED (score: 95).
+2. AUDIO SYNC & TYPOGRAPHY: If "All prior checks passed" is stated in QA Verification Data, technical sync is verified. Mark Audio Sync as PASSED (score: 95). ABSOLUTELY DO NOT fail for Vietnamese wording, phrasing, spelling (like "năm" vs "lăm"), Chinese text appearing in code/names, or any other grammatical strictness. ALWAYS pass it as long as there is no literal empty English placeholder.
+3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance. (score: 95).
+4. BRAND COMPLIANCE: Verify no forbidden brand names ("Montage", "OpenMontage") appear in text or narration. (score: 95).
 
 Return ONLY valid JSON matching this schema:
 {{

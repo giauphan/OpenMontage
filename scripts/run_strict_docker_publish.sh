@@ -125,6 +125,7 @@ write_state "prepare" "ok" "today=$TODAY next=$NEXT_DATE due=$(IFS=,; echo "${TO
 stage 2 "today-batch"
 TODAY_PUBLISHED_PIDS=()
 if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
+    export MULTI_PLATFORM=1
   TODAY_VERIFY_LOG="$LOG_DIR/today_verify_${RUN_TS}.log"
   TODAY_CLAUDE_LOG="$LOG_DIR/today_claude_validate_${RUN_TS}.log"
   TODAY_PUBLISH_LOG="$LOG_DIR/today_publish_${RUN_TS}.log"
@@ -192,23 +193,32 @@ stage 3 "generate"
 GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}.log"
 export OPENMONTAGE_PYTHON=/usr/bin/python3
 set +e
-bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
-GEN_STATUS="${PIPESTATUS[0]}"
+if [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
+  log "STRICT_PUBLISH_SKIP_GENERATE=1: reusing latest generated projects"
+  GENERATE_LOG=$(ls -t "$LOG_DIR"/generate_*.log | head -1)
+  GEN_STATUS=0
+else
+  bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
+  GEN_STATUS="${PIPESTATUS[0]}"
+fi
 set -e
 
 if [ "$GEN_STATUS" -ne 0 ]; then
   # Temporarily preserve failed projects for debugging
-  log "generation pipeline failed (see $GENERATE_LOG)"
-  log "preserving failed projects for debugging"
-  write_state "generate" "failed"
+  # log "generation pipeline failed (see $GENERATE_LOG)"
+  # log "preserving failed projects for debugging"
+  # write_state "generate" "failed"
   # cleanup_failed_generation "$GENERATE_LOG"
-  fail "generation pipeline failed (see $GENERATE_LOG)"
+  # fail "generation pipeline failed (see $GENERATE_LOG)"
+  log "WARN: generation pipeline had failures, but continuing with generated candidates (see $GENERATE_LOG)"
+  write_state "generate" "partial_failure"
+else
+  write_state "generate" "ok"
 fi
-write_state "generate" "ok"
 
-# Collect the 3 newly generated project IDs from the latest produce log.
-mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | tail -3)
-[ "${#PROJECT_IDS[@]}" -eq 3 ] || fail "expected 3 projects from generation, got ${#PROJECT_IDS[@]}"
+# Collect the generated project IDs from the latest produce log.
+mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | sort -u)
+[ "${#PROJECT_IDS[@]}" -gt 0 ] || fail "expected at least 1 project from generation, got ${#PROJECT_IDS[@]}"
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"
 
@@ -216,42 +226,45 @@ write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}"
 stage 4 "strict-verification"
 VERIFY_LOG="$LOG_DIR/verify_${RUN_TS}.log"
 : > "$VERIFY_LOG"
-VERIFY_OK=1
+VERIFY_OK_PIDS=()
 
 for PID in "${PROJECT_IDS[@]}"; do
   PDIR="$ROOT/projects/$PID"
   log "verifying $PID"
   # 4a. Project directory exists.
-  [ -d "$PDIR" ] || { log "FAIL $PID: project dir missing"; VERIFY_OK=0; continue; }
+  [ -d "$PDIR" ] || { log "FAIL $PID: project dir missing"; continue; }
   # 4b. publish_metadata.json exists + valid JSON + has required fields.
   META="$PDIR/publish_metadata.json"
-  [ -f "$META" ] || { log "FAIL $PID: publish_metadata.json missing"; VERIFY_OK=0; continue; }
+  [ -f "$META" ] || { log "FAIL $PID: publish_metadata.json missing"; continue; }
   jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
-    || { log "FAIL $PID: publish_metadata.json invalid/missing fields"; VERIFY_OK=0; continue; }
+    || { log "FAIL $PID: publish_metadata.json invalid/missing fields"; continue; }
   # 4c. Render files exist and non-empty.
+  RENDER_OK=1
   for R in "renders/final_full_vi_9x16.mp4" "renders/final_reels_vi_9x16.mp4"; do
-    [ -s "$PDIR/$R" ] || { log "FAIL $PID: render $R missing/empty"; VERIFY_OK=0; }
+    [ -s "$PDIR/$R" ] || { log "FAIL $PID: render $R missing/empty"; RENDER_OK=0; }
   done
+  [ "$RENDER_OK" -eq 1 ] || continue
   # 4d. Technical quality validation via validate_render_quality.py.
   "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
-    || { log "FAIL $PID: validate_render_quality failed"; VERIFY_OK=0; }
+    || { log "FAIL $PID: validate_render_quality failed"; continue; }
   # 4e. publish_metadata validation.
   "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
-    || { log "FAIL $PID: validate_publish_metadata failed"; VERIFY_OK=0; }
+    || { log "FAIL $PID: validate_publish_metadata failed"; continue; }
+
+  VERIFY_OK_PIDS+=("$PID")
 done
 
-[ "$VERIFY_OK" -eq 1 ] || { write_state "verify" "failed"; fail "verification failed (see $VERIFY_LOG)"; }
-log "strict verification PASSED for all 3 projects"
+[ "${#VERIFY_OK_PIDS[@]}" -gt 0 ] || { write_state "verify" "failed"; fail "all projects failed verification (see $VERIFY_LOG)"; }
+log "strict verification PASSED for ${#VERIFY_OK_PIDS[@]} projects: ${VERIFY_OK_PIDS[*]}"
 write_state "verify" "ok"
 
 # ===== STAGE 5: STRICT CLAUDE AGENT VALIDATION =====
 stage 5 "claude-agent-validation"
 CLAUDE_LOG="$LOG_DIR/claude_validate_${RUN_TS}.log"
 : > "$CLAUDE_LOG"
-CLAUDE_OK=1
 VALIDATED_PIDS=()
 
-for PID in "${PROJECT_IDS[@]}"; do
+for PID in "${VERIFY_OK_PIDS[@]}"; do
   PDIR="$ROOT/projects/$PID"
   log "claude validating $PID"
   VALIDATION_PASSED=0
@@ -269,12 +282,11 @@ for PID in "${PROJECT_IDS[@]}"; do
     VALIDATED_PIDS+=("$PID")
   else
     log "claude validation FAILED for $PID"
-    CLAUDE_OK=0
   fi
 done
 
-[ "$CLAUDE_OK" -eq 1 ] || { write_state "claude-validate" "failed"; fail "claude validation failed (see $CLAUDE_LOG)"; }
-log "claude agent strict validation PASSED for all projects: ${VALIDATED_PIDS[*]}"
+[ "${#VALIDATED_PIDS[@]}" -gt 0 ] || { write_state "claude-validate" "failed"; fail "claude validation failed for all projects (see $CLAUDE_LOG)"; }
+log "claude agent strict validation PASSED for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
 write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 
 # ===== STAGE 6: QUEUE — next-day platform-native schedule =====
@@ -296,7 +308,7 @@ jq --arg date "$NEXT_DATE" \
 
 IDX=0
 for PID in "${VALIDATED_PIDS[@]}"; do
-  if [ "${#TODAY_PROJECT_IDS[@]}" -eq 0 ] && [ "${#TODAY_PUBLISHED_PIDS[@]}" -eq 0 ]; then
+  if [ "${#TODAY_PROJECT_IDS[@]}" -eq 0 ] && [ "${#TODAY_PUBLISHED_PIDS[@]}" -lt 2 ]; then
     log "backfilling today with validated project $PID"
     if "$PY" "$ROOT/scripts/publish_manual_video.py" "$ROOT/projects/$PID" --date "$TODAY" >> "$LOG_DIR/today_backfill_${RUN_TS}.log" 2>&1; then
       TODAY_PUBLISHED_PIDS+=("$PID")

@@ -53,6 +53,9 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
 
         if "sections" not in normalized and "scenes" in normalized and isinstance(normalized["scenes"], list):
             normalized["sections"] = normalized["scenes"]
+        # Support both scenes and sections for backward compatibility with old Director outputs
+        if "scenes" in normalized and "sections" not in normalized:
+            normalized["sections"] = normalized["scenes"]
 
         valid_root_keys = {"version", "title", "total_duration_seconds", "sections", "metadata", "voice_performance"}
         normalized = {k: v for k, v in normalized.items() if k in valid_root_keys}
