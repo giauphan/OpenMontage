@@ -26,6 +26,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.narration_text import validate_vietnamese_narration
+
 FULL_RENDER = "final_full_vi_9x16.mp4"
 REELS_RENDER = "final_reels_vi_9x16.mp4"
 
@@ -163,9 +169,14 @@ def validate_video(
         return [f"{narration}: missing or empty"]
     if path.stat().st_mtime_ns <= narration.stat().st_mtime_ns:
         errors.append(f"{path}: render is stale relative to narration")
-    if narration_text and narration_text.is_file():
-        if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
-            errors.append(f"{narration}: narration audio is stale relative to text {narration_text}")
+    if narration_text:
+        if not narration_text.is_file():
+            errors.append(f"{narration_text}: missing narration text")
+        else:
+            language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
+            errors.extend(f"{narration_text}: {error}" for error in language_errors)
+            if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
+                errors.append(f"{narration}: narration audio is stale relative to text {narration_text}")
     try:
         rendered = probe(path, ffprobe)
         spoken = probe(narration, ffprobe)
@@ -304,8 +315,6 @@ def main() -> int:
     args = parser.parse_args()
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
     narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
-    if not narration_text.is_file():
-        narration_text = None
 
     full_narration = resolve_narration(args.project_dir, "narration.mp3")
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")

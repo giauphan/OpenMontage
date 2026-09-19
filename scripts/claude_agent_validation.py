@@ -156,7 +156,7 @@ def parse_claude_review(response_text: str) -> dict:
     if review is None:
         review = _pick_review_dict(values)
     if not isinstance(review, dict):
-        raise ValueError("Claude CLI review invalid")
+        raise ValueError(f"Claude CLI review invalid: {repr(response_text)}")
     return review
 
 try:

@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from scripts.publish_config import load_config, publish_timezone
+from tools.narration_text import validate_vietnamese_narration
 from tools.publish_store import PublishStore, publish_key
 from scripts.validate_render_quality import PORTRAIT_DIMENSIONS, resolve_narration, validate_video
 from tools.publishers.platform_routes import (
@@ -135,12 +136,17 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         "narration.mp3",
     )
     narration_text = project_dir / "artifacts" / "narration_vi_text.txt"
+    if not narration_text.is_file():
+        raise ValueError(f"missing narration text: {narration_text}")
+    language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
+    if language_errors:
+        raise ValueError("; ".join(language_errors))
     errors = validate_video(
         video_path,
         narration,
         ffprobe,
         ffmpeg,
-        30.0,
+        14.0,
         3.0,
         PORTRAIT_DIMENSIONS,
         60.0 if platform in ("youtube", "instagram") else None,

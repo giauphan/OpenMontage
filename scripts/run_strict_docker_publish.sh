@@ -308,7 +308,7 @@ jq --arg date "$NEXT_DATE" \
 
 IDX=0
 for PID in "${VALIDATED_PIDS[@]}"; do
-  if [ "${#TODAY_PROJECT_IDS[@]}" -eq 0 ] && [ "${#TODAY_PUBLISHED_PIDS[@]}" -lt 2 ]; then
+  if false; then
     log "backfilling today with validated project $PID"
     if "$PY" "$ROOT/scripts/publish_manual_video.py" "$ROOT/projects/$PID" --date "$TODAY" >> "$LOG_DIR/today_backfill_${RUN_TS}.log" 2>&1; then
       TODAY_PUBLISHED_PIDS+=("$PID")

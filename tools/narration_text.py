@@ -38,7 +38,7 @@ _DEFAULT_TERMS: dict[str, str] = {
     "Node.js": "Nốt Jây-ét",
     "React": "Ri-át",
     "GitHub": "Gít-hấp",
-    "OpenAI": "Ô-pừn Ây Âi",
+    "OpenAI": "Ô-pừn ây-ai",
     "ChatGPT": "Chát G P T",
     "API": "Ây Pi Ây",
     "REST API": "Rét Ây Pi Ây",
@@ -139,6 +139,42 @@ _FORBIDDEN_PATTERN = re.compile(
 )
 
 _ACRONYM_PATTERN = re.compile(r"\b(?:[A-Z][A-Z0-9]{0,5}|[A-Z]\d[A-Z]?\d?)\b")
+
+# Lightweight fail-closed language gate. It is intentionally lexical rather
+# than model-based: narration generation must not depend on network language
+# detection, and common English technical terms are allowed via the lexicon.
+_VIETNAMESE_MARKERS = frozenset({
+    "ai", "bạn", "báo", "bằng", "bị", "các", "cách", "cần", "chỉ", "cho",
+    "chúng", "có", "của", "đã", "đang", "đây", "đến", "để", "điều", "đó",
+    "được", "giả", "giúp", "hệ", "hiện", "họ", "khi", "không", "là", "làm",
+    "mà", "một", "này", "những", "người", "nhưng", "nó", "phải", "qua", "sẽ",
+    "sự", "tạo", "thành", "theo", "thể", "thống", "tin", "trong", "trí", "từ",
+    "và", "vào", "về", "với", "rất", "tiện", "công", "động", "hoạt", "năm",
+})
+_VIETNAMESE_DIACRITICS = "ĐđĂăÂâÊêÔôƠơƯưÁáÀàẢảÃãẠạẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẾếỀềỂểỄễỆệỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỨứỪừỬửỮữỰựÝýỲỳỶỷỸỹỴỵ"
+_WORD_PATTERN = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def validate_vietnamese_narration(text: str) -> list[str]:
+    """Reject narration that is not predominantly Vietnamese prose."""
+    try:
+        normalized = normalize_text(text)
+    except ValueError as exc:
+        return [str(exc)]
+
+    words = [word.casefold() for word in _WORD_PATTERN.findall(normalized)]
+    if not words:
+        return ["narration contains no words"]
+
+    marker_count = sum(word in _VIETNAMESE_MARKERS for word in words)
+    has_vietnamese_diacritic = any(ch in _VIETNAMESE_DIACRITICS for ch in normalized)
+
+    # A Vietnamese narration must contain both Vietnamese diacritics and at
+    # least one common Vietnamese word. This rejects an English script that
+    # happens to contain the technical term "AI".
+    if not has_vietnamese_diacritic or marker_count == 0:
+        return ["narration must be Vietnamese (missing Vietnamese diacritics or common words)"]
+    return []
 
 
 def _load_lexicon() -> list[tuple[str, str]]:
@@ -259,6 +295,9 @@ def prepare_narration(text: str, use_ssml: bool = False) -> str:
     normalized = normalize_text(text)
     if not normalized:
         raise ValueError("narration text is empty after normalization")
+    language_errors = validate_vietnamese_narration(normalized)
+    if language_errors:
+        raise ValueError(language_errors[0])
     localized = localize_pronunciation(normalized)
     return re.sub(r" {2,}", " ", localized).strip()
 

@@ -8,6 +8,7 @@ from tools.narration_text import (
     normalize_text,
     prepare_narration,
     validate_display_text,
+    validate_vietnamese_narration,
 )
 
 
@@ -110,3 +111,9 @@ def test_validate_display_rejects_replacement_and_zero_width():
 def test_localize_leaves_plain_vietnamese():
     text = "Trí tuệ nhân tạo đang phát triển."
     assert localize_pronunciation(text) == text
+
+
+def test_rejects_mostly_english():
+    english_text = "Are you sure that was your idea, or did the AI put it there? Chatbots are now experts at changing people's minds."
+    with pytest.raises(ValueError, match="narration must be Vietnamese"):
+        prepare_narration(english_text)
