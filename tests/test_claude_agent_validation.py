@@ -161,6 +161,27 @@ class TestClaudeReviewEnvelope:
         with pytest.raises(ValueError, match="Claude CLI error"):
             parse_claude_review(json.dumps({"is_error": True, "result": "failure"}))
 
+    def test_parse_claude_review_accepts_telemetry_before_review(self):
+        from scripts.claude_agent_validation import parse_claude_review
+
+        review = {
+            "visual_quality": {"passed": True, "score": 94, "notes": "clear"},
+            "audio_sync": {"passed": True, "score": 92, "notes": "aligned"},
+            "content_appropriateness": {"passed": True, "score": 96, "notes": "safe"},
+            "brand_compliance": {"passed": True, "score": 91, "notes": "consistent"},
+            "overall_passed": True,
+        }
+        response = json.dumps({"duration_api_ms": 4444, "stop_reason": "end_turn"}) + "\n" + json.dumps(review)
+
+        assert parse_claude_review(response) == review
+
+    def test_parse_claude_review_rejects_telemetry_only(self):
+        from scripts.claude_agent_validation import parse_claude_review
+
+        telemetry = {"duration_api_ms": 4444, "stop_reason": "end_turn", "session_id": "test"}
+        with pytest.raises(ValueError, match="review invalid"):
+            parse_claude_review(json.dumps(telemetry))
+
     def test_parse_claude_review_rejects_missing_result(self):
         from scripts.claude_agent_validation import parse_claude_review
 

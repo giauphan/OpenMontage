@@ -18,6 +18,7 @@ STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
+GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3 || command -v python || true)}"
 if [ -z "$PY" ] && [ -x "$ROOT/.venv/bin/python" ]; then
@@ -190,35 +191,42 @@ write_state "today-batch" "ok" "published=$(IFS=,; echo "${TODAY_PUBLISHED_PIDS[
 
 # ===== STAGE 3: GENERATE — produce next-day video and assets =====
 stage 3 "generate"
-GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}.log"
 export OPENMONTAGE_PYTHON=/usr/bin/python3
-set +e
+PROJECT_IDS=()
+GENERATION_ATTEMPT=0
+GEN_STATUS=1
 if [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
-  log "STRICT_PUBLISH_SKIP_GENERATE=1: reusing latest generated projects"
   GENERATE_LOG=$(ls -t "$LOG_DIR"/generate_*.log | head -1)
+  [ -f "$GENERATE_LOG" ] || fail "STRICT_PUBLISH_SKIP_GENERATE=1 but no generation log exists"
+  mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | sort -u)
   GEN_STATUS=0
+  log "STRICT_PUBLISH_SKIP_GENERATE=1: reusing projects from $GENERATE_LOG"
 else
-  bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
-  GEN_STATUS="${PIPESTATUS[0]}"
+  while [ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]; do
+    GENERATION_ATTEMPT=$((GENERATION_ATTEMPT + 1))
+    GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}_attempt${GENERATION_ATTEMPT}.log"
+    log "generation attempt $GENERATION_ATTEMPT/$GENERATION_RETRIES"
+    set +e
+    bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
+    GEN_STATUS="${PIPESTATUS[0]}"
+    set -e
+    mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | sort -u)
+    if [ "$GEN_STATUS" -eq 0 ] && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
+      break
+    fi
+    log "generation attempt $GENERATION_ATTEMPT failed (exit=$GEN_STATUS projects=${#PROJECT_IDS[@]})"
+  done
 fi
-set -e
 
+[ "${#PROJECT_IDS[@]}" -gt 0 ] || {
+  write_state "generate" "failed"
+  fail "expected at least 1 project from generation after $GENERATION_ATTEMPT attempts"
+}
 if [ "$GEN_STATUS" -ne 0 ]; then
-  # Temporarily preserve failed projects for debugging
-  # log "generation pipeline failed (see $GENERATE_LOG)"
-  # log "preserving failed projects for debugging"
-  # write_state "generate" "failed"
-  # cleanup_failed_generation "$GENERATE_LOG"
-  # fail "generation pipeline failed (see $GENERATE_LOG)"
-  log "WARN: generation pipeline had failures, but continuing with generated candidates (see $GENERATE_LOG)"
   write_state "generate" "partial_failure"
 else
   write_state "generate" "ok"
 fi
-
-# Collect the generated project IDs from the latest produce log.
-mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | sort -u)
-[ "${#PROJECT_IDS[@]}" -gt 0 ] || fail "expected at least 1 project from generation, got ${#PROJECT_IDS[@]}"
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"
 
@@ -285,7 +293,10 @@ for PID in "${VERIFY_OK_PIDS[@]}"; do
   fi
 done
 
-[ "${#VALIDATED_PIDS[@]}" -gt 0 ] || { write_state "claude-validate" "failed"; fail "claude validation failed for all projects (see $CLAUDE_LOG)"; }
+[ "${#VALIDATED_PIDS[@]}" -gt 0 ] || {
+  write_state "claude-validate" "failed"
+  fail "claude validation failed for all projects (see $CLAUDE_LOG)"
+}
 log "claude agent strict validation PASSED for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
 write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 

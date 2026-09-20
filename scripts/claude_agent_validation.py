@@ -91,34 +91,30 @@ def _json_values(text: str) -> list:
 def _is_review_dict(value) -> bool:
     if not isinstance(value, dict):
         return False
-    if not all(key in value for key in REVIEW_KEYS):
-        return False
-    return all(isinstance(value.get(key), dict) for key in REVIEW_KEYS if key != "overall_passed")
+    return all(
+        key in value
+        and (key == "overall_passed" or isinstance(value[key], dict))
+        for key in REVIEW_KEYS
+    )
 
 
-def _pick_review_dict(values: list):
-    for value in values:
-        if _is_review_dict(value):
-            return value
-        if isinstance(value, dict):
-            for nested in value.values():
-                if isinstance(nested, dict) and _is_review_dict(nested):
-                    return nested
-                if isinstance(nested, list):
-                    for item in nested:
-                        if _is_review_dict(item):
-                            return item
-                        if isinstance(item, str):
-                            try:
-                                decoded = json.loads(item)
-                                if _is_review_dict(decoded):
-                                    return decoded
-                            except json.JSONDecodeError:
-                                continue
-        if isinstance(value, list):
-            for item in value:
-                if _is_review_dict(item):
-                    return item
+def _pick_review_dict(value):
+    if _is_review_dict(value):
+        return value
+    if isinstance(value, dict):
+        for nested in value.values():
+            if isinstance(nested, str):
+                nested_values = _json_values(nested)
+                review = _pick_review_dict(nested_values)
+            else:
+                review = _pick_review_dict(nested)
+            if review is not None:
+                return review
+    elif isinstance(value, list):
+        for nested in value:
+            review = _pick_review_dict(nested)
+            if review is not None:
+                return review
     return None
 
 
@@ -126,36 +122,18 @@ def parse_claude_review(response_text: str) -> dict:
     if not response_text or not response_text.strip():
         raise ValueError("Claude CLI output was empty")
 
-    # Fallback to older matching logic
     values = _json_values(response_text)
-    envelope = None
-    for value in values:
-        if isinstance(value, dict) and ("result" in value or "is_error" in value):
-            envelope = value
-    if envelope is None:
-        envelope = _pick_review_dict(values)
-
-    if envelope is None:
+    if not values:
         raise ValueError(f"Claude CLI output not valid JSON - Output prefix: {repr(response_text[:100])}")
 
-    if envelope.get("is_error"):
-        raise ValueError(f"Claude CLI error: {envelope.get('result') or 'unknown error'}")
-    if "is_error" in envelope and "result" not in envelope:
-        raise ValueError("Claude CLI result missing")
-    result = envelope.get("result", envelope)
-    if not isinstance(result, (str, dict)):
-        raise ValueError("Claude CLI result missing")
-    if isinstance(result, dict):
-        review = result
-    else:
-        cleaned = result.strip()
-        if cleaned.startswith("```"):
-            cleaned = "\n".join(line for line in cleaned.splitlines() if not line.startswith("```")).strip()
-        review = _pick_review_dict(_json_values(cleaned))
+    for value in values:
+        if isinstance(value, dict) and value.get("is_error") is True:
+            raise ValueError(f"Claude CLI error: {value.get('result') or 'unknown error'}")
+        if isinstance(value, dict) and value.get("is_error") is False and "result" not in value:
+            raise ValueError("Claude CLI result missing")
 
+    review = _pick_review_dict(values)
     if review is None:
-        review = _pick_review_dict(values)
-    if not isinstance(review, dict):
         raise ValueError(f"Claude CLI review invalid: {repr(response_text)}")
     return review
 
