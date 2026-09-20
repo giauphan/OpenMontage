@@ -44,7 +44,7 @@ def test_main_passes_discovered_media_binaries(monkeypatch, tmp_path):
     assert captured["ffmpeg_bin"] == str(ffmpeg)
 
 def test_strict_review_fails_closed_when_claude_cli_is_unavailable(monkeypatch, tmp_path):
-    monkeypatch.setattr(validation.shutil, "which", lambda _: None)
+    monkeypatch.setattr(validation, "resolve_claude_cli", lambda: "")
 
     validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
     results = validator.claude_agent_strict_review(tmp_path / "video.mp4", tmp_path / "publish_metadata.json")

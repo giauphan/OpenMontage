@@ -423,6 +423,8 @@ fi
 
 if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Base render validation failed for $PROJECT_ID" >&2
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "render_validation" --project-id "$PROJECT_ID" \
+    --error-type "RENDER_VALIDATION_FAILED" --message "Base render validation failed" || true
   continue
 fi
 
