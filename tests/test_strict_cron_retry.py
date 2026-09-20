@@ -63,6 +63,32 @@ done
         "import sys\nfrom pathlib import Path\nPath('native-schedule-call').write_text(' '.join(sys.argv), encoding='utf-8')\n",
         encoding="utf-8",
     )
+    (scripts / "publish_active_projects.py").write_text(
+        """import argparse
+import json
+from pathlib import Path
+root = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser()
+parser.add_argument('--slot', required=True)
+parser.add_argument('--date', required=True)
+parser.add_argument('--only-platform')
+args = parser.parse_args()
+schedule = json.loads((root / 'config' / 'publish_schedule.json').read_text(encoding='utf-8'))
+matching = [
+    entry for entry in schedule.get('active_projects', [])
+    if entry.get('publish_date') == args.date and entry.get('publish_time') == args.slot
+]
+if not matching:
+    raise SystemExit(2)
+project = root / 'projects' / matching[0]['project_id']
+if not (project / 'publish_metadata.json').is_file():
+    raise SystemExit(3)
+if not (project / 'renders' / 'final_reels_vi_9x16.mp4').is_file():
+    raise SystemExit(4)
+(root / 'slot-publisher-call').write_text(f'{args.date} {args.slot} {matching[0]["project_id"]}', encoding='utf-8')
+""",
+        encoding="utf-8",
+    )
     (scripts / "pipeline_monitoring.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
     write_executable(scripts / "clear_stale_projects.sh", "#!/usr/bin/env bash\nexit 0\n")
 
@@ -128,3 +154,38 @@ def test_all_validation_failures_leave_schedule_unchanged(tmp_path: Path):
     assert "claude validation failed for all projects" in result.stdout
     assert (config / "publish_schedule.json").read_text(encoding="utf-8") == original
     assert not (tmp_path / "native-schedule-call").exists()
+
+
+def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(1)\n")
+    (scripts / "claude_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+
+    result = run_pipeline(tmp_path, scripts, binaries)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule = json.loads((config / "publish_schedule.json").read_text(encoding="utf-8"))
+    project_id = schedule["active_projects"][0]["project_id"]
+    assert schedule["active_projects"][0]["publish_date"] == tomorrow
+    assert (tmp_path / "projects" / project_id / "publish_metadata.json").is_file()
+    assert (tmp_path / "projects" / project_id / "renders" / "final_reels_vi_9x16.mp4").is_file()
+
+    slot_result = subprocess.run(
+        [
+            "python3",
+            str(scripts / "publish_active_projects.py"),
+            "--slot",
+            "09:15",
+            "--date",
+            tomorrow,
+            "--only-platform",
+            "instagram",
+        ],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert slot_result.returncode == 0, slot_result.stdout + slot_result.stderr
+    assert tomorrow in (tmp_path / "slot-publisher-call").read_text(encoding="utf-8")
