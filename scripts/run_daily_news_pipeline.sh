@@ -595,5 +595,10 @@ done
 # Step 5: (Removed atomic activation; now handled strictly by run_strict_docker_publish.sh's queue-next-day stage)
 cd "$ROOT"
 
-echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE)"
+if [ "$SUCCESSFUL_COUNT" -eq 0 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: no candidate passed strict generation and validation" >&2
+  exit 1
+fi
+
+echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE, Successful: $SUCCESSFUL_COUNT)"
 # Next-day scheduling and publishing is now fully managed by the strict orchestrator.
