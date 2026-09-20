@@ -60,5 +60,10 @@ if ! grep -q 'VALIDATION_EXIT=\$?' "$ROOT/scripts/run_daily_news_pipeline.sh"; t
     exit 1
 fi
 
+if ! grep -q 'if "\$PY" "\$ROOT/scripts/validate_render_quality.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Render validation is not guarded against errexit, so one failed candidate aborts later candidates."
+    exit 1
+fi
+
 echo "PASS"
 exit 0

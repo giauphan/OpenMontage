@@ -415,8 +415,11 @@ rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
 echo "[$(date -u +%FT%TZ)] CLAUDE Agent Strict Quality Validation Started"
 
 # Step 1: Base render quality validation (existing)
-"$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60 --strict
-VALIDATE_RENDER_EXIT=$?
+if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60 --strict; then
+  VALIDATE_RENDER_EXIT=0
+else
+  VALIDATE_RENDER_EXIT=$?
+fi
 
 if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Base render validation failed for $PROJECT_ID" >&2
