@@ -197,8 +197,10 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             if s_match and d_match:
                 max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
 
-    # Ensure composition root has required attributes
-    root_open = re.search(r"<div\b[^>]*>", html)
+    # Ensure composition root has required attributes.
+    root_open = re.search(r"<[a-zA-Z0-9]+\b(?=[^>]*(?:id=[\"'](?:stage|composition|root)[\"']|class=[\"'][^\"']*\bcomposition\b[^\"']*[\"']))[^>]*>", html)
+    if not root_open:
+        root_open = re.search(r"<div\b[^>]*>", html)
     if root_open:
         tag = root_open.group(0)
         new_tag = tag
@@ -328,7 +330,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         html = re.sub(r'<audio\b[^>]*\bid=["\']bg-audio["\'][^>]*>\s*(?:</audio>)?\s*', '', html)
 
     if not re.search(r"<audio\b[^>]*\bid=[\"']narration[\"']", html):
-        root_open = re.search(r"<(?:div|html)\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+        root_open = re.search(r"<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root_open:
             raise ValueError(f"{path}: missing composition root for narration audio binding")
         # Use reels narration for reels composition
@@ -410,11 +412,13 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         )
         html = html[:style_match.end()] + pulse_css + html[style_match.end():]
     if strict:
-        root = re.search(r"<(?:div|html)\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+        root = re.search(r"<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root:
             raise ValueError(f"{path}: missing composition root for strict timeline repair")
         if "data-no-timeline" not in root.group(0) and "window.__timelines[" not in html:
             html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
+        html = re.sub(r"\bopacity\s*:\s*0(\s*;?)", r"opacity: 1\1", html)
+        html = re.sub(r"\bvisibility\s*:\s*hidden(\s*;?)", r"visibility: visible\1", html)
         # Enforce exact 1080x1920 portrait
         html = re.sub(r"#root\s*\{\s*width:\s*\d+px;\s*height:\s*\d+px;", "#root { width: 1080px; height: 1920px;", html)
         html = re.sub(r"meta\s+name=\"viewport\"[^>]*", 'meta name="viewport" content="width=1080, height=1920"', html)
@@ -424,7 +428,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
 
 def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     """Scale composition timings and GSAP animations so visual timeline matches narration length."""
-    root_open = re.search(r"<(?:div|html)\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
+    root_open = re.search(r"<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
     if not root_open:
         raise ValueError(f"{path}: missing composition root for timeline alignment")
     root_duration_match = re.search(r"\bdata-duration=[\"']([0-9.]+)[\"']", root_open.group(0))
@@ -447,7 +451,7 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         body = re.sub(r"\b(data-start|data-duration)=[\"']([0-9.]+)[\"']", scale_attr, body)
 
     body = re.sub(
-        r'(<div\b[^>]*\bdata-composition-id=[\'"][^\'"]+[\'"][^>]*\bdata-duration=)[\'"][0-9.]+[\'"]',
+        r'(<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\'"][^\'"]+[\'"][^>]*\bdata-duration=)[\'"][0-9.]+[\'"]',
         rf'\1"{target:.3f}"',
         body,
         count=1,
@@ -506,10 +510,31 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         except Exception:
             pass
 
+    indexed_scene_schedule = re.search(
+        r"sceneMotion\(\s*scene\s*,\s*index\s*\*\s*([0-9.]+)\s*\)",
+        body,
+    )
+    timeline_end = re.search(
+        r"tl\.to\(\s*\{\}\s*,\s*\{\s*duration\s*:\s*[0-9.]+\s*\}\s*,\s*([0-9.]+)\s*\)\s*;?",
+        body,
+    )
+    if indexed_scene_schedule and timeline_end:
+        authored_end = float(timeline_end.group(1))
+        if authored_end > 0 and abs(authored_end - target) >= 0.01:
+            authored_step = float(indexed_scene_schedule.group(1))
+            step = authored_step * target / authored_end
+            body = body[:indexed_scene_schedule.start(1)] + f"{step:.3f}" + body[indexed_scene_schedule.end(1):]
+            body = re.sub(
+                r"(tl\.to\(\s*\{\}\s*,\s*\{\s*duration\s*:\s*[0-9.]+\s*\}\s*,\s*)[0-9.]+(\s*\)\s*;?)",
+                rf"\g<1>{target:.3f}\2",
+                body,
+                count=1,
+            )
+
     if "tl.duration(" in body:
         body = re.sub(r"tl\.duration\(\s*[0-9.]+\s*\);?", f"tl.duration({target:.3f});", body)
     else:
-        tl_decl = re.search(r"(?:const|let|var)\\s+tl\\s*=\\s*[^;]+;", body)
+        tl_decl = re.search(r"(?:const|let|var)\s+tl\s*=\s*[^;]+;", body)
         if tl_decl:
             idx = tl_decl.end()
             body = body[:idx] + f"\n  tl.duration({target:.3f});\n" + body[idx:]
@@ -519,18 +544,18 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
     # still trips freezedetect, so oscillate instead: each 1.6s half-cycle
     # shifts several pixels per frame and never freezes for the 2s window.
     cycles = max(1, int(round(target / 1.6)))
-    # Dynamically extract ID from the data-composition-id element or common fallbacks
+    # Animate the visible canvas, not a nested metadata-only composition node.
     comp_tag = re.search(r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", body)
     root_selector = ""
-    if comp_tag:
+    for candidate_id in ("stage", "composition", "viewport", "canvas", "app", "container", "root", "main"):
+        # Avoid matching `id="..."` inside `data-*-id="..."` attributes.
+        if re.search(rf"(?<!-)id=[\"']{candidate_id}[\"']", html):
+            root_selector = f"#{candidate_id}"
+            break
+    if not root_selector and comp_tag:
         id_match = re.search(r'(?<!-)id=["\']([^"\']+)["\']', comp_tag.group(0))
         if id_match:
             root_selector = f"#{id_match.group(1)}"
-    if not root_selector:
-        for candidate_id in ("stage", "composition", "viewport", "canvas", "app", "container", "root", "main"):
-            if re.search(rf"id=[\"']{candidate_id}[\"']", body):
-                root_selector = f"#{candidate_id}"
-                break
     if not root_selector:
         # If no explicit ID exists, target the data-composition-id attribute directly
         # or fallback to body. Both exist and will animate the canvas successfully.
@@ -692,7 +717,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     # on-screen content; normalize before the glyph smoke check.
     visible_text = unicodedata.normalize("NFC", html_lib.unescape(html))
     if VIETNAMESE_GLYPH_SENTINELS and not any(ch in visible_text for ch in VIETNAMESE_GLYPH_SENTINELS):
-        print(f"WARN: {path}: no Vietnamese diacritic text found for glyph smoke validation", file=sys.stderr)
+        errors.append(f"{path}: no Vietnamese diacritic text found for glyph smoke validation")
     malformed = sorted(set(_MALFORMED_TEXT_PATTERN.findall(html)))
     if malformed:
         codes = ", ".join(f"U+{ord(ch):04X}" for ch in malformed)

@@ -359,9 +359,28 @@ def test_repair_injects_valid_breathing_zoom_and_preserves_registered_timeline(t
 
     # Must inject breathing scale with valid JS syntax (no extra braces)
     assert "// __repair_scale_injected" in patched
-    assert "tl.fromTo('#root', {scale: 1.0}, {scale: 1.06, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: 6, ease: 'sine.inOut'}, 0);" in patched
+    assert "_r_tl.fromTo('#root', {scale: 1.0}, {scale: 1.12, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: 6, ease: 'sine.inOut'}, 0);" in patched
     # Timeline should not be marked data-no-timeline if it registered timelines
     assert "data-no-timeline" not in patched
+
+
+def test_repair_promotes_stage_div_to_composition_root(tmp_path):
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=1080, height=1920">
+    <style>#stage { width: 1080px; height: 1920px; overflow: hidden; }</style>
+</head>
+<body>
+    <div id="stage"><section class="scene">Tiếng Việt</section></div>
+</body>
+</html>"""
+    comp = write_composition(tmp_path, html)
+
+    repair.patch_html(comp, 42.0, strict=True)
+
+    patched = comp.read_text()
+    assert '<div data-start="0" data-duration="42.000" data-height="1920" data-width="1080" data-composition-id="main" id="stage"' in patched
 
 
 def test_strict_repair_preserves_css_semicolons_and_js_object_commas(tmp_path):

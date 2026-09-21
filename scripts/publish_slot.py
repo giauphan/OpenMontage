@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 
 from publish_config import load_config
 from publish_manual_video import validate_project_quality
-from tools.publishers.platform_routes import youtube_shorts_title
+from tools.publishers.platform_routes import CUT_RENDER, FULL_RENDER, youtube_shorts_title
 from tools.publish_store import PublishStore, existing_record_summary
 from tools.publishers.meta_publisher import MetaPublisher
 from tools.publishers.youtube_publisher import YoutubePublisher
@@ -33,7 +33,7 @@ JOBS = {
         "platform": "youtube",
         "title": "Cuộc Chiến Chống AI Slop 2026 #Shorts",
         "description": "YouTube vừa xóa 35 triệu tài khoản bot trong một đợt quét tự động lớn.",
-        "path": "projects/newsnow-2026-08-09/renders/final_full_vi_9x16.mp4",
+                "path": f"projects/newsnow-2026-08-09/{CUT_RENDER}",
     },
     "topic1-instagram": {
         "topic": "topic1",
@@ -41,7 +41,7 @@ JOBS = {
         "platform": "instagram",
         "title": "Cuộc Chiến Chống AI Slop 2026",
         "description": "Cuộc chiến chống AI slop 2026.",
-        "path": "projects/newsnow-2026-08-09/renders/final_reels_vi_9x16.mp4",
+                "path": f"projects/newsnow-2026-08-09/{FULL_RENDER}",
     },
     "topic2-short": {
         "topic": "topic2",
@@ -49,7 +49,7 @@ JOBS = {
         "platform": "youtube",
         "title": "Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026 #Shorts",
         "description": "Agentic AI đang thay đổi cách doanh nghiệp vận hành.",
-        "path": "projects/topic2-agentic-ai/renders/final_full_vi_9x16.mp4",
+                "path": f"projects/topic2-agentic-ai/{CUT_RENDER}",
     },
     "topic2-instagram": {
         "topic": "topic2",
@@ -57,7 +57,7 @@ JOBS = {
         "platform": "instagram",
         "title": "Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026",
         "description": "Kỷ nguyên Agentic AI 2026.",
-        "path": "projects/topic2-agentic-ai/renders/final_reels_vi_9x16.mp4",
+                "path": f"projects/topic2-agentic-ai/{FULL_RENDER}",
     },
     "topic3-short": {
         "topic": "topic3",
@@ -65,7 +65,7 @@ JOBS = {
         "platform": "youtube",
         "title": "Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất #Shorts",
         "description": "Các phương pháp mới nhất để bảo vệ dữ liệu cá nhân trong kỷ nguyên số.",
-        "path": "projects/topic3-cyber-defense/renders/final_full_vi_9x16.mp4",
+                "path": f"projects/topic3-cyber-defense/{CUT_RENDER}",
     },
     "topic3-instagram": {
         "topic": "topic3",
@@ -73,7 +73,7 @@ JOBS = {
         "platform": "instagram",
         "title": "Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất",
         "description": "Bảo vệ dữ liệu cá nhân 2026.",
-        "path": "projects/topic3-cyber-defense/renders/final_reels_vi_9x16.mp4",
+                "path": f"projects/topic3-cyber-defense/{FULL_RENDER}",
     },
 }
 

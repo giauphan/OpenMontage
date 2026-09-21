@@ -157,10 +157,11 @@ class YoutubePublisher(BaseTool):
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
-        from tools.publishers.platform_routes import ensure_vertical
+        from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short
 
         try:
             ensure_vertical(video_path)
+            ensure_youtube_short(video_path)
         except ValueError as geom_err:
             return ToolResult(success=False, error=str(geom_err))
 

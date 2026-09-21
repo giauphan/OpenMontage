@@ -142,7 +142,7 @@ if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
     [ -f "$META" ] || { log "FAIL today $PID: publish_metadata.json missing"; TODAY_OK=0; continue; }
     jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
       || { log "FAIL today $PID: publish_metadata invalid"; TODAY_OK=0; continue; }
-    "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
+    "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --reels-max-duration 60.0 >> "$TODAY_VERIFY_LOG" 2>&1 \
       || { log "FAIL today $PID: validate_render_quality failed"; TODAY_OK=0; continue; }
     "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
       || { log "FAIL today $PID: validate_publish_metadata failed"; TODAY_OK=0; continue; }
@@ -252,8 +252,8 @@ for PID in "${PROJECT_IDS[@]}"; do
     [ -s "$PDIR/$R" ] || { log "FAIL $PID: render $R missing/empty"; RENDER_OK=0; }
   done
   [ "$RENDER_OK" -eq 1 ] || continue
-  # 4d. Technical quality validation via validate_render_quality.py.
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
+  # 4d. Technical quality validation via validate_render_quality.py (reels max 60s for Shorts).
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --reels-max-duration 60.0 >> "$VERIFY_LOG" 2>&1 \
     || { log "FAIL $PID: validate_render_quality failed"; continue; }
   # 4e. publish_metadata validation.
   "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
