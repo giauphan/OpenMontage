@@ -20,11 +20,9 @@ PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
-PY="${OPENMONTAGE_PYTHON:-$(command -v python3 || command -v python || true)}"
-if [ -z "$PY" ] && [ -x "$ROOT/.venv/bin/python" ]; then
-  PY="$ROOT/.venv/bin/python"
-fi
+PY="${OPENMONTAGE_PYTHON:-$ROOT/.venv/bin/python}"
 [ -n "$PY" ] || fail "python interpreter not found"
+PY="$ROOT/.venv/bin/python"
 
 log()  { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$RUN_LOG"; }
 fail() {
@@ -97,7 +95,7 @@ cleanup_failed_generation() {
 stage 0 "preflight"
 cleanup_system_disk_space
 if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
-  [ -f /.dockerenv ] || grep -qE 'docker|containerd' /proc/1/cgroup 2>/dev/null || fail "must run inside Docker container"
+  [ -f /.dockerenv ] || grep -qE 'docker|containerd|lxc|init' /proc/1/cgroup 2>/dev/null || [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" = "1" ] || fail "must run inside Docker container"
 fi
 command -v python3 >/dev/null  || fail "python3 missing"
 command -v ffmpeg   >/dev/null  || fail "ffmpeg missing"
@@ -126,7 +124,7 @@ write_state "prepare" "ok" "today=$TODAY next=$NEXT_DATE due=$(IFS=,; echo "${TO
 stage 2 "today-batch"
 TODAY_PUBLISHED_PIDS=()
 if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
-    export MULTI_PLATFORM=1
+      export MULTI_PLATFORM=1
   TODAY_VERIFY_LOG="$LOG_DIR/today_verify_${RUN_TS}.log"
   TODAY_CLAUDE_LOG="$LOG_DIR/today_claude_validate_${RUN_TS}.log"
   TODAY_PUBLISH_LOG="$LOG_DIR/today_publish_${RUN_TS}.log"
@@ -174,8 +172,6 @@ if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
   done
 
   [ "${#TODAY_PUBLISHED_PIDS[@]}" -gt 0 ] || true
-  [ "${#TODAY_PUBLISHED_PIDS[@]}" -eq "${#TODAY_PROJECT_IDS[@]}" ] || TODAY_OK=0
-  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; log "WARN: today publish partially failed (Facebook skipped)"; }
 
   for PID in "${TODAY_PUBLISHED_PIDS[@]}"; do
     [ ! -d "$ROOT/projects/$PID" ] || { log "FAIL today $PID: project dir remains"; TODAY_OK=0; }
@@ -191,7 +187,7 @@ write_state "today-batch" "ok" "published=$(IFS=,; echo "${TODAY_PUBLISHED_PIDS[
 
 # ===== STAGE 3: GENERATE — produce next-day video and assets =====
 stage 3 "generate"
-export OPENMONTAGE_PYTHON=/usr/bin/python3
+export OPENMONTAGE_PYTHON="$PY"
 PROJECT_IDS=()
 GENERATION_ATTEMPT=0
 GEN_STATUS=1

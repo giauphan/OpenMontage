@@ -91,10 +91,12 @@ def _json_values(text: str) -> list:
 def _is_review_dict(value) -> bool:
     if not isinstance(value, dict):
         return False
+    required = [k for k in REVIEW_KEYS if k != "overall_passed"]
+    if not all(k in value for k in required):
+        return False
     return all(
-        key in value
-        and (key == "overall_passed" or isinstance(value[key], dict))
-        for key in REVIEW_KEYS
+        key in value and (key == "overall_passed" or isinstance(value[key], dict))
+        for key in required
     )
 
 

@@ -120,12 +120,14 @@ run_directors() {
     export DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-20}"
     export RESUME_FLAG="$resume_flag"
     export PROJECT_DIR="$PROJECT_DIR"
-    su node -p -s /bin/bash -c '
+    if id node >/dev/null 2>&1; then
+      su node -p -s /bin/bash -c '
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
       cd "$PROJECT_DIR" 2>/dev/null || cd "$ROOT"
       env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --add-dir "$ROOT" --permission-mode bypassPermissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
     '
+    fi
   else
     env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p $resume_flag --permission-mode bypassPermissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
   fi
@@ -454,22 +456,27 @@ if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"
   TITLE="$TITLE #tintuc #congnghe #ai"
 fi
 
-# Create basic publish_metadata.json for validation
-jq -n \
+# Create publish_metadata.json for validation
+if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" ]; then
+  jq -n \
   --arg title "$TITLE" \
   --arg desc "$(jq -r '.description // ""' artifacts/script_vi.json 2>/dev/null || echo "")" \
-  --arg yt_shorts "$TITLE" \
-  --arg tiktok "$TITLE" \
-  --arg fb_video "$TITLE" \
-  --arg ig_reels "$TITLE" \
+  --arg yt_shorts "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" \
+  --arg tiktok "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" \
+  --arg fb_video "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" \
+  --arg ig_reels "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" \
   '{
     title: $title,
     description: $desc,
-    yt_shorts: {title: $yt_shorts},
-    tiktok: {title: $tiktok},
-    fb_video: {title: $fb_video},
-    ig_reels: {title: $ig_reels}
-  }' > publish_metadata.json
+    yt_shorts: $yt_shorts,
+    tiktok: $tiktok,
+    fb_video: $fb_video,
+    ig_reels: $ig_reels
+  }' > "$PROJECT_DIR/publish_metadata.json"
+else
+  echo "[$(date -u +%FT%TZ)] ERROR: Missing video files for $PROJECT_ID" >&2
+  continue
+fi
 
 # Step 3: CLAUDE Agent Strict Quality Validation (NEW FEATURE)
 echo "[$(date -u +%FT%TZ)] Running CLAUDE Agent validation..."

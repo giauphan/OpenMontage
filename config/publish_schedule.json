@@ -27,33 +27,18 @@
   },
   "active_projects": [
     {
-      "project_id": "cand_adf110595a70f7ca",
-      "publish_date": "2026-09-09",
-      "publish_time": "09:15"
-    },
-    {
-      "project_id": "cand_e790f8b31628c143",
-      "publish_date": "2026-09-09",
-      "publish_time": "14:15"
-    },
-    {
-      "project_id": "cand_9d95d516fcc40352",
-      "publish_date": "2026-09-09",
-      "publish_time": "21:15"
-    },
-    {
-      "project_id": "cand_24c8a6669defa715",
-      "publish_date": "2026-09-19",
+      "project_id": "cand_b58431a0842c1616",
+      "publish_date": "2026-09-21",
       "publish_time": "09:15"
     },
     {
       "project_id": "cand_bd80d79dd2b0fe76",
-      "publish_date": "2026-09-19",
+      "publish_date": "2026-09-21",
       "publish_time": "14:15"
     },
     {
-      "project_id": "cand_c97769899c21d11a",
-      "publish_date": "2026-09-19",
+      "project_id": "cand_ff886248ee9aeec2",
+      "publish_date": "2026-09-21",
       "publish_time": "21:15"
     }
   ]

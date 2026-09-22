@@ -23,6 +23,7 @@ LOCAL_TZ = ZoneInfo(_CFG["timezone"])
 IG_ACCOUNT_ID = _CFG["meta"]["ig_account_id"]
 PLATFORM_ACCOUNTS = {
     "youtube": _CFG["youtube"]["account"],
+    "facebook": _CFG["meta"].get("page_id", ""),
     "instagram": IG_ACCOUNT_ID,
 }
 
@@ -33,7 +34,7 @@ JOBS = {
         "platform": "youtube",
         "title": "Cuộc Chiến Chống AI Slop 2026 #Shorts",
         "description": "YouTube vừa xóa 35 triệu tài khoản bot trong một đợt quét tự động lớn.",
-                "path": f"projects/newsnow-2026-08-09/{CUT_RENDER}",
+        "path": f"projects/newsnow-2026-08-09/{CUT_RENDER}",
     },
     "topic1-instagram": {
         "topic": "topic1",
@@ -41,7 +42,15 @@ JOBS = {
         "platform": "instagram",
         "title": "Cuộc Chiến Chống AI Slop 2026",
         "description": "Cuộc chiến chống AI slop 2026.",
-                "path": f"projects/newsnow-2026-08-09/{FULL_RENDER}",
+        "path": f"projects/newsnow-2026-08-09/{FULL_RENDER}",
+    },
+    "topic1-facebook": {
+        "topic": "topic1",
+        "kind": "reels",
+        "platform": "facebook",
+        "title": "Cuộc Chiến Chống AI Slop 2026",
+        "description": "Cuộc chiến chống AI slop 2026.",
+        "path": f"projects/newsnow-2026-08-09/{FULL_RENDER}",
     },
     "topic2-short": {
         "topic": "topic2",
@@ -49,7 +58,7 @@ JOBS = {
         "platform": "youtube",
         "title": "Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026 #Shorts",
         "description": "Agentic AI đang thay đổi cách doanh nghiệp vận hành.",
-                "path": f"projects/topic2-agentic-ai/{CUT_RENDER}",
+        "path": f"projects/topic2-agentic-ai/{CUT_RENDER}",
     },
     "topic2-instagram": {
         "topic": "topic2",
@@ -57,7 +66,7 @@ JOBS = {
         "platform": "instagram",
         "title": "Kỷ Nguyên Agentic AI: Khi AI Tự Động Hóa Toàn Bộ Workflow 2026",
         "description": "Kỷ nguyên Agentic AI 2026.",
-                "path": f"projects/topic2-agentic-ai/{FULL_RENDER}",
+        "path": f"projects/topic2-agentic-ai/{FULL_RENDER}",
     },
     "topic3-short": {
         "topic": "topic3",
@@ -65,7 +74,7 @@ JOBS = {
         "platform": "youtube",
         "title": "Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất #Shorts",
         "description": "Các phương pháp mới nhất để bảo vệ dữ liệu cá nhân trong kỷ nguyên số.",
-                "path": f"projects/topic3-cyber-defense/{CUT_RENDER}",
+        "path": f"projects/topic3-cyber-defense/{CUT_RENDER}",
     },
     "topic3-instagram": {
         "topic": "topic3",
@@ -73,7 +82,7 @@ JOBS = {
         "platform": "instagram",
         "title": "Bảo Vệ Dữ Liệu Cá Nhân 2026: Giải Pháp An Ninh Mạng Mới Nhất",
         "description": "Bảo vệ dữ liệu cá nhân 2026.",
-                "path": f"projects/topic3-cyber-defense/{FULL_RENDER}",
+        "path": f"projects/topic3-cyber-defense/{FULL_RENDER}",
     },
 }
 
@@ -94,7 +103,7 @@ def publish(job):
         "video_path": str(path),
         "page_id": IG_ACCOUNT_ID,
         "caption": f'{job["title"]} #TechNews #Vietnam #OpenMontage',
-        "post_to_facebook": False,
+        "post_to_facebook": True,
         "post_to_instagram": True,
     })
 

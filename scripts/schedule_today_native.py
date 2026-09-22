@@ -132,6 +132,30 @@ def main():
                     store.mark_failed(fb_key, str(e))
                     print(f"FB error {proj}: {e}")
                     failed = True
+        # Schedule Instagram Reels
+        if ig_account and ig_rel and (project_dir / ig_rel).is_file():
+            ig_key, ig_claimed,_ = store.claim(date=date, topic=topic_meta["id"], platform="instagram", account=ig_account, kind="reels", status="scheduling", title=topic_meta["title"], asset_path=project_dir/ig_rel, scheduled_for=scheduled_for)
+            if ig_key:
+                print(f"SCHEDULED: Instagram {date} {topic_meta['id']} {ig_key}")
+            else:
+                print(f"FAILED: Instagram {date} {topic_meta['id']} (already claimed)")
+        else:
+            print(f"SKIP: Instagram {date} {topic_meta['id']} (missing asset or account)")
+            if fb_claimed:
+                epoch = int(publish_at.astimezone(timezone.utc).timestamp())
+                try:
+                    r = MetaPublisher().execute({"video_path":str(project_dir/fb_rel),"caption":topic_meta.get("title",""),"page_id":fb_page_id,"post_to_facebook":True,"post_to_instagram":False,"scheduled_publish_time":epoch})
+                    if r.success:
+                        store.mark_scheduled(fb_key, video_id=((r.data or {}).get("publish_log",{}).get("entries",[{}])[0].get("video_id")), video_url=None, scheduled_for=scheduled_for)
+                        print(f"FB scheduled {proj} {scheduled_for}")
+                    else:
+                        store.mark_failed(fb_key, r.error)
+                        print(f"FB failed {proj}: {r.error}")
+                        failed = True
+                except Exception as e:
+                    store.mark_failed(fb_key, str(e))
+                    print(f"FB error {proj}: {e}")
+                    failed = True
         time.sleep(1)
     if failed:
         sys.exit(1)
