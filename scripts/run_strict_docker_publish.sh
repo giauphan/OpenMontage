@@ -9,6 +9,7 @@ export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:/app/node_modules/.bin:$HOME/
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+export FACEBOOK_PUBLISH_ENABLED=0
 
 LOG_DIR="$ROOT/logs/strict_docker_publish"
 mkdir -p "$LOG_DIR"
@@ -20,9 +21,7 @@ PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
-PY="${OPENMONTAGE_PYTHON:-$ROOT/.venv/bin/python}"
-[ -n "$PY" ] || fail "python interpreter not found"
-PY="$ROOT/.venv/bin/python"
+PY="${OPENMONTAGE_PYTHON:-$(command -v python3)}"
 
 log()  { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$RUN_LOG"; }
 fail() {
@@ -66,29 +65,25 @@ cleanup_failed_generation() {
   local generate_log="$1"
   local pid dir schedule_has
 
-  # Always preserve for debugging until issue is resolved
-  log "preserving failed-generation projects for diagnosis"
-  return
-
-  # while IFS= read -r pid; do
-  #   [ -n "$pid" ] || continue
-  #   schedule_has=$(jq --arg pid "$pid" \
-  #     'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
-  #   if [ "$schedule_has" = "true" ]; then
-  #     log "preserving scheduled failed-generation project: $pid"
-  #     continue
-  #   fi
-  #   for dir in "$ROOT/projects/$pid" "$ROOT/projects_news/$pid"; do
-  #     if [ -d "$dir" ]; then
-  #       rm -rf "$dir"
-  #       log "cleanup failed-generation project: $pid"
-  #     fi
-  #   done
-  # done < <(
-  #   grep -h 'PROJECT_ID=' "$generate_log" 2>/dev/null |
-  #     sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' |
-  #     sort -u
-  # )
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    schedule_has=$(jq --arg pid "$pid" \
+      'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
+    if [ "$schedule_has" = "true" ]; then
+      log "preserving scheduled failed-generation project: $pid"
+      continue
+    fi
+    for dir in "$ROOT/projects/$pid" "$ROOT/projects_news/$pid"; do
+      if [ -d "$dir" ]; then
+        rm -rf "$dir"
+        log "cleanup failed-generation project: $pid"
+      fi
+    done
+  done < <(
+    grep -h 'PROJECT_ID=' "$generate_log" 2>/dev/null |
+      sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' |
+      sort -u
+  )
 }
 
 # ===== Pre-flight: confirm we're inside Docker =====
@@ -120,70 +115,19 @@ log "next publish date (local $PUBLISH_TZ): $NEXT_DATE"
 log "due today projects: ${TODAY_PROJECT_IDS[*]:-none}"
 write_state "prepare" "ok" "today=$TODAY next=$NEXT_DATE due=$(IFS=,; echo "${TODAY_PROJECT_IDS[*]}")"
 
-# ===== STAGE 2: TODAY BATCH — verify, Claude validate, publish, cleanup =====
+# ===== STAGE 2: TODAY BATCH — verify native scheduling =====
 stage 2 "today-batch"
-TODAY_PUBLISHED_PIDS=()
 if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
-      export MULTI_PLATFORM=1
-  TODAY_VERIFY_LOG="$LOG_DIR/today_verify_${RUN_TS}.log"
-  TODAY_CLAUDE_LOG="$LOG_DIR/today_claude_validate_${RUN_TS}.log"
-  TODAY_PUBLISH_LOG="$LOG_DIR/today_publish_${RUN_TS}.log"
-  : > "$TODAY_VERIFY_LOG"
-  : > "$TODAY_CLAUDE_LOG"
-  : > "$TODAY_PUBLISH_LOG"
-  TODAY_OK=1
-
-  for PID in "${TODAY_PROJECT_IDS[@]}"; do
-    PDIR="$ROOT/projects/$PID"
-    [ -d "$PDIR" ] || { log "FAIL today $PID: project dir missing"; TODAY_OK=0; continue; }
-    META="$PDIR/publish_metadata.json"
-    [ -f "$META" ] || { log "FAIL today $PID: publish_metadata.json missing"; TODAY_OK=0; continue; }
-    jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
-      || { log "FAIL today $PID: publish_metadata invalid"; TODAY_OK=0; continue; }
-    "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --reels-max-duration 60.0 >> "$TODAY_VERIFY_LOG" 2>&1 \
-      || { log "FAIL today $PID: validate_render_quality failed"; TODAY_OK=0; continue; }
-    "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$TODAY_VERIFY_LOG" 2>&1 \
-      || { log "FAIL today $PID: validate_publish_metadata failed"; TODAY_OK=0; continue; }
-    VALIDATION_PASSED=0
-    for ((retry=1; retry<=MAX_RETRIES; retry++)); do
-      if "$PY" "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
-          >> "$TODAY_CLAUDE_LOG" 2>&1; then
-        VALIDATION_PASSED=1
-        break
-      fi
-      log "today Claude validation attempt $retry/$MAX_RETRIES failed for $PID"
-    done
-    if [ "$VALIDATION_PASSED" -ne 1 ]; then
-      log "FAIL today $PID: Claude validation failed"
-      TODAY_OK=0
-    fi
-  done
-  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today validation failed"; }
-
-  for PID in "${TODAY_PROJECT_IDS[@]}"; do
-    PDIR="$ROOT/projects/$PID"
-    log "publishing today $PID for $TODAY"
-    if "$PY" "$ROOT/scripts/publish_manual_video.py" "$PDIR" --date "$TODAY" >> "$TODAY_PUBLISH_LOG" 2>&1; then
-      TODAY_PUBLISHED_PIDS+=("$PID")
-    else
-      log "FAIL today $PID: publish failed"
-      TODAY_OK=0
-    fi
-  done
-
-  [ "${#TODAY_PUBLISHED_PIDS[@]}" -gt 0 ] || true
-
-  for PID in "${TODAY_PUBLISHED_PIDS[@]}"; do
-    [ ! -d "$ROOT/projects/$PID" ] || { log "FAIL today $PID: project dir remains"; TODAY_OK=0; }
-    SCHEDULE_HAS=$(jq --arg pid "$PID" 'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
-    [ "$SCHEDULE_HAS" = "false" ] || { log "FAIL today $PID: still scheduled"; TODAY_OK=0; }
-  done
-  [ "$TODAY_OK" -eq 1 ] || { write_state "today-batch" "failed"; fail "today cleanup failed"; }
-  log "today batch completed: ${TODAY_PUBLISHED_PIDS[*]}"
+  log "verifying native scheduling for ${#TODAY_PROJECT_IDS[@]} due-today projects"
+  if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$TODAY" >> "$RUN_LOG" 2>&1; then
+    write_state "today-batch" "failed"
+    fail "today native scheduling failed for existing queue entries"
+  fi
+  log "retained due-today projects for slot cron"
 else
   log "no due projects for today"
 fi
-write_state "today-batch" "ok" "published=$(IFS=,; echo "${TODAY_PUBLISHED_PIDS[*]}")"
+write_state "today-batch" "ok" "verified=$(IFS=,; echo "${TODAY_PROJECT_IDS[*]}")"
 
 # ===== STAGE 3: GENERATE — produce next-day video and assets =====
 stage 3 "generate"
@@ -194,7 +138,7 @@ GEN_STATUS=1
 if [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
   GENERATE_LOG=$(ls -t "$LOG_DIR"/generate_*.log | head -1)
   [ -f "$GENERATE_LOG" ] || fail "STRICT_PUBLISH_SKIP_GENERATE=1 but no generation log exists"
-  mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | sort -u)
+  mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
   GEN_STATUS=0
   log "STRICT_PUBLISH_SKIP_GENERATE=1: reusing projects from $GENERATE_LOG"
 else
@@ -206,7 +150,7 @@ else
     bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
     GEN_STATUS="${PIPESTATUS[0]}"
     set -e
-    mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | sort -u)
+    mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
     if [ "$GEN_STATUS" -eq 0 ] && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
       break
     fi
@@ -215,14 +159,16 @@ else
 fi
 
 [ "${#PROJECT_IDS[@]}" -gt 0 ] || {
+  cleanup_failed_generation "$GENERATE_LOG"
   write_state "generate" "failed"
   fail "expected at least 1 project from generation after $GENERATION_ATTEMPT attempts"
 }
 if [ "$GEN_STATUS" -ne 0 ]; then
-  write_state "generate" "partial_failure"
-else
-  write_state "generate" "ok"
+  cleanup_failed_generation "$GENERATE_LOG"
+  write_state "generate" "failed"
+  fail "generation failed after $GENERATION_ATTEMPT attempts (exit=$GEN_STATUS; see $GENERATE_LOG)"
 fi
+write_state "generate" "ok"
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"
 
@@ -296,79 +242,100 @@ done
 log "claude agent strict validation PASSED for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
 write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 
-# ===== STAGE 6: QUEUE — next-day platform-native schedule =====
-# Generate TODAY, schedule YT/FB on platform for TOMORROW slots, keep IG on cron.
-stage 6 "queue-next-day"
+# ===== STAGE 6: QUEUE — current-day recovery plus next-day schedule =====
+stage 6 "queue"
 QUEUE_OK=1
 QUEUED_PIDS=()
-BACKFILLED_PIDS=()
+TODAY_QUEUED_PIDS=()
+NEXT_QUEUED_PIDS=()
 
 SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
 mapfile -t SLOTS < <(jq -r '.[]' <<< "$SLOTS_JSON")
-[ "${#SLOTS[@]}" -ge "${#VALIDATED_PIDS[@]}" ] \
-  || { write_state "queue-next-day" "failed"; fail "not enough publish slots (${#SLOTS[@]}) for ${#VALIDATED_PIDS[@]} projects"; }
+
+declare -A TODAY_OCCUPIED=()
+declare -A NEXT_OCCUPIED=()
+while IFS= read -r SLOT; do
+  [ -z "$SLOT" ] || TODAY_OCCUPIED["$SLOT"]=1
+done < <(jq -r --arg date "$TODAY" '.active_projects[]? | select(type == "object" and (.publish_date // "") == $date) | .publish_time // empty' "$SCHEDULE")
+while IFS= read -r SLOT; do
+  [ -z "$SLOT" ] || NEXT_OCCUPIED["$SLOT"]=1
+done < <(jq -r --arg date "$NEXT_DATE" '.active_projects[]? | select(type == "object" and (.publish_date // "") == $date) | .publish_time // empty' "$SCHEDULE")
+
+NOW_EPOCH=$(date +%s)
+TODAY_SLOTS=()
+NEXT_SLOTS=()
+for SLOT in "${SLOTS[@]}"; do
+  SLOT_EPOCH=$(TZ="$PUBLISH_TZ" date -d "$TODAY $SLOT" +%s 2>/dev/null || echo 0)
+  if [ "$SLOT_EPOCH" -gt "$((NOW_EPOCH + 1200))" ] && [ -z "${TODAY_OCCUPIED[$SLOT]:-}" ]; then
+    TODAY_SLOTS+=("$SLOT")
+  fi
+  if [ -z "${NEXT_OCCUPIED[$SLOT]:-}" ]; then
+    NEXT_SLOTS+=("$SLOT")
+  fi
+done
+
+AVAILABLE_SLOT_COUNT=$((${#TODAY_SLOTS[@]} + ${#NEXT_SLOTS[@]}))
+[ "$AVAILABLE_SLOT_COUNT" -ge "${#VALIDATED_PIDS[@]}" ] \
+  || { write_state "queue" "failed"; fail "not enough unoccupied current/next-day publish slots ($AVAILABLE_SLOT_COUNT) for ${#VALIDATED_PIDS[@]} projects"; }
 
 TMP_QUEUE=$(mktemp)
-jq --arg date "$NEXT_DATE" \
-   '.active_projects = ((.active_projects // []) | map(select(.publish_date != $date)))' \
-   "$SCHEDULE" > "$TMP_QUEUE"
+cp "$SCHEDULE" "$TMP_QUEUE"
 
-IDX=0
+TODAY_IDX=0
+NEXT_IDX=0
 for PID in "${VALIDATED_PIDS[@]}"; do
-  if false; then
-    log "backfilling today with validated project $PID"
-    if "$PY" "$ROOT/scripts/publish_manual_video.py" "$ROOT/projects/$PID" --date "$TODAY" >> "$LOG_DIR/today_backfill_${RUN_TS}.log" 2>&1; then
-      TODAY_PUBLISHED_PIDS+=("$PID")
-      BACKFILLED_PIDS+=("$PID")
-      log "today backfill completed: $PID"
-      continue
-    fi
-    rm -f "$TMP_QUEUE"
-    write_state "today-backfill" "failed"
-    fail "today backfill publish failed (see $LOG_DIR/today_backfill_${RUN_TS}.log)"
+  if [ "$TODAY_IDX" -lt "${#TODAY_SLOTS[@]}" ]; then
+    DATE="$TODAY"
+    SLOT="${TODAY_SLOTS[$TODAY_IDX]}"
+    TODAY_QUEUED_PIDS+=("$PID")
+    TODAY_IDX=$((TODAY_IDX + 1))
+  else
+    DATE="$NEXT_DATE"
+    SLOT="${NEXT_SLOTS[$NEXT_IDX]}"
+    NEXT_QUEUED_PIDS+=("$PID")
+    NEXT_IDX=$((NEXT_IDX + 1))
   fi
-  SLOT="${SLOTS[$IDX]}"
-  jq --arg pid "$PID" --arg date "$NEXT_DATE" --arg time "$SLOT" \
+
+  jq --arg pid "$PID" --arg date "$DATE" --arg time "$SLOT" \
      '.active_projects += [{project_id: $pid, publish_date: $date, publish_time: $time}]' \
      "$TMP_QUEUE" > "$TMP_QUEUE.new" && mv "$TMP_QUEUE.new" "$TMP_QUEUE"
-  log "queued $PID for $NEXT_DATE slot $SLOT"
+  log "queued $PID for $DATE slot $SLOT"
   QUEUED_PIDS+=("$PID")
-  IDX=$((IDX + 1))
 done
 
 jq -e '.active_projects and (.active_projects | type == "array")' "$TMP_QUEUE" >/dev/null 2>&1 \
-  || { rm -f "$TMP_QUEUE"; write_state "queue-next-day" "failed"; fail "queued schedule invalid"; }
+  || { rm -f "$TMP_QUEUE"; write_state "queue" "failed"; fail "queued schedule invalid"; }
 mv "$TMP_QUEUE" "$SCHEDULE"
 
-EXPECTED_QUEUED=$((${#VALIDATED_PIDS[@]} - ${#BACKFILLED_PIDS[@]}))
-[ "${#QUEUED_PIDS[@]}" -eq "$EXPECTED_QUEUED" ] \
-  || { write_state "queue-next-day" "partial"; fail "queued ${#QUEUED_PIDS[@]}/$EXPECTED_QUEUED next-day projects"; }
+[ "${#QUEUED_PIDS[@]}" -eq "${#VALIDATED_PIDS[@]}" ] \
+  || { write_state "queue" "partial"; fail "queued ${#QUEUED_PIDS[@]}/${#VALIDATED_PIDS[@]} validated projects"; }
 
-# Queue verification: every validated project scheduled for NEXT_DATE with a slot.
 for PID in "${VALIDATED_PIDS[@]}"; do
-  BACKFILL_HAS=false
-  for BACKFILL_PID in "${BACKFILLED_PIDS[@]}"; do
-    [ "$BACKFILL_PID" = "$PID" ] && BACKFILL_HAS=true
-  done
-  [ "$BACKFILL_HAS" = "true" ] && continue
-
-  SCHEDULE_HAS=$(jq --arg pid "$PID" --arg d "$NEXT_DATE" \
-    'any(.active_projects[]?; (.project_id // .) == $pid and (.publish_date // "") == $d)' \
+  SCHEDULE_HAS=$(jq --arg pid "$PID" --arg today "$TODAY" --arg next "$NEXT_DATE" \
+    'any(.active_projects[]?; (.project_id // .) == $pid and (((.publish_date // "") == $today) or ((.publish_date // "") == $next)))' \
     "$SCHEDULE" 2>/dev/null || echo false)
-  [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL queue $PID: not scheduled for $NEXT_DATE"; QUEUE_OK=0; }
+  [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL queue $PID: not scheduled for $TODAY or $NEXT_DATE"; QUEUE_OK=0; }
   [ -d "$ROOT/projects/$PID" ] || { log "FAIL queue $PID: project dir must be retained for slot publisher"; QUEUE_OK=0; }
 done
-[ "$QUEUE_OK" -eq 1 ] || { write_state "queue-next-day" "failed"; fail "queue verification failed"; }
+[ "$QUEUE_OK" -eq 1 ] || { write_state "queue" "failed"; fail "queue verification failed"; }
 
-log "queued $EXPECTED_QUEUED projects for $NEXT_DATE: ${QUEUED_PIDS[*]:-none}; backfilled today: ${BACKFILLED_PIDS[*]:-none}"
-write_state "queue-next-day" "ok" "queued=$(IFS=,; echo "${QUEUED_PIDS[*]}") backfilled=$(IFS=,; echo "${BACKFILLED_PIDS[*]}")"
+log "queued today: ${TODAY_QUEUED_PIDS[*]:-none}; queued next day: ${NEXT_QUEUED_PIDS[*]:-none}"
+write_state "queue" "ok" "today=$(IFS=,; echo "${TODAY_QUEUED_PIDS[*]}") next=$(IFS=,; echo "${NEXT_QUEUED_PIDS[*]}")"
 
 stage 6.5 "platform-schedule"
-if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
-  write_state "platform-schedule" "failed"
-  fail "platform-native scheduling failed; queued projects retained"
+if [ "${#TODAY_QUEUED_PIDS[@]}" -gt 0 ]; then
+  if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$TODAY" 2>&1 | tee -a "$RUN_LOG"; then
+    write_state "platform-schedule" "failed" "date=$TODAY"
+    fail "current-day YouTube scheduling failed; queued projects retained"
+  fi
 fi
-write_state "platform-schedule" "ok"
+if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
+  if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
+    write_state "platform-schedule" "failed" "date=$NEXT_DATE"
+    fail "next-day YouTube scheduling failed; queued projects retained"
+  fi
+fi
+write_state "platform-schedule" "ok" "today=$(IFS=,; echo "${TODAY_QUEUED_PIDS[*]}") next=$(IFS=,; echo "${NEXT_QUEUED_PIDS[*]}")"
 
 # ===== STAGE 7: STALE CLEANUP — remove obsolete unscheduled candidate dirs =====
 stage 7 "cleanup"
@@ -380,10 +347,10 @@ stage 8 "final-state"
 FINAL_OK=1
 for PID in "${QUEUED_PIDS[@]}"; do
   [ -d "$ROOT/projects/$PID" ] || { log "FAIL final state $PID: queued project dir missing"; FINAL_OK=0; }
-  SCHEDULE_HAS=$(jq --arg pid "$PID" --arg d "$NEXT_DATE" \
-    'any(.active_projects[]?; (.project_id // .) == $pid and (.publish_date // "") == $d)' \
+  SCHEDULE_HAS=$(jq --arg pid "$PID" --arg today "$TODAY" --arg next "$NEXT_DATE" \
+    'any(.active_projects[]?; (.project_id // .) == $pid and (((.publish_date // "") == $today) or ((.publish_date // "") == $next)))' \
     "$SCHEDULE" 2>/dev/null || echo false)
-  [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL final state $PID: queued project not scheduled for $NEXT_DATE"; FINAL_OK=0; }
+  [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL final state $PID: queued project not scheduled for $TODAY or $NEXT_DATE"; FINAL_OK=0; }
 done
 [ "$FINAL_OK" -eq 1 ] || { write_state "final-state" "failed"; fail "queued state incomplete"; }
 
@@ -391,11 +358,11 @@ RETAINED=$(find "$ROOT/projects" -mindepth 1 -maxdepth 1 -type d -name 'cand_*' 
 ACTIVE=$(jq '.active_projects | length' "$SCHEDULE")
 log "retained scheduled cand_* dirs: $RETAINED"
 log "active_projects count: $ACTIVE"
-log "final state queued for next day (YT/FB native, IG on cron)"
+log "final state queued for current/next day (YT native, IG on cron)"
 write_state "final-state" "ok"
 
 log ""
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
-log "all stages passed; next-day videos platform-scheduled; IG on slot cron"
+log "all stages passed; videos platform-scheduled; IG on slot cron"
 write_state "workflow" "completed"
 exit 0

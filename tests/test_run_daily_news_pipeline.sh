@@ -50,6 +50,16 @@ if grep -E -q '^[[:space:]]*python3 "\$ROOT/(tools/narration_text\.py|scripts/ge
     exit 1
 fi
 
+if grep -q 'tests/qa/output/e2e_assets/music_bg.mp3' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Daily pipeline references a missing background music fixture."
+    exit 1
+fi
+
+if ! grep -q 'tests/qa/output/music_calm.mp3' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Daily pipeline does not use the available background music fallback."
+    exit 1
+fi
+
 if ! grep -q 'if "\$PY" "\$ROOT/scripts/claude_agent_validation.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
     echo "FAIL: Claude validation is not guarded against errexit."
     exit 1
@@ -62,6 +72,21 @@ fi
 
 if ! grep -q 'if "\$PY" "\$ROOT/scripts/validate_render_quality.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
     echo "FAIL: Render validation is not guarded against errexit, so one failed candidate aborts later candidates."
+    exit 1
+fi
+
+if ! grep -q -E 'if ! materialize_hyperframes_assets ".*"; then' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Asset materialization is not guarded against errexit, so one failed candidate aborts later candidates."
+    exit 1
+fi
+
+if grep -q 'exit \$CLAUDE_EXIT' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Director failure exits the generator instead of evaluating later candidates."
+    exit 1
+fi
+
+if grep -q -E '^[[:space:]]+exit 2$' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Missing director compositions exit the generator instead of evaluating later candidates."
     exit 1
 fi
 

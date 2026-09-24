@@ -158,17 +158,19 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
 
 
 def canonical_platform_records_published(store: PublishStore, *, date: str, topic: str) -> bool:
-    routes = (("youtube", "short"), ("instagram", "reels"), ("facebook", "reels"))
     try:
         # return all(
         multi_platform = os.environ.get("MULTI_PLATFORM", "0") == "1"
         instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
+        facebook_enabled = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
         if instagram_mode:
             enabled_routes = (("instagram", "reels"),)
         elif multi_platform:
-            enabled_routes = (("youtube", "short"), ("instagram", "reels"), ("facebook", "reels"))
+            enabled_routes = (("youtube", "short"), ("instagram", "reels"))
         else:
-            enabled_routes = (("youtube", "short"),)
+            enabled_routes = (("youtube", "short"), ("instagram", "reels"))
+        if facebook_enabled:
+            enabled_routes += (("facebook", "reels"),)
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
             and record.get("status") == "published"
@@ -230,14 +232,14 @@ def publish_batch(
             for platform, account in (("instagram", IG_ACCOUNT_ID),)
         ]
     elif multi_platform:
-        print("🌐 MULTI-PLATFORM MODE: YouTube + Instagram + Facebook")
+        facebook_enabled = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
+        platforms = [("youtube", YT_ACCOUNT), ("instagram", IG_ACCOUNT_ID)]
+        if facebook_enabled:
+            platforms.append(("facebook", FB_PAGE_ID))
+        print("🌐 MULTI-PLATFORM MODE: " + " + ".join(platform for platform, _ in platforms))
         platform_contract = [
             (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
-            for platform, account in (
-                ("youtube", YT_ACCOUNT),
-                ("instagram", IG_ACCOUNT_ID),
-                ("facebook", FB_PAGE_ID),
-            )
+            for platform, account in platforms
         ]
     else:
         print("🎯 SINGLE-PLATFORM MODE: YouTube only (set MULTI_PLATFORM=1 for multi-platform)")

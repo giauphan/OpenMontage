@@ -44,9 +44,14 @@ def test_main_passes_discovered_media_binaries(monkeypatch, tmp_path):
     assert captured["ffmpeg_bin"] == str(ffmpeg)
 
 def test_strict_review_fails_closed_when_claude_cli_is_unavailable(monkeypatch, tmp_path):
+    monkeypatch.delenv("CLAUDE_AGENT_VALIDATION_MOCK", raising=False)
     monkeypatch.setattr(validation, "resolve_claude_cli", lambda: "")
+    (tmp_path / "hyperframes").mkdir()
+    (tmp_path / "hyperframes" / "index.html").write_text("<html><body>scene</body></html>")
+    (tmp_path / "video.mp4").write_bytes(b"video")
 
     validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
+    monkeypatch.setattr(validator, "_extract_frames", lambda *_args: [tmp_path / "frame.png"])
     results = validator.claude_agent_strict_review(tmp_path / "video.mp4", tmp_path / "publish_metadata.json")
 
     assert len(results) == 1
@@ -56,6 +61,7 @@ def test_strict_review_fails_closed_when_claude_cli_is_unavailable(monkeypatch, 
 
 
 def test_strict_review_uses_claude_result(monkeypatch, tmp_path):
+    monkeypatch.delenv("CLAUDE_AGENT_VALIDATION_MOCK", raising=False)
     def run(*_args, **_kwargs):
         return subprocess.CompletedProcess(
             args=[],
@@ -71,10 +77,15 @@ def test_strict_review_uses_claude_result(monkeypatch, tmp_path):
             stderr="",
         )
 
+    (tmp_path / "hyperframes").mkdir()
+    (tmp_path / "hyperframes" / "index.html").write_text("<html><body>scene</body></html>")
+    (tmp_path / "video.mp4").write_bytes(b"video")
+
     monkeypatch.setattr(validation, "resolve_claude_cli", lambda: "/usr/bin/claude")
     monkeypatch.setattr(validation.subprocess, "run", run)
 
     validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
+    monkeypatch.setattr(validator, "_extract_frames", lambda *_args: [tmp_path / "frame.png"])
     results = validator.claude_agent_strict_review(tmp_path / "video.mp4", tmp_path / "publish_metadata.json")
 
     assert [result.passed for result in results] == [True, True, True, True]

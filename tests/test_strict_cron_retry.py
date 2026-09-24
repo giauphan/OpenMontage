@@ -25,7 +25,7 @@ def create_fixture(tmp_path: Path, validation_script: str) -> tuple[Path, Path, 
     shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts / "run_strict_docker_publish.sh")
     (config / "publish_schedule.json").write_text(
         json.dumps({
-            "slots": {"publish_slots_vn": ["09:15", "14:15", "21:15"]},
+            "slots": {"publish_slots_vn": ["01:00", "02:00", "03:00"]},
             "active_projects": [],
         }),
         encoding="utf-8",
@@ -139,7 +139,7 @@ if project == 'cand_fail' or count < 3:
     assert schedule["active_projects"] == [{
         "project_id": "cand_pass",
         "publish_date": tomorrow,
-        "publish_time": "09:15",
+        "publish_time": "01:00",
     }]
     assert tomorrow in (tmp_path / "native-schedule-call").read_text(encoding="utf-8")
 
@@ -175,7 +175,7 @@ def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
             "python3",
             str(scripts / "publish_active_projects.py"),
             "--slot",
-            "09:15",
+            "01:00",
             "--date",
             tomorrow,
             "--only-platform",

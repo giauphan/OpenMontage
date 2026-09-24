@@ -97,8 +97,20 @@ DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 set +e
 DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
 DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-40}"
-PROMPT_STR="CRITICAL: You are running in one-shot mode. DO NOT use TaskCreate, TodoWrite, or subagents. You MUST write all three files right now directly with Write/Edit or Bash. Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json, and generate the required video artifacts directly. Do not search for external pipeline manifests or pipeline_defs.json schemas. Write the Production Script as a flat JSON file at projects/$PROJECT_ID/artifacts/script_vi.json, not embedded in a checkpoint file. The JSON must have keys: version (1.0), title, total_duration_seconds, and sections (array of id, text, start_seconds, end_seconds). Do NOT use scenes key. Generate hyperframes/index.html and hyperframes_reels/index.html under projects/$PROJECT_ID/. The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed, and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Let the complete story determine FULL duration with no upper limit, but both compositions must exceed 14 seconds. Ensure 100% correct Vietnamese spelling, exact grammatical tone marks, and correct technical terminology in all scripts and on-screen text. Use rich, comprehensive Vietnamese narration with at least 150-250 spoken words across sections to ensure the audio duration is at least 45 to 60 seconds (never write brief title-only lines; write full sentences of spoken explanation). Use a strong first-3-second hook, fast pacing, no dead air, and synchronized dynamic captions. Ensure every scene uses high-contrast editorial imagery, animated visual elements, and large readable captions so the finished video meets the strict 0.5000% edge-density quality threshold. You MUST create at least 4 distinct visual scenes so it passes the visual diversity gate, and no single scene can be longer than 8s. You MUST use GSAP to animate scenes and transitions. Load GSAP from the CDN only: <script src=\"https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js\"></script>. You MUST define a master gsap.timeline({paused: true}) and expose it: window.__timelines = window.__timelines || {}; const tl = gsap.timeline({paused: true}); window.__timelines['main'] = tl; Do not use CSS transitions for timeline animation. Make sure to actually animate elements visually with .to() and .fromTo(). To prevent the video from failing the 50% static frozen canvas check, you MUST add a slow, continuous movement spanning the ENTIRE duration of EVERY scene. Every scene must have elements moving constantly. Do NOT use <video> elements or CSS @keyframes/animations; use ONLY GSAP for all movement. Never use fixed width or height on text containers; always use CSS width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box; display: inline-block; padding: 10px 20px;. Never include on-screen source badges, watermarks, or text overlays indicating source URLs. Do not ask for confirmation between stages. Do not stop until script_vi.json and both index.html files exist."
-DIRECTOR_SYSTEM_NOTE="CRITICAL: You are running in a headless CLI process. DO NOT use TaskCreate or TodoWrite to queue work. Write the files synchronously in this turn. You are already running ON the sandbox-video host inside /app. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop. Do not start background agents or background shell commands. Complete all work in this foreground turn using Write, Edit, or Bash. Before responding, run test -s on artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html inside the project. Return a non-success result if any required file is missing or empty."
+PROMPT_DIR="$ROOT/scripts/prompts"
+render_director_prompt() {
+  local template="$1"
+  [ -s "$template" ] || return 1
+  sed "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" "$template"
+}
+PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
+  echo "[$(date -u +%FT%TZ)] ERROR: missing director generation prompt" >> "$DIRECTORS_LOG"
+  exit 1
+}
+DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
+  echo "[$(date -u +%FT%TZ)] ERROR: missing director system prompt" >> "$DIRECTORS_LOG"
+  exit 1
+}
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
 DIRECTOR_ARTIFACTS_READY=0
@@ -124,12 +136,14 @@ run_directors() {
       su node -p -s /bin/bash -c '
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
-      cd "$PROJECT_DIR" 2>/dev/null || cd "$ROOT"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --add-dir "$ROOT" --permission-mode bypassPermissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
+      cd "$PROJECT_DIR"
+      test -s "artifacts/research_brief.json" || exit 7
+      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --model claude-opus-4-7 --add-dir "$ROOT" --permission-mode bypassPermissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
     '
     fi
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p $resume_flag --permission-mode bypassPermissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
+    cd "$PROJECT_DIR"
+    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --model claude-opus-4-7 --add-dir "$ROOT" $resume_flag --permission-mode bypassPermissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
   fi
 }
 
@@ -198,7 +212,11 @@ while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_direct
   echo "[$(date -u +%FT%TZ)] WARN: director artifacts incomplete/error (attempt $DIRECTOR_ATTEMPT/$MAX_DIRECTOR_RETRIES); retrying" >> "$DIRECTORS_LOG"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "directors" --project-id "$PROJECT_ID" \
     --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
-  RETRY_PROMPT="CRITICAL: You MUST write the files to disk right now using file tools. Resume and finish the OpenMontage directors pipeline for projects/$PROJECT_ID. Missing or incomplete files: artifacts/script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. In this foreground turn, write all three files directly. Do not stop and do not ask for confirmation. Before finishing, verify all three exist with test -s."
+  RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
+    echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
+    CLAUDE_EXIT=6
+    break
+  }
   RETRY_EXIT=0
   run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG" || RETRY_EXIT=$?
   if [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
@@ -241,7 +259,7 @@ if [ $CLAUDE_EXIT -eq 0 ]; then
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
         --error-type "MISSING_REELS_COMPOSITION" --message "Reels composition index.html missing or empty" || true
     fi
-    exit 2
+    continue
   fi
 else
   echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$CLAUDE_EXIT elapsed=${ELAPSED}s" \
@@ -249,7 +267,7 @@ else
   echo "  see full transcript: $DIRECTORS_LOG" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
     --error-type "DIRECTOR_FAILURE" --message "Director run failed with exit code $CLAUDE_EXIT" || true
-  exit $CLAUDE_EXIT
+  continue
 fi
 
 # Step 3: Render video (120s + 60s Reels) + sanity check (P4)
@@ -349,13 +367,13 @@ fi
   fi
   if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
     echo "[$(date -u +%FT%TZ)] WARN: background music asset missing for $PROJECT_ID, using fallback"
-    cp "$ROOT/tests/qa/output/e2e_assets/music_bg.mp3" "$project_root/assets/music-bg.mp3"
+    cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
   fi
   local music_duration
   music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
   if ! awk -v d="$music_duration" 'BEGIN{exit !(d > 5)}'; then
     echo "[$(date -u +%FT%TZ)] WARN: background music duration ${music_duration}s <=5s for $PROJECT_ID, using fallback"
-    cp "$ROOT/tests/qa/output/e2e_assets/music_bg.mp3" "$project_root/assets/music-bg.mp3"
+    cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
     music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
   fi
   if cmp -s "$narration" "$project_root/assets/music-bg.mp3"; then
@@ -385,7 +403,12 @@ fi
   done
   "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict
 }
-materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"
+if ! materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"; then
+  echo "[$(date -u +%FT%TZ)] ERROR: HyperFrames asset materialization/repair failed for $PROJECT_ID" >&2
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "asset_materialization" --project-id "$PROJECT_ID" \
+    --error-type "HYPERFRAMES_ASSET_REPAIR_FAILED" --message "HyperFrames asset materialization or repair failed" || true
+  continue
+fi
 
 FULL_COMP=""
 if [ -d "hyperframes" ]; then
@@ -459,19 +482,24 @@ fi
 # Create publish_metadata.json for validation
 if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" ]; then
   jq -n \
+  --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
   --arg desc "$(jq -r '.description // ""' artifacts/script_vi.json 2>/dev/null || echo "")" \
-  --arg yt_shorts "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" \
-  --arg tiktok "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" \
-  --arg fb_video "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" \
-  --arg ig_reels "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" \
+  --arg yt_shorts "renders/final_reels_vi_9x16.mp4" \
+  --arg tiktok "renders/final_full_vi_9x16.mp4" \
+  --arg fb_video "renders/final_full_vi_9x16.mp4" \
+  --arg ig_reels "renders/final_reels_vi_9x16.mp4" \
+  --argjson feed_stale "$FEED_STALE" \
   '{
+    id: $id,
+    topic: $title,
     title: $title,
     description: $desc,
     yt_shorts: $yt_shorts,
     tiktok: $tiktok,
     fb_video: $fb_video,
-    ig_reels: $ig_reels
+    ig_reels: $ig_reels,
+    feed_stale: $feed_stale
   }' > "$PROJECT_DIR/publish_metadata.json"
 else
   echo "[$(date -u +%FT%TZ)] ERROR: Missing video files for $PROJECT_ID" >&2

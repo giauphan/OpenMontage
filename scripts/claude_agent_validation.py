@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
@@ -398,24 +399,44 @@ class CLAUDEAgentValidator:
             
         return results
 
+    def _extract_frames(self, video_path: Path, out_dir: Path) -> List[Path]:
+        """Extract representative frames for visual review."""
+        ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
+        if not ffprobe_bin or not ffmpeg_bin:
+            return []
+        duration_result = subprocess.run(
+            [ffprobe_bin, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(video_path)],
+            capture_output=True,
+            text=True,
+        )
+        if duration_result.returncode:
+            return []
+        try:
+            duration = float(duration_result.stdout.strip())
+        except ValueError:
+            return []
+        timestamps = (min(0.5, duration * 0.05), duration * 0.5, max(0.0, duration * 0.9))
+        outputs = []
+        for index, timestamp in enumerate(timestamps):
+            output = out_dir / f"frame_{index}.png"
+            result = subprocess.run(
+                [ffmpeg_bin, "-y", "-v", "error", "-ss", f"{timestamp:.3f}", "-i", str(video_path), "-frames:v", "1", str(output)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0 and output.is_file() and output.stat().st_size > 0:
+                outputs.append(output)
+        return outputs
+
     def claude_agent_strict_review(self, video_path: Path, metadata_path: Path, prior_results: Optional[List[ValidationResult]] = None) -> List[ValidationResult]:
         """CLAUDE Agent powered strict quality review."""
         results = []
 
-        if os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1":
-            # Keep tests fast without skipping subprocess discovery/validation gating.
-            # Mock only Claude review gate itself.
-            return [
-                ValidationResult(
-                    check_name="CLAUDE Agent Review Gate",
-                    passed=True,
-                    message="Strict Contract Gate: Visual, audio, content & brand quality verified ✓ (Mocked)"
-                )
-            ]
-
         try:
             # Prepare prompt for CLAUDE agent review
             abs_video_path = Path(video_path).resolve()
+            frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-review-"))
+            frame_paths: List[Path] = []
             abs_metadata_path = Path(metadata_path).resolve()
             metadata_str = "{}"
             if abs_metadata_path.is_file():
@@ -431,17 +452,20 @@ class CLAUDEAgentValidator:
             comp_path = self.project_dir / ("hyperframes_reels/index.html" if "reels" in video_path.name else "hyperframes/index.html")
             script_path = self.project_dir / "artifacts" / "script_vi.json"
             comp_summary = "Composition: not found"
+            comp_text = ""
             if comp_path.is_file():
                 try:
-                    comp_text = comp_path.read_text(encoding="utf-8")
+                    comp_text = comp_path.read_text(encoding="utf-8").strip()
                     scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
                     if scene_ids:
                         scene_count = len(scene_ids)
                     else:
                         scene_count = len(re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text))
                     comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {scene_count}"
-                except Exception:
-                    pass
+                except OSError:
+                    comp_text = ""
+            if not comp_text:
+                raise ValueError(f"Missing HyperFrames HTML source for visual review: {comp_path}")
             script_summary = "Script: not found"
             script_full_text = ""
             if script_path.is_file():
@@ -470,6 +494,15 @@ class CLAUDEAgentValidator:
                 if failed_prior:
                     qa_summary = "Technical & Content QA FAILURES detected:\n" + "\n".join(f"- {r.check_name}: {r.message}" for r in failed_prior)
 
+            # Extract representative frames.
+            try:
+                if file_exists and file_size > 0:
+                    frame_paths = self._extract_frames(abs_video_path, frame_dir)
+                if not frame_paths:
+                    raise RuntimeError("No frames extracted")
+            except Exception as fe:
+                raise ValueError(f"Frame extraction failed for visual review: {abs_video_path} ({fe})")
+
             prompt = f"""
 Validate candidate video asset for OpenMontage automated publishing pipeline.
 
@@ -487,13 +520,19 @@ QA Verification Data:
 Metadata Content:
 {metadata_str}
 
-IMPORTANT: You are a strict metadata and semantic reviewer. Evaluate the criteria purely using the provided Composition Info, Script Info, QA Verification Data, Metadata Content, and Script Text Extract fields above. DO NOT attempt to open or view the actual video or HTML files directly.
+Full Composition HTML Source:
+```html
+{comp_text[:10000]}
+... (truncated) ...
+```
+
+IMPORTANT: You are a strict metadata, semantic, and visual reviewer. Evaluate the criteria using the provided HTML source, extracted frames, Composition Info, Script Info, QA Verification Data, and Metadata Content. DO NOT treat technical/QA pass as proof of visual quality. Analyze the HTML and image attachments.
 
 PERFORM STRICT QUALITY VALIDATION on the following criteria:
-1. VISUAL QUALITY & DIVERSITY: If "All prior checks passed" is stated in QA Verification Data, you MUST mark Visual Quality as PASSED (score: 95).
-2. AUDIO SYNC & TYPOGRAPHY: If "All prior checks passed" is stated in QA Verification Data, technical sync is verified. Mark Audio Sync as PASSED (score: 95). ABSOLUTELY DO NOT fail for Vietnamese wording, phrasing, spelling (like "năm" vs "lăm"), Chinese text appearing in code/names, or any other grammatical strictness. ALWAYS pass it as long as there is no literal empty English placeholder.
+1. VISUAL QUALITY & DIVERSITY: Review the extracted frames and HTML source. Reject raw/static web-page layouts, unstyled button/card lists, visible template scaffolding, or missing visual content. The frames must show a polished video composition, not a raw template testing page.
+2. AUDIO SYNC & TYPOGRAPHY: Mark Audio Sync as PASSED if it looks reasonable. ABSOLUTELY DO NOT fail for Vietnamese wording, phrasing, spelling, or grammatical strictness. ALWAYS pass it as long as there is no literal empty English placeholder.
 3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance. (score: 95).
-4. BRAND COMPLIANCE: Verify no forbidden brand names ("Montage", "OpenMontage") appear in text or narration. (score: 95).
+4. BRAND COMPLIANCE: Verify no forbidden brand names ("Montage", "OpenMontage") appear in text, HTML, or narration. Fail immediately if "OPENMONTAGE" is visible in HTML text or frames.
 
 Return ONLY valid JSON matching this schema:
 {{
@@ -506,9 +545,22 @@ Return ONLY valid JSON matching this schema:
 }}
 """
 
+            if os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1":
+                return [
+                    ValidationResult(
+                        check_name="CLAUDE Agent Review Gate",
+                        passed=True,
+                        message="Strict Contract Gate: Visual, audio, content & brand quality verified ✓ (Mocked)",
+                    )
+                ]
+
             claude_bin = resolve_claude_cli()
             if not claude_bin:
                 raise FileNotFoundError("claude CLI not found")
+
+            # Attach images
+            for fp in frame_paths:
+                prompt += f"\n\n[Attached image: {fp.name}] {fp}"
 
             root_dir = str(Path(__file__).parent.parent)
             env = os.environ.copy()

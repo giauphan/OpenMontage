@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Same-day native scheduler: validates, queues, schedules YT/FB on platform, keeps IG on cron.
+"""Native YouTube scheduler with Instagram claims for slot cron.
 Filters queued projects by publish_date == --date. Usage: --date YYYY-MM-DD (default today VN).
 """
 import argparse
@@ -16,7 +16,6 @@ from scripts.publish_config import load_config, publish_timezone
 from tools.publish_store import PublishStore
 from tools.publishers.platform_routes import youtube_shorts_title
 from tools.publishers.youtube_publisher import YoutubePublisher
-from tools.publishers.meta_publisher import MetaPublisher
 
 def ytv_publish_at(dt): return dt.astimezone(timezone.utc).isoformat().replace("+00:00","Z")
 
@@ -27,7 +26,6 @@ def main():
     cfg = load_config()
     tz = ZoneInfo(cfg["timezone"])
     yt_account = cfg["youtube"]["account"]
-    fb_page_id = cfg.get("meta",{}).get("page_id")
     today = (datetime.strptime(args.date,"%Y-%m-%d").date() if args.date else datetime.now(tz).date())
     date = today.isoformat()
     # Only schedule queued projects whose publish_date matches the requested date
@@ -87,9 +85,10 @@ def main():
         yt_rel = topic_meta.get("yt_shorts")
         if isinstance(yt_rel, dict):
             yt_rel = yt_rel.get("path") or yt_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
-        fb_rel = topic_meta.get("fb_video", topic_meta.get("fb_reels"))
-        if isinstance(fb_rel, dict):
-            fb_rel = fb_rel.get("path") or fb_rel.get("file") or "renders/final_full_vi_9x16.mp4"
+        ig_rel = topic_meta.get("ig_reels")
+        if isinstance(ig_rel, dict):
+            ig_rel = ig_rel.get("path") or ig_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
+        ig_account = cfg.get("instagram", {}).get("account_id") or cfg.get("meta", {}).get("ig_account_id")
         asset_path = project_dir / yt_rel if yt_rel else None
         if not asset_path or not asset_path.is_file():
             print(f"failed {proj}: missing YouTube asset file {asset_path}")
@@ -114,48 +113,16 @@ def main():
                 store.mark_failed(yt_key, str(e))
                 print(f"YT error {proj}: {e}")
                 failed = True
-        # FB (independent of YT claim)
-        if fb_page_id and fb_rel and (project_dir / fb_rel).is_file():
-            fb_key, fb_claimed,_ = store.claim(date=date, topic=topic_meta["id"], platform="facebook", account="primary", kind="video", status="scheduling", title=topic_meta["title"], asset_path=project_dir/fb_rel, scheduled_for=scheduled_for)
-            if fb_claimed:
-                epoch = int(publish_at.astimezone(timezone.utc).timestamp())
-                try:
-                    r = MetaPublisher().execute({"video_path":str(project_dir/fb_rel),"caption":topic_meta.get("title",""),"page_id":fb_page_id,"post_to_facebook":True,"post_to_instagram":False,"scheduled_publish_time":epoch})
-                    if r.success:
-                        store.mark_scheduled(fb_key, video_id=((r.data or {}).get("publish_log",{}).get("entries",[{}])[0].get("video_id")), video_url=None, scheduled_for=scheduled_for)
-                        print(f"FB scheduled {proj} {scheduled_for}")
-                    else:
-                        store.mark_failed(fb_key, r.error)
-                        print(f"FB failed {proj}: {r.error}")
-                        failed = True
-                except Exception as e:
-                    store.mark_failed(fb_key, str(e))
-                    print(f"FB error {proj}: {e}")
-                    failed = True
         # Schedule Instagram Reels
         if ig_account and ig_rel and (project_dir / ig_rel).is_file():
             ig_key, ig_claimed,_ = store.claim(date=date, topic=topic_meta["id"], platform="instagram", account=ig_account, kind="reels", status="scheduling", title=topic_meta["title"], asset_path=project_dir/ig_rel, scheduled_for=scheduled_for)
-            if ig_key:
+            if ig_claimed:
                 print(f"SCHEDULED: Instagram {date} {topic_meta['id']} {ig_key}")
             else:
-                print(f"FAILED: Instagram {date} {topic_meta['id']} (already claimed)")
+                print(f"SKIP: Instagram {date} {topic_meta['id']} (already claimed)")
         else:
             print(f"SKIP: Instagram {date} {topic_meta['id']} (missing asset or account)")
-            if fb_claimed:
-                epoch = int(publish_at.astimezone(timezone.utc).timestamp())
-                try:
-                    r = MetaPublisher().execute({"video_path":str(project_dir/fb_rel),"caption":topic_meta.get("title",""),"page_id":fb_page_id,"post_to_facebook":True,"post_to_instagram":False,"scheduled_publish_time":epoch})
-                    if r.success:
-                        store.mark_scheduled(fb_key, video_id=((r.data or {}).get("publish_log",{}).get("entries",[{}])[0].get("video_id")), video_url=None, scheduled_for=scheduled_for)
-                        print(f"FB scheduled {proj} {scheduled_for}")
-                    else:
-                        store.mark_failed(fb_key, r.error)
-                        print(f"FB failed {proj}: {r.error}")
-                        failed = True
-                except Exception as e:
-                    store.mark_failed(fb_key, str(e))
-                    print(f"FB error {proj}: {e}")
-                    failed = True
+
         time.sleep(1)
     if failed:
         sys.exit(1)

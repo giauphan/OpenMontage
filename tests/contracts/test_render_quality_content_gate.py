@@ -74,6 +74,8 @@ def _render(path: Path, *, blank: bool = False, silent: bool = False) -> None:
 
 def _project(tmp_path: Path, *, blank: bool = False, silent: bool = False) -> Path:
     project = tmp_path / "project"
+    (project / "artifacts").mkdir(parents=True, exist_ok=True)
+    (project / "artifacts" / "narration_vi_text.txt").write_text("Chào mọi người hôm nay chúng ta có tin tức mới.", encoding="utf-8")
     _narration(project / "assets" / "narration.mp3")
     for name in ("final_full_vi_9x16.mp4", "final_reels_vi_9x16.mp4"):
         _render(project / "renders" / name, blank=blank, silent=silent)
