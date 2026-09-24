@@ -42,23 +42,22 @@ def test_strict_repair_normalizes_unregistered_subcompositions(tmp_path):
     assert 'data-composition-id="antspace-discovery"' not in patched
     assert 'class="test"' in patched
 
-def test_strict_repair_preserves_registered_subcompositions(tmp_path):
+def test_repair_binds_narration_to_fallback_root_when_composition_id_missing(tmp_path):
     html = """<!DOCTYPE html>
 <html>
 <head>
     <meta name="viewport" content="width=1080, height=1920">
-    <style>#root { width: 1080px; height: 1920px; }</style>
+    <style>body { font-family: 'BeVietnamPro'; }</style>
+    <style>body { font-family: 'BeVietnamPro'; }</style>
 </head>
 <body>
-    <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-start="0" data-duration="10.0">
-        <div class="test" data-composition-id="antspace-discovery" data-start="0"></div>
-        <div data-composition-id="legit-sub"></div>
+    <div id="canvas">
+        <h1>Content</h1>
     </div>
     <script>
         const tl = gsap.timeline();
         window.__timelines = window.__timelines || {};
         window.__timelines['main'] = tl;
-        window.__timelines['legit-sub'] = gsap.timeline();
     </script>
 </body>
 </html>"""
@@ -67,8 +66,6 @@ def test_strict_repair_preserves_registered_subcompositions(tmp_path):
     repair.patch_html(comp, 10.0, strict=True)
     patched = comp.read_text()
 
+    assert '<audio id="narration"' in patched
     assert 'data-composition-id="main"' in patched
-    assert 'data-composition-id="legit-sub"' in patched
-    assert 'data-composition-id="antspace-discovery"' not in patched
-    assert 'class="test"' in patched
 

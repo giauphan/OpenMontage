@@ -332,7 +332,14 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     if not re.search(r"<audio\b[^>]*\bid=[\"']narration[\"']", html):
         root_open = re.search(r"<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root_open:
-            raise ValueError(f"{path}: missing composition root for narration audio binding")
+            body_root = re.search(r"<body\b[^>]*>", html, flags=re.IGNORECASE)
+            if body_root:
+                root_open = body_root
+                html = html[:root_open.start()] + html[root_open.start():root_open.end()].replace(
+                    ">", ' data-composition-id="main">', 1
+                ) + html[root_open.end():]
+            else:
+                raise ValueError(f"{path}: missing composition root for narration audio binding")
         # Use reels narration for reels composition
         narration_tag = NARRATION_TAG.replace('assets/narration.mp3', narration_src)
         html = html[:root_open.end()] + "\n    " + narration_tag + html[root_open.end():]

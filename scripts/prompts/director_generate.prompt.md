@@ -15,5 +15,5 @@ Content & Quality for both:
 - Must contain at least 4 distinct visual scenes (max 8s each).
 - CSS sizing must load fit-content; never use fixed width/height container constraints that silently clip dynamic text. Use CSS: `width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box; display: inline-block; padding: 10px 20px;`
 - High-contrast visual plates ensuring the final composition meets strict 0.5000% edge-density QA gates.
-- Animate elements using only GSAP from CDN: <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>. Expose the timeline: `window.__timelines = window.__timelines || {}; const tl = gsap.timeline({paused: true}); window.__timelines['main'] = tl;`
+- Animate elements using only GSAP from CDN: <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>. The root container must have data-composition-id="main". Expose the timeline: `window.__timelines = window.__timelines || {}; const tl = gsap.timeline({paused: true}); window.__timelines['main'] = tl;`
 - Add a slow, continuous background/layer movement spanning the entire duration of every scene to prevent failure of the frozen-canvas check (max 50% static frames). Do NOT use <video> elements or CSS @keyframes for this; use only GSAP.

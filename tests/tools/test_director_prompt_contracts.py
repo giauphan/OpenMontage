@@ -48,6 +48,17 @@ def test_director_prompt_interpolation():
         assert "{{PROJECT_DIR}}" not in rendered
         assert dummy_dir in rendered
 
+
+def test_generation_prompt_requires_render_contract():
+    root = get_root()
+    prompt = (
+        root / "scripts" / "prompts" / "director_generate.prompt.md"
+    ).read_text(encoding="utf-8")
+
+    assert 'data-composition-id="main"' in prompt
+    assert "window.__timelines['main']" in prompt
+
+
 def test_scripts_prevent_recursive_invocation():
     """Regression: ensure we don't hit infinite loop from bad prompt instructions."""
     root = get_root()

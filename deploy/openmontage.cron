@@ -6,6 +6,7 @@
 # DEFAULT: Single-platform publishing (YouTube only) to prevent duplicates.
 # Multi-platform mode can be enabled by setting MULTI_PLATFORM=1.
 #
+# All commands use absolute paths and append logs so cron has same runtime as manual runs.
 # Instagram slots: Instagram lacks native scheduling, so cron triggers Instagram publishing
 # at specific Vietnam time slots. YouTube uses platform-native scheduling; Facebook is disabled.
 
