@@ -100,15 +100,23 @@ DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-40}"
 PROMPT_DIR="$ROOT/scripts/prompts"
 render_director_prompt() {
   local template="$1"
-  [ -s "$template" ] || return 1
-  sed "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" "$template"
+  [ -f "$template" ] || { echo "ERROR: template file not found: $template" >&2; return 1; }
+  [ -s "$template" ] || { echo "ERROR: template file is empty: $template" >&2; return 1; }
+  local result
+  result="$(sed "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" "$template")"
+
+  if [ -z "${result:-}" ] || [ "$result" = "$(cat "$template" 2>/dev/null)" ]; then
+    echo "ERROR: template interpolation failed or untouched: $template" >&2
+    return 1
+  fi
+  printf '%s\n' "$result"
 }
 PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
-  echo "[$(date -u +%FT%TZ)] ERROR: missing director generation prompt" >> "$DIRECTORS_LOG"
+  echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
   exit 1
 }
 DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
-  echo "[$(date -u +%FT%TZ)] ERROR: missing director system prompt" >> "$DIRECTORS_LOG"
+  echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
   exit 1
 }
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"

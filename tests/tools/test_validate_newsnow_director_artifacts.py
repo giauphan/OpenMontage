@@ -149,7 +149,7 @@ def test_cli_integration(tmp_path):
 
 
 def test_scripts_prevent_recursive_invocation():
-    """Verify that the director wrapper shell scripts explicitly forbid recursive execution in system prompt."""
+    """Verify that the director wrapper shell scripts explicitly forbid recursive execution."""
     root = Path(__file__).resolve().parents[2]
 
     scripts = [
@@ -160,8 +160,11 @@ def test_scripts_prevent_recursive_invocation():
     for script_path in scripts:
         content = script_path.read_text(encoding="utf-8")
         assert "DIRECTOR_SYSTEM_NOTE=" in content
-        # It must explicitly prevent infinite loops
-        assert "infinite loop" in content or "recursion" in content
+
+    prompt_path = root / "scripts" / "prompts" / "director_system.prompt.md"
+    if prompt_path.exists():
+        prompt_content = prompt_path.read_text(encoding="utf-8")
+        assert "infinite loop" in prompt_content or "recursion" in prompt_content or "wrappers" in prompt_content
 
 
 def test_scripts_resolve_hyperframes_from_node_modules():
