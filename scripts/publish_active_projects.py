@@ -47,18 +47,6 @@ def scheduled_projects_for_slot(projects: list[object], slot: str, local_date: s
         if publish_date == local_date and publish_time == slot:
             queued_projects.append(project_id)
     
-    # For Instagram slots, also add projects from projects/instagram/ folder
-    # These were moved there after YouTube/Facebook scheduling
-    instagram_dir = ROOT / "projects" / "instagram"
-    if instagram_dir.exists():
-        for project_dir in instagram_dir.iterdir():
-            if project_dir.is_dir():
-                project_id = project_dir.name
-                # Check if this project has valid metadata
-                metadata_file = project_dir / "publish_metadata.json"
-                if metadata_file.exists():
-                    queued_projects.append(project_id)
-    
     return queued_projects
 
 
