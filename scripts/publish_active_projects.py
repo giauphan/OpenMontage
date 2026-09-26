@@ -183,7 +183,24 @@ def main() -> int:
         if args.only_platform == "instagram":
             env["INSTAGRAM_MODE"] = "1"
         result = subprocess.run(command, cwd=ROOT, env=env)
-        if result.returncode:
+        if result.returncode == 2:
+            print(f"STRICT QUALITY GATE REJECTED {project_id} (exit 2). Removing rejected project.")
+            schedule = json.loads(CONFIG.read_text(encoding="utf-8"))
+            active_projects = schedule.get("active_projects", [])
+            schedule["active_projects"] = [
+                item for item in active_projects
+                if (item.get("project_id") if isinstance(item, dict) else item) != project_id
+            ]
+            temp_config = CONFIG.with_suffix(".json.tmp")
+            temp_config.write_text(
+                json.dumps(schedule, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            temp_config.replace(CONFIG)
+            if project_dir.exists():
+                shutil.rmtree(project_dir, ignore_errors=True)
+            exit_code = result.returncode
+        elif result.returncode:
             exit_code = result.returncode
     return exit_code
 

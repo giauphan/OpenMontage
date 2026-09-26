@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from lib.checkpoint import init_project, write_checkpoint
-from lib.claude_news_selector import ClaudeNewsSelector
+from lib.codex_news_selector import CodexNewsSelector as NewsSelector
 from lib.news_research_bridge import NewsResearchBridge
 from lib.news_scoring import NewsCandidateScorer
 from tools.news.newsnow_adapter import NewsNowAdapter
@@ -109,12 +109,12 @@ def run_produce(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     if args.dry_run:
-        logger.info("[DRY RUN] Skipping Claude CLI and checkpoint generation.")
+        logger.info("[DRY RUN] Skipping Codex CLI and checkpoint generation.")
         print(json.dumps(ranked[:count], indent=2))
         return
 
-    logger.info("Running bounded Claude selection...")
-    selector = ClaudeNewsSelector()
+    logger.info("Running bounded Codex selection...")
+    selector = NewsSelector()
 
     project_ids: List[str] = []
     used_ids: set[str] = set()
@@ -128,14 +128,14 @@ def run_produce(args: argparse.Namespace) -> None:
         selection = selector.select_and_research(pool)
         if not selection:
             logger.warning(
-                "Claude returned invalid candidate-bound research; retrying selection "
+                "Codex returned invalid candidate-bound research; retrying selection "
                 f"(attempt {attempts}/{max_attempts})."
             )
             continue
 
         selected_id = selection["selected_candidate_id"]
         if selected_id in used_ids:
-            logger.warning(f"Claude selected duplicate candidate {selected_id}; retrying selection.")
+            logger.warning(f"Codex selected duplicate candidate {selected_id}; retrying selection.")
             continue
 
         candidate = next(c for c in pool if c["candidate_id"] == selected_id)

@@ -165,12 +165,16 @@ def canonical_platform_records_published(store: PublishStore, *, date: str, topi
         facebook_enabled = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
         if instagram_mode:
             enabled_routes = (("instagram", "reels"),)
+        elif "MULTI_PLATFORM" in os.environ and not multi_platform:
+            enabled_routes = (("youtube", "short"),)
         elif multi_platform:
             enabled_routes = (("youtube", "short"), ("instagram", "reels"))
+            if facebook_enabled:
+                enabled_routes += (("facebook", "reels"),)
         else:
             enabled_routes = (("youtube", "short"), ("instagram", "reels"))
-        if facebook_enabled:
-            enabled_routes += (("facebook", "reels"),)
+            if facebook_enabled:
+                enabled_routes += (("facebook", "reels"),)
         return all(
             (record := store.get(publish_key(date, topic, platform, kind)))
             and record.get("status") == "published"
@@ -536,11 +540,11 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
         diagnostic = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
         raise RuntimeError(diagnostic or f"metadata validator exited {result.returncode}")
 
-    # Step 2: CLAUDE Agent Strict Quality Validation (mandatory when strict=True)
+    # Step 2: Codex Agent Strict Quality Validation (mandatory when strict=True)
     if strict:
-        claude_validator = root / "scripts" / "claude_agent_validation.py"
-        if not claude_validator.is_file():
-            raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: CLAUDE agent validator required")
+        agent_validator = root / "scripts" / "codex_agent_validation.py"
+        if not agent_validator.is_file():
+            raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: Codex agent validator required")
 
         env = dict(os.environ)
         ffprobe = shutil.which("ffprobe") or ""
@@ -549,15 +553,16 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
             if candidates:
                 env["PATH"] = str(candidates[0].parent) + ":" + env.get("PATH", "")
 
-        claude_result = subprocess.run(
-            [sys.executable, str(claude_validator), str(project_path), "--strict"],
+        val_result = subprocess.run(
+            [sys.executable, str(agent_validator), str(project_path), "--strict"],
             capture_output=True,
             text=True,
             env=env,
         )
-        if claude_result.returncode:
-            diagnostic = "\n".join(part.strip() for part in (claude_result.stdout, claude_result.stderr) if part.strip())
-            raise RuntimeError(f"CLAUDE Agent strict validation failed: {diagnostic or f'validator exited {claude_result.returncode}'}")
+        if val_result.returncode:
+            diagnostic = "\n".join(part.strip() for part in (val_result.stdout, val_result.stderr) if part.strip())
+            err_detail = diagnostic or f"validator exited {val_result.returncode}"
+            raise RuntimeError(f"Codex Agent strict validation failed: {err_detail}")
 
     # Step 3: Validate video/audio content (dimensions, codecs, black frames, silent audio)
     ffprobe = shutil.which("ffprobe") or ""

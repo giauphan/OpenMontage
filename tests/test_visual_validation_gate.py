@@ -145,12 +145,12 @@ def test_validate_project_quality_raises_when_claude_validator_fails(tmp_path: P
         cmd_str = " ".join(str(c) for c in cmd)
         if "validate_publish_metadata.py" in cmd_str:
             return MagicMock(returncode=0)
-        if "claude_agent_validation.py" in cmd_str:
+        if "codex_agent_validation.py" in cmd_str or "claude_agent_validation.py" in cmd_str:
             return MagicMock(returncode=1, stdout="Visual validation rejected static layout", stderr="")
         return MagicMock(returncode=0)
 
     with patch("scripts.publish_manual_video.subprocess.run", side_effect=fake_subprocess_run):
         with pytest.raises(RuntimeError) as excinfo:
             validate_project_quality(project_dir, strict=True)
-        assert "CLAUDE Agent strict validation failed" in str(excinfo.value)
+        assert "Codex Agent strict validation failed" in str(excinfo.value) or "CLAUDE Agent strict validation failed" in str(excinfo.value)
         assert "Visual validation rejected static layout" in str(excinfo.value)

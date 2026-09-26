@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Strict Docker publish workflow orchestrator.
 # Runs entirely inside the openmontage_worker container on the server.
-# Stages: prepare -> today-batch -> generate -> verify -> claude-validate -> publish -> cleanup -> final-state.
+# Stages: prepare -> today-batch -> generate -> verify -> codex-validate -> publish -> cleanup -> final-state.
 # Each stage is a hard gate; any failure stops the workflow before publishing.
 set -euo pipefail
 
@@ -18,7 +18,7 @@ RUN_LOG="$LOG_DIR/run_${RUN_TS}.log"
 STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
-MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
+MAX_RETRIES="${CODEX_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3)}"
@@ -95,8 +95,9 @@ fi
 command -v python3 >/dev/null  || fail "python3 missing"
 command -v ffmpeg   >/dev/null  || fail "ffmpeg missing"
 command -v ffprobe  >/dev/null  || fail "ffprobe missing"
-command -v claude   >/dev/null  || fail "claude CLI missing"
-log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), claude=$(claude --version 2>&1 | head -1))"
+command -v codex >/dev/null || [ -f "$ROOT/scripts/codex_agent_validation.py" ] || fail "codex agent validator missing"
+CLI_AGENT=$( (command -v codex >/dev/null && codex --version 2>&1 | head -1) || echo "autonomous" )
+log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), agent=$CLI_AGENT)"
 write_state "preflight" "ok"
 
 # ===== STAGE 1: PREPARE — isolate due-today batch from next-day generation =====
@@ -185,21 +186,21 @@ for PID in "${PROJECT_IDS[@]}"; do
   [ -d "$PDIR" ] || { log "FAIL $PID: project dir missing"; continue; }
   # 4b. publish_metadata.json exists + valid JSON + has required fields.
   META="$PDIR/publish_metadata.json"
-  [ -f "$META" ] || { log "FAIL $PID: publish_metadata.json missing"; continue; }
+  [ -f "$META" ] || { log "FAIL $PID: publish_metadata.json missing — removing"; rm -rf "$PDIR" "$ROOT/projects/instagram/$PID"; continue; }
   jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
-    || { log "FAIL $PID: publish_metadata.json invalid/missing fields"; continue; }
+    || { log "FAIL $PID: publish_metadata.json invalid/missing fields — removing"; rm -rf "$PDIR" "$ROOT/projects/instagram/$PID"; continue; }
   # 4c. Render files exist and non-empty.
   RENDER_OK=1
   for R in "renders/final_full_vi_9x16.mp4" "renders/final_reels_vi_9x16.mp4"; do
     [ -s "$PDIR/$R" ] || { log "FAIL $PID: render $R missing/empty"; RENDER_OK=0; }
   done
-  [ "$RENDER_OK" -eq 1 ] || continue
+  [ "$RENDER_OK" -eq 1 ] || { log "FAIL $PID: incomplete renders — removing"; rm -rf "$PDIR" "$ROOT/projects/instagram/$PID"; continue; }
   # 4d. Technical quality validation via validate_render_quality.py (reels max 60s for Shorts).
   "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --reels-max-duration 60.0 >> "$VERIFY_LOG" 2>&1 \
-    || { log "FAIL $PID: validate_render_quality failed"; continue; }
+    || { log "FAIL $PID: validate_render_quality failed — removing"; rm -rf "$PDIR" "$ROOT/projects/instagram/$PID"; continue; }
   # 4e. publish_metadata validation.
   "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \
-    || { log "FAIL $PID: validate_publish_metadata failed"; continue; }
+    || { log "FAIL $PID: validate_publish_metadata failed — removing"; rm -rf "$PDIR" "$ROOT/projects/instagram/$PID"; continue; }
 
   VERIFY_OK_PIDS+=("$PID")
 done
@@ -208,39 +209,45 @@ done
 log "strict verification PASSED for ${#VERIFY_OK_PIDS[@]} projects: ${VERIFY_OK_PIDS[*]}"
 write_state "verify" "ok"
 
-# ===== STAGE 5: STRICT CLAUDE AGENT VALIDATION =====
-stage 5 "claude-agent-validation"
-CLAUDE_LOG="$LOG_DIR/claude_validate_${RUN_TS}.log"
-: > "$CLAUDE_LOG"
+# ===== STAGE 5: STRICT CODEX AGENT VALIDATION =====
+stage 5 "codex-agent-validation"
+CODEX_LOG="$LOG_DIR/codex_validate_${RUN_TS}.log"
+: > "$CODEX_LOG"
 VALIDATED_PIDS=()
 
 for PID in "${VERIFY_OK_PIDS[@]}"; do
   PDIR="$ROOT/projects/$PID"
-  log "claude validating $PID"
+  log "Codex validating $PID"
   VALIDATION_PASSED=0
+  VAL_SCRIPT="$ROOT/scripts/codex_agent_validation.py"
+  [ -f "$VAL_SCRIPT" ] || { log "ERROR: codex_agent_validation.py not found"; fail "codex_agent_validation.py missing"; }
   for ((retry=1; retry<=MAX_RETRIES; retry++)); do
     log "attempt $retry/$MAX_RETRIES for $PID"
-    if "$PY" "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
-        >> "$CLAUDE_LOG" 2>&1; then
+    if "$PY" "$VAL_SCRIPT" "$PDIR" --strict --retry "$MAX_RETRIES" \
+        >> "$CODEX_LOG" 2>&1; then
       VALIDATION_PASSED=1
       break
     fi
     log "attempt $retry failed for $PID"
   done
   if [ "$VALIDATION_PASSED" -eq 1 ]; then
-    log "claude validation PASSED for $PID"
+    log "Codex validation PASSED for $PID"
     VALIDATED_PIDS+=("$PID")
   else
-    log "claude validation FAILED for $PID"
+    log "Codex validation FAILED for $PID — removing rejected project directory"
+    rm -rf "$ROOT/projects/$PID" "$ROOT/projects/instagram/$PID"
+    if [ -f "$SCHEDULE" ]; then
+      jq --arg pid "$PID" '.active_projects = [(.active_projects[]? | select((.project_id // .) != $pid))]' "$SCHEDULE" > "$SCHEDULE.tmp" && mv "$SCHEDULE.tmp" "$SCHEDULE"
+    fi
   fi
 done
 
 [ "${#VALIDATED_PIDS[@]}" -gt 0 ] || {
-  write_state "claude-validate" "failed"
-  fail "claude validation failed for all projects (see $CLAUDE_LOG)"
+  write_state "codex-validate" "failed"
+  fail "Codex validation failed for all projects (see $CODEX_LOG)"
 }
-log "claude agent strict validation PASSED for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
-write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
+log "Codex agent strict validation PASSED for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
+write_state "codex-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 
 # ===== STAGE 6: QUEUE — current-day recovery plus next-day schedule =====
 stage 6 "queue"

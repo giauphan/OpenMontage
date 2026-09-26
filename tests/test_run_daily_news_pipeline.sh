@@ -60,7 +60,7 @@ if ! grep -q 'tests/qa/output/music_calm.mp3' "$ROOT/scripts/run_daily_news_pipe
     exit 1
 fi
 
-if ! grep -q 'if "\$PY" "\$ROOT/scripts/claude_agent_validation.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+if ! grep -q 'if "\$PY" "\$ROOT/scripts/codex_agent_validation.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
     echo "FAIL: Claude validation is not guarded against errexit."
     exit 1
 fi

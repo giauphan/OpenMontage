@@ -30,15 +30,14 @@ RUN pip3 install -r requirements.txt -r requirements-publish.txt -r requirements
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
-# Claude Code CLI — drives the news selection / research pipeline
-# (lib/claude_news_selector.py shells out to `claude --print`)
-RUN npm install -g @anthropic-ai/claude-code
+# Codex CLI — drives news selection / research / validation pipeline
+RUN npm install -g @openai/codex
 
 # Project source
 COPY . .
 ENV PYTHONPATH=/app
 
 # Make validation scripts executable
-RUN chmod +x scripts/claude_agent_validation.py scripts/validate_render_quality.py scripts/validate_publish_metadata.py
+RUN chmod +x scripts/codex_agent_validation.py scripts/validate_render_quality.py scripts/validate_publish_metadata.py
 
 CMD ["bash"]

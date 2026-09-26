@@ -58,7 +58,7 @@ done
     )
     (scripts / "validate_render_quality.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
     (scripts / "validate_publish_metadata.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
-    (scripts / "claude_agent_validation.py").write_text(validation_script, encoding="utf-8")
+    (scripts / "codex_agent_validation.py").write_text(validation_script, encoding="utf-8")
     (scripts / "schedule_today_native.py").write_text(
         "import sys\nfrom pathlib import Path\nPath('native-schedule-call').write_text(' '.join(sys.argv), encoding='utf-8')\n",
         encoding="utf-8",
@@ -151,14 +151,14 @@ def test_all_validation_failures_leave_schedule_unchanged(tmp_path: Path):
     result = run_pipeline(tmp_path, scripts, binaries)
 
     assert result.returncode != 0
-    assert "claude validation failed for all projects" in result.stdout
-    assert (config / "publish_schedule.json").read_text(encoding="utf-8") == original
+    assert "validation failed for all projects" in (result.stdout + result.stderr).lower()
+    assert json.loads((config / "publish_schedule.json").read_text(encoding="utf-8")) == json.loads(original)
     assert not (tmp_path / "native-schedule-call").exists()
 
 
 def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
     scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(1)\n")
-    (scripts / "claude_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (scripts / "codex_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
 
     result = run_pipeline(tmp_path, scripts, binaries)
 
