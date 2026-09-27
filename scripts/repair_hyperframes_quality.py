@@ -616,19 +616,6 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
 
     beam_repeats = max(2, int(round(target / 3.2)) + 2)
     grid_repeats = max(2, int(round(target / 4.0)) + 2)
-    cycles = max(1, int(round(target / 1.6)))
-    comp_tag = re.search(r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", body)
-    root_selector = ""
-    for candidate_id in ("stage", "composition", "viewport", "canvas", "app", "container", "root", "main"):
-        if re.search(rf"(?<!-)id=[\"']{candidate_id}[\"']", html):
-            root_selector = f"#{candidate_id}"
-            break
-    if not root_selector and comp_tag:
-        id_match = re.search(r'(?<!-)id=["\']([^"\']+)["\']', comp_tag.group(0))
-        if id_match:
-            root_selector = f"#{id_match.group(1)}"
-    if not root_selector:
-        root_selector = "[data-composition-id]" if comp_tag else "body"
 
     # Remove stale scale injection so it gets regenerated with current target duration
     if "__repair_scale_injected" in body:
@@ -658,9 +645,6 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         f"    }} catch (e) {{}}\n"
         f"    try {{\n"
         f"      _r_tl.fromTo('.hf-grid-overlay', {{backgroundPosition: '0px 0px'}}, {{backgroundPosition: '0px 240px', force3D: true, duration: 4.0, repeat: {grid_repeats}, ease: 'linear'}}, 0);\n"
-        f"    }} catch (e) {{}}\n"
-        f"    try {{\n"
-        f"      _r_tl.fromTo('{root_selector}', {{scale: 1.0}}, {{scale: 1.12, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: {cycles}, ease: 'sine.inOut'}}, 0);\n"
         f"    }} catch (e) {{}}\n"
         f"  }}\n"
         f"}})();\n"
