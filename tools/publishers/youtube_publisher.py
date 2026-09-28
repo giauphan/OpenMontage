@@ -288,3 +288,33 @@ class YoutubePublisher(BaseTool):
             return ToolResult(
                 success=False, error=f"YouTube upload failed: {str(exc)}"
             )
+
+    def check_video_published(self, video_id: str) -> dict[str, Any] | None:
+        """Check status of a YouTube video via YouTube Data API v3 for reconciliation."""
+        try:
+            secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
+            if not secret_file_str:
+                return None
+            secret_file = Path(secret_file_str).expanduser()
+            token_path_str = os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")
+            token_file = Path(token_path_str).expanduser()
+            if not secret_file.is_file() or not token_file.is_file():
+                return None
+            service = self._get_authenticated_service(secret_file, token_file)
+            req = service.videos().list(part="status,snippet", id=video_id)
+            res = req.execute()
+            items = res.get("items", [])
+            if items:
+                status = items[0].get("status", {})
+                snippet = items[0].get("snippet", {})
+                return {
+                    "video_id": video_id,
+                    "privacy_status": status.get("privacyStatus"),
+                    "upload_status": status.get("uploadStatus"),
+                    "publish_at": status.get("publishAt"),
+                    "channel_id": snippet.get("channelId"),
+                    "title": snippet.get("title"),
+                }
+        except Exception:
+            return None
+        return None

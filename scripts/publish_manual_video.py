@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 from scripts.publish_config import load_config, publish_timezone
 from tools.narration_text import validate_vietnamese_narration
-from tools.publish_store import PublishStore, publish_key
+from tools.publish_store import PublishStore, file_sha256, publish_key
 from scripts.validate_render_quality import PORTRAIT_DIMENSIONS, resolve_narration, validate_video
 from tools.publishers.platform_routes import (
     PLATFORM_ROUTES,
@@ -157,25 +157,68 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         raise ValueError("\n".join(errors))
 
 
-def canonical_platform_records_published(store: PublishStore, *, date: str, topic: str) -> bool:
+def get_required_routes_for_project(
+    topic: str,
+    project_dir: Path | None = None,
+    metadata: dict | None = None,
+) -> list[tuple[str, str]]:
+    """Determine all required platform routes (platform, kind) for a project."""
+    root = ROOT
+    pdir = project_dir
+    if pdir is None:
+        for cand in [root / "projects" / topic, root / "projects_news" / topic, root / "projects" / "instagram" / topic]:
+            if cand.is_dir():
+                pdir = cand
+                break
+    meta = metadata
+    if meta is None and pdir and (pdir / "publish_metadata.json").is_file():
+        try:
+            meta = json.loads((pdir / "publish_metadata.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    facebook_enabled = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
+
+    routes: list[tuple[str, str]] = [("youtube", "short")]
+
+    has_ig = bool(meta and meta.get("ig_reels"))
+    if not has_ig and pdir:
+        has_ig = (pdir / "renders" / "final_reels_vi_9x16.mp4").is_file()
+    if has_ig or not meta:
+        routes.append(("instagram", "reels"))
+
+    if facebook_enabled:
+        has_fb = bool(meta and (meta.get("fb_video") or meta.get("fb_reels")))
+        if not has_fb and pdir:
+            has_fb = (pdir / "renders" / "final_full_vi_9x16.mp4").is_file()
+        if has_fb or not meta:
+            routes.append(("facebook", "reels"))
+
+    return routes
+
+
+def canonical_platform_records_published(
+    store: PublishStore,
+    *,
+    date: str,
+    topic: str,
+    project_dir: Path | None = None,
+    routes: list[tuple[str, str]] | None = None,
+) -> bool:
     try:
-        # return all(
-        multi_platform = os.environ.get("MULTI_PLATFORM", "0") == "1"
-        instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
-        facebook_enabled = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
-        if instagram_mode:
-            enabled_routes = (("instagram", "reels"),)
-        elif multi_platform:
-            enabled_routes = (("youtube", "short"), ("instagram", "reels"))
-        else:
-            enabled_routes = (("youtube", "short"), ("instagram", "reels"))
-        if facebook_enabled:
-            enabled_routes += (("facebook", "reels"),)
-        return all(
-            (record := store.get(publish_key(date, topic, platform, kind)))
-            and record.get("status") == "published"
-            for platform, kind in enabled_routes
+        if routes:
+            return all(
+                (record := store.get(publish_key(date, topic, platform, kind)))
+                and record.get("status") == "published"
+                for platform, kind in routes
+            )
+        from scripts.check_cleanup_eligibility import is_project_eligible_for_cleanup
+        eligible, reason, _ = is_project_eligible_for_cleanup(
+            topic, project_dir=project_dir, store=store, date=date
         )
+        if not eligible:
+            print(f"Publication not complete for {topic}: {reason}", file=sys.stderr)
+        return eligible
     except Exception as exc:
         print(f"Failed to verify Firebase publish completion: {exc}", file=sys.stderr)
         return False
@@ -213,6 +256,8 @@ def publish_batch(
     only_platform: str | None = None,
     force: bool = False,
     date: str | None = None,
+    strict: bool = True,
+    enforce_preflight: bool | None = None,
 ) -> dict:
     """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
@@ -225,7 +270,18 @@ def publish_batch(
     multi_platform = os.environ.get("MULTI_PLATFORM", "0") == "1"
     instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
     
-    if instagram_mode:
+    if only_platform:
+        if only_platform == "instagram":
+            platform_contract = [("instagram", IG_ACCOUNT_ID, PLATFORM_ROUTES["instagram"][0], PLATFORM_ROUTES["instagram"][1])]
+        elif only_platform == "facebook":
+            platform_contract = [("facebook", FB_PAGE_ID, PLATFORM_ROUTES["facebook"][0], PLATFORM_ROUTES["facebook"][1])]
+        elif only_platform == "youtube":
+            platform_contract = [("youtube", YT_ACCOUNT, PLATFORM_ROUTES["youtube"][0], PLATFORM_ROUTES["youtube"][1])]
+        elif only_platform in PLATFORM_ROUTES:
+            platform_contract = [(only_platform, "", PLATFORM_ROUTES[only_platform][0], PLATFORM_ROUTES[only_platform][1])]
+        else:
+            raise ValueError(f"No platform configured for {only_platform}")
+    elif instagram_mode:
         print("📸 INSTAGRAM MODE: Instagram only (Instagram cron job)")
         platform_contract = [
             (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
@@ -292,6 +348,27 @@ def publish_batch(
     if not platforms:
         raise ValueError(f"No platform configured for {only_platform}")
 
+    # Enforce release preflight (quality gates, checkpoints, human approval).
+    # Preflight failure halts before making upload API calls or DB writes.
+    if enforce_preflight is None:
+        enforce_preflight = bool(
+            (project_dir / "project.json").is_file()
+            or (project_dir / "approval.json").is_file()
+            or (project_dir / "human_approval.json").is_file()
+            or "human_approval" in metadata
+            or os.environ.get("PRODUCTION_RELEASE") == "1"
+            or os.environ.get("STRICT_PRODUCTION") == "1"
+        )
+
+    if enforce_preflight:
+        enforce_release_preflight(
+            project_dir,
+            metadata,
+            platforms=platforms,
+            strict=strict,
+            force=force,
+        )
+
     # Validate exact selected assets before any Firebase claim or mutation.
     for cfg in platforms:
         video_path = resolve_video_path(cfg["video_path"], project_dir, root)
@@ -303,9 +380,7 @@ def publish_batch(
     # IMPORTANT: this must never block YouTube. Gate each platform independently and fail
     # the blocked ones as "failed" (visible failure), while YouTube still runs.
     def _meta_preflight_error_for_platform(platform: str) -> str | None:
-        from tools.publishers.meta_publisher import MetaPublisher as _MetaPub
-
-        mp = _MetaPub()
+        mp = MetaPublisher()
         fb_token = os.environ.get("TOKEN_FACEBOOK", "")
         if platform == "facebook":
             try:
@@ -387,6 +462,17 @@ def publish_batch(
         if not claimed:
             existing_status = existing.get("status") if existing else "unknown"
             if retry_failed and existing_status == "failed":
+                if existing.get("video_id") or existing.get("platform_id"):
+                    print(
+                        f"[RETRY CHECK] Existing record {key} already has remote ID; "
+                        f"skipping duplicate upload"
+                    )
+                    results["platforms"][f"{platform}/{kind}"] = {
+                        "status": "skipped",
+                        "reason": "existing_remote_id",
+                        "existing_record": existing,
+                    }
+                    continue
                 key = publish_key(today, metadata["id"], platform, kind)
                 store.update(
                     key,
@@ -394,6 +480,21 @@ def publish_batch(
                         "status": "uploading",
                         "error": None,
                         "retry_started_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            elif existing_status == "scheduling" and not (existing.get("video_id") or existing.get("platform_id")):
+                print(
+                    f"[RESERVATION RESUME] Found queued reservation for {key} without remote ID; "
+                    f"resuming upload."
+                )
+                key = publish_key(today, metadata["id"], platform, kind)
+                store.update(
+                    key,
+                    {
+                        "status": "uploading",
+                        "error": None,
+                        "worker_started_at": datetime.now(timezone.utc).isoformat(),
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     },
                 )
@@ -481,22 +582,50 @@ def publish_batch(
 
         # Step 3: Update Firebase based on result
         if result and result.get("success"):
-            try:
-                store.mark_published(
-                    key,
-                    video_id=result.get("video_id") or result.get("platform_id"),
-                    video_url=result.get("video_url"),
-                    published_at=datetime.now(timezone.utc).isoformat(),
-                )
-                print(f"✅ Firebase record updated: {key} -> published")
-            except Exception as fb_error:
-                print(f"❌ Firebase update failed for {key}: {fb_error}")
-                # Continue anyway since the platform upload succeeded
+            vid_id = result.get("video_id") or result.get("platform_id")
+            vid_url = result.get("video_url")
+            # F08: Instagram is uploaded directly and published immediately at its slot.
+            # Only YouTube with publish_at or Facebook with scheduled_epoch are remotely scheduled.
+            if platform == "instagram":
+                is_scheduled = False
+            elif platform == "facebook" and cfg.get("scheduled_epoch"):
+                is_scheduled = True
+            elif platform == "youtube" and publish_at:
+                is_scheduled = True
+            else:
+                is_scheduled = False
+            record_status = "scheduled" if is_scheduled else "published"
+            if store:
+                try:
+                    if is_scheduled:
+                        sched_target = publish_at or (
+                            datetime.fromtimestamp(cfg["scheduled_epoch"], tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                            if cfg.get("scheduled_epoch")
+                            else datetime.now(timezone.utc).isoformat()
+                        )
+                        store.mark_scheduled(
+                            key,
+                            video_id=vid_id,
+                            video_url=vid_url,
+                            scheduled_for=sched_target,
+                        )
+                        print(f"✅ Firebase record updated: {key} -> scheduled")
+                    else:
+                        store.mark_published(
+                            key,
+                            video_id=vid_id,
+                            video_url=vid_url,
+                            published_at=datetime.now(timezone.utc).isoformat(),
+                        )
+                        print(f"✅ Firebase record updated: {key} -> published")
+                except Exception as fb_error:
+                    print(f"❌ Firebase update failed for {key}: {fb_error}")
+                    # Continue anyway since the platform upload succeeded
                 
             results["platforms"][f"{platform}/{kind}"] = {
-                "status": "published",
-                "video_id": result.get("video_id") or result.get("platform_id"),
-                "video_url": result.get("video_url"),
+                "status": record_status,
+                "video_id": vid_id,
+                "video_url": vid_url,
             }
         else:
             error_msg = result.get("error", "Unknown upload error") if result else "No result returned"
@@ -536,11 +665,11 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
         diagnostic = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
         raise RuntimeError(diagnostic or f"metadata validator exited {result.returncode}")
 
-    # Step 2: CLAUDE Agent Strict Quality Validation (mandatory when strict=True)
+    # Step 2: Codex Agent Strict Quality Validation (mandatory when strict=True)
     if strict:
-        claude_validator = root / "scripts" / "claude_agent_validation.py"
-        if not claude_validator.is_file():
-            raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: CLAUDE agent validator required")
+        agent_validator = root / "scripts" / "codex_agent_validation.py"
+        if not agent_validator.is_file():
+            raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: Codex agent validator required")
 
         env = dict(os.environ)
         ffprobe = shutil.which("ffprobe") or ""
@@ -549,15 +678,16 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
             if candidates:
                 env["PATH"] = str(candidates[0].parent) + ":" + env.get("PATH", "")
 
-        claude_result = subprocess.run(
-            [sys.executable, str(claude_validator), str(project_path), "--strict"],
+        val_result = subprocess.run(
+            [sys.executable, str(agent_validator), str(project_path), "--strict"],
             capture_output=True,
             text=True,
             env=env,
         )
-        if claude_result.returncode:
-            diagnostic = "\n".join(part.strip() for part in (claude_result.stdout, claude_result.stderr) if part.strip())
-            raise RuntimeError(f"CLAUDE Agent strict validation failed: {diagnostic or f'validator exited {claude_result.returncode}'}")
+        if val_result.returncode:
+            diagnostic = "\n".join(part.strip() for part in (val_result.stdout, val_result.stderr) if part.strip())
+            err_detail = diagnostic or f"validator exited {val_result.returncode}"
+            raise RuntimeError(f"Codex Agent strict validation failed: {err_detail}")
 
     # Step 3: Validate video/audio content (dimensions, codecs, black frames, silent audio)
     ffprobe = shutil.which("ffprobe") or ""
@@ -590,6 +720,250 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
         raise RuntimeError(diagnostic or f"validator exited {result.returncode}")
 
 
+def enforce_release_preflight(
+    project_dir: Path,
+    metadata: dict,
+    *,
+    platforms: list[dict] | None = None,
+    strict: bool = True,
+    force: bool = False,
+) -> None:
+    """Unified release preflight gate.
+
+    Enforces:
+    1. Strict video, audio, and metadata quality validation.
+    2. Stage checkpoints & prerequisites from selected pipeline manifest.
+    3. Required stage artifacts from pipeline manifest.
+    4. Explicit human approval bound to exact media SHA-256, target account, copy, and release time.
+    5. Block publication on asset or copy changes until re-validated and re-approved.
+    6. Force flags cannot bypass quality gates or approvals.
+    """
+    root = Path(__file__).resolve().parents[1]
+
+    # --- Step 1: Quality Validation ---
+    validate_project_quality(project_dir, strict=strict)
+
+    # --- Step 2: Pipeline Checkpoints & Artifacts ---
+    project_marker = project_dir / "project.json"
+    pipeline_type = metadata.get("pipeline_type")
+    if project_marker.is_file():
+        try:
+            with project_marker.open("r", encoding="utf-8") as f:
+                marker_data = json.load(f)
+            if not pipeline_type:
+                pipeline_type = marker_data.get("pipeline_type")
+        except Exception as e:
+            raise RuntimeError(f"Release preflight failed: Invalid project.json: {e}") from e
+
+    if pipeline_type:
+        from lib.checkpoint import (
+            get_pipeline_stages,
+            _stage_requires_approval,
+            validate_checkpoint,
+            CANONICAL_STAGE_ARTIFACTS,
+        )
+        from lib.pipeline_loader import load_pipeline_readonly
+
+        try:
+            stages = get_pipeline_stages(pipeline_type)
+        except Exception:
+            stages = []
+
+        publish_idx = stages.index("publish") if "publish" in stages else len(stages)
+        predecessor_stages = stages[:publish_idx]
+
+        manifest_stages_dict = {}
+        try:
+            manifest = load_pipeline_readonly(pipeline_type)
+            for st in manifest.get("stages", []):
+                manifest_stages_dict[st.get("name")] = st
+        except Exception:
+            pass
+
+        for st_name in predecessor_stages:
+            cp_file = project_dir / f"checkpoint_{st_name}.json"
+            if not cp_file.is_file():
+                raise RuntimeError(
+                    f"Release preflight failed: Missing required stage checkpoint for {st_name!r} "
+                    f"(expected {cp_file.name})"
+                )
+            try:
+                with cp_file.open("r", encoding="utf-8") as f:
+                    cp_data = json.load(f)
+                validate_checkpoint(cp_data)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Release preflight failed: Invalid checkpoint for stage {st_name!r}: {e}"
+                ) from e
+
+            if cp_data.get("status") != "completed":
+                raise RuntimeError(
+                    f"Release preflight failed: Stage {st_name!r} status is {cp_data.get('status')!r}, "
+                    f"expected 'completed'"
+                )
+
+            # Check human approval on gated stages
+            if _stage_requires_approval(pipeline_type, st_name) and not cp_data.get("human_approved"):
+                raise RuntimeError(
+                    f"Release preflight failed: Stage {st_name!r} requires human approval "
+                    f"but human_approved is false"
+                )
+
+            # Check produced artifacts
+            produced = []
+            if st_name in manifest_stages_dict:
+                produced = manifest_stages_dict[st_name].get("produces", [])
+            elif st_name in CANONICAL_STAGE_ARTIFACTS:
+                produced = [CANONICAL_STAGE_ARTIFACTS[st_name]]
+
+            for art in produced:
+                art_in_cp = isinstance(cp_data.get("artifacts"), dict) and art in cp_data["artifacts"]
+                art_on_disk = (
+                    (project_dir / "artifacts" / f"{art}.json").is_file()
+                    or (project_dir / "artifacts" / f"{art}_vi.json").is_file()
+                    or (project_dir / f"{art}.json").is_file()
+                )
+                if not (art_in_cp or art_on_disk):
+                    raise RuntimeError(
+                        f"Release preflight failed: Missing required stage artifact {art!r} "
+                        f"for stage {st_name!r}"
+                    )
+
+    # --- Step 3: Explicit Human Approval Bound to Media SHA-256 ---
+    requires_approval = bool(
+        project_marker.is_file()
+        or (project_dir / "approval.json").is_file()
+        or (project_dir / "human_approval.json").is_file()
+        or "human_approval" in metadata
+        or os.environ.get("PRODUCTION_RELEASE") == "1"
+        or os.environ.get("STRICT_PRODUCTION") == "1"
+    )
+
+    if requires_approval:
+        approval = None
+        if "human_approval" in metadata and isinstance(metadata["human_approval"], dict):
+            approval = metadata["human_approval"]
+        elif (project_dir / "approval.json").is_file():
+            try:
+                with (project_dir / "approval.json").open("r", encoding="utf-8") as f:
+                    approval = json.load(f)
+            except Exception as e:
+                raise RuntimeError(f"Release preflight failed: Invalid approval.json: {e}") from e
+        elif (project_dir / "human_approval.json").is_file():
+            try:
+                with (project_dir / "human_approval.json").open("r", encoding="utf-8") as f:
+                    approval = json.load(f)
+            except Exception as e:
+                raise RuntimeError(f"Release preflight failed: Invalid human_approval.json: {e}") from e
+
+        if not approval:
+            raise RuntimeError(
+                f"Release preflight failed: Missing explicit human approval record for {project_dir.name}. "
+                f"Publication requires human approval bound to media SHA-256."
+            )
+
+        if not (approval.get("approved") is True or approval.get("status") == "approved"):
+            raise RuntimeError(
+                f"Release preflight failed: Human approval status is not approved "
+                f"(status={approval.get('status')!r}, approved={approval.get('approved')!r})"
+            )
+
+        # Build list of media files to check
+        media_to_check: list[tuple[str, Path]] = []
+        if platforms:
+            for p in platforms:
+                vp = resolve_video_path(p["video_path"], project_dir, root)
+                media_to_check.append((p["platform"], vp))
+        else:
+            for k in ("yt_shorts", "ig_reels", "fb_video", "fb_reels"):
+                if k in metadata:
+                    vp = resolve_video_path(metadata[k], project_dir, root)
+                    plat = "youtube" if "yt" in k else ("instagram" if "ig" in k else "facebook")
+                    media_to_check.append((plat, vp))
+
+        approved_sha = approval.get("approved_media_sha256") or approval.get("media_sha256")
+        approved_hashes_list = approval.get("approved_media_hashes", [])
+        approved_by_plat = approval.get("media_sha256_by_platform", {})
+
+        for plat, v_path in media_to_check:
+            if not v_path.is_file():
+                continue
+            actual_sha = file_sha256(v_path)
+            plat_approved_sha = approved_by_plat.get(plat) or approved_sha
+
+            hash_matched = (
+                (plat_approved_sha and actual_sha == plat_approved_sha)
+                or (actual_sha in approved_hashes_list)
+            )
+            if not hash_matched:
+                raise RuntimeError(
+                    f"Release preflight failed: Media SHA-256 mismatch for {v_path.name} on {plat}. "
+                    f"File SHA-256 is {actual_sha}, but approved hash is {plat_approved_sha!r}. "
+                    f"Asset has been modified after human approval!"
+                )
+
+            # Check Stale Review against validation_status.json
+            val_status_file = project_dir / "validation_status.json"
+            if val_status_file.is_file():
+                inspected_hash = None
+                try:
+                    with val_status_file.open("r", encoding="utf-8") as f:
+                        v_stat = json.load(f)
+                    inspected_hash = v_stat.get("inspected_artifact_hash")
+                except (json.JSONDecodeError, OSError):
+                    pass
+                if inspected_hash and inspected_hash != actual_sha:
+                    raise RuntimeError(
+                        f"Release preflight failed: Stale validation review! "
+                        f"Codex agent inspected hash {inspected_hash}, but media file hash is {actual_sha}. "
+                        f"Re-validation required."
+                    )
+
+        # Check Copy: Title & Description
+        approved_title = approval.get("approved_title") or approval.get("title")
+        if approved_title is not None and metadata.get("title") != approved_title:
+            raise RuntimeError(
+                f"Release preflight failed: Post title has been altered since approval. "
+                f"Approved: {approved_title!r}, Current: {metadata.get('title')!r}"
+            )
+
+        approved_desc = approval.get("approved_description") or approval.get("description")
+        if approved_desc is not None and metadata.get("description") != approved_desc:
+            raise RuntimeError(
+                f"Release preflight failed: Post description has been altered since approval. "
+                f"Approved: {approved_desc!r}, Current: {metadata.get('description')!r}"
+            )
+
+        # Check Target Account
+        approved_accounts = approval.get("target_accounts", {})
+        if not approved_accounts and approval.get("account"):
+            approved_accounts = {"all": approval.get("account")}
+        if platforms:
+            for p in platforms:
+                plat = p["platform"]
+                acct = p["account"]
+                target_match = approved_accounts.get(plat) or approved_accounts.get("all")
+                if target_match and str(target_match) != str(acct):
+                    raise RuntimeError(
+                        f"Release preflight failed: Target account mismatch for {plat}. "
+                        f"Configured account: {acct!r}, Approved account: {target_match!r}"
+                    )
+
+        # Check Release Time / Scheduled Time
+        approved_time = (
+            approval.get("release_time")
+            or approval.get("publish_time")
+            or approval.get("scheduled_for")
+        )
+        if approved_time is not None:
+            actual_time = metadata.get("publish_time") or metadata.get("publish_date")
+            if actual_time and approved_time != actual_time and not approved_time.startswith(str(actual_time)):
+                raise RuntimeError(
+                    f"Release preflight failed: Release time mismatch. "
+                    f"Approved: {approved_time!r}, Scheduled: {actual_time!r}"
+                )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Firebase-guarded manual publisher for generated videos")
     parser.add_argument("project_dir", help="Path to generated project directory")
@@ -614,7 +988,7 @@ def main():
         sys.exit(1)
 
     try:
-        validate_project_quality(project_path, strict=True)
+        enforce_release_preflight(project_path, metadata, strict=True, force=args.force)
     except Exception as exc:
         print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
         print(str(exc), file=sys.stderr)
@@ -644,6 +1018,8 @@ def main():
         only_platform=args.only_platform,
         force=args.force,
         date=args.date,
+        strict=True,
+        enforce_preflight=False,
     )
 
     # Print summary
@@ -685,19 +1061,40 @@ def main():
 
     total_platforms = len(results["platforms"])
     today = args.date if args.date else datetime.now(timezone.utc).date().isoformat()
-    if canonical_platform_records_published(store, date=today, topic=metadata["id"]):
-        published_now = sum(1 for s in results["platforms"].values() if s.get("status") in ("published", "skipped"))
-        print(f"\n✅ All {total_platforms} canonical Firebase platform records verified ({published_now} uploaded now)")
+
+    batch_success_count = sum(
+        1 for s in results["platforms"].values()
+        if s.get("status") in ("published", "scheduled", "skipped")
+    )
+    batch_succeeded = (batch_success_count == total_platforms) and len(results["errors"]) == 0
+
+    all_canonical_published = canonical_platform_records_published(
+        store, date=today, topic=metadata["id"], project_dir=project_path
+    )
+
+    if all_canonical_published:
+        print(f"\n✅ All canonical platform records verified for {metadata['id']} ({batch_success_count}/{total_platforms} in this batch)")
         if not args.dry_run:
             from scripts.publish_active_projects import deactivate_project
             instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
-            if not deactivate_project(metadata["id"], store=store, date=today, instagram_mode=instagram_mode):
+            if not deactivate_project(
+                metadata["id"],
+                project_dir=project_path,
+                store=store,
+                date=today,
+                instagram_mode=instagram_mode,
+            ):
                 print("\n❌ Cleanup blocked: canonical Firebase publish records are incomplete; project retained")
                 return 1
         return 0
+    elif batch_succeeded:
+        print(
+            f"\n✅ Batch completed for requested platforms ({batch_success_count}/{total_platforms}). "
+            f"Project retained for remaining scheduled/pending platforms."
+        )
+        return 0
 
-    published_count = sum(1 for s in results["platforms"].values() if s.get("status") in ("published", "skipped"))
-    print(f"\n❌ Incomplete batch: {published_count}/{total_platforms} uploads and Firebase records not all published; project retained")
+    print(f"\n❌ Incomplete batch: {batch_success_count}/{total_platforms} uploads succeeded; errors: {results['errors']}; project retained")
     return 1
 
 

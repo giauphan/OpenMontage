@@ -15,7 +15,11 @@ def test_slot_filter_skips_legacy_and_malformed_entries(capsys):
         {"publish_date": "2026-08-29", "publish_time": "09:15"},
     ]
 
-    assert scheduled_projects_for_slot(projects, "09:15", "2026-08-29") == ["due"]
+    res = scheduled_projects_for_slot(projects, "09:15", "2026-08-29")
+    assert len(res) == 1
+    assert res[0]["project_id"] == "due"
+    assert res[0]["publish_date"] == "2026-08-29"
+    assert res[0]["publish_time"] == "09:15"
     output = capsys.readouterr().out
     assert "legacy-project" in output
     assert "missing-date" in output

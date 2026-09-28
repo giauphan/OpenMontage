@@ -68,7 +68,7 @@ cleanup_failed_generation() {
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
     schedule_has=$(jq --arg pid "$pid" \
-      'any(.active_projects[]?; (.project_id // .) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
+      'any(.active_projects[]?; (if type == "object" then .project_id else . end) == $pid)' "$SCHEDULE" 2>/dev/null || echo false)
     if [ "$schedule_has" = "true" ]; then
       log "preserving scheduled failed-generation project: $pid"
       continue
@@ -312,7 +312,7 @@ mv "$TMP_QUEUE" "$SCHEDULE"
 
 for PID in "${VALIDATED_PIDS[@]}"; do
   SCHEDULE_HAS=$(jq --arg pid "$PID" --arg today "$TODAY" --arg next "$NEXT_DATE" \
-    'any(.active_projects[]?; (.project_id // .) == $pid and (((.publish_date // "") == $today) or ((.publish_date // "") == $next)))' \
+    'any(.active_projects[]?; ((if type == "object" then .project_id else . end) == $pid) and ((if type == "object" then .publish_date else "" end) | (. == $today or . == $next)))' \
     "$SCHEDULE" 2>/dev/null || echo false)
   [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL queue $PID: not scheduled for $TODAY or $NEXT_DATE"; QUEUE_OK=0; }
   [ -d "$ROOT/projects/$PID" ] || { log "FAIL queue $PID: project dir must be retained for slot publisher"; QUEUE_OK=0; }
@@ -348,7 +348,7 @@ FINAL_OK=1
 for PID in "${QUEUED_PIDS[@]}"; do
   [ -d "$ROOT/projects/$PID" ] || { log "FAIL final state $PID: queued project dir missing"; FINAL_OK=0; }
   SCHEDULE_HAS=$(jq --arg pid "$PID" --arg today "$TODAY" --arg next "$NEXT_DATE" \
-    'any(.active_projects[]?; (.project_id // .) == $pid and (((.publish_date // "") == $today) or ((.publish_date // "") == $next)))' \
+    'any(.active_projects[]?; ((if type == "object" then .project_id else . end) == $pid) and ((if type == "object" then .publish_date else "" end) | (. == $today or . == $next)))' \
     "$SCHEDULE" 2>/dev/null || echo false)
   [ "$SCHEDULE_HAS" = "true" ] || { log "FAIL final state $PID: queued project not scheduled for $TODAY or $NEXT_DATE"; FINAL_OK=0; }
 done
