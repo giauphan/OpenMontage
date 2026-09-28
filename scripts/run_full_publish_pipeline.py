@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Full publish pipeline: Generate, validate, and publish videos for today and next day with strict CLAUDE agent validation.
+Full publish pipeline: Generate, validate, and publish videos for today and next day with strict Codex agent validation.
 
 This script orchestrates the complete video production and publishing pipeline:
 1. Run daily news pipeline (generation + rendering)
-2. Apply strict CLAUDE agent validation
+2. Apply strict Codex agent validation
 3. Publish to platforms for today and next day
 4. Monitor and report status
 
@@ -12,7 +12,7 @@ Usage:
     python3 scripts/run_full_publish_pipeline.py [--strict] [--today-only] [--next-day-only] [--dry-run]
 
 Options:
-    --strict        Enable mandatory CLAUDE agent strict validation (default: True)
+    --strict        Enable mandatory Codex agent strict validation (default: True)
     --today-only    Only publish for today's date
     --next-day-only Only publish for next day's date
     --dry-run       Validate and prepare but don't actually publish
@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import subprocess
+import shutil
 import sys
 import time
 from datetime import datetime, timedelta
@@ -54,10 +55,11 @@ class FullPublishPipeline:
         self.start_time = datetime.now()
 
         # Validate required scripts exist
+        val_script = "codex_agent_validation.py"
         self.required_scripts = [
             "run_daily_news_pipeline.sh",
             "schedule_youtube_today.py",
-            "claude_agent_validation.py"
+            val_script
         ]
         self._validate_dependencies()
 
@@ -133,8 +135,8 @@ class FullPublishPipeline:
         return True
 
     def validate_projects_strict(self) -> Dict[str, bool]:
-        """Run strict CLAUDE agent validation on all projects"""
-        logger.info("🔍 Running strict CLAUDE agent validation...")
+        """Run strict Codex agent validation on all projects"""
+        logger.info("🔍 Running strict Codex agent validation...")
 
         # Get active projects from config
         config_path = ROOT / "config" / "publish_schedule.json"
@@ -162,8 +164,10 @@ class FullPublishPipeline:
                 validation_results[project_id] = False
                 continue
 
-            # Run CLAUDE agent strict validation
-            validation_script = SCRIPTS_DIR / "claude_agent_validation.py"
+            # Run Codex agent strict validation
+            validation_script = SCRIPTS_DIR / "codex_agent_validation.py"
+            if not validation_script.exists():
+                validation_script = SCRIPTS_DIR / "codex_agent_validation.py"
             cmd = ["python3", str(validation_script), str(project_path)]
 
             if self.strict:
@@ -171,7 +175,7 @@ class FullPublishPipeline:
 
             exit_code, stdout, stderr = self._run_command(
                 cmd,
-                f"CLAUDE validation for {project_id}",
+                f"Codex validation for {project_id}",
                 timeout=600  # 10 minute timeout per project
             )
 
@@ -183,6 +187,11 @@ class FullPublishPipeline:
                 if stderr:
                     logger.error(f"Validation error: {stderr}")
                 validation_results[project_id] = False
+                logger.info(f"🗑️ Removing failed project directory: {project_path}")
+                try:
+                    shutil.rmtree(project_path)
+                except Exception as e:
+                    logger.error(f"Failed to remove project dir {project_path}: {e}")
 
         # Summary
         passed = sum(validation_results.values())
@@ -294,7 +303,7 @@ def main():
         "--strict",
         action="store_true",
         default=True,
-        help="Enable mandatory CLAUDE agent strict validation (default: True)"
+        help="Enable mandatory Codex agent strict validation (default: True)"
     )
     parser.add_argument(
         "--no-strict",

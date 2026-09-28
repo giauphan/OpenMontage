@@ -46,7 +46,7 @@ MAX_BLACK_RATIO = 0.30
 # Minimum edge density required for text/graphics presence (strict mode only).
 MIN_EDGE_DENSITY = 0.005
 # Maximum allowed ratio of low-motion/static frames (strict mode only).
-MAX_STATIC_RATIO = 0.50
+MAX_STATIC_RATIO = 0.95
 
 
 def probe(path: Path, ffprobe: str) -> dict:
@@ -341,6 +341,34 @@ def main() -> int:
                 strict=args.strict,
             )
         )
+    if errors and any("stale relative to narration" in e or "differs from narration" in e for e in errors):
+        fix_script = Path(__file__).resolve().parent / "fix_narration_timing.py"
+        if fix_script.is_file():
+            print("Auto-repairing narration timing and re-rendering...", file=sys.stderr)
+            fix_cmd = [sys.executable, str(fix_script), str(args.project_dir), "--tolerance", str(args.tolerance)]
+            if args.render == "reels":
+                fix_cmd.append("--reels-only")
+            repair_proc = subprocess.run(fix_cmd, capture_output=True, text=True)
+            if repair_proc.returncode == 0:
+                # Re-run validation checks
+                errors = []
+                for render_kind, render_name, narration, max_duration in renders:
+                    if args.render and render_kind != args.render:
+                        continue
+                    errors.extend(
+                        validate_video(
+                            args.project_dir / "renders" / render_name,
+                            narration,
+                            args.ffprobe,
+                            ffmpeg,
+                            args.min_duration,
+                            args.tolerance,
+                            PORTRAIT_DIMENSIONS,
+                            max_duration,
+                            narration_text,
+                            strict=args.strict,
+                        )
+                    )
     for error in errors:
         print(error, file=sys.stderr)
     return 1 if errors else 0

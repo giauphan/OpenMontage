@@ -60,7 +60,7 @@ if ! grep -q 'tests/qa/output/music_calm.mp3' "$ROOT/scripts/run_daily_news_pipe
     exit 1
 fi
 
-if ! grep -q 'if "\$PY" "\$ROOT/scripts/claude_agent_validation.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+if ! grep -q 'if "\$PY" "\$ROOT/scripts/codex_agent_validation.py"' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
     echo "FAIL: Claude validation is not guarded against errexit."
     exit 1
 fi
@@ -87,6 +87,11 @@ fi
 
 if grep -q -E '^[[:space:]]+exit 2$' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
     echo "FAIL: Missing director compositions exit the generator instead of evaluating later candidates."
+    exit 1
+fi
+
+if grep -q '\\n[[:space:]]*--' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Daily pipeline contains literal \n before command flags."
     exit 1
 fi
 

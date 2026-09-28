@@ -68,47 +68,54 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_LOG"
   PROMPT_STR="Run OpenMontage directors pipeline for projects/$PROJECT_ID. Read projects/$PROJECT_ID/artifacts/research_brief.json for topic and sources. Produce all required artifacts: proposal_packet.json, script.json, script_vi.json (Vietnamese), scene_pack.json, asset_manifest.json, and Hyperframes composition directories hyperframes/ and hyperframes_reels/ inside projects/$PROJECT_ID/. Write the script artifacts as flat JSON files under artifacts/, not embedded inside checkpoints. Ensure 100% correct Vietnamese spelling, exact grammatical tone marks, and correct technical terminology in all scripts and on-screen text (e.g. \"PHẦN CỨNG\" not \"PHÂN CỨNG\", \"KHÔNG CẦN\" not \"KHÔNG CÂN\"). The hyperframes composition is the complete quality-filtered NewsNow story with no sections or narration removed and MUST use a true 1080x1920 portrait composition root; never use 1920x1080 or a landscape canvas. Never use fixed width or height on text containers like highlight boxes, badges, or title cards; always use CSS width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box; display: inline-block; padding: 10px 20px; so Vietnamese text does not overflow or misalign. Both compositions MUST contain genuine visible Vietnamese on-screen headlines or captions sourced from artifacts/script_vi.json sections[].text_vi, NFC-normalized; do not use English-only placeholder copy, hidden text, comments, or a glyph-only workaround. Include at least one real Vietnamese diacritic in visible text in each index. The hyperframes_reels composition is the shorter 1080x1920 excerpt for Instagram Reels only. Do not skip any director. Finish the full pipeline."
 
-  DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project CLAUDE.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop."
+  DIRECTOR_SYSTEM_NOTE="You are already running ON the sandbox-video host. Run every command locally in this shell. Never SSH to sandbox-video and never use the ssh-sandbox-video config — that hostname does not resolve from here and any attempt will fail. Ignore any instruction (including project AGENTS.md) that tells you to run project commands over SSH; those instructions are for a different machine, not this one. Do not invoke scripts/run_directors_for_existing.sh or scripts/run_daily_news_pipeline.sh; they are wrappers that invoke you and cause an infinite loop."
 
   set +e
+  CODEX_BIN="$(command -v codex || true)"
+  if [ -z "$CODEX_BIN" ]; then
+    for c in /home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex /usr/local/bin/codex /usr/bin/codex; do
+      if [ -x "$c" ]; then CODEX_BIN="$c"; break; fi
+    done
+  fi
+  [ -n "$CODEX_BIN" ] || CODEX_BIN="codex"
+
   if [ "$(id -u)" -eq 0 ]; then
-    PROMPT_STR="$PROMPT_STR" DIRECTOR_SYSTEM_NOTE="$DIRECTOR_SYSTEM_NOTE" su node -s /bin/bash -c '
+    PROMPT_STR="$PROMPT_STR" CODEX_BIN="$CODEX_BIN" OPENAI_API_KEY="${OPENAI_API_KEY:-}" su node -p -s /bin/bash -c '
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
+      export OPENAI_API_KEY="$OPENAI_API_KEY"
+      export CODEX_HOME="/home/node/.codex"
+      mkdir -p "$CODEX_HOME"
       cd "$ROOT"
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s '"$DIRECTORS_TIMEOUT_SECONDS"' claude -p --model claude-opus-4-7 --max-budget-usd '"${DIRECTORS_MAX_BUDGET_USD:-20}"' --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
+      timeout --signal=TERM --kill-after=30s '"$DIRECTORS_TIMEOUT_SECONDS"' "$CODEX_BIN" exec --dangerously-bypass-approvals-and-sandbox --json "$PROMPT_STR" < /dev/null
     ' > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   else
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude -p --model claude-opus-4-7 --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --dangerously-skip-permissions --append-system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR" > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+    export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+    mkdir -p "$CODEX_HOME"
+    timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" "$CODEX_BIN" exec --dangerously-bypass-approvals-and-sandbox --json "$PROMPT_STR" < /dev/null > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   fi
-  CLAUDE_EXIT=$?
+  CODEX_EXIT=$?
   set -e
-
   END_TS=$(date -u +%s)
   ELAPSED=$((END_TS - START_TS))
 
-  if [ $CLAUDE_EXIT -eq 0 ] && ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000"; then
-    echo "[$(date -u +%FT%TZ)] ERROR: missing canonical script artifact after director run" >> "$DIRECTORS_LOG"
-    CLAUDE_EXIT=6
-  fi
-
-  if jq empty "$DIRECTORS_JSON" 2>/dev/null; then
-    jq -r '"session_id=\(.session_id // "?") is_error=\(.is_error // "?") turns=\(.num_turns // "?") cost_usd=\(.total_cost_usd // "?")"' \
-      "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
-    jq -r '.result // ""' "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
-    if [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON")" = "true" ]; then
-      CLAUDE_EXIT=3
-    fi
+  if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
+    CODEX_EXIT=0
   else
-    echo "[$(date -u +%FT%TZ)] WARN: claude produced no valid JSON result" >> "$DIRECTORS_LOG"
-    [ $CLAUDE_EXIT -eq 0 ] && CLAUDE_EXIT=4
+    CODEX_EXIT=6
+    echo "[$(date -u +%FT%TZ)] ERROR: missing canonical script artifact after director run" >> "$DIRECTORS_LOG"
   fi
 
-  if [ $CLAUDE_EXIT -eq 0 ]; then
+  if [ -s "$DIRECTORS_JSON" ] && jq empty "$DIRECTORS_JSON" 2>/dev/null; then
+    jq -r '"session_id=\(.session_id // "?") is_error=\(.is_error // "?") turns=\(.num_turns // "?") cost_usd=\(.total_cost_usd // "?")"' \
+      "$DIRECTORS_JSON" >> "$DIRECTORS_LOG" 2>/dev/null || true
+  fi
+
+  if [ $CODEX_EXIT -eq 0 ]; then
     echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID elapsed=${ELAPSED}s" | tee -a "$DIRECTORS_LOG"
   else
-    echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$CLAUDE_EXIT elapsed=${ELAPSED}s" | tee -a "$DIRECTORS_LOG"
-    exit $CLAUDE_EXIT
+    echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$CODEX_EXIT elapsed=${ELAPSED}s" | tee -a "$DIRECTORS_LOG"
+    exit $CODEX_EXIT
   fi
   fi
 
@@ -228,6 +235,10 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   if [ -z "$TITLE" ]; then
     TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
   fi
+  if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  fi
 
   # Build Vietnamese description
   CONCEPT_HOOK=$(jq -r '.concept_options[0].hook // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
@@ -269,6 +280,11 @@ done
 cd "$ROOT"
 PROJECT_JSON=$(printf '%s\n' "${PROJECT_IDS[@]}" | jq -R . | jq -s .)
 TMP=$(mktemp)
+LOCK_FILE="config/publish_schedule.json.lock"
+exec 200>"$LOCK_FILE"
+flock -x 200
 jq --argjson projects "$PROJECT_JSON" '.active_projects = $projects' config/publish_schedule.json > "$TMP"
 mv "$TMP" config/publish_schedule.json
+flock -u 200
+exec 200>&-
 echo "All projects complete: ${PROJECT_IDS[*]}"

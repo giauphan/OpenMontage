@@ -128,6 +128,7 @@ lint: ensure-venv
 	$(RUN_PYTHON) -m py_compile scripts/repair_hyperframes_quality.py
 	$(RUN_PYTHON) -m py_compile scripts/check_qa.py
 	$(RUN_PYTHON) -m py_compile scripts/fix_narration_timing.py
+	$(RUN_PYTHON) -m py_compile scripts/codex_agent_validation.py
 	$(RUN_PYTHON) -m py_compile scripts/claude_agent_validation.py
 	$(RUN_PYTHON) -m py_compile scripts/validation_status.py
 

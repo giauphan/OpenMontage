@@ -22,10 +22,10 @@ class NewsResearchBridge:
     def build_brief(
         self,
         candidate: Dict[str, Any],
-        claude_draft: Dict[str, Any]
+        agent_draft: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Construct a validated research_brief; missing evidence raises instead of being invented."""
-        draft = claude_draft.get("research_draft")
+        draft = agent_draft.get("research_draft")
         if not isinstance(draft, dict):
             raise ValueError("research_draft must be an object")
 
@@ -94,6 +94,8 @@ class NewsResearchBridge:
 
         sources = []
         seen_urls = set()
+        if not isinstance(raw_sources, list):
+            raw_sources = []
         for source in raw_sources:
             if not isinstance(source, dict):
                 continue

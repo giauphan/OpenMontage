@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validation Status Logger for CLAUDE Agent Quality Pipeline.
+"""Validation Status Logger for Codex Agent Quality Pipeline.
 
 Tracks validation results and provides status reporting for Docker pipeline.
 Integrates with cron pipeline logs and provides clear 🟢 PASS / 🔴 FAIL indicators.
@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 
 class ValidationStatusLogger:
-    """Tracks and logs CLAUDE agent validation status."""
+    """Tracks and logs Codex agent validation status."""
 
     def __init__(self, project_dir: Optional[Path] = None):
         # If project_dir is provided, use it for file locations
@@ -102,7 +102,7 @@ class ValidationStatusLogger:
     def _print_console_output(self, entry: Dict) -> None:
         """Print formatted console output."""
         print(f"\n{'='*50}")
-        print("CLAUDE AGENT VALIDATION STATUS")
+        print("CODEX AGENT VALIDATION STATUS")
         print(f"{'='*50}")
         print(f"Project: {entry['project_id']}")
         print(f"Timestamp: {entry['timestamp']}")

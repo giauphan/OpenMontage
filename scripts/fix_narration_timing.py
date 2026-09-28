@@ -98,7 +98,7 @@ def synth(voice, text, out: Path, rate: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("project_dir")
-    ap.add_argument("--target", type=float, default=70.0)
+    ap.add_argument("--target", type=float, default=None)
     ap.add_argument("--tolerance", type=float, default=3.0)
     ap.add_argument("--voice", default="vi-VN-HoaiMyNeural")
     ap.add_argument("--max-rate", default="+40%")
@@ -110,6 +110,19 @@ def main():
     args = ap.parse_args()
 
     project = Path(args.project_dir).resolve()
+    if args.target is None:
+        # Infer target duration from existing composition root data-duration or narration
+        target_val = 70.0
+        comp_dir = project / ("hyperframes_reels" if args.reels_only else "hyperframes")
+        index_file = comp_dir / "index.html"
+        if index_file.is_file():
+            try:
+                matches = re.findall(r"data-duration=[^\d]*([0-9.]+)", index_file.read_text(encoding="utf-8"))
+                if matches:
+                    target_val = float(matches[0])
+            except Exception:
+                pass
+        args.target = target_val
     if not project.is_dir():
         raise SystemExit(f"ERROR: {project} is not a directory")
 
@@ -159,17 +172,21 @@ def main():
         d = project / "hyperframes_reels" / "assets"
         if d.is_dir():
             shutil.copy2(narration, d / "narration.mp3")
-            warn("copied narration -> hyperframes_reels/assets/narration.mp3")
+            shutil.copy2(narration, d / "narration_reels.mp3")
+            warn("copied narration -> hyperframes_reels/assets/narration.mp3 and narration_reels.mp3")
     else:
         for comp in ("hyperframes", "hyperframes_reels"):
             d = project / comp / "assets"
             if d.is_dir():
                 shutil.copy2(narration, d / "narration.mp3")
-                warn(f"copied narration -> {comp}/assets/narration.mp3")
+                shutil.copy2(narration, d / "narration_reels.mp3")
+                warn(f"copied narration -> {comp}/assets/narration.mp3 and narration_reels.mp3")
         root_assets = project / "assets"
         if root_assets.is_dir():
-            shutil.copy2(narration, root_assets / "narration.mp3")
-            shutil.copy2(narration, root_assets / "narration_reels.mp3")
+            if narration != root_assets / "narration.mp3":
+                shutil.copy2(narration, root_assets / "narration.mp3")
+            if narration != root_assets / "narration_reels.mp3":
+                shutil.copy2(narration, root_assets / "narration_reels.mp3")
 
     # Repair quality (fonts + audio src bindings). This gate is mandatory:
     # skipping it silently was how landscape/missing-font compositions reached

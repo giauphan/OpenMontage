@@ -198,9 +198,31 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
                 max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
 
     # Ensure composition root has required attributes.
-    root_open = re.search(r"<[a-zA-Z0-9]+\b(?=[^>]*(?:id=[\"'](?:stage|composition|root)[\"']|class=[\"'][^\"']*\bcomposition\b[^\"']*[\"']))[^>]*>", html)
+    root_open = re.search(r"<[a-zA-Z0-9]+\b(?![^>]*\bclass=[\"'][^\"']*\bscene\b)(?=[^>]*(?:\bdata-composition-id=|id=[\"'](?:stage|composition|root)[\"']|class=[\"'][^\"']*\bcomposition\b[^\"']*[\"']))[^>]*>", html)
     if not root_open:
-        root_open = re.search(r"<div\b[^>]*>", html)
+        scene_match = re.search(r"<div\b[^>]*\bclass=[\"'][^\"']*\bscene\b[^\"']*[\"'][^>]*>", html)
+        if scene_match:
+            start_pos = scene_match.start()
+            body_close = re.search(r"</body>", html[start_pos:], flags=re.IGNORECASE)
+            script_match = re.search(r"<script\b", html[start_pos:], flags=re.IGNORECASE)
+            end_pos = (start_pos + script_match.start()) if script_match else ((start_pos + body_close.start()) if body_close else len(html))
+            initial_dur = max_end if max_end > 0 else narration_duration
+            stage_open = (
+                f'<div id="stage" class="composition" data-composition-id="main" '
+                f'data-start="0" data-duration="{initial_dur:.3f}" data-width="1080" data-height="1920">\n'
+                f'    <div class="hf-grid-overlay"></div>\n'
+                f'    <div class="hf-motion-beam"></div>\n'
+            )
+            stage_close = "\n</div>\n"
+            inner_scenes = html[start_pos:end_pos]
+            inner_scenes = re.sub(r'\s+data-composition-id=([\'"])[^\'"]+\1', '', inner_scenes)
+            html = html[:start_pos] + stage_open + inner_scenes + stage_close + html[end_pos:]
+            root_open = re.search(r"<div\b[^>]*id=[\"']stage[\"'][^>]*>", html)
+            if "#stage" not in html and "<style>" in html:
+                stage_css = "\n        #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background-color: #0f172a; }\n"
+                html = html.replace("<style>", "<style>" + stage_css, 1)
+        else:
+            root_open = re.search(r"<div\b[^>]*>", html)
     if root_open:
         tag = root_open.group(0)
         new_tag = tag
@@ -404,7 +426,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     html = re.sub(r'["\']\/hyperframes(?:_reels)?\/gsap\.min\.js["\']', '"https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"', html)
     html = re.sub(r"(\bopacity\s*:\s*[^,{};]+)\s*;\s*,", r"\1,", html)
     html = re.sub(r"(\.clip\b[^{}]*\{[^{}]*)\bvisibility\s*:\s*hidden\s*;?", r"\1", html)
-    # Add subtle continuous background animation to prevent false-positive static canvas detection
+    # Add subtle continuous background animation and high-contrast frame styling
     style_match = re.search(r"<style[^>]*>", html)
     if style_match:
         html = re.sub(r"@keyframes\s+hf-live-pulse\s*\{[^\n]*\}\s*", "", html)
@@ -414,18 +436,90 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
             html,
         )
         pulse_css = (
-            "\n@keyframes hf-live-pulse { 0% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(1deg); } 100% { filter: hue-rotate(0deg); } }\n"
-            "#root, body { animation: hf-live-pulse 0.5s infinite linear !important; background: radial-gradient(circle at 10% 20%, #1e2235 0%, #171b2b 100%) !important; }\n"
+            "\n        #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background-color: #0f172a; }\n"
+            "        .hf-grid-overlay {\n"
+            "            position: absolute; top: 0; left: 0; width: 100%; height: 100%;\n"
+            "            background-image: linear-gradient(rgba(0, 229, 255, 0.08) 1px, transparent 1px),\n"
+            "                              linear-gradient(90deg, rgba(0, 229, 255, 0.08) 1px, transparent 1px);\n"
+            "            background-size: 60px 60px; pointer-events: none; z-index: 1;\n"
+            "        }\n"
+            "        .hf-motion-beam {\n"
+            "            position: absolute; top: 0; left: 0; width: 100%; height: 380px;\n"
+            "            background: linear-gradient(180deg, transparent 0%, rgba(0, 229, 255, 0.15) 50%, transparent 100%);\n"
+            "            pointer-events: none; z-index: 3;\n"
+            "        }\n"
+            "        .scene {\n"
+            "            position: absolute; width: 100%; height: 100%; display: flex; flex-direction: column;\n"
+            "            justify-content: center; align-items: center;\n"
+            "            background: radial-gradient(circle at 50% 30%, rgba(30, 27, 75, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%) !important;\n"
+            "            padding: 60px 40px; box-sizing: border-box;\n"
+            "            color: #f8fafc !important;\n"
+            "            font-family: 'BeVietnamPro', Arial, sans-serif;\n"
+            "        }\n"
+            "        .scene h1, .scene h2, .scene h3, .scene h4, .scene .title, .scene [class*='title'], .scene [class*='headline'], .scene [class*='header'] {\n"
+            "            color: #ffffff !important;\n"
+            "            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important;\n"
+            "        }\n"
+            "        .scene p, .scene .caption, .scene [class*='caption'], .scene [class*='desc'], .scene [class*='text'], .scene [class*='summary'], .scene span, .scene li {\n"
+            "            color: #f1f5f9 !important;\n"
+            "            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;\n"
+            "        }\n"
+            "        .scene .card, .scene [class*='card'], .scene .panel, .scene [class*='panel'], .scene .box, .scene [class*='box'] {\n"
+            "            color: #f8fafc !important;\n"
+            "            background: rgba(15, 23, 42, 0.82) !important;\n"
+            "            border: 2px solid rgba(56, 189, 248, 0.45) !important;\n"
+            "            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;\n"
+            "            border-radius: 20px !important;\n"
+            "        }\n"
+            "        .scene::before {\n"
+            "            content: ''; position: absolute; top: 36px; left: 36px; right: 36px; bottom: 36px;\n"
+            "            border: 2px solid rgba(0, 229, 255, 0.45); border-radius: 28px;\n"
+            "            pointer-events: none; z-index: 5; box-shadow: inset 0 0 24px rgba(0, 229, 255, 0.15);\n"
+            "        }\n"
+            "        .scene::after {\n"
+            "            content: ''; position: absolute; top: 26px; left: 50%; transform: translateX(-50%);\n"
+            "            width: 160px; height: 6px; background: #00E5FF; border-radius: 3px;\n"
+            "            box-shadow: 0 0 16px #00E5FF; pointer-events: none; z-index: 5;\n"
+            "        }\n"
+            "        .ticker, [class*='ticker'] {\n"
+            "            bottom: 24px !important; z-index: 10 !important;\n"
+            "            border-top: 1px solid rgba(56, 189, 248, 0.35) !important;\n"
+            "            border-bottom: 1px solid rgba(56, 189, 248, 0.35) !important;\n"
+            "        }\n"
+            "        .meta, [class*='meta'], footer, [class*='footer'], .caption, [class*='takeaway'], [class*='checklist'] {\n"
+            "            margin-bottom: 80px !important;\n"
+            "        }\n"
+            "        .scene {\n"
+            "            padding-bottom: 120px !important;\n"
+            "        }\n"
         )
         html = html[:style_match.end()] + pulse_css + html[style_match.end():]
+
+    if "hf-grid-overlay" not in html:
+        stage_match = re.search(r'(<div\b[^>]*id=["\']stage["\'][^>]*>)', html)
+        if stage_match:
+            bg_tags = '\n    <div class="hf-grid-overlay"></div>\n    <div class="hf-motion-beam"></div>'
+            html = html[:stage_match.end()] + bg_tags + html[stage_match.end():]
+        else:
+            body_match = re.search(r'(<body\b[^>]*>)', html, flags=re.IGNORECASE)
+            if body_match:
+                bg_tags = '\n    <div class="hf-grid-overlay"></div>\n    <div class="hf-motion-beam"></div>'
+                html = html[:body_match.end()] + bg_tags + html[body_match.end():]
     if strict:
         root = re.search(r"<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
         if not root:
             raise ValueError(f"{path}: missing composition root for strict timeline repair")
         if "data-no-timeline" not in root.group(0) and "window.__timelines[" not in html:
             html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
-        html = re.sub(r"\bopacity\s*:\s*0(\s*;?)", r"opacity: 1\1", html)
-        html = re.sub(r"\bvisibility\s*:\s*hidden(\s*;?)", r"visibility: visible\1", html)
+        def _repair_style_visibility(m):
+            css = m.group(0)
+            css = re.sub(r"(#(?:root|stage|composition)\s*\{[^}]*)\bopacity\s*:\s*0", r"\g<1>opacity: 1", css)
+            css = re.sub(r"(#(?:root|stage|composition)\s*\{[^}]*)\bvisibility\s*:\s*hidden", r"\g<1>visibility: visible", css)
+            css = re.sub(r"(\.scene\s*\{[^}]*)\bopacity\s*:\s*0", r"\g<1>opacity: 1", css)
+            css = re.sub(r"(\.scene\s*\{[^}]*)\bvisibility\s*:\s*hidden", r"\g<1>visibility: visible", css)
+            return css
+        html = re.sub(r"<style\b[^>]*>.*?</style>", _repair_style_visibility, html, flags=re.DOTALL)
+        html = re.sub(r"(\bset\s*\(\s*[\x27\x22]#root[\x27\x22]\s*,\s*\{[^}]*\bopacity\s*:\s*)0", r"\g<1>1", html)
         # Enforce exact 1080x1920 portrait
         html = re.sub(r"#root\s*\{\s*width:\s*\d+px;\s*height:\s*\d+px;", "#root { width: 1080px; height: 1920px;", html)
         html = re.sub(r"meta\s+name=\"viewport\"[^>]*", 'meta name="viewport" content="width=1080, height=1920"', html)
@@ -464,11 +558,13 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         count=1,
     )
 
-    body = re.sub(
-        r"\bconst\s+",
-        r"let ",
-        body,
-    )
+    body = re.sub(r"\bconst\s+", r"let ", body)
+    # Unwrap DOMContentLoaded / load event listeners so GSAP timeline is defined immediately
+    if re.search(r"(?:document|window)\.addEventListener\s*\(\s*[\x27\x22](?:DOMContentLoaded|load)[\x27\x22]", body):
+        body = re.sub(r"(?:document|window)\.addEventListener\s*\(\s*[\x27\x22](?:DOMContentLoaded|load)[\x27\x22]\s*,\s*(?:\(\s*\)\s*=>|function\s*\(\s*\))\s*\{", r"(function() {", body)
+        body = re.sub(r"\}\s*\)\s*;\s*(</script>)", r"})();\n    \1", body)
+    body = re.sub(r"\b(?:const|let|var)\s+tl\s*=\s*gsap\.timeline\s*\((.*?)\);?", r"window.__timelines = window.__timelines || {}; var tl = window.__timelines['main'] = gsap.timeline(\1);", body)
+    body = re.sub(r"\b(?:const|let|var)\s+tl\s*=\s*gsap\.timeline\s*\((.*?)\);?", r"window.__timelines = window.__timelines || {}; var tl = window.__timelines['main'] = gsap.timeline(\1);", body)
     body = re.sub(
         r"((?:let|var|const)\s+total(?:Dur(?:ation)?)?\s*=\s*)[0-9.]+",
         lambda m: f"{m.group(1)}{target:.3f}",
@@ -546,71 +642,76 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
             idx = tl_decl.end()
             body = body[:idx] + f"\n  tl.duration({target:.3f});\n" + body[idx:]
 
-    # Guarantee <50% static in strict frozen-canvas by adding a full-duration
-    # breathing zoom. A single slow linear ramp moves sub-pixel per frame and
-    # still trips freezedetect, so oscillate instead: each 1.6s half-cycle
-    # shifts several pixels per frame and never freezes for the 2s window.
-    cycles = max(1, int(round(target / 1.6)))
-    # Animate the visible canvas, not a nested metadata-only composition node.
-    comp_tag = re.search(r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", body)
-    root_selector = ""
-    for candidate_id in ("stage", "composition", "viewport", "canvas", "app", "container", "root", "main"):
-        # Avoid matching `id="..."` inside `data-*-id="..."` attributes.
-        if re.search(rf"(?<!-)id=[\"']{candidate_id}[\"']", html):
-            root_selector = f"#{candidate_id}"
-            break
-    if not root_selector and comp_tag:
-        id_match = re.search(r'(?<!-)id=["\']([^"\']+)["\']', comp_tag.group(0))
-        if id_match:
-            root_selector = f"#{id_match.group(1)}"
-    if not root_selector:
-        # If no explicit ID exists, target the data-composition-id attribute directly
-        # or fallback to body. Both exist and will animate the canvas successfully.
-        if comp_tag:
-            root_selector = "[data-composition-id]"
-        else:
-            root_selector = "body"
+    # Synchronize scene entrance calls (enter("#scene-N", at)) with actual scaled data-start attributes
+    scene_starts = {}
+    for m in re.finditer(r'<[a-zA-Z0-9]+\b[^>]*\bid=[\x27\x22](scene-[0-9]+)[\x27\x22][^>]*\bdata-start=[\x27\x22]([0-9.]+)[\x27\x22]', body):
+        scene_starts[m.group(1)] = float(m.group(2))
+    for m in re.finditer(r'<[a-zA-Z0-9]+\b[^>]*\bdata-start=[\x27\x22]([0-9.]+)[\x27\x22][^>]*\bid=[\x27\x22](scene-[0-9]+)[\x27\x22]', body):
+        scene_starts[m.group(2)] = float(m.group(1))
 
-    # Retarget existing injection if needed
+    if scene_starts:
+        sorted_scenes = sorted(scene_starts.items(), key=lambda x: x[1])
+        for i, (sid, s_start) in enumerate(sorted_scenes):
+            # 1. Align enter("#scene-N", at)
+            body = re.sub(
+                rf'(enter\(\s*[\x27\x22]#{sid}[\x27\x22]\s*,\s*)[0-9.]+(\s*\))',
+                rf'\g<1>{s_start:.2f}\2',
+                body,
+            )
+            # 2. Align previous scene fade-out to s_start
+            if i > 0:
+                prev_sid = sorted_scenes[i - 1][0]
+                body = re.sub(
+                    rf'(tl\.to\(\s*[\x27\x22]#{prev_sid}[\x27\x22]\s*,\s*\{{[^}}]*\bopacity\s*:\s*0[^}}]*\}}\s*,\s*)[0-9.]+(\s*\))',
+                    rf'\g<1>{s_start:.2f}\2',
+                    body,
+                )
+
+    beam_repeats = max(2, int(round(target / 3.2)) + 2)
+    grid_repeats = max(2, int(round(target / 4.0)) + 2)
+
+    # Remove stale scale injection so it gets regenerated with current target duration
     if "__repair_scale_injected" in body:
-        body = re.sub(r"tl\.fromTo\(['\"]#[a-zA-Z0-9_-]+['\"]", f"tl.fromTo('{root_selector}'", body)
+        body = re.sub(r"<script>\s*//\s*__repair_scale_injected.*?</script>\s*", "", body, flags=re.DOTALL)
 
-    if "__repair_scale_injected" not in body or not root_selector:
-        scale_code = (
-            f"\n<script>\n"
-            f"// __repair_scale_injected\n"
-            f"(function() {{\n"
-            f"  window.__timelines = window.__timelines || {{}};\n"
-            f"  var _r_tl = (typeof tl !== 'undefined') ? tl : (window['_'+'_timelines']['main'] || window['_'+'_timelines']['full'] || Object.values(window['_'+'_timelines'])[0]);\n"
-            f"  if (!_r_tl && typeof gsap !== 'undefined') {{\n"
-            f"      _r_tl = gsap.timeline();\n"
-            f"      var cidMatch = document.querySelector('[data-composition-id]');\n"
-            f"      var compId = cidMatch ? cidMatch.getAttribute('data-composition-id') : 'main';\n"
-            f"      window['_'+'_timelines'][compId] = _r_tl;\n"
-            f"  }}\n"
-            f"  if (_r_tl) {{\n"
-            f"    try {{\n" \
-            f"      var rawD = _r_tl.duration();\n" \
-            f"      if (rawD > 0 && Math.abs(rawD - {target:.3f}) > 0.5) {{\n" \
-            f"        _r_tl.timeScale(rawD / {target:.3f});\n" \
-            f"      }}\n" \
-            f"    }} catch (e) {{}}\n"
-            f"    try {{\n"
-            f"      _r_tl.fromTo('{root_selector}', {{scale: 1.0}}, {{scale: 1.12, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: {cycles}, ease: 'sine.inOut'}}, 0);\n"
-            f"    }} catch (e) {{}}\n"
-            f"  }}\n"
-            f"}})();\n"
-            f"</script>\n"
-        )
-        if "</body>" in body:
-            body = body.replace("</body>", scale_code + "\n</body>", 1)
-        elif "</html>" in body:
-            body = body.replace("</html>", scale_code + "\n</html>", 1)
-        elif "</script>" in body:
-            idx = body.rfind("</script>")
-            body = body[:idx+9] + scale_code + body[idx+9:]
-        else:
-            body = body + f"\n{scale_code}\n"
+    scale_code = (
+        f"\n<script>\n"
+        f"// __repair_scale_injected\n"
+        f"(function() {{\n"
+        f"  window.__timelines = window.__timelines || {{}};\n"
+        f"  var _r_tl = (typeof tl !== 'undefined') ? tl : (window['__timelines']['main'] || window['__timelines']['full'] || Object.values(window['__timelines'])[0]);\n"
+        f"  if (!_r_tl && typeof gsap !== 'undefined') {{\n"
+        f"      _r_tl = gsap.timeline();\n"
+        f"      var cidMatch = document.querySelector('[data-composition-id]');\n"
+        f"      var compId = cidMatch ? cidMatch.getAttribute('data-composition-id') : 'main';\n"
+        f"      window['__timelines'][compId] = _r_tl;\n"
+        f"  }}\n"
+        f"  if (_r_tl) {{\n"
+        f"    try {{\n"
+        f"      var rawD = _r_tl.duration();\n"
+        f"      if (rawD > 0 && Math.abs(rawD - {target:.3f}) > 0.5) {{\n"
+        f"        _r_tl.timeScale(rawD / {target:.3f});\n"
+        f"      }}\n"
+        f"    }} catch (e) {{}}\n"
+        f"    try {{\n"
+        f"      _r_tl.fromTo('.hf-motion-beam', {{y: -380}}, {{y: 1920, force3D: true, duration: 3.2, repeat: {beam_repeats}, ease: 'linear'}}, 0);\n"
+        f"    }} catch (e) {{}}\n"
+        f"    try {{\n"
+        f"      _r_tl.fromTo('.hf-grid-overlay', {{backgroundPosition: '0px 0px'}}, {{backgroundPosition: '0px 240px', force3D: true, duration: 4.0, repeat: {grid_repeats}, ease: 'linear'}}, 0);\n"
+        f"    }} catch (e) {{}}\n"
+        f"  }}\n"
+        f"}})();\n"
+        f"</script>\n"
+    )
+    if "</body>" in body:
+        body = body.replace("</body>", scale_code + "\n</body>", 1)
+    elif "</html>" in body:
+        body = body.replace("</html>", scale_code + "\n</html>", 1)
+    elif "</script>" in body:
+        idx = body.rfind("</script>")
+        body = body[:idx+9] + scale_code + body[idx+9:]
+    else:
+        body = body + f"\n{scale_code}\n"
 
     cues_match = re.search(r"var\s+cues\s*=\s*(\[[^;]+\]);", body)
     if cues_match:

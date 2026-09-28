@@ -25,8 +25,8 @@ def test_strict_run_fails_when_native_platform_schedule_fails(tmp_path: Path):
         encoding="utf-8",
     )
 
-    (bin_dir / "claude").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    (bin_dir / "claude").chmod(0o755)
+    (bin_dir / "codex").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (bin_dir / "codex").chmod(0o755)
     for name in ("ffmpeg", "ffprobe"):
         executable = bin_dir / name
         executable.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -48,7 +48,7 @@ done
     )
     (scripts_dir / "run_daily_news_pipeline.sh").chmod(0o755)
 
-    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "claude_agent_validation.py"):
+    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "codex_agent_validation.py"):
         (scripts_dir / name).write_text("", encoding="utf-8")
     (scripts_dir / "schedule_today_native.py").write_text(
         "import sys\nfrom pathlib import Path\nPath('platform-schedule-called').write_text(' '.join(sys.argv))\nraise SystemExit(7)\n",
@@ -106,11 +106,9 @@ def test_strict_run_today_recovery_uses_available_slots(tmp_path: Path):
     next_date = (now_local + timedelta(days=1)).strftime("%F")
 
     # Create slots: two passed, one available
-    past_dt = now_local - timedelta(minutes=30)
-    future_dt = now_local + timedelta(minutes=60)
-    past_slot_1 = "01:00"
-    past_slot_2 = past_dt.strftime("%H:%M")
-    future_slot_1 = future_dt.strftime("%H:%M")
+    past_slot_1 = "00:05"
+    past_slot_2 = "00:20"
+    future_slot_1 = "23:59" 
 
     (config_dir / "publish_schedule.json").write_text(
         json.dumps({
@@ -120,8 +118,8 @@ def test_strict_run_today_recovery_uses_available_slots(tmp_path: Path):
         encoding="utf-8",
     )
 
-    (bin_dir / "claude").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    (bin_dir / "claude").chmod(0o755)
+    (bin_dir / "codex").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (bin_dir / "codex").chmod(0o755)
     for name in ("ffmpeg", "ffprobe"):
         executable = bin_dir / name
         executable.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -143,7 +141,7 @@ done
     )
     (scripts_dir / "run_daily_news_pipeline.sh").chmod(0o755)
 
-    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "claude_agent_validation.py"):
+    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "codex_agent_validation.py"):
         (scripts_dir / name).write_text("", encoding="utf-8")
 
     (scripts_dir / "schedule_today_native.py").write_text(
@@ -187,7 +185,7 @@ def test_strict_run_preserves_existing_queue_entries(tmp_path: Path):
     now_local = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
     today = now_local.strftime("%F")
     next_date = (now_local + timedelta(days=1)).strftime("%F")
-    future_slot = (now_local + timedelta(minutes=60)).strftime("%H:%M")
+    future_slot = (now_local + (timedelta(minutes=25) if now_local.hour >= 23 else timedelta(minutes=60))).strftime("%H:%M")
 
     (config_dir / "publish_schedule.json").write_text(
         json.dumps({
@@ -199,8 +197,8 @@ def test_strict_run_preserves_existing_queue_entries(tmp_path: Path):
         encoding="utf-8",
     )
 
-    (bin_dir / "claude").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    (bin_dir / "claude").chmod(0o755)
+    (bin_dir / "codex").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (bin_dir / "codex").chmod(0o755)
     for name in ("ffmpeg", "ffprobe"):
         executable = bin_dir / name
         executable.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -220,7 +218,7 @@ echo "PROJECT_ID=cand_new"
     )
     (scripts_dir / "run_daily_news_pipeline.sh").chmod(0o755)
 
-    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "claude_agent_validation.py"):
+    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "codex_agent_validation.py"):
         (scripts_dir / name).write_text("", encoding="utf-8")
     (scripts_dir / "schedule_today_native.py").write_text(
         "import sys\nfrom pathlib import Path\nwith open('platform-schedule-called.log', 'a') as f: f.write(' '.join(sys.argv) + '\\n')\nraise SystemExit(0)\n",

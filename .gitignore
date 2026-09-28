@@ -23,6 +23,9 @@ htmlcov/
 # Pipeline outputs (regenerable — never commit large media)
 output/
 pipeline/
+renders/
+hyperframes/
+hyperframes_reels/
 tests/qa/output/
 
 # Project workspaces (generated assets, renders — all regenerable)

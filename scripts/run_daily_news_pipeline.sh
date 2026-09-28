@@ -86,7 +86,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
 
-# Step 2.5: Run Directors pipeline via Claude CLI (unattended, logged) (P2)
+# Step 2.5: Run Directors pipeline via Codex CLI (unattended, logged) (P2)
 DIRECTORS_LOG="$ROOT/logs/directors_${PROJECT_ID}_$(date -u +%Y%m%dT%H%M%SZ).log"
 START_TS=$(date -u +%s)
 
@@ -140,18 +140,45 @@ run_directors() {
     export DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-20}"
     export RESUME_FLAG="$resume_flag"
     export PROJECT_DIR="$PROJECT_DIR"
-    if id node >/dev/null 2>&1; then
-      su node -p -s /bin/bash -c '
-      export PATH="$PATH"; export HOME="/home/node"
-      export PYTHONPATH="$PYTHONPATH"
-      cd "$PROJECT_DIR"
-      test -s "artifacts/research_brief.json" || exit 7
-      env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --model claude-opus-4-7 --add-dir "$ROOT" --permission-mode bypassPermissions --max-budget-usd "$DIRECTORS_MAX_BUDGET_USD" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$PROMPT_STR"
-    '
+    CODEX_BIN="$(command -v codex || true)"
+    if [ -z "$CODEX_BIN" ]; then
+      for c in /home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex /usr/local/bin/codex /usr/bin/codex; do
+        if [ -x "$c" ]; then CODEX_BIN="$c"; break; fi
+      done
+    fi
+    if [ -n "$CODEX_BIN" ]; then
+      export CODEX_BIN
+      if id node >/dev/null 2>&1; then
+        su node -p -s /bin/bash -c '
+        export PATH="$PATH"; export HOME="/home/node"
+        export PYTHONPATH="$PYTHONPATH"
+        export CODEX_HOME="/home/node/.codex"
+        export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+        mkdir -p "$CODEX_HOME"
+        cd "$PROJECT_DIR"
+        test -s "artifacts/research_brief.json" || exit 7
+        timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" "$CODEX_BIN" exec --dangerously-bypass-approvals-and-sandbox --json "$PROMPT_STR" < /dev/null
+      '
+      fi
+    else
+      echo "[$(date -u +%FT%TZ)] ERROR: codex CLI not found, cannot run directors" >&2
+      return 1
     fi
   else
     cd "$PROJECT_DIR"
-    env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SSE_PORT -u CLAUDE_SESSION_ID -u ANTHROPIC_MODEL timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" claude --bare -p --model claude-opus-4-7 --add-dir "$ROOT" $resume_flag --permission-mode bypassPermissions --max-budget-usd "${DIRECTORS_MAX_BUDGET_USD:-20}" --system-prompt "$DIRECTOR_SYSTEM_NOTE" --output-format json "$prompt"
+    CODEX_BIN="$(command -v codex || true)"
+    if [ -z "$CODEX_BIN" ]; then
+      for c in /home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex /usr/local/bin/codex /usr/bin/codex; do
+        if [ -x "$c" ]; then CODEX_BIN="$c"; break; fi
+      done
+    fi
+    if [ -n "$CODEX_BIN" ]; then
+      export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+      mkdir -p "$CODEX_HOME"
+      timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" "$CODEX_BIN" exec --dangerously-bypass-approvals-and-sandbox --json "$prompt" < /dev/null
+    else
+      echo "[$(date -u +%FT%TZ)] ERROR: codex CLI not found, cannot run directors" >&2
+    fi
   fi
 }
 
@@ -161,9 +188,9 @@ if ! command -v timeout >/dev/null 2>&1; then
 fi
 
 run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
-CLAUDE_EXIT=$?
+DIRECTOR_EXIT=$?
 DIRECTOR_ARTIFACT_FALLBACK=0
-if [ "$CLAUDE_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
+if [ "$DIRECTOR_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: directors timed out; refusing stale artifacts" >> "$DIRECTORS_LOG"
 fi
 
@@ -193,12 +220,12 @@ elif jq empty "$DIRECTORS_JSON" 2>/dev/null; then
     "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   jq -r '.result // ""' "$DIRECTORS_JSON" >> "$DIRECTORS_LOG"
   if [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON")" = "true" ]; then
-    echo "[$(date -u +%FT%TZ)] ERROR: claude director reported execution error in output JSON" >> "$DIRECTORS_LOG"
-    CLAUDE_EXIT=3
+    echo "[$(date -u +%FT%TZ)] ERROR: codex director reported execution error in output JSON" >> "$DIRECTORS_LOG"
+    DIRECTOR_EXIT=3
   fi
 else
-  echo "[$(date -u +%FT%TZ)] WARN: claude produced no valid JSON result" >> "$DIRECTORS_LOG"
-  [ $CLAUDE_EXIT -eq 0 ] && CLAUDE_EXIT=4
+  echo "[$(date -u +%FT%TZ)] WARN: codex produced no valid JSON result" >> "$DIRECTORS_LOG"
+  [ $DIRECTOR_EXIT -eq 0 ] && DIRECTOR_EXIT=4
 fi
 
 END_TS=$(date -u +%s)
@@ -207,13 +234,13 @@ ELAPSED=$((END_TS - START_TS))
 MAX_DIRECTOR_RETRIES="${MAX_DIRECTOR_RETRIES:-3}"
 DIRECTOR_ATTEMPT=1
 
-while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; do
+while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; do
   if [ "$DIRECTOR_ATTEMPT" -ge "$MAX_DIRECTOR_RETRIES" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: director artifacts incomplete or failed after $MAX_DIRECTOR_RETRIES attempts" >> "$DIRECTORS_LOG"
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
       --error-type "DIRECTOR_INCOMPLETE" --message "Director artifacts incomplete after $MAX_DIRECTOR_RETRIES attempts" \
       --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
-    CLAUDE_EXIT=6
+    DIRECTOR_EXIT=6
     break
   fi
   DIRECTOR_ATTEMPT=$((DIRECTOR_ATTEMPT + 1))
@@ -222,7 +249,7 @@ while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_direct
     --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
   RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
     echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
-    CLAUDE_EXIT=6
+    DIRECTOR_EXIT=6
     break
   }
   RETRY_EXIT=0
@@ -237,14 +264,21 @@ while [ "$CLAUDE_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_direct
   fi
   if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
     mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
-    CLAUDE_EXIT=0
+    DIRECTOR_EXIT=0
   else
-    CLAUDE_EXIT=6
+    DIRECTOR_EXIT=6
   fi
 done
 
 set -e
-if [ $CLAUDE_EXIT -eq 0 ]; then
+if [ $DIRECTOR_EXIT -ne 0 ]; then
+  if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
+    echo "[$(date -u +%FT%TZ)] directors recovered via autonomous synthesis project=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+    DIRECTOR_EXIT=0
+  fi
+fi
+
+if [ $DIRECTOR_EXIT -eq 0 ]; then
   echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID exit=0 elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
@@ -270,11 +304,11 @@ if [ $CLAUDE_EXIT -eq 0 ]; then
     continue
   fi
 else
-  echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$CLAUDE_EXIT elapsed=${ELAPSED}s" \
+  echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$DIRECTOR_EXIT elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   echo "  see full transcript: $DIRECTORS_LOG" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
-    --error-type "DIRECTOR_FAILURE" --message "Director run failed with exit code $CLAUDE_EXIT" || true
+    --error-type "DIRECTOR_FAILURE" --message "Director run failed with exit code $DIRECTOR_EXIT" || true
   continue
 fi
 
@@ -401,6 +435,7 @@ fi
     local target="$project_root/$composition/assets"
     if [ "$composition" = "hyperframes_reels" ]; then
       cp "$reels_narration" "$target/narration_reels.mp3"
+      cp "$reels_narration" "$target/narration.mp3"
     else
       cp "$narration" "$target/narration.mp3"
     fi
@@ -433,8 +468,9 @@ elif [ -d "Hyperframes_reels" ]; then
 fi
 
 if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html" ] || [ ! -f "$REELS_COMP/index.html" ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID"
-  exit 1
+  echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID; skipping candidate" >&2
+  rm -rf "$ROOT/projects/$PROJECT_ID"
+  continue
 fi
 
 # Fix composition asset references (incorrect relative paths)
@@ -444,8 +480,8 @@ rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
 
-# ===== CLAUDE AGENT STRICT QUALITY VALIDATION =====
-echo "[$(date -u +%FT%TZ)] CLAUDE Agent Strict Quality Validation Started"
+# ===== CODEX AGENT STRICT QUALITY VALIDATION =====
+echo "[$(date -u +%FT%TZ)] Codex Agent Strict Quality Validation Started"
 
 # Step 1: Base render quality validation (existing)
 if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60 --strict; then
@@ -473,7 +509,7 @@ if [ $RENDER_MISSING -ne 0 ]; then
   continue
 fi
 
-# Step 2: Create publish_metadata.json first (needed for CLAUDE validation)
+# Step 2: Create publish_metadata.json first (needed for Codex validation)
 TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
 if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
@@ -484,7 +520,8 @@ fi
 
 # Ensure title contains required hashtags
 if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
-  TITLE="$TITLE #tintuc #congnghe #ai"
+  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
 fi
 
 # Create publish_metadata.json for validation
@@ -514,36 +551,38 @@ else
   continue
 fi
 
-# Step 3: CLAUDE Agent Strict Quality Validation (NEW FEATURE)
-echo "[$(date -u +%FT%TZ)] Running CLAUDE Agent validation..."
+# Step 3: Codex Agent Strict Quality Validation
+echo "[$(date -u +%FT%TZ)] Running Codex Agent validation..."
 
 # Set max retry attempts
-MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
+MAX_RETRIES="${CODEX_VALIDATION_RETRIES:-3}"
 VALIDATION_PASSED=0
+VAL_SCRIPT="$ROOT/scripts/codex_agent_validation.py"
+[ -f "$VAL_SCRIPT" ] || { echo "ERROR: codex_agent_validation.py not found"; exit 1; }
 
 for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
-  echo "[$(date -u +%FT%TZ)] CLAUDE Validation Attempt $retry/$MAX_RETRIES"
+  echo "[$(date -u +%FT%TZ)] Codex Validation Attempt $retry/$MAX_RETRIES"
 
-  if "$PY" "$ROOT/scripts/claude_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
-    --strict \
-    --retry "$MAX_RETRIES" \
-    --ffprobe "$FFPROBE_BIN" \
-    --ffmpeg "$FFMPEG_BIN"; then
+  if "$PY" "$ROOT/scripts/codex_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
+      --strict \
+      --retry "$MAX_RETRIES" \
+      --ffprobe "$FFPROBE_BIN" \
+      --ffmpeg "$FFMPEG_BIN"; then
     VALIDATION_EXIT=0
   else
     VALIDATION_EXIT=$?
   fi
 
   if [ $VALIDATION_EXIT -eq 0 ]; then
-    echo "[$(date -u +%FT%TZ)] 🟢 CLAUDE Agent Strict Quality Validation PASSED"
+    echo "[$(date -u +%FT%TZ)] 🟢 Codex Agent Strict Quality Validation PASSED"
     VALIDATION_PASSED=1
-    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "claude_validation" --project-id "$PROJECT_ID" \
-      --message "Claude agent validation passed on attempt $retry/$MAX_RETRIES" || true
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "codex_validation" --project-id "$PROJECT_ID" \
+      --message "Codex agent validation passed on attempt $retry/$MAX_RETRIES" || true
     break
   else
-    echo "[$(date -u +%FT%TZ)] ❌ CLAUDE Agent validation failed (attempt $retry/$MAX_RETRIES)"
-    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "claude_validation" --project-id "$PROJECT_ID" \
-      --reason "Claude agent validation failed, retrying" --attempt "$retry" --max-attempts "$MAX_RETRIES" || true
+    echo "[$(date -u +%FT%TZ)] ❌ Codex Agent validation failed (attempt $retry/$MAX_RETRIES)"
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "codex_validation" --project-id "$PROJECT_ID" \
+      --reason "Codex agent validation failed, retrying" --attempt "$retry" --max-attempts "$MAX_RETRIES" || true
 
     # Only retry if we haven't exhausted attempts
     if [ $retry -lt $MAX_RETRIES ]; then
@@ -554,12 +593,15 @@ for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
 done
 
 if [ $VALIDATION_PASSED -eq 0 ]; then
-  echo "[$(date -u +%FT%TZ)] 🔴 FINAL: CLAUDE Agent Strict Quality Validation FAILED after $MAX_RETRIES attempts" >&2
+  echo "[$(date -u +%FT%TZ)] 🔴 FINAL: Codex Agent Strict Quality Validation FAILED after $MAX_RETRIES attempts" >&2
   echo "[$(date -u +%FT%TZ)] Project: $PROJECT_ID" >&2
   echo "[$(date -u +%FT%TZ)] Check validation reports in project directory" >&2
-  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "claude_validation" --project-id "$PROJECT_ID" \
-    --error-type "VALIDATION_FAILED" --message "Claude agent validation failed after $MAX_RETRIES attempts" \
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "codex_validation" --project-id "$PROJECT_ID" \
+    --error-type "VALIDATION_FAILED" --message "Codex agent validation failed after $MAX_RETRIES attempts" \
     --attempt "$MAX_RETRIES" --max-attempts "$MAX_RETRIES" || true
+
+  echo "[$(date -u +%FT%TZ)] Removing failed project directory and continuing to next candidate." >&2
+  rm -rf "$ROOT/projects/$PROJECT_ID"
   continue
 fi
 
@@ -577,8 +619,9 @@ if [ -z "$TITLE" ]; then
 fi
 
 # Ensure title contains required hashtags (#tintuc #congnghe #ai)
-if [[ "$TITLE" != *"#tintuc"* && "$TITLE" != *"#congnghe"* && "$TITLE" != *"#ai"* ]]; then
-  TITLE="$TITLE #tintuc #congnghe #ai"
+if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
+  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
 fi
 # Safeguard: ensure it fits within 100 chars for YT Shorts
 if [ ${#TITLE} -gt 100 ]; then

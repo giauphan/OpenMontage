@@ -17,7 +17,7 @@ def test_news_research_bridge_angle_type_normalization():
         "content_hash": "abc123hash",
         "raw_provenance": {"source_feed": "newsnow"},
     }
-    claude_draft = {
+    agent_draft = {
         "research_draft": {
             "landscape": {
                 "existing_content": [],
@@ -61,7 +61,7 @@ def test_news_research_bridge_angle_type_normalization():
             ],
         }
     }
-    brief = bridge.build_brief(candidate, claude_draft)
+    brief = bridge.build_brief(candidate, agent_draft)
     angles = brief["angles_discovered"]
     assert len(angles) >= 2
     assert angles[0]["type"] == "data_driven"

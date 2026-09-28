@@ -337,7 +337,7 @@ def test_removes_clip_visibility_hidden_rule(tmp_path):
     assert re.search(r"\.clip[^{}]*\{[^{}]*visibility:\s*hidden", patched) is None
 
 
-def test_repair_injects_valid_breathing_zoom_and_preserves_registered_timeline(tmp_path):
+def test_repair_injects_valid_background_motion_and_preserves_registered_timeline(tmp_path):
     html = """<!DOCTYPE html>
 <html>
 <head>
@@ -357,9 +357,12 @@ def test_repair_injects_valid_breathing_zoom_and_preserves_registered_timeline(t
     repair.patch_html(comp, 10.0, strict=True)
     patched = comp.read_text()
 
-    # Must inject breathing scale with valid JS syntax (no extra braces)
+    # Must inject background motion with valid JS syntax (no whole-canvas breathing zoom)
     assert "// __repair_scale_injected" in patched
-    assert "_r_tl.fromTo('#root', {scale: 1.0}, {scale: 1.12, transformOrigin: '50% 50%', force3D: true, duration: 1.6, yoyo: true, repeat: 6, ease: 'sine.inOut'}, 0);" in patched
+    assert "_r_tl.fromTo('.hf-motion-beam'" in patched
+    assert "_r_tl.fromTo('.hf-grid-overlay'" in patched
+    assert "scale: 1.12" not in patched
+    assert "yoyo: true" not in patched
     # Timeline should not be marked data-no-timeline if it registered timelines
     assert "data-no-timeline" not in patched
 

@@ -4,7 +4,7 @@
 Centralized error logging, retry tracking, and incident reporting for:
 - scripts/run_daily_news_pipeline.sh
 - scripts/run_strict_docker_publish.sh
-- scripts/claude_agent_validation.py
+- scripts/codex_agent_validation.py
 - scripts/repair_hyperframes_quality.py
 """
 

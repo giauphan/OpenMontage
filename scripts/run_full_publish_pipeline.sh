@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full publish pipeline: Generate, validate, and publish videos for today and next day
-# with strict CLAUDE agent strict validation
+# with strict Codex agent strict validation
 # Runs on sandbox-video server via SSH
 set -euo pipefail
 
@@ -59,7 +59,7 @@ Full publish pipeline: Generate, validate, and publish videos for today and next
 Runs on sandbox-video server via SSH
 
 Options:
-  --strict          Enable mandatory CLAUDE agent strict validation (default)
+  --strict          Enable mandatory Codex agent strict validation (default)
   --no-strict       Disable strict validation
   --today-only      Only publish for today's date
   --next-day-only   Only publish for next day's date

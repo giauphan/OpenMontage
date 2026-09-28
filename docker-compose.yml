@@ -13,11 +13,8 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      # Mount user's local Claude CLI login session (~/.claude.json / credentials)
-      - ~/.claude.json:/root/.claude.json:ro
-      - ~/.claude:/root/.claude
-      - ~/.claude.json:/home/node/.claude.json:ro
-      - ~/.claude:/home/node/.claude
+      - ~/.codex:/root/.codex
+      - ~/.codex:/home/node/.codex
       - ~/.openmontage:/root/.openmontage
     environment:
       - PYTHONPATH=/app
@@ -42,10 +39,8 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - ~/.claude.json:/root/.claude.json:ro
-      - ~/.claude:/root/.claude
-      - ~/.claude.json:/home/node/.claude.json:ro
-      - ~/.claude:/home/node/.claude
+      - ~/.codex:/root/.codex
+      - ~/.codex:/home/node/.codex
       - ~/.openmontage:/root/.openmontage
     command: >
       bash -c "
