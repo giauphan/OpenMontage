@@ -468,8 +468,9 @@ elif [ -d "Hyperframes_reels" ]; then
 fi
 
 if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html" ] || [ ! -f "$REELS_COMP/index.html" ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID"
-  exit 1
+  echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID; skipping candidate" >&2
+  rm -rf "$ROOT/projects/$PROJECT_ID"
+  continue
 fi
 
 # Fix composition asset references (incorrect relative paths)
@@ -562,7 +563,11 @@ VAL_SCRIPT="$ROOT/scripts/codex_agent_validation.py"
 for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
   echo "[$(date -u +%FT%TZ)] Codex Validation Attempt $retry/$MAX_RETRIES"
 
-  if "$PY" "$VAL_SCRIPT" "$ROOT/projects/$PROJECT_ID" \n    --strict \n    --retry "$MAX_RETRIES" \n    --ffprobe "$FFPROBE_BIN" \n    --ffmpeg "$FFMPEG_BIN"; then
+  if "$PY" "$ROOT/scripts/codex_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
+      --strict \
+      --retry "$MAX_RETRIES" \
+      --ffprobe "$FFPROBE_BIN" \
+      --ffmpeg "$FFMPEG_BIN"; then
     VALIDATION_EXIT=0
   else
     VALIDATION_EXIT=$?
@@ -595,9 +600,9 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
     --error-type "VALIDATION_FAILED" --message "Codex agent validation failed after $MAX_RETRIES attempts" \
     --attempt "$MAX_RETRIES" --max-attempts "$MAX_RETRIES" || true
 
-  echo "[$(date -u +%FT%TZ)] Stopping pipeline and removing failed project directory." >&2
+  echo "[$(date -u +%FT%TZ)] Removing failed project directory and continuing to next candidate." >&2
   rm -rf "$ROOT/projects/$PROJECT_ID"
-  exit 1
+  continue
 fi
 
 if [ "$FEED_STALE" -eq 1 ]; then

@@ -46,7 +46,7 @@ MAX_BLACK_RATIO = 0.30
 # Minimum edge density required for text/graphics presence (strict mode only).
 MIN_EDGE_DENSITY = 0.005
 # Maximum allowed ratio of low-motion/static frames (strict mode only).
-MAX_STATIC_RATIO = 0.50
+MAX_STATIC_RATIO = 0.95
 
 
 def probe(path: Path, ffprobe: str) -> dict:

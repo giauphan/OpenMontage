@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -127,14 +128,22 @@ class MetaPublisher(BaseTool):
     def _get_page_info(self, user_token: str, page_id: str) -> dict[str, Any]:
         url = f"{self.GRAPH_URL}/{page_id}?fields=access_token,instagram_business_account&access_token={user_token}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.load(resp)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP Error {exc.code} for page_id {page_id}: {body}") from exc
 
     def _get_instagram_info(self, user_token: str, ig_account_id: str) -> dict[str, Any]:
         url = f"{self.GRAPH_URL}/{ig_account_id}?fields=id,username&access_token={user_token}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.load(resp)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP Error {exc.code} for ig_account_id {ig_account_id}: {body}") from exc
 
     def _upload_facebook_video(
         self,
@@ -386,3 +395,53 @@ class MetaPublisher(BaseTool):
 
         except Exception as exc:
             return ToolResult(success=False, error=f"Meta upload failed: {str(exc)}")
+
+    def check_media_published(
+        self,
+        media_id: str,
+        platform: str = "instagram",
+        user_token: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Check status of an Instagram media or Facebook video post via Meta Graph API."""
+        try:
+            token = user_token or os.environ.get("TOKEN_FACEBOOK")
+            if not token or not media_id:
+                return None
+
+            import requests
+
+            if platform == "instagram":
+                url = f"{self.GRAPH_URL}/{media_id}?fields=id,media_type,shortcode,timestamp&access_token={token}"
+                resp = requests.get(url, timeout=30)
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                if "error" in data or str(data.get("id")) != str(media_id):
+                    return None
+                return {
+                    "platform": "instagram",
+                    "media_id": str(media_id),
+                    "status": "published",
+                    "shortcode": data.get("shortcode"),
+                    "timestamp": data.get("timestamp"),
+                }
+            elif platform == "facebook":
+                url = f"{self.GRAPH_URL}/{media_id}?fields=id,published,is_published,publishing_phase&access_token={token}"
+                resp = requests.get(url, timeout=30)
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                if "error" in data or str(data.get("id")) != str(media_id):
+                    return None
+                is_pub = data.get("published", True) and data.get("is_published", True)
+                if not is_pub:
+                    return None
+                return {
+                    "platform": "facebook",
+                    "media_id": str(media_id),
+                    "status": "published",
+                    "publishing_phase": data.get("publishing_phase"),
+                }
+        except Exception:
+            return None
+        return None

@@ -1,6 +1,7 @@
 """Tests for Codex Agent Validation Implementation."""
 
 import json
+import subprocess
 import tempfile
 import pytest
 from pathlib import Path
@@ -114,6 +115,25 @@ class TestCodexAgentValidator:
         assert parsed["overall_passed"] is True
         assert parsed["visual_quality"]["score"] == 95
 
+    def test_parse_codex_review_jsonl_stream(self):
+        jsonl = (
+            '{"type":"thread.started","thread_id":"test-123"}\n'
+            '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"'
+            'Here is the review result:\\n\\n```json\\n'
+            '{\\"visual_quality\\": {\\"passed\\": true, \\"score\\": 95, \\"notes\\": \\"fine\\"}, '
+            '\\"audio_sync\\": {\\"passed\\": true, \\"score\\": 95, \\"notes\\": \\"fine\\"}, '
+            '\\"content_appropriateness\\": {\\"passed\\": true, \\"score\\": 95, \\"notes\\": \\"fine\\"}, '
+            '\\"brand_compliance\\": {\\"passed\\": true, \\"score\\": 95, \\"notes\\": \\"fine\\"}, '
+            '\\"overall_passed\\": true, \\"summary\\": \\"looks good\\"}'
+            '\\n```"}}\n'
+            '{"type":"turn.completed"}\n'
+        )
+        parsed = parse_codex_review(jsonl)
+        assert parsed["overall_passed"] is True
+        assert parsed["visual_quality"]["passed"] is True
+        assert parsed["visual_quality"]["score"] == 95
+
+
 
 class TestCodexCommandLineIntegration:
     def test_help_command(self):
@@ -125,3 +145,85 @@ class TestCodexCommandLineIntegration:
         )
         assert result.returncode == 0
         assert "usage:" in result.stdout.lower()
+
+
+class TestCodexFailClosedStrictReview:
+    """Test strict fail-closed and audit binding rules."""
+
+    def test_strict_review_fails_when_agent_cli_missing(self, monkeypatch):
+        test_dir = Path(tempfile.mkdtemp())
+        validator = CodexAgentValidator(test_dir, strict_mode=True)
+        video_path = test_dir / "video.mp4"
+        video_path.write_bytes(b"content" * 100)
+        meta_path = test_dir / "meta.json"
+        meta_path.write_text("{}", encoding="utf-8")
+
+        monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: None)
+        results = validator.codex_agent_strict_review(video_path, meta_path)
+        assert len(results) == 1
+        assert results[0].passed is False
+        assert "Agent CLI binary not found" in results[0].message
+        assert results[0].details["inspected_artifact_hash"] != ""
+
+    def test_strict_review_fails_on_cli_exception(self, monkeypatch):
+        test_dir = Path(tempfile.mkdtemp())
+        validator = CodexAgentValidator(test_dir, strict_mode=True)
+        video_path = test_dir / "video.mp4"
+        video_path.write_bytes(b"content" * 100)
+        meta_path = test_dir / "meta.json"
+        meta_path.write_text("{}", encoding="utf-8")
+
+        monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: "/usr/bin/codex")
+        def _mock_exec(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=["codex"], timeout=30)
+        monkeypatch.setattr(validator, "_execute_cli_review", _mock_exec)
+
+        results = validator.codex_agent_strict_review(video_path, meta_path)
+        assert len(results) == 1
+        assert results[0].passed is False
+        assert "timed out" in results[0].message.lower() or "timeout" in results[0].message.lower()
+        assert results[0].details["inspected_artifact_hash"] != ""
+
+    def test_strict_review_fails_on_missing_category(self, monkeypatch):
+        test_dir = Path(tempfile.mkdtemp())
+        (test_dir / "hyperframes").mkdir(parents=True, exist_ok=True)
+        (test_dir / "hyperframes" / "index.html").write_text("<html><body>scene</body></html>", encoding="utf-8")
+        validator = CodexAgentValidator(test_dir, strict_mode=True)
+        video_path = test_dir / "video.mp4"
+        video_path.write_bytes(b"content" * 100)
+        meta_path = test_dir / "meta.json"
+        meta_path.write_text("{}", encoding="utf-8")
+
+        monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: "/usr/bin/codex")
+        monkeypatch.setattr(validator, "_extract_frames", lambda *args, **kwargs: [test_dir / "frame.png"])
+        # Incomplete review output: missing brand_compliance
+        incomplete_json = json.dumps({
+            "visual_quality": {"passed": True, "score": 90, "notes": "ok"},
+            "audio_sync": {"passed": True, "score": 90, "notes": "ok"},
+            "content_appropriateness": {"passed": True, "score": 90, "notes": "ok"},
+            "overall_passed": True,
+        })
+        class DummyProc:
+            stdout = incomplete_json
+            returncode = 0
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: DummyProc())
+
+        results = validator.codex_agent_strict_review(video_path, meta_path)
+        assert len(results) == 1
+        assert results[0].passed is False
+        assert "missing mandatory category: brand_compliance" in results[0].message
+
+    def test_strict_review_blocks_mock_in_production_mode(self, monkeypatch):
+        test_dir = Path(tempfile.mkdtemp())
+        validator = CodexAgentValidator(test_dir, strict_mode=True)
+        video_path = test_dir / "video.mp4"
+        video_path.write_bytes(b"content" * 100)
+        meta_path = test_dir / "meta.json"
+        meta_path.write_text("{}", encoding="utf-8")
+
+        monkeypatch.setenv("CODEX_AGENT_VALIDATION_MOCK", "1")
+        monkeypatch.setenv("PRODUCTION_RELEASE", "1")
+        results = validator.codex_agent_strict_review(video_path, meta_path)
+        assert len(results) == 1
+        assert results[0].passed is False
+        assert "Mock review strictly forbidden in production mode" in results[0].message

@@ -453,6 +453,23 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
             "            justify-content: center; align-items: center;\n"
             "            background: radial-gradient(circle at 50% 30%, rgba(30, 27, 75, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%) !important;\n"
             "            padding: 60px 40px; box-sizing: border-box;\n"
+            "            color: #f8fafc !important;\n"
+            "            font-family: 'BeVietnamPro', Arial, sans-serif;\n"
+            "        }\n"
+            "        .scene h1, .scene h2, .scene h3, .scene h4, .scene .title, .scene [class*='title'], .scene [class*='headline'], .scene [class*='header'] {\n"
+            "            color: #ffffff !important;\n"
+            "            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important;\n"
+            "        }\n"
+            "        .scene p, .scene .caption, .scene [class*='caption'], .scene [class*='desc'], .scene [class*='text'], .scene [class*='summary'], .scene span, .scene li {\n"
+            "            color: #f1f5f9 !important;\n"
+            "            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;\n"
+            "        }\n"
+            "        .scene .card, .scene [class*='card'], .scene .panel, .scene [class*='panel'], .scene .box, .scene [class*='box'] {\n"
+            "            color: #f8fafc !important;\n"
+            "            background: rgba(15, 23, 42, 0.82) !important;\n"
+            "            border: 2px solid rgba(56, 189, 248, 0.45) !important;\n"
+            "            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;\n"
+            "            border-radius: 20px !important;\n"
             "        }\n"
             "        .scene::before {\n"
             "            content: ''; position: absolute; top: 36px; left: 36px; right: 36px; bottom: 36px;\n"
@@ -463,6 +480,17 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
             "            content: ''; position: absolute; top: 26px; left: 50%; transform: translateX(-50%);\n"
             "            width: 160px; height: 6px; background: #00E5FF; border-radius: 3px;\n"
             "            box-shadow: 0 0 16px #00E5FF; pointer-events: none; z-index: 5;\n"
+            "        }\n"
+            "        .ticker, [class*='ticker'] {\n"
+            "            bottom: 24px !important; z-index: 10 !important;\n"
+            "            border-top: 1px solid rgba(56, 189, 248, 0.35) !important;\n"
+            "            border-bottom: 1px solid rgba(56, 189, 248, 0.35) !important;\n"
+            "        }\n"
+            "        .meta, [class*='meta'], footer, [class*='footer'], .caption, [class*='takeaway'], [class*='checklist'] {\n"
+            "            margin-bottom: 80px !important;\n"
+            "        }\n"
+            "        .scene {\n"
+            "            padding-bottom: 120px !important;\n"
             "        }\n"
         )
         html = html[:style_match.end()] + pulse_css + html[style_match.end():]
@@ -613,6 +641,31 @@ def align_timeline(path: Path, html: str, narration_duration: float) -> str:
         if tl_decl:
             idx = tl_decl.end()
             body = body[:idx] + f"\n  tl.duration({target:.3f});\n" + body[idx:]
+
+    # Synchronize scene entrance calls (enter("#scene-N", at)) with actual scaled data-start attributes
+    scene_starts = {}
+    for m in re.finditer(r'<[a-zA-Z0-9]+\b[^>]*\bid=[\x27\x22](scene-[0-9]+)[\x27\x22][^>]*\bdata-start=[\x27\x22]([0-9.]+)[\x27\x22]', body):
+        scene_starts[m.group(1)] = float(m.group(2))
+    for m in re.finditer(r'<[a-zA-Z0-9]+\b[^>]*\bdata-start=[\x27\x22]([0-9.]+)[\x27\x22][^>]*\bid=[\x27\x22](scene-[0-9]+)[\x27\x22]', body):
+        scene_starts[m.group(2)] = float(m.group(1))
+
+    if scene_starts:
+        sorted_scenes = sorted(scene_starts.items(), key=lambda x: x[1])
+        for i, (sid, s_start) in enumerate(sorted_scenes):
+            # 1. Align enter("#scene-N", at)
+            body = re.sub(
+                rf'(enter\(\s*[\x27\x22]#{sid}[\x27\x22]\s*,\s*)[0-9.]+(\s*\))',
+                rf'\g<1>{s_start:.2f}\2',
+                body,
+            )
+            # 2. Align previous scene fade-out to s_start
+            if i > 0:
+                prev_sid = sorted_scenes[i - 1][0]
+                body = re.sub(
+                    rf'(tl\.to\(\s*[\x27\x22]#{prev_sid}[\x27\x22]\s*,\s*\{{[^}}]*\bopacity\s*:\s*0[^}}]*\}}\s*,\s*)[0-9.]+(\s*\))',
+                    rf'\g<1>{s_start:.2f}\2',
+                    body,
+                )
 
     beam_repeats = max(2, int(round(target / 3.2)) + 2)
     grid_repeats = max(2, int(round(target / 4.0)) + 2)

@@ -90,5 +90,10 @@ if grep -q -E '^[[:space:]]+exit 2$' "$ROOT/scripts/run_daily_news_pipeline.sh";
     exit 1
 fi
 
+if grep -q '\\n[[:space:]]*--' "$ROOT/scripts/run_daily_news_pipeline.sh"; then
+    echo "FAIL: Daily pipeline contains literal \n before command flags."
+    exit 1
+fi
+
 echo "PASS"
 exit 0

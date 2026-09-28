@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -26,11 +27,23 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 import unicodedata as _ud
 
 logger = logging.getLogger(__name__)
+
+
+def compute_sha256(path: Path | str) -> str:
+    p = Path(path)
+    if not p.is_file():
+        return ""
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
 
 # Try to import pipeline monitoring
 try:
@@ -167,21 +180,58 @@ def parse_codex_review(response_text: str) -> dict:
     candidates = _json_values(response_text)
     for cand in candidates:
         if isinstance(cand, dict) and cand.get("is_error") is True:
-            raise ValueError(f"Claude CLI error: {cand.get('result')}")
+            raise ValueError(f"Agent CLI error: {cand.get('result')}")
         if isinstance(cand, dict) and cand.get("is_error") is False and "result" not in cand:
             raise ValueError("result missing from output envelope")
-    for cand in candidates:
-        found = _pick_review_dict(cand)
-        if found:
-            return found
-        if isinstance(cand, dict) and isinstance(cand.get("result"), str):
-            for inner in _json_values(cand["result"]):
+
+    fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+
+    def _extract_from_text(text: str):
+        if not isinstance(text, str):
+            return None
+        for inner in _json_values(text):
+            found_inner = _pick_review_dict(inner)
+            if found_inner:
+                return found_inner
+        for match in fence_pattern.finditer(text):
+            for inner in _json_values(match.group(1)):
                 found_inner = _pick_review_dict(inner)
                 if found_inner:
                     return found_inner
+        return None
 
-    # Markdown fence fallback
-    fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+    def _search_cand(val):
+        found = _pick_review_dict(val)
+        if found:
+            return found
+        if isinstance(val, dict):
+            for k in ("text", "result", "message", "content"):
+                if k in val and isinstance(val[k], str):
+                    found = _extract_from_text(val[k])
+                    if found:
+                        return found
+            for k, sub_v in val.items():
+                if isinstance(sub_v, (dict, list)):
+                    found = _search_cand(sub_v)
+                    if found:
+                        return found
+                elif isinstance(sub_v, str):
+                    found = _extract_from_text(sub_v)
+                    if found:
+                        return found
+        elif isinstance(val, list):
+            for item in val:
+                found = _search_cand(item)
+                if found:
+                    return found
+        return None
+
+    for cand in candidates:
+        found = _search_cand(cand)
+        if found:
+            return found
+
+    # Markdown fence fallback on raw text
     for match in fence_pattern.finditer(response_text):
         for inner in _json_values(match.group(1)):
             found_inner = _pick_review_dict(inner)
@@ -189,6 +239,7 @@ def parse_codex_review(response_text: str) -> dict:
                 return found_inner
 
     raise ValueError(f"Agent CLI review invalid: {response_text!r}")
+
 
 
 
@@ -527,6 +578,16 @@ class CodexAgentValidator:
         scaffold_indicators = ["Template Scaffold", "LOREM IPSUM", "TODO: REPLACE", "UNSTYLED_CANVAS"]
         has_scaffold = any(ind in comp_text for ind in scaffold_indicators)
 
+        artifact_hash = compute_sha256(video_path)
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        common_details = {
+            "reviewer": "autonomous_heuristic",
+            "review_mode": "heuristic_fallback",
+            "inspected_artifact_hash": artifact_hash,
+            "timestamp": ts,
+            "heuristic_check": True,
+        }
+
         # 1. VISUAL QUALITY
         if has_video and not has_scaffold:
             scenes_desc = f"{scene_count} detected scenes" if scene_count > 0 else "smooth visual pacing"
@@ -539,8 +600,8 @@ class CodexAgentValidator:
                 ValidationResult(
                     check_name="Visual Quality",
                     passed=True,
-                    message=f"Visual Quality: ✓ PASS (Score: 95) - {notes}",
-                    details={"score": 95, "notes": notes},
+                    message=f"Visual Quality: ✓ PASS (Heuristic) - {notes}",
+                    details={**common_details, "score": None, "notes": notes},
                 )
             )
         else:
@@ -549,8 +610,8 @@ class CodexAgentValidator:
                 ValidationResult(
                     check_name="Visual Quality",
                     passed=False,
-                    message=f"Visual Quality: ✗ FAIL (Score: 30) - {reason}",
-                    details={"score": 30, "notes": reason},
+                    message=f"Visual Quality: ✗ FAIL (Heuristic) - {reason}",
+                    details={**common_details, "score": None, "notes": reason},
                 )
             )
 
@@ -564,8 +625,8 @@ class CodexAgentValidator:
                 ValidationResult(
                     check_name="Audio Sync",
                     passed=True,
-                    message=f"Audio Sync: ✓ PASS (Score: 95) - {notes}",
-                    details={"score": 95, "notes": notes},
+                    message=f"Audio Sync: ✓ PASS (Heuristic) - {notes}",
+                    details={**common_details, "score": None, "notes": notes},
                 )
             )
         else:
@@ -574,8 +635,8 @@ class CodexAgentValidator:
                 ValidationResult(
                     check_name="Audio Sync",
                     passed=False,
-                    message=f"Audio Sync: ✗ FAIL (Score: 20) - {notes}",
-                    details={"score": 20, "notes": notes},
+                    message=f"Audio Sync: ✗ FAIL (Heuristic) - {notes}",
+                    details={**common_details, "score": None, "notes": notes},
                 )
             )
 
@@ -592,8 +653,8 @@ class CodexAgentValidator:
             ValidationResult(
                 check_name="Content Appropriateness",
                 passed=True,
-                message=f"Content Appropriateness: ✓ PASS (Score: 95) - {content_notes}",
-                details={"score": 95, "notes": content_notes},
+                message=f"Content Appropriateness: ✓ PASS (Heuristic) - {content_notes}",
+                details={**common_details, "score": None, "notes": content_notes},
             )
         )
 
@@ -614,8 +675,8 @@ class CodexAgentValidator:
                 ValidationResult(
                     check_name="Brand Compliance",
                     passed=False,
-                    message=f"Brand Compliance: ✗ FAIL (Score: 0) - {notes}",
-                    details={"score": 0, "notes": notes},
+                    message=f"Brand Compliance: ✗ FAIL (Heuristic) - {notes}",
+                    details={**common_details, "score": 0, "notes": notes},
                 )
             )
         else:
@@ -624,8 +685,8 @@ class CodexAgentValidator:
                 ValidationResult(
                     check_name="Brand Compliance",
                     passed=True,
-                    message=f"Brand Compliance: ✓ PASS (Score: 95) - {notes}",
-                    details={"score": 95, "notes": notes},
+                    message=f"Brand Compliance: ✓ PASS (Heuristic) - {notes}",
+                    details={**common_details, "score": None, "notes": notes},
                 )
             )
 
@@ -747,14 +808,39 @@ Return a valid JSON object matching this schema:
             prompt += f"\n\n[Attached image: {fp.name}] {fp}"
 
         root_dir = str(Path(__file__).resolve().parent.parent)
-        timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "30"))
+        timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "120"))
 
         is_codex = "codex" in Path(agent_bin).name.lower()
         env = os.environ.copy()
         if "CODEX_HOME" not in env:
-            writable_codex = "/tmp/codex"
-            os.makedirs(writable_codex, exist_ok=True)
-            env["CODEX_HOME"] = writable_codex
+            candidate_homes = [
+                Path.home() / ".codex",
+                Path("/root/.codex"),
+                Path("/home/ubuntu/.codex"),
+            ]
+            found_home = None
+            for ch in candidate_homes:
+                if (ch / "auth.json").is_file():
+                    found_home = ch
+                    break
+
+            if found_home:
+                try:
+                    test_file = found_home / ".write_test"
+                    test_file.touch()
+                    test_file.unlink()
+                    env["CODEX_HOME"] = str(found_home)
+                except OSError:
+                    writable_codex = Path("/tmp/codex")
+                    writable_codex.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(found_home / "auth.json", writable_codex / "auth.json")
+                    if (found_home / "config.toml").is_file():
+                        shutil.copy2(found_home / "config.toml", writable_codex / "config.toml")
+                    env["CODEX_HOME"] = str(writable_codex)
+            else:
+                writable_codex = "/tmp/codex"
+                os.makedirs(writable_codex, exist_ok=True)
+                env["CODEX_HOME"] = writable_codex
 
         if is_codex:
             cmd = [
@@ -794,6 +880,13 @@ Return a valid JSON object matching this schema:
             raise RuntimeError(f"CLI returned error or rate limit: {output[:200]}")
 
         response_data = parse_codex_review(output)
+        if not isinstance(response_data, dict):
+            raise ValueError(f"Agent CLI review returned non-dictionary JSON: {output[:200]}")
+
+        artifact_hash = compute_sha256(abs_video_path)
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        reviewer_name = Path(agent_bin).name
+
         results = []
         checks = {
             "Visual Quality": "visual_quality",
@@ -802,9 +895,11 @@ Return a valid JSON object matching this schema:
             "Brand Compliance": "brand_compliance",
         }
         for check_name, check_key in checks.items():
+            if check_key not in response_data:
+                raise ValueError(f"Agent CLI review missing mandatory category: {check_key}")
             check_data = response_data.get(check_key, {})
             if not isinstance(check_data, dict):
-                raise ValueError(f"Agent CLI review missing {check_key}")
+                raise ValueError(f"Agent CLI review invalid format for category: {check_key}")
             passed = check_data.get("passed") is True
             score = check_data.get("score", 0)
             notes = check_data.get("notes", "")
@@ -813,7 +908,14 @@ Return a valid JSON object matching this schema:
                     check_name=check_name,
                     passed=passed,
                     message=f"{check_name}: {'✓ PASS' if passed else '✗ FAIL'} (Score: {score}) - {notes}",
-                    details={"score": score, "notes": notes},
+                    details={
+                        "score": score,
+                        "notes": notes,
+                        "reviewer": reviewer_name,
+                        "review_mode": "codex_cli",
+                        "inspected_artifact_hash": artifact_hash,
+                        "timestamp": ts,
+                    },
                 )
             )
 
@@ -823,6 +925,12 @@ Return a valid JSON object matching this schema:
                     check_name="Agent Review Gate",
                     passed=False,
                     message=str(response_data.get("summary") or "Strict review rejected asset"),
+                    details={
+                        "reviewer": reviewer_name,
+                        "review_mode": "codex_cli",
+                        "inspected_artifact_hash": artifact_hash,
+                        "timestamp": ts,
+                    },
                 )
             )
 
@@ -835,20 +943,31 @@ Return a valid JSON object matching this schema:
         metadata_path: Path,
         prior_results: Optional[List[ValidationResult]] = None,
     ) -> List[ValidationResult]:
-        """Codex Agent review with robust autonomous fallback."""
-        if os.environ.get("CODEX_AGENT_VALIDATION_MOCK") == "1" or os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1":
-            return [
-                ValidationResult(check_name="Visual Quality", passed=True, message="Visual Quality: ✓ PASS (Score: 95) - Mocked", details={"score": 95}),
-                ValidationResult(check_name="Audio Sync", passed=True, message="Audio Sync: ✓ PASS (Score: 95) - Mocked", details={"score": 95}),
-                ValidationResult(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Score: 95) - Mocked", details={"score": 95}),
-                ValidationResult(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Score: 95) - Mocked", details={"score": 95}),
-            ]
+        """Codex Agent review with strict enforcement and fail-closed security."""
+        abs_video_path = Path(video_path).resolve()
+        artifact_hash = compute_sha256(abs_video_path)
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        from unittest.mock import Mock, MagicMock
-        is_mocked = isinstance(subprocess.run, (Mock, MagicMock))
-        if not is_mocked and not is_network_available():
-            logger.info("External network unreachable; using autonomous Codex quality agent")
-            return self._autonomous_quality_review(Path(video_path).resolve(), Path(metadata_path).resolve(), prior_results)
+        # Mock isolation: mock reviews are blocked in strict production release
+        is_mock_env = os.environ.get("CODEX_AGENT_VALIDATION_MOCK") == "1" or os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1"
+        is_production = os.environ.get("PRODUCTION_RELEASE") == "1" or os.environ.get("STRICT_PRODUCTION") == "1"
+
+        if is_mock_env:
+            if is_production:
+                return [
+                    ValidationResult(
+                        check_name="Codex Agent Review Gate",
+                        passed=False,
+                        message="Mock review strictly forbidden in production mode",
+                        details={"error": "mock_forbidden_in_production", "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
+                    )
+                ]
+            return [
+                ValidationResult(check_name="Visual Quality", passed=True, message="Visual Quality: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+                ValidationResult(check_name="Audio Sync", passed=True, message="Audio Sync: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+                ValidationResult(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+                ValidationResult(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+            ]
 
         claude_mod = sys.modules.get("scripts.claude_agent_validation")
         if claude_mod and hasattr(claude_mod, "resolve_claude_cli"):
@@ -861,18 +980,39 @@ Return a valid JSON object matching this schema:
                             check_name="CLAUDE Agent Review Gate",
                             passed=False,
                             message="CLAUDE Agent strict review unavailable: FileNotFoundError: claude CLI not found",
-                            details={"error": "claude CLI not found"},
+                            details={"error": "claude CLI not found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
                         )
                     ]
 
         agent_bin = resolve_agent_cli()
-        if agent_bin:
-            try:
-                return self._execute_cli_review(agent_bin, video_path, metadata_path, prior_results)
-            except Exception as exc:
-                logger.info("Agent CLI call skipped (%s); applying autonomous quality review", exc)
+        if not agent_bin:
+            if self.strict_mode:
+                return [
+                    ValidationResult(
+                        check_name="Codex Agent Review Gate",
+                        passed=False,
+                        message="Codex agent review unavailable: Agent CLI binary not found",
+                        details={"error": "agent_cli_not_found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
+                    )
+                ]
+            logger.info("Agent CLI not found; falling back to non-strict autonomous heuristic review")
+            return self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
 
-        return self._autonomous_quality_review(Path(video_path).resolve(), Path(metadata_path).resolve(), prior_results)
+        try:
+            return self._execute_cli_review(agent_bin, video_path, metadata_path, prior_results)
+        except Exception as exc:
+            if self.strict_mode:
+                logger.error("Strict Codex Agent review failed: %s", exc)
+                return [
+                    ValidationResult(
+                        check_name="Codex Agent Review Gate",
+                        passed=False,
+                        message=f"Strict Codex agent review failed: {exc}",
+                        details={"error": str(exc), "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
+                    )
+                ]
+            logger.info("Agent CLI review skipped (%s); applying autonomous heuristic review in non-strict mode", exc)
+            return self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
 
     claude_agent_strict_review = codex_agent_strict_review
 

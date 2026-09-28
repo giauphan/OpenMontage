@@ -280,6 +280,11 @@ done
 cd "$ROOT"
 PROJECT_JSON=$(printf '%s\n' "${PROJECT_IDS[@]}" | jq -R . | jq -s .)
 TMP=$(mktemp)
+LOCK_FILE="config/publish_schedule.json.lock"
+exec 200>"$LOCK_FILE"
+flock -x 200
 jq --argjson projects "$PROJECT_JSON" '.active_projects = $projects' config/publish_schedule.json > "$TMP"
 mv "$TMP" config/publish_schedule.json
+flock -u 200
+exec 200>&-
 echo "All projects complete: ${PROJECT_IDS[*]}"
