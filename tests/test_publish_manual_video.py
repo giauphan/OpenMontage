@@ -257,6 +257,121 @@ def test_preflight_blocks_on_stale_validation_review(tmp_path: Path):
             enforce_release_preflight(project_dir, metadata, strict=False)
 
 
+@pytest.mark.parametrize("latest_matches", [True, False], ids=["matching", "stale"])
+@pytest.mark.parametrize("status_format", ["history", "legacy"])
+def test_preflight_uses_latest_review_hashes(tmp_path: Path, latest_matches, status_format):
+    from scripts.publish_manual_video import enforce_release_preflight
+    from scripts.validation_status import ValidationStatusLogger
+
+    project_dir, metadata, video_sha = _setup_valid_pipeline_project(tmp_path)
+    stale_sha = "deadbeef" * 8
+    latest_sha = video_sha if latest_matches else stale_sha
+    status_file = project_dir / "validation_status.json"
+    if status_format == "legacy":
+        status_file.write_text(json.dumps({
+            "strict_quality_pass": True,
+            "inspected_artifact_hash": latest_sha,
+        }), encoding="utf-8")
+    else:
+        status_file.unlink()
+        logger = ValidationStatusLogger(project_dir)
+
+        def log_review(project_id, hashes):
+            logger.log_validation_result(
+                project_id, "PASS", len(hashes), len(hashes), 0,
+                details={"results": [
+                    {"check_name": "Visual Quality", "passed": True,
+                     "message": "PASS", "details": {"inspected_artifact_hash": sha}}
+                    for sha in hashes
+                ]},
+            )
+
+        # An older matching review must not rescue a stale latest review;
+        # an older stale review must not invalidate a fresh one.
+        log_review(project_dir.name, [stale_sha if latest_matches else video_sha])
+        log_review(project_dir.name, [latest_sha])
+        # Neither unrelated projects nor hashless technical checks erase the review.
+        log_review("another_project", [video_sha if not latest_matches else stale_sha])
+        log_review(project_dir.name, [])
+
+    with patch("scripts.publish_manual_video.validate_project_quality") as quality:
+        if latest_matches:
+            enforce_release_preflight(project_dir, metadata, strict=True)
+        else:
+            with pytest.raises(RuntimeError, match="Stale validation review!"):
+                enforce_release_preflight(project_dir, metadata, strict=True, force=True)
+        quality.assert_called_once_with(project_dir, strict=True)
+
+
+def test_preflight_history_supports_distinct_reviewed_media(tmp_path: Path):
+    import hashlib
+    from scripts.publish_manual_video import enforce_release_preflight
+    from scripts.validation_status import ValidationStatusLogger
+
+    project_dir, metadata, reels_sha = _setup_valid_pipeline_project(tmp_path)
+    full_video = project_dir / metadata["fb_video"]
+    full_video.write_bytes(b"distinct-full-video")
+    full_sha = hashlib.sha256(full_video.read_bytes()).hexdigest()
+    approval_file = project_dir / "approval.json"
+    approval = json.loads(approval_file.read_text(encoding="utf-8"))
+    approval["approved_media_hashes"] = [reels_sha, full_sha]
+    approval_file.write_text(json.dumps(approval), encoding="utf-8")
+    (project_dir / "validation_status.json").unlink()
+    logger = ValidationStatusLogger(project_dir)
+    logger.log_validation_result(project_dir.name, "PASS", 2, 2, 0, details={
+        "results": [
+            {"check_name": "Visual Quality", "passed": True, "message": "PASS",
+             "details": {"inspected_artifact_hash": sha}}
+            for sha in (full_sha, reels_sha)
+        ],
+    })
+
+    with patch("scripts.publish_manual_video.validate_project_quality"):
+        enforce_release_preflight(project_dir, metadata, strict=True)
+
+    # Re-approval alone must not authorize media absent from the latest review.
+    full_video.write_bytes(b"changed-full-video")
+    approval["approved_media_hashes"] = [
+        reels_sha, hashlib.sha256(full_video.read_bytes()).hexdigest(),
+    ]
+    approval_file.write_text(json.dumps(approval), encoding="utf-8")
+    with patch("scripts.publish_manual_video.validate_project_quality"):
+        with pytest.raises(RuntimeError, match="Stale validation review!"):
+            enforce_release_preflight(project_dir, metadata, strict=True)
+
+
+@pytest.mark.parametrize("gate", ["quality", "approval", "approval_hash"])
+def test_preflight_matching_history_does_not_bypass_gates(tmp_path: Path, gate):
+    from scripts.publish_manual_video import enforce_release_preflight
+    from scripts.validation_status import ValidationStatusLogger
+
+    project_dir, metadata, video_sha = _setup_valid_pipeline_project(tmp_path)
+    (project_dir / "validation_status.json").unlink()
+    ValidationStatusLogger(project_dir).log_validation_result(
+        project_dir.name, "PASS", 1, 1, 0, details={"results": [
+            {"check_name": "Visual Quality", "passed": True, "message": "PASS",
+             "details": {"inspected_artifact_hash": video_sha}},
+        ]},
+    )
+    expected_error = "quality rejected"
+    if gate == "approval":
+        (project_dir / "approval.json").unlink()
+        expected_error = "Missing explicit human approval record"
+    elif gate == "approval_hash":
+        approval_file = project_dir / "approval.json"
+        approval = json.loads(approval_file.read_text(encoding="utf-8"))
+        approval["approved_media_sha256"] = "deadbeef" * 8
+        approval_file.write_text(json.dumps(approval), encoding="utf-8")
+        expected_error = "Media SHA-256 mismatch"
+
+    with patch("scripts.publish_manual_video.validate_project_quality") as quality:
+        if gate == "quality":
+            quality.side_effect = RuntimeError(expected_error)
+        with pytest.raises(RuntimeError, match=expected_error):
+            enforce_release_preflight(project_dir, metadata, strict=True, force=True)
+        quality.assert_called_once_with(project_dir, strict=True)
+
+
 def test_preflight_blocks_on_altered_post_title_or_description(tmp_path: Path):
     from scripts.publish_manual_video import enforce_release_preflight
 

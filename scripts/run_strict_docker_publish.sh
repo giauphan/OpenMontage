@@ -95,8 +95,8 @@ fi
 command -v python3 >/dev/null  || fail "python3 missing"
 command -v ffmpeg   >/dev/null  || fail "ffmpeg missing"
 command -v ffprobe  >/dev/null  || fail "ffprobe missing"
-command -v claude   >/dev/null  || fail "claude CLI missing"
-log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), claude=$(claude --version 2>&1 | head -1))"
+command -v codex    >/dev/null  || fail "codex CLI missing"
+log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), codex=$(codex --version 2>&1 | head -1))"
 write_state "preflight" "ok"
 
 # ===== STAGE 1: PREPARE — isolate due-today batch from next-day generation =====
@@ -220,7 +220,7 @@ for PID in "${VERIFY_OK_PIDS[@]}"; do
   VALIDATION_PASSED=0
   for ((retry=1; retry<=MAX_RETRIES; retry++)); do
     log "attempt $retry/$MAX_RETRIES for $PID"
-    if "$PY" "$ROOT/scripts/claude_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
+    if "$PY" "$ROOT/scripts/codex_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
         >> "$CLAUDE_LOG" 2>&1; then
       VALIDATION_PASSED=1
       break

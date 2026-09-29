@@ -905,17 +905,35 @@ def enforce_release_preflight(
             # Check Stale Review against validation_status.json
             val_status_file = project_dir / "validation_status.json"
             if val_status_file.is_file():
-                inspected_hash = None
+                inspected_hashes = set()
                 try:
                     with val_status_file.open("r", encoding="utf-8") as f:
                         v_stat = json.load(f)
-                    inspected_hash = v_stat.get("inspected_artifact_hash")
+                    entries = v_stat if isinstance(v_stat, list) else [v_stat]
+                    # The logger appends history; never merge superseded reviews.
+                    for entry in reversed(entries):
+                        if not isinstance(entry, dict):
+                            continue
+                        if entry.get("project_id") not in (None, project_dir.name):
+                            continue
+                        hashes = [entry.get("inspected_artifact_hash")]
+                        details = entry.get("details")
+                        results = details.get("results", []) if isinstance(details, dict) else []
+                        if isinstance(results, list):
+                            for result in results:
+                                result_details = result.get("details") if isinstance(result, dict) else None
+                                if isinstance(result_details, dict):
+                                    hashes.append(result_details.get("inspected_artifact_hash"))
+                        inspected_hashes = {h for h in hashes if isinstance(h, str) and h}
+                        if inspected_hashes:
+                            break
                 except (json.JSONDecodeError, OSError):
                     pass
-                if inspected_hash and inspected_hash != actual_sha:
+                # A review covers full and reels media with no per-result path labels.
+                if inspected_hashes and actual_sha not in inspected_hashes:
                     raise RuntimeError(
                         f"Release preflight failed: Stale validation review! "
-                        f"Codex agent inspected hash {inspected_hash}, but media file hash is {actual_sha}. "
+                        f"Codex agent inspected hashes {sorted(inspected_hashes)}, but media file hash is {actual_sha}. "
                         f"Re-validation required."
                     )
 

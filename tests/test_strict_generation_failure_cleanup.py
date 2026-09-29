@@ -27,8 +27,8 @@ def test_stage3_failure_cleans_unscheduled_generated_folders(tmp_path: Path):
         encoding="utf-8",
     )
 
-    # Mock claude CLI in PATH
-    for name in ("claude", "ffmpeg", "ffprobe"):
+    # Mock Codex CLI in PATH
+    for name in ("codex", "ffmpeg", "ffprobe"):
         mock_bin = bin_dir / name
         mock_bin.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         mock_bin.chmod(0o755)

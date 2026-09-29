@@ -31,7 +31,7 @@ def create_fixture(tmp_path: Path, validation_script: str) -> tuple[Path, Path, 
         encoding="utf-8",
     )
 
-    for name in ("claude", "ffmpeg", "ffprobe"):
+    for name in ("codex", "ffmpeg", "ffprobe"):
         write_executable(binaries / name, "#!/usr/bin/env bash\nexit 0\n")
 
     write_executable(
