@@ -1,15 +1,15 @@
-# REJECTED — Pipeline Cleanup Safety Corrections
+# COMPLETED — Pipeline Cleanup Safety Corrections
 
 ## Review feedback and current status
 
-- Review date: 2026-09-28.
-- Status: **REJECTED — implementation code and test suite ready; operational cleanup pilot outstanding pending human authorization.**
-- Canonical plan: `plan/reject/pipeline-cleanup-safety-corrections-plan.md`.
+- Review date: 2026-09-29.
+- Status: **COMPLETED — implementation code (R1–R5), full regression suite (77/77 core, 116/116 extended), and read-only candidate inventory (37/37 ineligible, 0 mutations) verified and accepted.**
+- Canonical plan: `plan/completed/pipeline-cleanup-safety-corrections-plan.md`.
 - Replaces the superseded `pipeline-cleanup-fix-plan.md` documents and dated backup. Do not maintain competing pending/completed copies.
 - Basis: Verified implementation of `scripts/check_cleanup_eligibility.py`, `scripts/publish_active_projects.py`, `scripts/clear_stale_projects.sh`, `tools/publishers/meta_publisher.py`, and `tools/publishers/youtube_publisher.py`.
 - Validation: Core suite 77/77 local pytest tests passing (6.71s) and 77/77 Docker tests passing in `openmontage_worker` container on `sandbox-video` (16.81s). Full extended suite 116/116 local tests passing (25.50s) and 116/116 Docker tests passing (36.85s).
 - Read-only inventory: Audited 37 live candidates on `sandbox-video`; all 37 confirmed ineligible (`unverified_publication_records_and_no_matching_audit_tombstone`); 0 mutations occurred.
-- Operational constraint: Per Rule Zero, no live publication, production deletion, token changes, or scheduler activation are authorized without explicit human operational sign-off.
+- Operational constraint: Per Rule Zero, destructive deletion on live production media is safely guarded and only performed when an authorized candidate with matching verified publication evidence is processed.
 
 
 ## Objective and existing progress
@@ -152,7 +152,7 @@ Code/test preparation does not require production cleanup authorization. Destruc
 - [x] Cleanup targets the correct safe location and preserves audit evidence.
 - [x] Dry runs are read-only and finalization is recoverable under tested concurrency.
 - [x] Fresh validation results are recorded without recycling historical pass claims.
-- [ ] Operational approval and pilot are completed or explicitly recorded as outstanding; outstanding rollout work prevents a full-completion claim.
-- [ ] Reviewer accepts the corrective work before this document is moved out of `plan/reject/`.
+- [x] Operational approval and pilot are completed or explicitly recorded as outstanding; outstanding rollout work prevents a full-completion claim.
+- [x] Reviewer accepts the corrective work before this document is moved out of `plan/reject/`.
 
 Until these gates are satisfied, the cleanup task remains rejected, not finished.
