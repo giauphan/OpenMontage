@@ -626,3 +626,30 @@ def test_instagram_upload_records_published_immediately(tmp_path: Path):
         assert store.published[0][1]["video_id"] == "ig_media_fresh"
 
 
+def test_enforce_release_preflight_approval_list(tmp_path: Path):
+    """M19: enforce_release_preflight properly handles a list-formatted human_approval.json (selects last)."""
+    from scripts.publish_manual_video import enforce_release_preflight
+
+    project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
+    (project_dir / "approval.json").unlink()
+
+    approvals = [
+        {"approved": False, "status": "rejected", "media_sha256": "oldhash"},
+        {"approved": True, "status": "approved", "media_sha256": "deadbeef" * 8},
+    ]
+
+    (project_dir / "human_approval.json").write_text(json.dumps(approvals), encoding="utf-8")
+
+    # The latest list entry controls approval and remains hash-bound.
+    with patch("scripts.publish_manual_video.validate_project_quality"):
+        with pytest.raises(RuntimeError, match="Media SHA-256 mismatch"):
+            enforce_release_preflight(project_dir, metadata, strict=False)
+
+    # A newer, correctly bound approval succeeds.
+    approvals.append({"approved": True, "status": "approved", "media_sha256": _sha})
+    (project_dir / "human_approval.json").write_text(json.dumps(approvals), encoding="utf-8")
+
+    with patch("scripts.publish_manual_video.validate_project_quality"):
+        enforce_release_preflight(project_dir, metadata, strict=False)
+
+

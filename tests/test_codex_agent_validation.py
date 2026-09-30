@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 import tempfile
 import pytest
 from pathlib import Path
@@ -133,6 +134,17 @@ class TestCodexAgentValidator:
         assert parsed["visual_quality"]["passed"] is True
         assert parsed["visual_quality"]["score"] == 95
 
+
+
+class TestCanonicalValidatorImports:
+    def test_imports_do_not_form_circular_dependency(self):
+        result = subprocess.run(
+            [sys.executable, "-c", "import scripts.codex_agent_validation; print('ok')"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "ok"
 
 
 class TestCodexCommandLineIntegration:

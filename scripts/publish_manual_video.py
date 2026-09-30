@@ -856,7 +856,10 @@ def enforce_release_preflight(
             except Exception as e:
                 raise RuntimeError(f"Release preflight failed: Invalid human_approval.json: {e}") from e
 
-        if not approval:
+        if isinstance(approval, list):
+            approval = approval[-1] if approval else None
+
+        if not approval or not isinstance(approval, dict):
             raise RuntimeError(
                 f"Release preflight failed: Missing explicit human approval record for {project_dir.name}. "
                 f"Publication requires human approval bound to media SHA-256."

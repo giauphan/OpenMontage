@@ -820,9 +820,12 @@ Return a valid JSON object matching this schema:
             ]
             found_home = None
             for ch in candidate_homes:
-                if (ch / "auth.json").is_file():
-                    found_home = ch
-                    break
+                try:
+                    if (ch / "auth.json").is_file():
+                        found_home = ch
+                        break
+                except OSError:
+                    continue
 
             if found_home:
                 try:

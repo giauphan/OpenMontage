@@ -9,15 +9,27 @@ if str(ROOT) not in sys.path:
 
 import argparse
 import subprocess
+
 from scripts.codex_agent_validation import (
+    CLAUDEAgentValidator,
     CodexAgentValidator,
-    CodexAgentValidator as CLAUDEAgentValidator,
     ValidationResult,
     ValidationStatusLogger,
-    parse_codex_review as parse_claude_review,
-    resolve_codex_cli as resolve_claude_cli,
+    parse_codex_review,
+    resolve_claude_cli,
+    resolve_codex_cli,
     resolve_ffprobe_ffmpeg,
 )
+
+def parse_claude_review(response_text: str) -> dict:
+    try:
+        return parse_codex_review(response_text)
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("Agent CLI error:"):
+            raise ValueError(message.replace("Agent CLI error:", "Claude CLI error:", 1)) from exc
+        raise
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Codex Agent Strict Quality Validation")

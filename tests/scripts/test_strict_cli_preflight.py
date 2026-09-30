@@ -56,6 +56,15 @@ write_state() { printf 'STATE %s %s\n' "$1" "$2"; }
     )
 
 
+def test_preflight_source_does_not_require_claude(tmp_path: Path):
+    wrapper = (ROOT / "scripts" / "run_strict_docker_publish.sh").read_text(encoding="utf-8")
+    start = wrapper.index('stage 0 "preflight"')
+    end = wrapper.index("# ===== STAGE 1:", start)
+    preflight = wrapper[start:end]
+    assert 'command -v claude' not in preflight
+    assert 'command -v codex' in preflight
+
+
 def test_preflight_passes_with_codex_and_without_claude(tmp_path: Path):
     result = _run_preflight(tmp_path, codex=True, claude=False)
 
