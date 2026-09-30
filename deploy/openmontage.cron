@@ -12,6 +12,7 @@
 
 PATH=/usr/local/bin:/usr/bin:/bin
 PATH_TO_OPENMONTAGE=/app
+CODEX_HOME=/root/.codex_pipeline
 
 # 23:00 UTC (06:00 Vietnam next day) — Strict orchestrator: publish today's slots,
 # generate next-day videos, validate, queue them for tomorrow's slot cron.

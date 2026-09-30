@@ -11,6 +11,39 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 export FACEBOOK_PUBLISH_ENABLED=0
 
+# Codex pipeline profile: resolved and validated by scripts/codex_agent_validation.py.
+# Defaults to the isolated pipeline profile initialized from the read-only host source.
+if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" = "1" ]; then
+  export CODEX_HOME="${CODEX_HOME:-$ROOT/.tmp_codex_pipeline_$$}"
+  mkdir -p "$CODEX_HOME"
+  [ -s "$CODEX_HOME/auth.json" ] || echo '{"OPENAI_API_KEY":"mock-key"}' > "$CODEX_HOME/auth.json"
+  [ -s "$CODEX_HOME/config.toml" ] || echo 'model = "mock"' > "$CODEX_HOME/config.toml"
+else
+  export CODEX_HOME="${CODEX_HOME:-/root/.codex_pipeline}"
+fi
+export CODEX_PIPELINE_PROFILE="omniroute"
+export PRODUCTION_RELEASE="${PRODUCTION_RELEASE:-1}"
+
+if [ ! -s "$CODEX_HOME/auth.json" ] && [ -d "/etc/codex_source" ]; then
+  bash "$ROOT/scripts/init_codex_profile.sh" /etc/codex_source "$CODEX_HOME" || true
+fi
+
+# Load provider API key from the selected Codex profile auth store into the local
+# environment for Codex CLI calls in cron/non-interactive context. The key is never
+# printed: jq reads only when auth.json contains the field; otherwise the variable
+# is cleared so no stale credential can be used.
+if [ -f "$CODEX_HOME/auth.json" ]; then
+  _api_key="$(jq -r '.OPENAI_API_KEY // empty' "$CODEX_HOME/auth.json" 2>/dev/null || true)"
+  if [ -n "$_api_key" ]; then
+    export OPENAI_API_KEY="$_api_key"
+  else
+    unset OPENAI_API_KEY
+  fi
+else
+  unset OPENAI_API_KEY
+fi
+unset _api_key
+
 LOG_DIR="$ROOT/logs/strict_docker_publish"
 mkdir -p "$LOG_DIR"
 RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -96,7 +129,12 @@ command -v python3 >/dev/null  || fail "python3 missing"
 command -v ffmpeg   >/dev/null  || fail "ffmpeg missing"
 command -v ffprobe  >/dev/null  || fail "ffprobe missing"
 command -v codex    >/dev/null  || fail "codex CLI missing"
-log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), codex=$(codex --version 2>&1 | head -1))"
+if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
+  [ -d "$CODEX_HOME" ] || fail "CODEX_HOME does not exist: $CODEX_HOME"
+  [ -s "$CODEX_HOME/auth.json" ] || fail "CODEX_HOME missing auth.json: $CODEX_HOME/auth.json"
+  [ -s "$CODEX_HOME/config.toml" ] || fail "CODEX_HOME missing config.toml: $CODEX_HOME/config.toml"
+fi
+log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), codex=$(codex --version 2>&1 | head -1), codex_home=$CODEX_HOME)"
 write_state "preflight" "ok"
 
 # ===== STAGE 1: PREPARE — isolate due-today batch from next-day generation =====

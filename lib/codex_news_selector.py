@@ -181,9 +181,11 @@ class CodexNewsSelector:
     def _run_codex(self, prompt: str) -> Optional[Dict[str, Any]]:
         env = os.environ.copy()
         if "CODEX_HOME" not in env:
-            writable_codex = "/tmp/codex"
-            os.makedirs(writable_codex, exist_ok=True)
-            env["CODEX_HOME"] = writable_codex
+            try:
+                from scripts.codex_agent_validation import resolve_and_validate_codex_home
+                env["CODEX_HOME"] = resolve_and_validate_codex_home(env)
+            except Exception:
+                pass
 
         is_codex = "codex" in Path(self.cli_path).name.lower()
         if is_codex:

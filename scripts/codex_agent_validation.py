@@ -91,6 +91,65 @@ def resolve_ffprobe_ffmpeg() -> tuple[str, str]:
     return ffprobe or "ffprobe", ffmpeg or "ffmpeg"
 
 
+def resolve_and_validate_codex_home(env: Optional[Dict[str, str]] = None) -> str:
+    """Resolve and validate the active CODEX_HOME directory.
+
+    If CODEX_HOME is explicitly set in environment:
+    - Verifies directory exists, contains non-empty auth.json and config.toml.
+    - Verifies directory is writable.
+    - Fails closed with RuntimeError on any defect.
+
+    If CODEX_HOME is unset:
+    - Probes standard candidate homes in order.
+    - Fails closed if no valid, writable home is discovered.
+    - Does NOT fall back to creating /tmp/codex or copying stale credentials.
+    """
+    if env is None:
+        env = os.environ
+
+    explicit_home = env.get("CODEX_HOME")
+    if explicit_home and explicit_home.strip():
+        home_path = Path(explicit_home.strip())
+        if not home_path.is_dir():
+            raise RuntimeError(f"Configured CODEX_HOME does not exist or is not a directory: {home_path}")
+        auth_file = home_path / "auth.json"
+        if not auth_file.is_file() or auth_file.stat().st_size == 0:
+            raise RuntimeError(f"Configured CODEX_HOME is missing or has empty auth.json: {home_path}")
+        config_file = home_path / "config.toml"
+        if not config_file.is_file() or config_file.stat().st_size == 0:
+            raise RuntimeError(f"Configured CODEX_HOME is missing or has empty config.toml: {home_path}")
+        try:
+            test_file = home_path / f".write_test_{os.getpid()}"
+            test_file.touch()
+            test_file.unlink()
+        except OSError as exc:
+            raise RuntimeError(f"Configured CODEX_HOME is not writable: {home_path} ({exc})")
+        return str(home_path)
+
+    candidate_homes = [
+        Path.home() / ".codex_pipeline",
+        Path("/root/.codex_pipeline"),
+        Path.home() / ".codex",
+        Path("/root/.codex"),
+        Path("/home/ubuntu/.codex"),
+    ]
+    for ch in candidate_homes:
+        try:
+            if (ch / "auth.json").is_file() and (ch / "auth.json").stat().st_size > 0:
+                if (ch / "config.toml").is_file() and (ch / "config.toml").stat().st_size > 0:
+                    test_file = ch / f".write_test_{os.getpid()}"
+                    test_file.touch()
+                    test_file.unlink()
+                    return str(ch)
+        except OSError:
+            continue
+
+    raise RuntimeError(
+        "No valid Codex home with non-empty auth.json, config.toml, and write permissions found, "
+        "and CODEX_HOME is unset. Fallback to temporary credentials is disabled."
+    )
+
+
 def resolve_codex_cli() -> str:
     """Robustly resolve Codex CLI binary path."""
     candidates = [
@@ -812,38 +871,22 @@ Return a valid JSON object matching this schema:
 
         is_codex = "codex" in Path(agent_bin).name.lower()
         env = os.environ.copy()
-        if "CODEX_HOME" not in env:
-            candidate_homes = [
-                Path.home() / ".codex",
-                Path("/root/.codex"),
-                Path("/home/ubuntu/.codex"),
-            ]
-            found_home = None
-            for ch in candidate_homes:
-                try:
-                    if (ch / "auth.json").is_file():
-                        found_home = ch
-                        break
-                except OSError:
-                    continue
+        try:
+            resolved_home = resolve_and_validate_codex_home(env)
+            env["CODEX_HOME"] = resolved_home
+        except RuntimeError as e:
+            raise RuntimeError(f"Configured CODEX_HOME resolution failed: {e}")
 
-            if found_home:
+        if is_codex and not env.get("OPENAI_API_KEY"):
+            auth_file = Path(resolved_home) / "auth.json"
+            if auth_file.is_file():
                 try:
-                    test_file = found_home / ".write_test"
-                    test_file.touch()
-                    test_file.unlink()
-                    env["CODEX_HOME"] = str(found_home)
-                except OSError:
-                    writable_codex = Path("/tmp/codex")
-                    writable_codex.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(found_home / "auth.json", writable_codex / "auth.json")
-                    if (found_home / "config.toml").is_file():
-                        shutil.copy2(found_home / "config.toml", writable_codex / "config.toml")
-                    env["CODEX_HOME"] = str(writable_codex)
-            else:
-                writable_codex = "/tmp/codex"
-                os.makedirs(writable_codex, exist_ok=True)
-                env["CODEX_HOME"] = writable_codex
+                    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                    api_key = auth_data.get("OPENAI_API_KEY")
+                    if api_key and isinstance(api_key, str) and api_key.strip():
+                        env["OPENAI_API_KEY"] = api_key.strip()
+                except Exception:
+                    pass
 
         if is_codex:
             cmd = [

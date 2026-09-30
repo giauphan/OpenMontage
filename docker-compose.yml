@@ -13,12 +13,12 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - ~/.codex:/root/.codex
-      - ~/.codex:/home/node/.codex
+      - ~/.codex:/etc/codex_source:ro
       - ~/.openmontage:/root/.openmontage
     environment:
       - PYTHONPATH=/app
       - OPENMONTAGE_PYTHON=/usr/bin/python3
+      - CODEX_HOME=/root/.codex_pipeline
     stdin_open: true
     tty: true
 
@@ -36,19 +36,18 @@ services:
     environment:
       - PYTHONPATH=/app
       - OPENMONTAGE_PYTHON=/usr/bin/python3
+      - CODEX_HOME=/root/.codex_pipeline
     volumes:
       - .:/app
       - /app/node_modules
-      - ~/.codex:/root/.codex
-      - ~/.codex:/home/node/.codex
+      - ~/.codex:/etc/codex_source:ro
       - ~/.openmontage:/root/.openmontage
     command: >
       bash -c "
+        bash /app/scripts/init_codex_profile.sh /etc/codex_source /root/.codex_pipeline &&
         mkdir -p /app/logs &&
         apt-get update && apt-get install -y cron jq &&
-        cp deploy/openmontage.cron /etc/cron.d/openmontage-cron &&
-        chmod 0644 /etc/cron.d/openmontage-cron &&
-        crontab /etc/cron.d/openmontage-cron &&
+        crontab deploy/openmontage.cron &&
         cron -f
       "
     healthcheck:

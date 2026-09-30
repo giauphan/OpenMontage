@@ -46,10 +46,21 @@ log() { printf '%s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*"; exit 1; }
 write_state() { printf 'STATE %s %s\n' "$1" "$2"; }
 """ + preflight + "\nprintf 'PRODUCTION_REACHED\\n'\n"
+
+    # Setup valid CODEX_HOME for tests
+    codex_home = tmp_path / ".codex_pipeline"
+    codex_home.mkdir()
+    (codex_home / "auth.json").write_text('{"token": "test"}')
+    (codex_home / "config.toml").write_text('model = "test"')
+
     return subprocess.run(
         [bash, "--noprofile", "--norc", "-c", harness],
         cwd=tmp_path,
-        env={"PATH": str(binaries), "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1"},
+        env={
+            "PATH": str(binaries),
+            "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+            "CODEX_HOME": str(codex_home),
+        },
         capture_output=True,
         text=True,
         timeout=10,

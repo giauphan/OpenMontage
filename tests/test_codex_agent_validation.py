@@ -15,7 +15,63 @@ from scripts.codex_agent_validation import (
     resolve_codex_cli,
     resolve_claude_cli,
     resolve_agent_cli,
+    resolve_and_validate_codex_home,
 )
+
+
+class TestCodexHomeValidation:
+    def test_explicit_valid_home(self, tmp_path, monkeypatch):
+        codex_home = tmp_path / ".codex"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text('{"mock": true}')
+        (codex_home / "config.toml").write_text('model = "test"')
+
+        env = {"CODEX_HOME": str(codex_home)}
+        result = resolve_and_validate_codex_home(env)
+
+        assert result == str(codex_home)
+
+    def test_explicit_invalid_dir(self, tmp_path):
+        env = {"CODEX_HOME": str(tmp_path / "nonexistent")}
+        with pytest.raises(RuntimeError, match="not exist or is not a directory"):
+            resolve_and_validate_codex_home(env)
+
+    def test_explicit_missing_auth(self, tmp_path):
+        codex_home = tmp_path / ".codex"
+        codex_home.mkdir()
+        # Create empty auth
+        (codex_home / "auth.json").touch()
+        (codex_home / "config.toml").touch()
+
+        env = {"CODEX_HOME": str(codex_home)}
+        with pytest.raises(RuntimeError, match="missing or has empty auth.json"):
+            resolve_and_validate_codex_home(env)
+
+    def test_unset_fallback_discovery(self, tmp_path, monkeypatch):
+        codex_home = tmp_path / ".codex_pipeline"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text('{"mock": true}')
+        (codex_home / "config.toml").write_text('model = "test"')
+
+        # Mock candidate_homes by prepending our tmp_path
+        import scripts.codex_agent_validation
+        import os
+        original_home = Path.home
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(scripts.codex_agent_validation, "os", os) # ensure no weird un-mock
+
+        env = {}
+        result = resolve_and_validate_codex_home(env)
+        # Should pick up tmp_path / .codex_pipeline
+        assert result == str(codex_home)
+
+    def test_unset_no_valid_fallback(self, monkeypatch):
+        # Prevent picking up actual root homes
+        monkeypatch.setattr(Path, "home", lambda: Path("/nonexistent/tmp"))
+        # Also prevent finding /root/.codex or /home/ubuntu/.codex
+        monkeypatch.setattr(Path, "is_file", lambda self: False)
+        with pytest.raises(RuntimeError, match="Fallback to temporary credentials is disabled"):
+            resolve_and_validate_codex_home({})
 
 
 class TestCodexValidationResult:
