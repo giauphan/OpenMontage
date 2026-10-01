@@ -17,8 +17,8 @@ fi
 # Do not overwrite if it already exists and holds valid auth, unless explicitly refreshed.
 if [ -s "$TARGET_DIR/auth.json" ] && [ "${REFRESH_CODEX_PROFILE:-0}" != "1" ]; then
   # Still validate the existing target directory
-  if ! jq -e 'has("OPENAI_API_KEY")' "$TARGET_DIR/auth.json" >/dev/null 2>&1; then
-    echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target auth.json lacks OPENAI_API_KEY." >&2
+  if ! jq -e '.OPENAI_API_KEY | type == "string" and length > 0' "$TARGET_DIR/auth.json" >/dev/null 2>&1; then
+    echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target auth.json lacks valid OPENAI_API_KEY." >&2
     exit 1
   fi
   exit 0
@@ -26,10 +26,28 @@ fi
 
 # Create a staging directory for atomic replacement
 STAGING_DIR="${TARGET_DIR}_staging_$$"
+BACKUP_DIR=""
 mkdir -p "$STAGING_DIR"
 chmod 700 "$STAGING_DIR"
 
-trap 'rm -rf "$STAGING_DIR"' EXIT
+cleanup() {
+  local exit_code=$?
+  # If TARGET_DIR was moved to BACKUP_DIR, but STAGING failed to become TARGET_DIR, restore BACKUP_DIR
+  if [ -n "${BACKUP_DIR:-}" ] && [ -d "$BACKUP_DIR" ] && [ ! -d "$TARGET_DIR" ]; then
+    echo "[$(date -u +%FT%TZ)] RESTORE: Restoring backup profile to $TARGET_DIR after activation failure" >&2
+    mv "$BACKUP_DIR" "$TARGET_DIR" || true
+  fi
+  # Clean up staging directory
+  if [ -n "${STAGING_DIR:-}" ] && [ -d "$STAGING_DIR" ]; then
+    rm -rf "$STAGING_DIR" || true
+  fi
+  # Clean up backup directory if target is present
+  if [ -n "${BACKUP_DIR:-}" ] && [ -d "$BACKUP_DIR" ] && [ -d "$TARGET_DIR" ]; then
+    rm -rf "$BACKUP_DIR" || true
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT INT TERM
 
 # Copy complete configuration snapshot
 cp -a "$SOURCE_DIR/auth.json" "$STAGING_DIR/auth.json"
@@ -53,7 +71,7 @@ if ! jq -e '.|type=="object"' "$STAGING_DIR/auth.json" >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! jq -e 'has("OPENAI_API_KEY")' "$STAGING_DIR/auth.json" >/dev/null 2>&1; then
+if ! jq -e '.OPENAI_API_KEY | type == "string" and length > 0' "$STAGING_DIR/auth.json" >/dev/null 2>&1; then
   echo "[$(date -u +%FT%TZ)] ERROR: auth.json missing OPENAI_API_KEY payload" >&2
   exit 1
 fi
@@ -66,15 +84,27 @@ if [ -f "$STAGING_DIR/config.toml" ]; then
 fi
 
 # Atomic replacement: swap the staging directory into the target location
+# Key rotation procedure:
+# 1. Update source files in /etc/codex_source (or CODEX_SOURCE_DIR).
+# 2. Run init_codex_profile.sh with REFRESH_CODEX_PROFILE=1 to force replacement.
+# 3. Restart containers with: docker compose restart scheduler worker
+#    (Note: `docker compose up -d` will NOT pick up mounted file updates if container spec is unchanged).
 if [ -d "$TARGET_DIR" ]; then
   BACKUP_DIR="${TARGET_DIR}_bak_$$"
   mv "$TARGET_DIR" "$BACKUP_DIR"
-  mv "$STAGING_DIR" "$TARGET_DIR"
+  if ! mv "$STAGING_DIR" "$TARGET_DIR"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: Failed to activate staging directory to $TARGET_DIR" >&2
+    exit 1
+  fi
   rm -rf "$BACKUP_DIR"
+  BACKUP_DIR=""
 else
-  mv "$STAGING_DIR" "$TARGET_DIR"
+  if ! mv "$STAGING_DIR" "$TARGET_DIR"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: Failed to activate staging directory to $TARGET_DIR" >&2
+    exit 1
+  fi
 fi
 
-trap - EXIT
+trap - EXIT INT TERM
 
 echo "[$(date -u +%FT%TZ)] SUCCESS: Profile initialized at $TARGET_DIR for user $TARGET_USER"

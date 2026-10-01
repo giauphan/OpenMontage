@@ -14,6 +14,14 @@ PATH=/usr/local/bin:/usr/bin:/bin
 PATH_TO_OPENMONTAGE=/app
 CODEX_HOME=/root/.codex_pipeline
 
+# Key rotation procedure:
+# When updating OPENAI_API_KEY or other credentials:
+# 1. Update source files in /etc/codex_source (or CODEX_SOURCE_DIR).
+# 2. Run init_codex_profile.sh with REFRESH_CODEX_PROFILE=1 to force profile replacement.
+# 3. Restart scheduler and worker containers with: docker compose restart scheduler worker
+#    (Note: `docker compose up -d` will NOT restart containers if the compose definition is unchanged;
+#    mounted file updates require explicit restart to be picked up by running containers).
+
 # 23:00 UTC (06:00 Vietnam next day) — Strict orchestrator: publish today's slots,
 # generate next-day videos, validate, queue them for tomorrow's slot cron.
 0 23 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/run_strict_docker_publish.sh >> logs/cron_pipeline.log 2>&1

@@ -132,16 +132,46 @@ def _probe_audio_streams(video_path: Path) -> str:
         return f"audio streams: probe failed ({exc})"
 
 
+def _validate_profile_dir(profile_path: Path) -> None:
+    """Validate that profile_path contains valid auth.json, config.toml, and required credentials."""
+    auth_file = profile_path / "auth.json"
+    if not auth_file.is_file() or auth_file.stat().st_size == 0:
+        raise RuntimeError(f"Configured CODEX_HOME is missing or has empty auth.json: {profile_path}")
+    try:
+        data = json.loads(auth_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Configured CODEX_HOME has invalid JSON in auth.json: {profile_path}") from exc
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Configured CODEX_HOME auth.json is not a JSON object: {profile_path}")
+
+    api_key = data.get("OPENAI_API_KEY")
+    if not api_key or not isinstance(api_key, str) or not api_key.strip():
+        raise RuntimeError(f"Configured CODEX_HOME auth.json missing or invalid OPENAI_API_KEY: {profile_path}")
+
+    config_file = profile_path / "config.toml"
+    if not config_file.is_file() or config_file.stat().st_size == 0:
+        raise RuntimeError(f"Configured CODEX_HOME is missing or has empty config.toml: {profile_path}")
+
+    try:
+        config_content = config_file.read_text(encoding="utf-8")
+    except Exception as exc:
+        raise RuntimeError(f"Configured CODEX_HOME could not read config.toml: {profile_path}") from exc
+
+    if "model_provider" not in config_content:
+        raise RuntimeError(f"Configured CODEX_HOME config.toml missing model_provider: {profile_path}")
+
+
 def resolve_and_validate_codex_home(env: Optional[Dict[str, str]] = None) -> str:
     """Resolve and validate the active CODEX_HOME directory.
 
     If CODEX_HOME is explicitly set in environment:
-    - Verifies directory exists, contains non-empty auth.json and config.toml.
+    - Verifies directory exists, contains valid auth.json (with non-empty OPENAI_API_KEY) and config.toml (with model_provider).
     - Verifies directory is writable.
     - Fails closed with RuntimeError on any defect.
 
     If CODEX_HOME is unset:
-    - Probes standard candidate homes in order.
+    - Probes standard candidate homes in order, verifying credentials and config.
     - Fails closed if no valid, writable home is discovered.
     - Does NOT fall back to creating /tmp/codex or copying stale credentials.
     """
@@ -153,12 +183,7 @@ def resolve_and_validate_codex_home(env: Optional[Dict[str, str]] = None) -> str
         home_path = Path(explicit_home.strip())
         if not home_path.is_dir():
             raise RuntimeError(f"Configured CODEX_HOME does not exist or is not a directory: {home_path}")
-        auth_file = home_path / "auth.json"
-        if not auth_file.is_file() or auth_file.stat().st_size == 0:
-            raise RuntimeError(f"Configured CODEX_HOME is missing or has empty auth.json: {home_path}")
-        config_file = home_path / "config.toml"
-        if not config_file.is_file() or config_file.stat().st_size == 0:
-            raise RuntimeError(f"Configured CODEX_HOME is missing or has empty config.toml: {home_path}")
+        _validate_profile_dir(home_path)
         try:
             test_file = home_path / f".write_test_{os.getpid()}"
             test_file.touch()
@@ -176,13 +201,12 @@ def resolve_and_validate_codex_home(env: Optional[Dict[str, str]] = None) -> str
     ]
     for ch in candidate_homes:
         try:
-            if (ch / "auth.json").is_file() and (ch / "auth.json").stat().st_size > 0:
-                if (ch / "config.toml").is_file() and (ch / "config.toml").stat().st_size > 0:
-                    test_file = ch / f".write_test_{os.getpid()}"
-                    test_file.touch()
-                    test_file.unlink()
-                    return str(ch)
-        except OSError:
+            _validate_profile_dir(ch)
+            test_file = ch / f".write_test_{os.getpid()}"
+            test_file.touch()
+            test_file.unlink()
+            return str(ch)
+        except (RuntimeError, OSError):
             continue
 
     raise RuntimeError(

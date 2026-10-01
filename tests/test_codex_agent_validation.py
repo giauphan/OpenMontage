@@ -23,8 +23,8 @@ class TestCodexHomeValidation:
     def test_explicit_valid_home(self, tmp_path, monkeypatch):
         codex_home = tmp_path / ".codex"
         codex_home.mkdir()
-        (codex_home / "auth.json").write_text('{"mock": true}')
-        (codex_home / "config.toml").write_text('model = "test"')
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}')
+        (codex_home / "config.toml").write_text('model_provider = "test"')
 
         env = {"CODEX_HOME": str(codex_home)}
         result = resolve_and_validate_codex_home(env)
@@ -47,16 +47,45 @@ class TestCodexHomeValidation:
         with pytest.raises(RuntimeError, match="missing or has empty auth.json"):
             resolve_and_validate_codex_home(env)
 
+    def test_explicit_null_api_key_rejected(self, tmp_path):
+        codex_home = tmp_path / ".codex"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": null}')
+        (codex_home / "config.toml").write_text('model_provider = "test"')
+
+        env = {"CODEX_HOME": str(codex_home)}
+        with pytest.raises(RuntimeError, match="auth.json missing or invalid OPENAI_API_KEY"):
+            resolve_and_validate_codex_home(env)
+
+    def test_explicit_empty_string_api_key_rejected(self, tmp_path):
+        codex_home = tmp_path / ".codex"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": ""}')
+        (codex_home / "config.toml").write_text('model_provider = "test"')
+
+        env = {"CODEX_HOME": str(codex_home)}
+        with pytest.raises(RuntimeError, match="auth.json missing or invalid OPENAI_API_KEY"):
+            resolve_and_validate_codex_home(env)
+
+    def test_config_toml_missing_model_provider_rejected(self, tmp_path):
+        codex_home = tmp_path / ".codex"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}')
+        (codex_home / "config.toml").write_text('other = "value"')
+
+        env = {"CODEX_HOME": str(codex_home)}
+        with pytest.raises(RuntimeError, match="config.toml missing model_provider"):
+            resolve_and_validate_codex_home(env)
+
     def test_unset_fallback_discovery(self, tmp_path, monkeypatch):
         codex_home = tmp_path / ".codex_pipeline"
         codex_home.mkdir()
-        (codex_home / "auth.json").write_text('{"mock": true}')
-        (codex_home / "config.toml").write_text('model = "test"')
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}')
+        (codex_home / "config.toml").write_text('model_provider = "test"')
 
         # Mock candidate_homes by prepending our tmp_path
         import scripts.codex_agent_validation
         import os
-        original_home = Path.home
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setattr(scripts.codex_agent_validation, "os", os) # ensure no weird un-mock
 
@@ -64,6 +93,20 @@ class TestCodexHomeValidation:
         result = resolve_and_validate_codex_home(env)
         # Should pick up tmp_path / .codex_pipeline
         assert result == str(codex_home)
+
+    def test_auto_discovery_null_api_key_rejected(self, tmp_path, monkeypatch):
+        codex_home = tmp_path / ".codex_pipeline"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": null}')
+        (codex_home / "config.toml").write_text('model_provider = "test"')
+
+        import scripts.codex_agent_validation
+        import os
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(scripts.codex_agent_validation, "os", os)
+
+        with pytest.raises(RuntimeError, match="No valid Codex home"):
+            resolve_and_validate_codex_home({})
 
     def test_unset_no_valid_fallback(self, monkeypatch):
         # Prevent picking up actual root homes
