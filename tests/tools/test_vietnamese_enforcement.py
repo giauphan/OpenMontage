@@ -133,6 +133,15 @@ def test_youtube_publisher_rejects_english_prose(tmp_path: Path):
         assert not res.success
         assert "Invalid YouTube description" in res.error
 
+        # Valid Vietnamese title+description proceed to credential gate (not prose gate)
+        res = publisher.execute({
+            "video_path": str(dummy_video),
+            "title": "Bộ lấy mẫu CHOMPI độc đáo #Shorts",
+            "description": "Tin tức công nghệ AI mới nhất hôm nay",
+        })
+        assert not res.success
+        assert "Invalid YouTube" not in res.error
+
 def test_schedule_today_native_blocks_invalid_metadata(tmp_path: Path):
     from scripts.schedule_today_native import main as schedule_main
     project_dir = tmp_path / "projects" / "cand_bad_lang"
@@ -163,13 +172,17 @@ def test_schedule_today_native_blocks_invalid_metadata(tmp_path: Path):
         }]
     }
 
+    mock_store = MagicMock()
+
     with patch("scripts.schedule_today_native.load_config", return_value=cfg), \
          patch("sys.argv", ["schedule_today_native.py", "--date", "2026-10-01"]), \
          patch("scripts.schedule_today_native.ROOT", tmp_path), \
-         patch("tools.publish_store.PublishStore.claim") as mock_claim:
+         patch("scripts.schedule_today_native.PublishStore", return_value=mock_store), \
+         patch("scripts.schedule_today_native.YoutubePublisher") as mock_yt_cls:
         # Running scheduler must fail/skip and NOT claim the invalid project
         with pytest.raises(SystemExit) as exc:
             schedule_main()
         assert exc.value.code != 0
-        assert mock_claim.call_count == 0, "Should not make any Firebase claim for non-Vietnamese metadata"
+        assert mock_store.claim.call_count == 0, "Should not make any Firebase claim for non-Vietnamese metadata"
+        assert mock_yt_cls.return_value.execute.call_count == 0, "Should not upload to YouTube for non-Vietnamese metadata"
 

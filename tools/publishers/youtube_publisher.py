@@ -157,6 +157,24 @@ class YoutubePublisher(BaseTool):
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
+        title = inputs["title"][:100]
+        description = inputs.get("description", "")
+
+        from tools.narration_text import check_vietnamese_prose
+        title_errors = check_vietnamese_prose(title)
+        if title_errors:
+            return ToolResult(
+                success=False,
+                error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
+            )
+        if description:
+            desc_errors = check_vietnamese_prose(description)
+            if desc_errors:
+                return ToolResult(
+                    success=False,
+                    error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
+                )
+
         from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short
 
         try:
@@ -182,24 +200,6 @@ class YoutubePublisher(BaseTool):
             "token_storage_path", "~/.openmontage/youtube_token.json"
         )
         token_file = Path(token_path_str).expanduser()
-
-        title = inputs["title"][:100]
-        description = inputs.get("description", "")
-
-        from tools.narration_text import check_vietnamese_prose
-        title_errors = check_vietnamese_prose(title)
-        if title_errors:
-            return ToolResult(
-                success=False,
-                error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
-            )
-        if description:
-            desc_errors = check_vietnamese_prose(description)
-            if desc_errors:
-                return ToolResult(
-                    success=False,
-                    error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
-                )
 
         tags = inputs.get("tags", [])
         privacy_status = inputs.get("privacy_status", "unlisted")
