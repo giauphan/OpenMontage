@@ -29,3 +29,20 @@ When fixing the daily pipeline, verify the full stage progression completely man
 - Validates required criteria: `visual_quality`, `audio_sync`, `content_appropriateness`, `brand_compliance`.
 - Uses autonomous fallback when Codex CLI is unavailable (rate-limited or offline).
 - Missing CLI, nonzero exit, timeout, malformed JSON, or missing required review sections must produce failed `ValidationResult`s — never substitute `non_interactive_strict_pass`.
+
+## 5. Outcome-Focused Plans and Independent Investigation
+
+Plans are problem-solving contracts, not implementation scripts. Keep them concise and specify:
+- **Problem and goal:** What is wrong and what observable outcome resolves it.
+- **Inputs:** Relevant artifacts, interfaces, environment, evidence, and known unknowns. Separate verified facts from assumptions.
+- **Expected outputs:** Required behavior, deliverables, and failure behavior.
+- **Constraints and scope:** Compatibility, security, data preservation, and actions requiring explicit approval.
+- **Acceptance criteria:** How to verify the goal, including relevant failure cases and deployment evidence when applicable.
+
+Do not over-prescribe algorithms, code structure, exact edits, or long command sequences. Include implementation detail only when it is necessary to explain a verified defect, an interface contract, or a non-negotiable constraint. Label suggested solutions as hypotheses, not mandatory recipes.
+
+The implementing agent must independently search and inspect the current codebase, check applicable documentation, reproduce or isolate the problem, and validate the plan's assumptions before choosing a solution. Do not blindly translate a plan into code. Adapt the approach when new evidence warrants it, recording the reason; obtain approval before changing the goal, scope, provider, or other protected decisions.
+
+Continue investigating, implementing, and testing within the authorized scope until the acceptance criteria are met or a concrete blocker requires user input. A successful patch or passing narrow test suite alone does not establish completion. If criteria remain unmet or unverified, report the evidence and remaining work rather than marking the plan completed. A plan itself does not authorize deployment, paid calls, publishing, or deletion.
+
+Review feedback should identify the observed failure, evidence, expected outcome, and acceptance gap without prescribing unnecessary implementation details.
