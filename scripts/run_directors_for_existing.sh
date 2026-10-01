@@ -80,12 +80,14 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   [ -n "$CODEX_BIN" ] || CODEX_BIN="codex"
 
   if [ "$(id -u)" -eq 0 ]; then
-    PROMPT_STR="$PROMPT_STR" CODEX_BIN="$CODEX_BIN" OPENAI_API_KEY="${OPENAI_API_KEY:-}" su node -p -s /bin/bash -c '
+    PROMPT_STR="$PROMPT_STR" CODEX_BIN="$CODEX_BIN" su node -p -s /bin/bash -c '
       export PATH="$PATH"; export HOME="/home/node"
       export PYTHONPATH="$PYTHONPATH"
-      export OPENAI_API_KEY="$OPENAI_API_KEY"
-      export CODEX_HOME="/home/node/.codex"
+      export CODEX_HOME="/home/node/.codex_pipeline"
       mkdir -p "$CODEX_HOME"
+      if [ -s "$CODEX_HOME/auth.json" ]; then
+        export OPENAI_API_KEY="$(jq -r .OPENAI_API_KEY "$CODEX_HOME/auth.json" 2>/dev/null || true)"
+      fi
       cd "$ROOT"
       timeout --signal=TERM --kill-after=30s '"$DIRECTORS_TIMEOUT_SECONDS"' "$CODEX_BIN" exec --dangerously-bypass-approvals-and-sandbox --json "$PROMPT_STR" < /dev/null
     ' > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"

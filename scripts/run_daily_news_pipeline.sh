@@ -152,9 +152,11 @@ run_directors() {
         su node -p -s /bin/bash -c '
         export PATH="$PATH"; export HOME="/home/node"
         export PYTHONPATH="$PYTHONPATH"
-        export CODEX_HOME="/home/node/.codex"
-        export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+        export CODEX_HOME="/home/node/.codex_pipeline"
         mkdir -p "$CODEX_HOME"
+        if [ -s "$CODEX_HOME/auth.json" ]; then
+          export OPENAI_API_KEY="$(jq -r .OPENAI_API_KEY "$CODEX_HOME/auth.json" 2>/dev/null || true)"
+        fi
         cd "$PROJECT_DIR"
         test -s "artifacts/research_brief.json" || exit 7
         timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" "$CODEX_BIN" exec --dangerously-bypass-approvals-and-sandbox --json "$PROMPT_STR" < /dev/null
