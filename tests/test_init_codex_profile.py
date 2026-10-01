@@ -104,6 +104,21 @@ def test_json_validation_requires_openai_api_key(tmp_path: Path):
     assert "missing OPENAI_API_KEY" in result.stderr
 
 
+def test_toml_commented_model_provider_rejected(tmp_path: Path):
+    """Source config.toml with model_provider commented out is rejected."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+    (source / "config.toml").write_text("# model_provider = 'test'\n")
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 1
+    assert "model_provider" in result.stderr
+
+
 def test_toml_validation_requires_model_provider(tmp_path: Path):
     """Source config.toml must contain model_provider."""
     source = tmp_path / "source"
@@ -116,7 +131,27 @@ def test_toml_validation_requires_model_provider(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target)
 
     assert result.returncode == 1
-    assert "missing model_provider" in result.stderr
+    assert "model_provider" in result.stderr
+
+
+def test_idempotent_validates_existing_target_config_toml(tmp_path: Path):
+    """Idempotent check validates existing target config.toml has model_provider."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-new"}))
+    (source / "config.toml").write_text("model_provider = 'new'\n")
+
+    # Target has valid auth.json but commented-out model_provider in config.toml
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
+    (target / "config.toml").write_text("# model_provider = 'original'\n")
+
+    result = _run_init_script(tmp_path, source, target, refresh=False)
+
+    assert result.returncode == 1
+    assert "Existing target config.toml lacks valid model_provider" in result.stderr
 
 
 def test_idempotent_skip_when_target_valid(tmp_path: Path):
@@ -269,7 +304,7 @@ def test_redacted_errors_no_key_leakage(tmp_path: Path):
     assert secret_key not in result.stdout
     assert secret_key not in result.stderr
     # Verify error message is present
-    assert "missing model_provider" in result.stderr
+    assert "model_provider" in result.stderr
 
 
 def test_successful_initialization_copies_all_files(tmp_path: Path):
@@ -309,4 +344,54 @@ def test_idempotent_validates_existing_target(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target, refresh=False)
 
     assert result.returncode == 1
-    assert "Existing target auth.json lacks OPENAI_API_KEY" in result.stderr
+    assert "Existing target auth.json lacks valid OPENAI_API_KEY" in result.stderr
+
+
+def test_atomic_swap_restores_backup_on_activation_failure(tmp_path: Path):
+    """If activation mv fails after backup, trap restores backup to target."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    bin_dir = tmp_path / "bin"
+    source.mkdir()
+    target.mkdir()
+    bin_dir.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-new"}))
+    (source / "config.toml").write_text("model_provider = 'new'\n")
+
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
+    (target / "config.toml").write_text("model_provider = 'original'\n")
+
+    mock_mv = bin_dir / "mv"
+    mock_mv.write_text(
+        "#!/usr/bin/env bash\n"
+        "for arg in \"$@\"; do\n"
+        "  if [[ \"$arg\" == *\"_staging_\"* ]]; then\n"
+        "    echo 'MOCK MV ACTIVATION FAILURE' >&2\n"
+        "    exit 1\n"
+        "  fi\n"
+        "done\n"
+        "exec /bin/mv \"$@\"\n"
+    )
+    mock_mv.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["REFRESH_CODEX_PROFILE"] = "1"
+
+    result = subprocess.run(
+        [str(SCRIPT), str(source), str(target)],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+
+    assert result.returncode == 1
+    assert "MOCK MV ACTIVATION FAILURE" in result.stderr
+    assert "RESTORE: Restoring backup profile" in result.stderr
+    assert target.exists()
+    assert (target / "auth.json").exists()
+    original = json.loads((target / "auth.json").read_text())
+    assert original["OPENAI_API_KEY"] == "sk-original"
+

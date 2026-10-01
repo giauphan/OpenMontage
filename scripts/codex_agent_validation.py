@@ -158,7 +158,7 @@ def _validate_profile_dir(profile_path: Path) -> None:
     except Exception as exc:
         raise RuntimeError(f"Configured CODEX_HOME could not read config.toml: {profile_path}") from exc
 
-    if "model_provider" not in config_content:
+    if not re.search(r"(?m)^[ \t]*model_provider[ \t]*=", config_content):
         raise RuntimeError(f"Configured CODEX_HOME config.toml missing model_provider: {profile_path}")
 
 

@@ -14,11 +14,20 @@ if [ ! -d "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/auth.json" ]; then
   exit 0
 fi
 
+if [ ! -f "$SOURCE_DIR/config.toml" ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: source directory missing config.toml" >&2
+  exit 1
+fi
+
 # Do not overwrite if it already exists and holds valid auth, unless explicitly refreshed.
 if [ -s "$TARGET_DIR/auth.json" ] && [ "${REFRESH_CODEX_PROFILE:-0}" != "1" ]; then
   # Still validate the existing target directory
   if ! jq -e '.OPENAI_API_KEY | type == "string" and length > 0' "$TARGET_DIR/auth.json" >/dev/null 2>&1; then
     echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target auth.json lacks valid OPENAI_API_KEY." >&2
+    exit 1
+  fi
+  if [ ! -s "$TARGET_DIR/config.toml" ] || ! grep -q -E "^[[:space:]]*model_provider[[:space:]]*=" "$TARGET_DIR/config.toml"; then
+    echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target config.toml lacks valid model_provider." >&2
     exit 1
   fi
   exit 0
@@ -76,11 +85,9 @@ if ! jq -e '.OPENAI_API_KEY | type == "string" and length > 0' "$STAGING_DIR/aut
   exit 1
 fi
 
-if [ -f "$STAGING_DIR/config.toml" ]; then
-  if ! grep -q "model_provider" "$STAGING_DIR/config.toml"; then
-    echo "[$(date -u +%FT%TZ)] ERROR: config.toml missing model_provider configuration" >&2
-    exit 1
-  fi
+if [ ! -f "$STAGING_DIR/config.toml" ] || ! grep -q -E "^[[:space:]]*model_provider[[:space:]]*=" "$STAGING_DIR/config.toml"; then
+  echo "[$(date -u +%FT%TZ)] ERROR: config.toml missing model_provider configuration" >&2
+  exit 1
 fi
 
 # Atomic replacement: swap the staging directory into the target location
@@ -89,6 +96,13 @@ fi
 # 2. Run init_codex_profile.sh with REFRESH_CODEX_PROFILE=1 to force replacement.
 # 3. Restart containers with: docker compose restart scheduler worker
 #    (Note: `docker compose up -d` will NOT pick up mounted file updates if container spec is unchanged).
+LOCK_FILE="${TARGET_DIR}.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Another profile initialization is running for $TARGET_DIR" >&2
+  exit 1
+fi
+
 if [ -d "$TARGET_DIR" ]; then
   BACKUP_DIR="${TARGET_DIR}_bak_$$"
   mv "$TARGET_DIR" "$BACKUP_DIR"
