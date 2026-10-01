@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.publishers.platform_routes import youtube_shorts_title
+from tools.narration_text import check_vietnamese_prose
 
 
 REQUIRED_HASHTAGS = {"#tintuc", "#congnghe", "#ai"}
@@ -85,12 +86,18 @@ def validate_metadata(metadata_path: Path) -> tuple[bool, list[str]]:
             youtube_shorts_title(title)
         except ValueError as exc:
             errors.append(f"YouTube Shorts title invalid: {exc}")
+        lang_errors = check_vietnamese_prose(title)
+        if lang_errors:
+            errors.extend(f"title language error: {err}" for err in lang_errors)
 
     # Validate description
     description = metadata.get("description", "")
     if description:
         errors.extend(validate_text_field("description", description))
         errors.extend(validate_hashtags("description", description, REQUIRED_HASHTAGS))
+        lang_errors = check_vietnamese_prose(description)
+        if lang_errors:
+            errors.extend(f"description language error: {err}" for err in lang_errors)
 
     return len(errors) == 0, errors
 
