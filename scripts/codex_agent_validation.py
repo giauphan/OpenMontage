@@ -91,6 +91,47 @@ def resolve_ffprobe_ffmpeg() -> tuple[str, str]:
     return ffprobe or "ffprobe", ffmpeg or "ffmpeg"
 
 
+def _probe_audio_streams(video_path: Path) -> str:
+    """Return a one-line summary of audio streams in *video_path* using ffprobe.
+
+    Injected into the Codex review prompt so the agent has objective evidence for
+    audio-sync scoring instead of penalising the video for absent playback data.
+
+    Example: "1 audio stream(s): codec=aac duration=28.95s channels=2 sample_rate=48000"
+    """
+    ffprobe_bin, _ = resolve_ffprobe_ffmpeg()
+    try:
+        result = subprocess.run(
+            [
+                ffprobe_bin,
+                "-v", "error",
+                "-select_streams", "a",
+                "-show_entries", "stream=codec_name,duration,channels,sample_rate",
+                "-of", "json",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return "audio streams: ffprobe error"
+        data = json.loads(result.stdout or "{}")
+        streams = data.get("streams", [])
+        if not streams:
+            return "audio streams: none detected in rendered video"
+        parts = []
+        for s in streams:
+            codec = s.get("codec_name", "?")
+            dur = s.get("duration", "?")
+            channels = s.get("channels", "?")
+            rate = s.get("sample_rate", "?")
+            parts.append(f"codec={codec} duration={dur}s channels={channels} sample_rate={rate}")
+        return f"{len(streams)} audio stream(s): " + "; ".join(parts)
+    except Exception as exc:
+        return f"audio streams: probe failed ({exc})"
+
+
 def resolve_and_validate_codex_home(env: Optional[Dict[str, str]] = None) -> str:
     """Resolve and validate the active CODEX_HOME directory.
 
@@ -831,6 +872,15 @@ class CodexAgentValidator:
                 )
             ]
 
+        audio_stream_summary = _probe_audio_streams(abs_video_path)
+
+        narration_asset = self.project_dir / "assets" / "narration.mp3"
+        narration_words_js = self.project_dir / "hyperframes" / "assets" / "narration_words.js"
+        narration_assets_summary = (
+            f"narration.mp3: {'present (' + str(narration_asset.stat().st_size) + ' bytes)' if narration_asset.is_file() else 'absent'}"
+            + f"; narration_words.js: {'present' if narration_words_js.is_file() else 'absent'}"
+        )
+
         prompt = f"""
 Validate candidate video asset for OpenMontage automated publishing pipeline.
 
@@ -844,12 +894,15 @@ Script Info: {script_summary}
 Script Text Extract (Vietnamese):
 {script_full_text}
 
+Audio Stream Evidence (from ffprobe on rendered video): {audio_stream_summary}
+Narration Assets: {narration_assets_summary}
+
 Metadata Content:
 {metadata_str}
 
 PERFORM STRICT QUALITY VALIDATION on the following criteria:
 1. VISUAL QUALITY & DIVERSITY: Reject raw web-page layouts or placeholder scaffolds.
-2. AUDIO SYNC & TYPOGRAPHY: Ensure audio aligns with script sections.
+2. AUDIO SYNC & TYPOGRAPHY: Use the Audio Stream Evidence above to verify that an audio track exists and its duration aligns with the script. Do not fail this criterion solely because audio cannot be heard — use the stream metadata.
 3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance.
 4. BRAND COMPLIANCE: Prohibit brand names such as Montage or OpenMontage.
 
