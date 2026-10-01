@@ -20,13 +20,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from schemas.artifacts import validate_artifact
+from tools.narration_text import check_vietnamese_prose
 
 
 def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
         return None
-
-    from tools.narration_text import check_vietnamese_prose
 
     try:
         normalized = json.loads(json.dumps(payload))
