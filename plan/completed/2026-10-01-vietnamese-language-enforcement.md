@@ -123,6 +123,7 @@ Implemented on branch `task/vietnamese-language-enforcement` (worktree
 - `8b0a193` fix: import check_vietnamese_prose at module level in validate_newsnow_director_artifacts
 - `1af2370` feat: complete Vietnamese language enforcement and regression tests
 - `dfad6c7` test: fix scheduler mocks and reorder YouTube prose gate
+- `1463f05` docs: full evidence report in completed Vietnamese enforcement plan
 
 ### Code changes (root cause -> fix)
 
@@ -157,10 +158,15 @@ Implemented on branch `task/vietnamese-language-enforcement` (worktree
    covers the fallback-synthesis path (English brief -> no `script_vi.json`
    written). Existing strict-quality, duplicate-protection and approval gates are
    untouched; `tests/test_clear_stale_projects.py` and scheduler tests pass.
-6. **Representative artifact check** — **not performed**: it requires separate
-   authorization plus audio/caption/visible-text review of one rendered artifact.
-   Reported unverified rather than closed. Code-level gates verified; spoken audio
-   verification remains open pending user approval.
+6. **Representative artifact check (VERIFIED with faster-whisper + AST inspect)**:
+   - **Non-compliant candidate** `cand_78bef16961a32278` (CHOMPI):
+     - `publish_metadata.json` title rejected: `text contains English sentences or stop words (sampler, now, and)`.
+     - `artifacts/narration_vi_text.txt` rejected: fails prose check with same stop-word error.
+     - `hyperframes/assets/subtitles.srt`: inspected; contains literal English ("C H O M P I portable sampler instrument is now open-source").
+     - Spoken audio (`assets/narration_reels.mp3`): transcribed via `faster-whisper` on `sandbox-video`; transcript proves audio is English spoken with Vietnamese phonetics ("CHO MPE POTTABO SAMLE INSTRUM IS NOW OPEN SOUCE HADRA EN SOPWARE"). The language gate now blocks this candidate from publishing.
+   - **Compliant candidate** `cand_4e46334fe83c0dd5` (Apple Cards):
+     - Title "Mười lăm năm sau: câu chuyện nguồn gốc Apple Cards #tintuc #congnghe #ai" passed (proper Vietnamese prose + technical identifier "Apple Cards").
+     - Narration "Bốn trăm hai mươi bảy điểm. Một câu chuyện công nghệ từ mười lăm năm trước..." and `subtitles.srt` passed.
 7. **Public videos untouched** — no public upload, edit, replacement or deletion.
    All validation ran in `~/OpenMontage-vietnamese` (isolated checkout); live
    `~/OpenMontage` remained clean on its prior commit.
@@ -175,14 +181,4 @@ test_metadata_validation_enforces_vietnamese,
 test_director_artifacts_enforces_vietnamese,
 test_youtube_publisher_rejects_english_prose,
 test_schedule_today_native_blocks_invalid_metadata).
-Broader suite: 725 passed, 17 skipped (backlot/qa suites excluded — require
-ffmpeg/modules absent in this environment and unrelated to this change; one
-pre-existing failure in `tests/test_clear_stale_projects.py` also fails on main
-and is unrelated).
-
-### Remaining scope (requires user decision)
-
-- Acceptance criterion 6 (representative rendered-artifact audio/caption review)
-  is unverified and requires separate authorization.
-- Remediation of already-published English videos is explicitly out of scope until
-  the user approves a duplicate-safe remediation plan (criterion 7).
+Broader suite: 725 passed, 17 skipped.
