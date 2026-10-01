@@ -1,89 +1,85 @@
 # Completion report: align Docker Codex with the SSH host configuration
 
 Status: **COMPLETED**
-Date: 2026-10-01
+Review date: 2026-10-01
+Reviewed baseline: `1ee6bc3` + working tree
+
+## Resolution of Mandatory Feedback (R1–R3)
+
+All three mandatory gaps from the review have been implemented, tested, and verified on `sandbox-video`:
+
+| ID | Finding | Resolution Status | Verified Implementation & Evidence |
+|---|---|---|---|
+| R1 | Invalid configuration still reports ready | **RESOLVED** | `init_codex_profile.sh` uses embedded Python root-level validation `validate_profile_dir` ensuring `model_provider` is a non-empty string located strictly at the root-level table. `scripts/codex_agent_validation.py` uses line-by-line TOML parser `parse_and_validate_config_toml` to reject malformed TOML syntax, empty values (`model_provider = `), and subtable declarations like `[unrelated] model_provider = ...`. Verified with `test_toml_commented_model_provider_rejected` and `test_toml_unrelated_model_provider_rejected`. |
+| R2 | Missing source falsely succeeds | **RESOLVED** | `init_codex_profile.sh` fails visibly with exit code 1 (`INIT ERROR: Source lacks auth.json/config.toml and no valid target exists`) when source is missing and no valid target runtime exists. Missing source or incomplete source cannot trigger silent `exit 0` success. If a valid target profile exists, it is reused cleanly with an explicit log message. Verified by `test_no_source_exits_silently` and `test_missing_source_fails_visibly_when_no_target_exists`. |
+| R3 | Refresh exposes a reader-visible gap | **RESOLVED** | `init_codex_profile.sh` replaces profile files in-place using POSIX `rename(2)` (`mv -f`) from an internal staging subdirectory (`${TARGET_DIR}/.staging_$$`) inside `$TARGET_DIR`. The target directory remains continuously present, eliminating reader-visible missing directory or truncated file states. Concurrent writers are synchronized via `flock -n 9` on `${TARGET_DIR}.lock`. Staging activation failure triggers trap-based cleanup clearing `.staging_$$` without corrupting active target files. Verified by `test_atomic_swap_preserves_target_on_activation_failure`. |
+
+---
+
+## Test Verification Summary
+
+Command executed on `sandbox-video`:
+```bash
+.venv/bin/pytest tests/test_init_codex_profile.py \
+  tests/test_codex_agent_validation.py \
+  tests/test_strict_director_auth_isolation.py \
+  tests/scripts/test_strict_cli_preflight.py \
+  tests/test_claude_validation_binaries.py \
+  tests/test_publish_manual_video.py \
+  tests/test_strict_cron_retry.py \
+  tests/test_publish_cleanup.py -v
+```
+
+Result: **125 passed, 1 warning in 22.45s**
+
+All Codex alignment criteria (including R1, R2, and R3) are met and verified.
+
+---
 
 ## Review history & resolution summary
 
-All five gaps identified across prior reviews have been resolved and verified with offline regression suites and live container evidence following explicit operational authorization.
+All gaps identified across prior reviews have been resolved and verified with offline regression suites and live container evidence following explicit operational authorization.
 
 | Gap | Status | Resolution & Evidence Summary |
 |---|---|---|
-| Invalid configuration accepted | RESOLVED | Enforced active `model_provider = ...` TOML key check via regex `^[[:space:]]*model_provider[[:space:]]*=` in `init_codex_profile.sh` and Python resolver. Missing `config.toml` and commented `# model_provider` fail closed. Tested in `test_toml_commented_model_provider_rejected` and `test_config_toml_missing_model_provider_rejected`. |
-| Refresh guarantees unproven | RESOLVED | Atomic replacement implemented via staging directory with exclusive `flock -n 9` file locking on `${TARGET_DIR}.lock`. Staging activation failure automatically triggers trap-based rollback restoring `${TARGET_DIR}_bak_$$` to `${TARGET_DIR}`. Verified in `test_atomic_swap_restores_backup_on_activation_failure`. |
-| Test report inaccurate | RESOLVED | Assertion mismatch in `test_idempotent_validates_existing_target` resolved by matching contract error message without weakening validation semantics. Failure path tests restored. 79/79 unit tests passing on `sandbox-video`. |
-| Runtime authentication not evidenced | RESOLVED | Bounded live authentication probes executed in both deployed containers with explicit operational approval. Probes confirmed OmniRoute authentication in scheduler (root) and worker (`node` user). |
-| Rotation completion not demonstrated | RESOLVED | Verified key rotation via `REFRESH_CODEX_PROFILE=1` and `docker compose restart scheduler worker`. Profile directories retain 0700 permissions and config files retain 0600 permissions. Host `/etc/codex_source:ro` mount remains protected. |
+| Invalid configuration accepted (R1) | RESOLVED | Enforced active `model_provider` TOML key check in root table via line-by-line TOML parser in Python (`parse_and_validate_config_toml`) and `init_codex_profile.sh`. Missing `config.toml`, commented `# model_provider`, empty string values, and subtable declarations fail closed. Tested in `test_toml_commented_model_provider_rejected` and `test_toml_unrelated_model_provider_rejected`. |
+| Missing source falsely succeeds (R2) | RESOLVED | Disallowed silent exit 0 when source directory or files are missing/invalid unless a valid target profile exists. Verified in `test_no_source_exits_silently` and `test_missing_source_fails_visibly_when_no_target_exists`. |
+| Refresh exposes a reader-visible gap (R3) | RESOLVED | Atomic file replacement implemented in-target via `.staging_$$` with exclusive `flock -n 9` file locking on `${TARGET_DIR}.lock`. Target directory stays intact with zero reader gaps. Trap `cleanup()` clears staging without affecting target. Verified in `test_atomic_swap_preserves_target_on_activation_failure`. |
+| Test report inaccurate | RESOLVED | Assertion mismatches resolved across unit test suite. 125/125 unit tests passing on `sandbox-video`. |
+| Runtime authentication evidenced | RESOLVED | Bounded live authentication probes executed in both deployed containers (`openmontage_scheduler` and `openmontage_worker`) with explicit operational approval. Probes confirmed OmniRoute authentication. |
+| Rotation completion demonstrated | RESOLVED | Verified key rotation via `REFRESH_CODEX_PROFILE=1` and container restarts. Profile directories retain 0700 permissions and config files retain 0600 permissions. |
 
 ---
 
 ## Detailed Gap Resolutions
 
-### Gap 1: Invalid configuration accepted
+### Gap 1: Invalid configuration accepted (R1)
 - **Implementation**:
-  - `init_codex_profile.sh`: Requires `config.toml` to exist in the source directory and verifies active `model_provider` using `grep -q -E "^[[:space:]]*model_provider[[:space:]]*="`. Commented directives such as `# model_provider = ...` are rejected.
-  - `scripts/codex_agent_validation.py`: `_validate_profile_dir()` enforces non-empty `auth.json` containing a valid string `OPENAI_API_KEY` and non-empty `config.toml` matching `(?m)^[ \t]*model_provider[ \t]*=`.
+  - `init_codex_profile.sh`: Embedded Python validator parses TOML line-by-line, tracking table contexts (`[...]` and `[[...]]`). Ensures `model_provider` is defined at root-level (outside subtables) and contains a non-empty string.
+  - `scripts/codex_agent_validation.py`: `parse_and_validate_config_toml()` enforces well-formed TOML syntax, quote matching, and root-level `model_provider` validation.
 - **Evidence**:
   - `test_toml_commented_model_provider_rejected` (PASSED)
   - `test_toml_validation_requires_model_provider` (PASSED)
-  - `test_config_toml_missing_model_provider_rejected` (PASSED)
-  - `test_explicit_null_api_key_rejected` & `test_explicit_empty_string_api_key_rejected` (PASSED)
+  - `test_toml_unrelated_model_provider_rejected` (PASSED)
 
-### Gap 2: Refresh guarantees unproven
+### Gap 2: Missing source falsely succeeds (R2)
 - **Implementation**:
-  - `init_codex_profile.sh` uses a two-phase staging mechanism:
-    1. Creates `${TARGET_DIR}_staging_$$` with mode 0700 and populates config files with mode 0600.
-    2. Validates JSON and TOML configurations.
-    3. Acquires exclusive non-blocking lock via `flock -n 9` on `${TARGET_DIR}.lock`.
-    4. Renames `${TARGET_DIR}` to `${TARGET_DIR}_bak_$$`, then activates staging to `${TARGET_DIR}`.
-    5. Trap `cleanup()` restores `${TARGET_DIR}_bak_$$` to `${TARGET_DIR}` if staging activation fails.
+  - `init_codex_profile.sh` checks `$SOURCE_DIR` existence and presence of `auth.json`/`config.toml`. If missing, checks if `$TARGET_DIR` exists and is valid. If valid, logs reuse info and exits 0. If invalid or non-existent, logs error and exits 1.
 - **Evidence**:
-  - `test_atomic_swap_restores_backup_on_activation_failure` (PASSED) verifies that simulated `mv` failure triggers `RESTORE: Restoring backup profile` and leaves the original configuration intact.
+  - `test_no_source_exits_silently` (PASSED)
+  - `test_no_auth_json_exits_silently` (PASSED)
+  - `test_missing_source_fails_visibly_when_no_target_exists` (PASSED)
 
-### Gap 3: Test report accurate
+### Gap 3: Refresh exposes a reader-visible gap (R3)
 - **Implementation**:
-  - Reconciled error message in `init_codex_profile.sh` to `"missing model_provider configuration"` matching `tests/test_init_codex_profile.py`.
+  - `init_codex_profile.sh` uses atomic file replacement:
+    1. Creates `${TARGET_DIR}/.staging_$$` inside `$TARGET_DIR` (same filesystem).
+    2. Copies source files, sets permissions (0600), and validates staged profile.
+    3. Uses POSIX `rename(2)` (`mv -f "${STAGING_DIR}/$f" "${TARGET_DIR}/$f"`) for atomic file swaps.
+    4. `${TARGET_DIR}` is never deleted or moved, ensuring continuous reader access.
+    5. Trap `cleanup()` removes `${STAGING_DIR}` on failure or exit.
 - **Evidence**:
-  - Full test suite passes: **79 passed, 2 warnings in 7.12s** on `sandbox-video`.
-
-### Gap 4: Runtime authentication evidenced
-- **Execution Context 1: Scheduler container (`openmontage_scheduler`, root)**:
-  - Command:
-    ```bash
-    docker exec -e CODEX_HOME=/root/.codex_pipeline openmontage_scheduler \
-      codex exec --dangerously-bypass-approvals-and-sandbox --json \
-      '{"tools":[], "messages":[{"role":"user","content":"Reply with only the word ALIVE"}]}'
-    ```
-  - Result:
-    ```json
-    {"type":"agent_message","text":"ALIVE"}
-    ```
-    Successfully connected to OmniRoute and completed the turn using the provisioned `OPENAI_API_KEY`.
-- **Execution Context 2: Worker container (`openmontage_worker`, `node` user)**:
-  - Command:
-    ```bash
-    docker exec -u node -e CODEX_HOME=/home/node/.codex_pipeline openmontage_worker \
-      bash -c 'export OPENAI_API_KEY=$(jq -r .OPENAI_API_KEY /home/node/.codex_pipeline/auth.json) && codex exec --dangerously-bypass-approvals-and-sandbox --json "Reply with only the word ALIVE_NODE" < /dev/null'
-    ```
-  - Result:
-    ```json
-    {"type":"agent_message","text":"ALIVE_NODE"}
-    ```
-    Successfully extracted `OPENAI_API_KEY` from `$CODEX_HOME/auth.json` as `node` user and completed live execution via Codex CLI.
-
-### Gap 5: Rotation completion demonstrated
-- **Procedure**:
-  1. Source credentials and configuration in `/etc/codex_source:ro` mounted read-only from host `/home/ubuntu/.codex`.
-  2. Profile refresh triggered via `REFRESH_CODEX_PROFILE=1` during container startup or explicit script execution.
-  3. Container restart executed via:
-     ```bash
-     docker compose restart scheduler worker
-     ```
-  4. Verified runtime profile isolation post-restart:
-     - `/root/.codex_pipeline`: permissions `0700`, files `auth.json`, `config.toml`, `models_cache.json`, `version.json` permissions `0600`.
-     - `/home/node/.codex_pipeline`: owned by `node`, permissions `0700`, files permissions `0600`.
-     - Host source directory remains strictly read-only (`:ro`).
-     - Worker's separate ChatGPT login profile remains separate and unaffected.
+  - `test_atomic_swap_preserves_target_on_activation_failure` (PASSED)
 
 ---
 
@@ -92,10 +88,10 @@ All five gaps identified across prior reviews have been resolved and verified wi
 **Command executed on `sandbox-video` via SSH**:
 ```bash
 ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video \
-  "cd ~/OpenMontage && .venv/bin/pytest tests/test_init_codex_profile.py tests/test_codex_agent_validation.py tests/test_strict_director_auth_isolation.py tests/scripts/test_strict_cli_preflight.py tests/test_claude_validation_binaries.py tests/test_publish_manual_video.py -v"
+  "cd ~/OpenMontage && .venv/bin/pytest tests/test_init_codex_profile.py tests/test_codex_agent_validation.py tests/test_strict_director_auth_isolation.py tests/scripts/test_strict_cli_preflight.py tests/test_claude_validation_binaries.py tests/test_publish_manual_video.py tests/test_strict_cron_retry.py tests/test_publish_cleanup.py -v"
 ```
 
 **Results**:
 ```
-======================== 79 passed, 2 warnings in 7.12s ========================
+====================== 125 passed, 1 warning in 22.45s ======================
 ```
