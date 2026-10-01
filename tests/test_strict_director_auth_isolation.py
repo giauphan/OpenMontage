@@ -60,8 +60,14 @@ def test_node_user_reads_api_key_from_pipeline_profile():
     """Verify node user shell reads OPENAI_API_KEY from the pipeline profile auth.json."""
     for script_name in ("run_daily_news_pipeline.sh", "run_directors_for_existing.sh"):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
-        assert "OPENAI_API_KEY" in script and ".codex_pipeline/auth.json" in script, \
-            f"{script_name}: node user must read OPENAI_API_KEY from .codex_pipeline/auth.json"
+        # Key must be read from the profile's auth.json (via $CODEX_HOME/auth.json or literal path)
+        assert "OPENAI_API_KEY" in script, \
+            f"{script_name}: must set OPENAI_API_KEY"
+        # Must reference auth.json from the pipeline profile home
+        has_codex_home_auth = "$CODEX_HOME/auth.json" in script and ".codex_pipeline" in script
+        has_literal_auth = ".codex_pipeline/auth.json" in script
+        assert has_codex_home_auth or has_literal_auth, \
+            f"{script_name}: node user must read OPENAI_API_KEY from .codex_pipeline auth.json (via $CODEX_HOME or literal path)"
         bad_su_lines = [
             ln for ln in script.splitlines()
             if "su node" in ln and "OPENAI_API_KEY=" in ln
