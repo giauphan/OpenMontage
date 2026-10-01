@@ -104,6 +104,10 @@ class TestCodexHomeValidation:
         import os
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setattr(scripts.codex_agent_validation, "os", os)
+        # Block all fixed candidate paths so only tmp_path/.codex_pipeline is probed
+        monkeypatch.setattr(Path, "is_file", lambda self: (
+            self.parent == codex_home and self.name in ("auth.json", "config.toml")
+        ))
 
         with pytest.raises(RuntimeError, match="No valid Codex home"):
             resolve_and_validate_codex_home({})
