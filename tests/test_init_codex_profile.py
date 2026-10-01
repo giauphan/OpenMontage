@@ -259,19 +259,19 @@ def test_user_ownership_uses_current_user(tmp_path: Path):
 
 
 def test_no_source_exits_silently(tmp_path: Path):
-    """If source dir doesn't exist, script exits 0 silently."""
+    """If source dir doesn't exist and no target exists, script fails visibly."""
     source = tmp_path / "nonexistent_source"
     target = tmp_path / "target"
 
     result = _run_init_script(tmp_path, source, target)
 
-    assert result.returncode == 0
-    assert "Skipping replacement" in result.stdout
+    assert result.returncode == 1
+    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
     assert not target.exists()
 
 
 def test_no_auth_json_exits_silently(tmp_path: Path):
-    """If source has no auth.json, script exits 0 silently."""
+    """If source has no auth.json and no target exists, script fails visibly."""
     source = tmp_path / "source"
     target = tmp_path / "target"
     source.mkdir()
@@ -281,8 +281,8 @@ def test_no_auth_json_exits_silently(tmp_path: Path):
 
     result = _run_init_script(tmp_path, source, target)
 
-    assert result.returncode == 0
-    assert "Skipping replacement" in result.stdout
+    assert result.returncode == 1
+    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
     assert not target.exists()
 
 
@@ -347,8 +347,8 @@ def test_idempotent_validates_existing_target(tmp_path: Path):
     assert "Existing target auth.json lacks valid OPENAI_API_KEY" in result.stderr
 
 
-def test_atomic_swap_restores_backup_on_activation_failure(tmp_path: Path):
-    """If activation mv fails after backup, trap restores backup to target."""
+def test_atomic_swap_preserves_target_on_activation_failure(tmp_path: Path):
+    """If activation mv fails, trap clears staging and target remains valid."""
     source = tmp_path / "source"
     target = tmp_path / "target"
     bin_dir = tmp_path / "bin"
@@ -366,7 +366,7 @@ def test_atomic_swap_restores_backup_on_activation_failure(tmp_path: Path):
     mock_mv.write_text(
         "#!/usr/bin/env bash\n"
         "for arg in \"$@\"; do\n"
-        "  if [[ \"$arg\" == *\"_staging_\"* ]]; then\n"
+        "  if [[ \"$arg\" == *\".staging_\"* ]]; then\n"
         "    echo 'MOCK MV ACTIVATION FAILURE' >&2\n"
         "    exit 1\n"
         "  fi\n"
@@ -375,6 +375,7 @@ def test_atomic_swap_restores_backup_on_activation_failure(tmp_path: Path):
     )
     mock_mv.chmod(0o755)
 
+    import os, subprocess
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     env["REFRESH_CODEX_PROFILE"] = "1"
@@ -389,9 +390,33 @@ def test_atomic_swap_restores_backup_on_activation_failure(tmp_path: Path):
 
     assert result.returncode == 1
     assert "MOCK MV ACTIVATION FAILURE" in result.stderr
-    assert "RESTORE: Restoring backup profile" in result.stderr
     assert target.exists()
     assert (target / "auth.json").exists()
+    # The original active auth.json remains exactly as it was, no files deleted.
     original = json.loads((target / "auth.json").read_text())
     assert original["OPENAI_API_KEY"] == "sk-original"
 
+
+def test_toml_unrelated_model_provider_rejected(tmp_path: Path):
+    """Source config.toml with model_provider only in a subtable is rejected."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+    (source / "config.toml").write_text("[unrelated]\nmodel_provider = 'test'\n")
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 1
+    assert "missing valid root-level model_provider" in result.stderr
+
+def test_missing_source_fails_visibly_when_no_target_exists(tmp_path: Path):
+    """Missing source and missing target must fail visibly."""
+    source = tmp_path / "missing_source"
+    target = tmp_path / "target"
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 1
+    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
