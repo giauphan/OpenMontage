@@ -107,8 +107,8 @@ if [ ! -d "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/auth.json" ] || [ ! -f "$SOURCE
   fi
 fi
 
-# Do not overwrite if target already exists and holds valid auth, unless explicitly refreshed.
-if [ -s "$TARGET_DIR/auth.json" ] && [ -s "$TARGET_DIR/config.toml" ] && [ "${REFRESH_CODEX_PROFILE:-0}" != "1" ]; then
+# Do not overwrite if target already exists, unless explicitly refreshed.
+if [ -d "$TARGET_DIR" ] && ([ -e "$TARGET_DIR/auth.json" ] || [ -e "$TARGET_DIR/config.toml" ]) && [ "${REFRESH_CODEX_PROFILE:-0}" != "1" ]; then
   if ! validate_err=$(validate_profile_dir "$TARGET_DIR" 2>&1); then
     echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target profile is invalid: $validate_err" >&2
     exit 1
