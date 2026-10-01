@@ -67,7 +67,7 @@ def test_atomic_replacement_validation_failure_preserves_target(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target, refresh=True)
 
     assert result.returncode == 1
-    assert "missing OPENAI_API_KEY" in result.stderr
+    assert "missing or invalid OPENAI_API_KEY" in result.stderr
     # Target should be unchanged
     assert (target / "auth.json").exists()
     original = json.loads((target / "auth.json").read_text())
@@ -86,7 +86,7 @@ def test_json_validation_requires_valid_json(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target)
 
     assert result.returncode == 1
-    assert "invalid JSON" in result.stderr
+    assert "Invalid JSON" in result.stderr
 
 
 def test_json_validation_requires_openai_api_key(tmp_path: Path):
@@ -101,7 +101,7 @@ def test_json_validation_requires_openai_api_key(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target)
 
     assert result.returncode == 1
-    assert "missing OPENAI_API_KEY" in result.stderr
+    assert "missing or invalid OPENAI_API_KEY" in result.stderr
 
 
 def test_toml_commented_model_provider_rejected(tmp_path: Path):
@@ -151,7 +151,7 @@ def test_idempotent_validates_existing_target_config_toml(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target, refresh=False)
 
     assert result.returncode == 1
-    assert "Existing target config.toml lacks valid model_provider" in result.stderr
+    assert "Existing target profile is invalid" in result.stderr
 
 
 def test_idempotent_skip_when_target_valid(tmp_path: Path):
@@ -344,7 +344,7 @@ def test_idempotent_validates_existing_target(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target, refresh=False)
 
     assert result.returncode == 1
-    assert "Existing target auth.json lacks valid OPENAI_API_KEY" in result.stderr
+    assert "Existing target profile is invalid" in result.stderr
 
 
 def test_atomic_swap_preserves_target_on_activation_failure(tmp_path: Path):
@@ -409,7 +409,7 @@ def test_toml_unrelated_model_provider_rejected(tmp_path: Path):
     result = _run_init_script(tmp_path, source, target)
 
     assert result.returncode == 1
-    assert "missing valid root-level model_provider" in result.stderr
+    assert "config.toml missing model_provider" in result.stderr
 
 def test_missing_source_fails_visibly_when_no_target_exists(tmp_path: Path):
     """Missing source and missing target must fail visibly."""

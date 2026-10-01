@@ -74,7 +74,7 @@ class TestCodexHomeValidation:
         (codex_home / "config.toml").write_text('other = "value"')
 
         env = {"CODEX_HOME": str(codex_home)}
-        with pytest.raises(RuntimeError, match="config.toml missing model_provider"):
+        with pytest.raises(RuntimeError, match="missing model_provider"):
             resolve_and_validate_codex_home(env)
 
     def test_unset_fallback_discovery(self, tmp_path, monkeypatch):
