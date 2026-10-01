@@ -55,14 +55,17 @@ def canonical_records(
         publish_key(date, topic, "youtube", "short"): {
             "status": "published",
             "media_sha256": cut_hash or "cut_hash_dummy",
+            "remote_status": {"privacy_status": "public", "upload_status": "processed"},
         },
         publish_key(date, topic, "instagram", "reels"): {
             "status": "published",
             "media_sha256": cut_hash or "cut_hash_dummy",
+            "remote_status": {"status": "published"},
         },
         publish_key(date, topic, "facebook", "reels"): {
             "status": facebook_status,
             "media_sha256": full_hash or cut_hash or "full_hash_dummy",
+            "remote_status": {"status": "published"} if facebook_status == "published" else None,
         },
     }
 
@@ -204,7 +207,7 @@ def test_youtube_success_instagram_pending_retains_schedule_and_directory(tmp_pa
 
     # Store has ONLY youtube marked as published; instagram and facebook are pending / not published
     store = FakeStore({
-        publish_key("2026-09-05", project_id, "youtube", "short"): {"status": "published", "media_sha256": h_cut},
+        publish_key("2026-09-05", project_id, "youtube", "short"): {"status": "published", "media_sha256": h_cut, "remote_status": {"privacy_status": "public", "upload_status": "processed"}},
         publish_key("2026-09-05", project_id, "instagram", "reels"): {"status": "pending", "media_sha256": h_cut},
         publish_key("2026-09-05", project_id, "facebook", "reels"): {"status": "pending", "media_sha256": h_full},
     })
@@ -252,9 +255,9 @@ def test_final_platform_success_cleans_across_all_locations(tmp_path, monkeypatc
     monkeypatch.setattr(pap, "ROOT", tmp_path)
 
     store = FakeStore({
-        publish_key("2026-09-05", project_id, "youtube", "short"): {"status": "published", "media_sha256": h_cut},
-        publish_key("2026-09-05", project_id, "instagram", "reels"): {"status": "published", "media_sha256": h_cut},
-        publish_key("2026-09-05", project_id, "facebook", "reels"): {"status": "published", "media_sha256": h_full},
+        publish_key("2026-09-05", project_id, "youtube", "short"): {"status": "published", "media_sha256": h_cut, "remote_status": {"privacy_status": "public", "upload_status": "processed"}},
+        publish_key("2026-09-05", project_id, "instagram", "reels"): {"status": "published", "media_sha256": h_cut, "remote_status": {"status": "published"}},
+        publish_key("2026-09-05", project_id, "facebook", "reels"): {"status": "published", "media_sha256": h_full, "remote_status": {"status": "published"}},
     })
 
     ok = deactivate_project(project_id, project_dir=target_project_dir, store=store, date="2026-09-05")
@@ -299,9 +302,9 @@ def test_idempotent_cleanup_handles_already_deleted_folders(tmp_path, monkeypatc
     monkeypatch.setattr(pap, "ROOT", tmp_path)
 
     store = FakeStore({
-        publish_key("2026-09-05", project_id, "youtube", "short"): {"status": "published"},
-        publish_key("2026-09-05", project_id, "instagram", "reels"): {"status": "published"},
-        publish_key("2026-09-05", project_id, "facebook", "reels"): {"status": "published"},
+        publish_key("2026-09-05", project_id, "youtube", "short"): {"status": "published", "remote_status": {"privacy_status": "public", "upload_status": "processed"}},
+        publish_key("2026-09-05", project_id, "instagram", "reels"): {"status": "published", "remote_status": {"status": "published"}},
+        publish_key("2026-09-05", project_id, "facebook", "reels"): {"status": "published", "remote_status": {"status": "published"}},
     })
 
     ok = deactivate_project(project_id, project_dir=non_existent_dir, store=store, date="2026-09-05")
@@ -622,7 +625,54 @@ def test_r1_reconcile_youtube_api_error_stays_pending(tmp_path):
     rec = store.get("rec1")
 
     with patch("tools.publishers.youtube_publisher.YoutubePublisher.check_video_published") as mock_check:
-        mock_check.side_effect = RuntimeError("API rate limit exceeded")
+        mock_check.return_value = {
+            "status": "error",
+            "error_type": "http_error",
+            "status_code": 403,
+            "error": "<HttpError 403 when requesting ... returned 'insufficientPermissions'>",
+        }
+        res = reconcile_scheduled_record(store, "rec1", rec)
+        assert res.get("status") == "scheduled"
+        assert store.get("rec1").get("status") == "scheduled"
+
+
+def test_r1_reconcile_youtube_auth_required_stays_pending(tmp_path):
+    """R1: YouTube AUTH_REQUIRED error leaves scheduled record pending."""
+    from scripts.check_cleanup_eligibility import reconcile_scheduled_record
+
+    store = FakeStore({
+        "rec1": {"status": "scheduled", "scheduled_for": "2026-09-27T08:00:00Z", "platform": "youtube", "video_id": "yt_auth_req"}
+    })
+    rec = store.get("rec1")
+
+    with patch("tools.publishers.youtube_publisher.YoutubePublisher.check_video_published") as mock_check:
+        mock_check.return_value = {
+            "status": "error",
+            "error_type": "auth_required",
+            "error": "AUTH_REQUIRED: Please authenticate by visiting https://accounts.google.com/o/oauth2/auth...",
+        }
+        res = reconcile_scheduled_record(store, "rec1", rec)
+        assert res.get("status") == "scheduled"
+        assert store.get("rec1").get("status") == "scheduled"
+
+
+def test_r1_reconcile_youtube_oembed_fallback_never_authorizes_published(tmp_path):
+    """R1: Non-authoritative oEmbed response on API failure must never authorize publication."""
+    from scripts.check_cleanup_eligibility import reconcile_scheduled_record
+
+    store = FakeStore({
+        "rec1": {"status": "scheduled", "scheduled_for": "2026-09-27T08:00:00Z", "platform": "youtube", "video_id": "yt_oembed"}
+    })
+    rec = store.get("rec1")
+
+    with patch("tools.publishers.youtube_publisher.YoutubePublisher.check_video_published") as mock_check:
+        mock_check.return_value = {
+            "status": "unverified_oembed",
+            "video_id": "yt_oembed",
+            "title": "Test Title",
+            "author_name": "Test Channel",
+            "via_oembed": True,
+        }
         res = reconcile_scheduled_record(store, "rec1", rec)
         assert res.get("status") == "scheduled"
         assert store.get("rec1").get("status") == "scheduled"
@@ -804,10 +854,12 @@ def test_r3_exact_asset_per_platform_binding(tmp_path):
     assert h_cut != h_full
 
     # Store with cut hash assigned to FB (wrong asset)
+    yt_proof = {"privacy_status": "public", "upload_status": "processed"}
+    meta_proof = {"status": "published"}
     wrong_store = FakeStore({
-        publish_key("2026-09-27", pid, "youtube", "short"): {"status": "published", "media_sha256": h_cut},
-        publish_key("2026-09-27", pid, "instagram", "reels"): {"status": "published", "media_sha256": h_cut},
-        publish_key("2026-09-27", pid, "facebook", "reels"): {"status": "published", "media_sha256": h_cut},  # Wrong! FB expects h_full
+        publish_key("2026-09-27", pid, "youtube", "short"): {"status": "published", "media_sha256": h_cut, "remote_status": dict(yt_proof)},
+        publish_key("2026-09-27", pid, "instagram", "reels"): {"status": "published", "media_sha256": h_cut, "remote_status": dict(meta_proof)},
+        publish_key("2026-09-27", pid, "facebook", "reels"): {"status": "published", "media_sha256": h_cut, "remote_status": dict(meta_proof)},  # Wrong! FB expects h_full
     })
 
     eligible, reason, _ = is_project_eligible_for_cleanup(pid, project_dir=pdir, store=wrong_store, date="2026-09-27", root=tmp_path)
@@ -816,9 +868,9 @@ def test_r3_exact_asset_per_platform_binding(tmp_path):
 
     # Correct store
     correct_store = FakeStore({
-        publish_key("2026-09-27", pid, "youtube", "short"): {"status": "published", "media_sha256": h_cut},
-        publish_key("2026-09-27", pid, "instagram", "reels"): {"status": "published", "media_sha256": h_cut},
-        publish_key("2026-09-27", pid, "facebook", "reels"): {"status": "published", "media_sha256": h_full},
+        publish_key("2026-09-27", pid, "youtube", "short"): {"status": "published", "media_sha256": h_cut, "remote_status": dict(yt_proof)},
+        publish_key("2026-09-27", pid, "instagram", "reels"): {"status": "published", "media_sha256": h_cut, "remote_status": dict(meta_proof)},
+        publish_key("2026-09-27", pid, "facebook", "reels"): {"status": "published", "media_sha256": h_full, "remote_status": dict(meta_proof)},
     })
     eligible, reason, _ = is_project_eligible_for_cleanup(pid, project_dir=pdir, store=correct_store, date="2026-09-27", root=tmp_path)
     assert eligible is True
@@ -1046,6 +1098,158 @@ def test_r1_reconcile_youtube_missing_fields_stays_pending(tmp_path):
         }
         res = reconcile_scheduled_record(store, "rec1", rec)
         assert res.get("status") == "scheduled"
+
+
+def test_publisher_level_api_failure_oembed_success_returns_unverified_oembed(monkeypatch, tmp_path):
+    """Finding 5: Publisher-level test: API failure with oEmbed success returns unverified_oembed structure."""
+    import io
+    import urllib.error
+    import urllib.request
+    from tools.publishers.youtube_publisher import YoutubePublisher
+
+    # Set up dummy env
+    secret_file = tmp_path / "client_secret.json"
+    secret_file.write_text('{"installed": {}}')
+    token_file = tmp_path / "youtube_token.json"
+    token_file.write_text('{"token": "dummy"}')
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET_FILE", str(secret_file))
+    monkeypatch.setenv("YOUTUBE_TOKEN_PATH", str(token_file))
+
+    # Mock _get_authenticated_service to raise API error
+    def mock_get_auth(self, s, t):
+        raise RuntimeError("HttpError 403: insufficientPermissions")
+
+    monkeypatch.setattr(YoutubePublisher, "_get_authenticated_service", mock_get_auth)
+
+    # Mock oEmbed response
+    class MockOembedResponse:
+        def __init__(self):
+            self.status = 200
+        def read(self):
+            return b'{"title": "Sample Title", "author_name": "Sample Author"}'
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: MockOembedResponse())
+
+    pub = YoutubePublisher()
+    result = pub.check_video_published("vid_pub_test")
+
+    assert result.get("status") == "unverified_oembed"
+    assert result.get("video_id") == "vid_pub_test"
+    assert result.get("via_oembed") is True
+    assert result.get("title") == "Sample Title"
+    assert result.get("author_name") == "Sample Author"
+    # CRITICAL SAFETY: Must NOT counterfeit API status fields
+    assert "privacy_status" not in result
+    assert "upload_status" not in result
+
+
+def test_publisher_level_api_and_oembed_failure_returns_structured_error(monkeypatch, tmp_path):
+    """Finding 5: When both API and oEmbed fail, check_video_published returns structured error."""
+    import urllib.error
+    import urllib.request
+    from tools.publishers.youtube_publisher import YoutubePublisher
+
+    secret_file = tmp_path / "client_secret.json"
+    secret_file.write_text('{"installed": {}}')
+    token_file = tmp_path / "youtube_token.json"
+    token_file.write_text('{"token": "dummy"}')
+    monkeypatch.setenv("YOUTUBE_CLIENT_SECRET_FILE", str(secret_file))
+    monkeypatch.setenv("YOUTUBE_TOKEN_PATH", str(token_file))
+
+    def mock_get_auth(self, s, t):
+        raise ValueError("AUTH_REQUIRED: Please authenticate by visiting URL")
+
+    monkeypatch.setattr(YoutubePublisher, "_get_authenticated_service", mock_get_auth)
+
+    def mock_urlopen(*args, **kwargs):
+        raise urllib.error.URLError("Not found 404")
+
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+    pub = YoutubePublisher()
+    result = pub.check_video_published("vid_fail_test")
+
+    assert result.get("status") == "error"
+    assert result.get("error_type") == "auth_required"
+    assert "AUTH_REQUIRED" in result.get("error", "")
+
+
+def test_real_publish_store_mark_published_accepts_verified_at_and_remote_status(monkeypatch):
+    """Finding 1: Verify real PublishStore.mark_published accepts verified_at & remote_status without TypeError."""
+    from tools.publish_store import PublishStore
+
+    # Mock service account and session to isolate from real network/Firestore
+    monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT", json.dumps({"project_id": "test-project"}))
+
+    captured_updates = {}
+    class MockResponse:
+        status_code = 200
+        def json(self):
+            return {"fields": {}}
+
+    class MockSession:
+        def patch(self, url, params=None, json=None, timeout=None):
+            captured_updates.update(json.get("fields", {}))
+            return MockResponse()
+
+    monkeypatch.setattr("tools.publish_store.Credentials.from_service_account_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr("tools.publish_store.AuthorizedSession", lambda creds: MockSession())
+
+    store = PublishStore()
+    remote_st = {"privacy_status": "public", "upload_status": "processed"}
+    res = store.mark_published(
+        "test_key_1",
+        video_id="v123",
+        video_url="https://youtube.com/watch?v=v123",
+        published_at="2026-10-01T09:15:00Z",
+        verified_at="2026-10-01T09:20:00Z",
+        remote_status=remote_st,
+    )
+    # Ensure call succeeded and fields were formatted for Firestore
+    assert "status" in captured_updates
+    assert captured_updates["status"] == {"stringValue": "published"}
+    assert "verified_at" in captured_updates
+    assert captured_updates["verified_at"] == {"stringValue": "2026-10-01T09:20:00Z"}
+    assert "remote_status" in captured_updates
+
+
+def test_cleanup_boundary_rejects_historical_records_lacking_authoritative_proof(tmp_path):
+    """Finding 2: Projects with records marked 'published' but lacking public release proof must fail closed."""
+    from scripts.check_cleanup_eligibility import is_project_eligible_for_cleanup
+
+    pid = "cand_unverified_hist"
+    pdir = tmp_path / "projects" / pid
+    pdir.mkdir(parents=True)
+    h_cut, h_full = make_project_with_renders(pdir)
+    (pdir / "publish_metadata.json").write_text(json.dumps({"id": pid, "publish_date": "2026-09-27"}))
+
+    # Store has status='published' but NO remote_status or unlisted remote_status
+    store = FakeStore({
+        publish_key("2026-09-27", pid, "youtube", "short"): {
+            "status": "published",
+            "media_sha256": h_cut,
+            # No remote_status or unlisted privacy_status
+            "remote_status": {"privacy_status": "unlisted", "upload_status": "processed"},
+        },
+        publish_key("2026-09-27", pid, "instagram", "reels"): {
+            "status": "published",
+            "media_sha256": h_cut,
+            "remote_status": {"status": "published"},
+        },
+        publish_key("2026-09-27", pid, "facebook", "reels"): {
+            "status": "published",
+            "media_sha256": h_full,
+            "remote_status": {"status": "published"},
+        },
+    })
+
+    eligible, reason, _ = is_project_eligible_for_cleanup(pid, project_dir=pdir, store=store, date="2026-09-27", root=tmp_path)
+    assert eligible is False
+    assert "missing_authoritative_public_evidence" in reason
 
 
 def test_r3_current_store_pending_or_failed_records_cannot_be_overridden_by_archive(tmp_path):

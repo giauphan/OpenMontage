@@ -12,11 +12,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NODE_PATH=/app/node_modules
 
 # System deps: python, ffmpeg, chromium (multi-arch), curl, and jq
+# cron is baked in so the scheduler does not depend on runtime apt/network.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-pip python3-venv \
       ffmpeg \
       chromium \
       curl jq \
+      cron \
       ca-certificates fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 

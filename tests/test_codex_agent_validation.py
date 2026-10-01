@@ -16,6 +16,7 @@ from scripts.codex_agent_validation import (
     resolve_claude_cli,
     resolve_agent_cli,
     resolve_and_validate_codex_home,
+    parse_and_validate_config_toml,
 )
 
 
@@ -119,6 +120,50 @@ class TestCodexHomeValidation:
         monkeypatch.setattr(Path, "is_file", lambda self: False)
         with pytest.raises(RuntimeError, match="Fallback to temporary credentials is disabled"):
             resolve_and_validate_codex_home({})
+
+
+class TestParseAndValidateConfigToml:
+    """Test parse_and_validate_config_toml strictly enforces TOML syntax and string model_provider."""
+
+    def test_valid_string_provider_accepted(self):
+        content = 'model_provider = "openai"\n'
+        result = parse_and_validate_config_toml(content)
+        assert result["model_provider"] == "openai"
+
+    def test_single_quoted_string_accepted(self):
+        content = "model_provider = 'anthropic'\n"
+        result = parse_and_validate_config_toml(content)
+        assert result["model_provider"] == "anthropic"
+
+    def test_numeric_provider_rejected(self):
+        content = 'model_provider = 123\n'
+        with pytest.raises(ValueError, match="must be a non-empty string|syntax"):
+            parse_and_validate_config_toml(content)
+
+    def test_boolean_provider_rejected(self):
+        content = 'model_provider = true\n'
+        with pytest.raises(ValueError, match="must be a non-empty string|syntax"):
+            parse_and_validate_config_toml(content)
+
+    def test_empty_string_provider_rejected(self):
+        content = 'model_provider = ""\n'
+        with pytest.raises(ValueError, match="must be a non-empty string"):
+            parse_and_validate_config_toml(content)
+
+    def test_duplicate_key_rejected(self):
+        content = 'model_provider = "first"\nmodel_provider = "second"\n'
+        with pytest.raises(ValueError, match="Duplicate key|Invalid TOML"):
+            parse_and_validate_config_toml(content)
+
+    def test_subtable_provider_rejected(self):
+        content = '[other_table]\nmodel_provider = "test"\n'
+        with pytest.raises(ValueError, match="Missing required root-level 'model_provider'"):
+            parse_and_validate_config_toml(content)
+
+    def test_malformed_syntax_rejected(self):
+        content = 'model_provider\n'
+        with pytest.raises(ValueError, match="Invalid TOML syntax"):
+            parse_and_validate_config_toml(content)
 
 
 class TestCodexValidationResult:

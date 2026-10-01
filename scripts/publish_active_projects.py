@@ -25,6 +25,104 @@ from scripts.publish_config import load_config, publish_timezone
 
 CONFIG = ROOT / "config" / "publish_schedule.json"
 PUBLISHER = ROOT / "scripts" / "publish_manual_video.py"
+# Bounded deadline for a single project publish so a hung publisher cannot
+# stall the whole slot run indefinitely. Child is killed on expiry.
+PUBLISHER_TIMEOUT_SECONDS = int(os.environ.get("PUBLISHER_TIMEOUT_SECONDS", "3600"))
+
+
+def write_slot_heartbeat(slot: str | None, status: str, extra: dict[str, Any] | None = None) -> None:
+    """Write a per-slot heartbeat for the independent missed-run checker."""
+    if not slot:
+        return
+    hb_dir = ROOT / "logs" / "heartbeat"
+    rec: dict[str, Any] = {
+        "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "slot": slot,
+        "status": status,
+    }
+    if extra:
+        rec.update(extra)
+    try:
+        hb_dir.mkdir(parents=True, exist_ok=True)
+        (hb_dir / f"slot_{slot.replace(':', '')}.json").write_text(
+            json.dumps(rec, ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception as exc:
+        print(f"WARNING: failed to write slot heartbeat for {slot}: {exc}", file=sys.stderr)
+
+
+def _finish_slot_heartbeat(slot: str | None, exit_code: int, dry_run: bool) -> None:
+    if dry_run or not slot:
+        return
+    write_slot_heartbeat(slot, "completed" if exit_code == 0 else "failed", {"exit_code": exit_code})
+
+
+def _record_retry(project_id: str, err_text: str) -> None:
+    """Increment retry_count with exponential backoff; mark terminal states.
+
+    Fail-closed: on write error the schedule is left untouched.
+    """
+    with locked_schedule(CONFIG):
+        if not CONFIG.is_file():
+            return
+        try:
+            sched = json.loads(CONFIG.read_text(encoding="utf-8"))
+            for item in sched.get("active_projects", []):
+                if not isinstance(item, dict) or item.get("project_id") != project_id:
+                    continue
+                retries = item.get("retry_count", 0) + 1
+                item["retry_count"] = retries
+                now_utc = datetime.now(timezone.utc)
+                item["last_attempt"] = now_utc.isoformat()
+                delay_seconds = 300 * (3 ** (retries - 1))
+                item["next_attempt_at"] = (now_utc + timedelta(seconds=delay_seconds)).isoformat()
+
+                if any(pattern in err_text for pattern in ["AUTH_REQUIRED", "OAuthException", "invalid_token", "invalid_grant"]):
+                    item["status"] = "auth_blocked"
+                    item["alert"] = "authentication_error_requires_operator_resolution"
+                    print(f"⚠️ Project {project_id} authentication failed; marked auth_blocked.")
+                elif retries >= 3:
+                    item["status"] = "failed"
+                    item["alert"] = "max_retries_exceeded"
+                    print(f"⚠️ Project {project_id} reached max retries ({retries}); marked failed.")
+            temp_cfg = CONFIG.with_suffix(".json.tmp")
+            temp_cfg.write_text(json.dumps(sched, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            temp_cfg.replace(CONFIG)
+        except Exception as err:
+            print(f"WARNING: failed to update retry count for {project_id}: {err}")
+
+
+def _run_publisher(
+    command: list[str],
+    env: dict[str, str],
+    project_id: str,
+    args: argparse.Namespace,
+) -> subprocess.CompletedProcess | None:
+    """Run the publisher with a bounded deadline; record retry state on timeout.
+
+    A timeout kills the child mid-upload. The persisted Firebase claim is NOT
+    reset: the next retry runs with --retry-failed and reconciles the remote
+    record before re-uploading, so uploads are never blindly repeated.
+    Returns None when the run timed out (caller must set a non-zero exit code).
+    """
+    try:
+        return subprocess.run(
+            command, cwd=ROOT, env=env, capture_output=True, text=True,
+            timeout=PUBLISHER_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        print(
+            f"TIMEOUT: publisher for {project_id} exceeded {PUBLISHER_TIMEOUT_SECONDS}s; "
+            "child killed, remote claim preserved for reconciliation on retry",
+            file=sys.stderr,
+        )
+        if exc.stdout:
+            print(exc.stdout)
+        if exc.stderr:
+            print(exc.stderr, file=sys.stderr)
+        if not args.dry_run:
+            _record_retry(project_id, f"publisher timeout after {PUBLISHER_TIMEOUT_SECONDS}s")
+        return None
 
 
 @contextlib.contextmanager
@@ -393,10 +491,14 @@ def main() -> int:
     parser.add_argument("--only-platform", choices=["youtube", "facebook", "instagram"], help="Limit publishing to one platform")
     args = parser.parse_args()
 
+    if not args.dry_run:
+        write_slot_heartbeat(args.slot, "started")
+
     schedule = load_config()
     projects = schedule.get("active_projects", [])
     if not isinstance(projects, list):
         print("ERROR: active_projects must be a list")
+        _finish_slot_heartbeat(args.slot, 1, args.dry_run)
         return 1
 
     if args.slot:
@@ -411,6 +513,7 @@ def main() -> int:
 
     if not projects:
         print("No active projects configured for requested filters")
+        _finish_slot_heartbeat(args.slot, 0, args.dry_run)
         return 0
 
     exit_code = 0
@@ -459,7 +562,10 @@ def main() -> int:
         if "MULTI_PLATFORM" not in env:
             env["MULTI_PLATFORM"] = "0"
 
-        result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
+        result = _run_publisher(command, env, project_id, args)
+        if result is None:
+            exit_code = 1
+            continue
         print(result.stdout)
         if result.stderr:
             print(result.stderr, file=sys.stderr)
@@ -484,33 +590,9 @@ def main() -> int:
         elif result.returncode:
             exit_code = result.returncode
             if not args.dry_run:
-                with locked_schedule(CONFIG):
-                    if CONFIG.is_file():
-                        try:
-                            sched = json.loads(CONFIG.read_text(encoding="utf-8"))
-                            for item in sched.get("active_projects", []):
-                                if (item.get("project_id") if isinstance(item, dict) else item) == project_id and isinstance(item, dict):
-                                    retries = item.get("retry_count", 0) + 1
-                                    item["retry_count"] = retries
-                                    now_utc = datetime.now(timezone.utc)
-                                    item["last_attempt"] = now_utc.isoformat()
-                                    delay_seconds = 300 * (3 ** (retries - 1))
-                                    item["next_attempt_at"] = (now_utc + timedelta(seconds=delay_seconds)).isoformat()
+                _record_retry(project_id, (result.stderr or "") + " " + (result.stdout or ""))
 
-                                    err_text = (result.stderr or "") + " " + (result.stdout or "")
-                                    if any(pattern in err_text for pattern in ["AUTH_REQUIRED", "OAuthException", "invalid_token", "invalid_grant"]):
-                                        item["status"] = "auth_blocked"
-                                        item["alert"] = "authentication_error_requires_operator_resolution"
-                                        print(f"⚠️ Project {project_id} authentication failed; marked auth_blocked.")
-                                    elif retries >= 3:
-                                        item["status"] = "failed"
-                                        item["alert"] = "max_retries_exceeded"
-                                        print(f"⚠️ Project {project_id} reached max retries ({retries}); marked failed.")
-                            temp_cfg = CONFIG.with_suffix(".json.tmp")
-                            temp_cfg.write_text(json.dumps(sched, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                            temp_cfg.replace(CONFIG)
-                        except Exception as err:
-                            print(f"WARNING: failed to update retry count for {project_id}: {err}")
+    _finish_slot_heartbeat(args.slot, exit_code, args.dry_run)
     return exit_code
 
 

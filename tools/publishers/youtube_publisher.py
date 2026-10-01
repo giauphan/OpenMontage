@@ -118,9 +118,12 @@ class YoutubePublisher(BaseTool):
         "Check YouTube Studio or the returned video URL to verify the uploaded video and metadata",
     ]
 
-    SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+    SCOPES = [
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+    ]
 
-    def _get_authenticated_service(self, client_secret_file: Path, token_file: Path):
+    def _get_authenticated_service(self, client_secret_file: Path, token_file: Path, interactive: bool = True):
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
@@ -141,10 +144,12 @@ class YoutubePublisher(BaseTool):
                     str(client_secret_file), self.SCOPES
                 )
                 flow.redirect_uri = "http://localhost:8080/"
+                auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+                if not interactive:
+                    raise ValueError(f"AUTH_REQUIRED: Please authenticate by visiting:\n{auth_url}")
                 try:
                     creds = flow.run_local_server(port=8080, open_browser=False)
                 except Exception as e:
-                    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
                     raise ValueError(f"AUTH_REQUIRED: Please authenticate by visiting:\n{auth_url}") from e
 
             token_file.parent.mkdir(parents=True, exist_ok=True)
@@ -289,18 +294,27 @@ class YoutubePublisher(BaseTool):
                 success=False, error=f"YouTube upload failed: {str(exc)}"
             )
 
-    def check_video_published(self, video_id: str) -> dict[str, Any] | None:
-        """Check status of a YouTube video via YouTube Data API v3 for reconciliation."""
+    def check_video_published(self, video_id: str) -> dict[str, Any]:
+        """Check status of a YouTube video via YouTube Data API v3 for reconciliation.
+
+        Returns a dict distinguishing unavailable/error/not-found from authoritative status.
+        """
         try:
             secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
             if not secret_file_str:
-                return None
+                return {"status": "unavailable", "error_type": "missing_config", "error": "YOUTUBE_CLIENT_SECRET_FILE missing"}
             secret_file = Path(secret_file_str).expanduser()
             token_path_str = os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")
             token_file = Path(token_path_str).expanduser()
             if not secret_file.is_file() or not token_file.is_file():
-                return None
-            service = self._get_authenticated_service(secret_file, token_file)
+                return {
+                    "status": "unavailable",
+                    "error_type": "missing_credentials",
+                    "error": f"Missing credential files: secret={secret_file.is_file()}, token={token_file.is_file()}",
+                }
+
+            from googleapiclient.errors import HttpError
+            service = self._get_authenticated_service(secret_file, token_file, interactive=False)
             req = service.videos().list(part="status,snippet", id=video_id)
             res = req.execute()
             items = res.get("items", [])
@@ -308,6 +322,7 @@ class YoutubePublisher(BaseTool):
                 status = items[0].get("status", {})
                 snippet = items[0].get("snippet", {})
                 return {
+                    "status": "found",
                     "video_id": video_id,
                     "privacy_status": status.get("privacyStatus"),
                     "upload_status": status.get("uploadStatus"),
@@ -315,6 +330,40 @@ class YoutubePublisher(BaseTool):
                     "channel_id": snippet.get("channelId"),
                     "title": snippet.get("title"),
                 }
-        except Exception:
-            return None
-        return None
+            return {"status": "not_found", "video_id": video_id}
+        except Exception as exc:
+            # Fallback for read-only reconciliation: Check public visibility via YouTube oEmbed API
+            # This does not require OAuth scopes and definitively proves if a video is publicly accessible.
+            try:
+                import urllib.request
+                import json as _json
+                oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+                req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = _json.loads(resp.read().decode("utf-8"))
+                        return {
+                            "status": "unverified_oembed",
+                            "video_id": video_id,
+                            "title": data.get("title"),
+                            "author_name": data.get("author_name"),
+                            "via_oembed": True,
+                        }
+            except Exception:
+                pass
+
+            error_str = str(exc)
+            status_code = None
+            error_type = "exception"
+            if "HttpError" in str(type(exc)):
+                error_type = "http_error"
+                status_code = getattr(getattr(exc, "resp", None), "status", getattr(exc, "status_code", None))
+            elif "AUTH_REQUIRED" in error_str:
+                error_type = "auth_required"
+
+            return {
+                "status": "error",
+                "error_type": error_type,
+                "status_code": status_code,
+                "error": error_str[:200],
+            }

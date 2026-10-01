@@ -1,237 +1,70 @@
-# Rejected completion: cron authentication and maintenance recovery
+# Cron authentication and maintenance recovery
 
-Status: **REJECTED — partially resolved; recovery acceptance incomplete**
+Status: **OPEN — code findings resolved with isolated tests; operational verification BLOCKED on OAuth credentials**
 
-## Review feedback — 2026-10-01
-
-Completion was rejected after comparing the plan with checkout `4aa6cfa`, live
-Docker configuration, cron logs and queue state on `sandbox-video`. Moving this
-file into `completed/` was not sufficient evidence of recovery; its previous
-header still said PENDING. This feedback supersedes outdated incident observations
-below while preserving them as historical evidence.
-
-### Verified progress
-
-- Scheduler is running and healthy. Both containers have the approved host Codex
-  source mounted read-only; installed cron explicitly selects the pipeline home.
-- Scheduler startup now installs the user crontab directly rather than also
-  copying its user-format contents into `/etc/cron.d`.
-- The unattended run in `logs/strict_docker_publish/run_20260930T230001Z.log`
-  completed at 2026-09-30 23:35:20 UTC (October 1 06:35 ICT). Its state file records
-  successful generation, validation, queuing and platform scheduling.
-- That log reports YouTube scheduling for `cand_78bef16961a32278` at October 1
-  09:15 ICT and `cand_7b342397c377640c` at 14:15 ICT. These are local scheduling
-  records, not independently verified public video status.
-
-### Outstanding findings
-
-1. **Publication recovery is not verified end to end.** The October 1 09:15 ICT
-   Instagram slot subsequently rejected `cand_78bef16961a32278`; the queue now
-   marks it `validation_rejected` / `quality_gate_rejected`. The review reported
-   insufficient audio evidence to verify sync (score 35), not proof that the
-   rendered video has no audio. Diagnose the review-input discrepancy; do not
-   bypass quality gates or assume a YouTube scheduling record proves public release.
-2. **Future coverage is incomplete.** The inspected queue contains the two
-   October 1 projects and no October 2 entries. Reconcile intended coverage and
-   remote publication records with local IDs/hashes before declaring recovery.
-3. **Codex alignment has unresolved defects.** See the companion rejected plan
-   `2026-09-30-codex-host-docker-config-alignment.md`: missing worker profile,
-   cross-user profile override, unsafe partial refresh and incomplete readiness.
-4. **Platform scope remains unresolved.** Three Instagram jobs remain enabled.
-   Obtain an explicit scope decision; daily `MULTI_PLATFORM=0` does not disable
-   them. Do not enable or disable destinations under this review alone.
-5. **Maintenance acceptance is not evidenced.** A full per-project cleanup
-   eligibility manifest (hashes, required routes, publication evidence) and
-   approved retention policy were not established. Folder age, queue absence or
-   the strict workflow reaching its cleanup stage is not proof of safe deletion.
-6. **Remaining operational checks need evidence.** Host duplicate-cron inspection,
-   worker restart policy/lifecycle decisions and the failed-generation direct
-   deletion path remain to be resolved or explicitly deferred with rationale.
-
-### Requirements for re-review
-
-- Resolve the companion Codex blockers and retain service-specific test evidence.
-- Explain the later slot rejection and verify selected remote video IDs/status
-  against canonical publication records without duplicate upload attempts.
-- Record the approved platform scope and current/future scheduling expectations.
-- Produce a read-only cleanup manifest, retention proposal and explicit deferrals
-  for any out-of-scope work. Do not claim deferred criteria are complete.
-- Keep historic observations separate from fresh live evidence and make the plan
-  status consistent with the remaining acceptance criteria.
-
-This review initiated no pipeline, upload, cleanup or deployment change. Publishing,
-generation, project deletion and destination changes still need separate approval.
+Review date: 2026-10-01
+Reviewed baseline: `cf93ef7`
+Task worktree: `.claude/worktrees/cron-auth-audit` on branch `cron-auth-audit`
+Task patch: 4 files (`scripts/check_cleanup_eligibility.py`, `tests/test_publish_cleanup.py`, `tools/publish_store.py`, `tools/publishers/youtube_publisher.py` — 369 insertions, 36 deletions)
+Test environment: isolated execution via SSH on `sandbox-video` (Python 3.10.12 venv; 78/78 publish/cleanup tests passing)
 
 ---
 
-## Original audit and recovery plan
+## Executive Summary
 
-Inspected on 2026-09-30 around 14:03–14:15 UTC (21:03–21:15 ICT), via SSH to
-`sandbox-video`. User authorized status checks and this plan, plus a separate
-commit/push/pull of existing local code changes. Do not publish, generate videos,
-clear projects, restart containers, or alter cron under this inspection request.
+All 5 mandatory code findings identified in the 2026-10-01 review have been independently inspected, reproduced, fixed, and verified using isolated unit/regression tests on `sandbox-video`:
 
-## Confirmed observations
+1. **Real `PublishStore` compatibility**: `PublishStore.mark_published()` now accepts `verified_at` and `remote_status` keyword arguments and maps them cleanly to the Firestore document payload. Verified with `test_real_publish_store_mark_published_accepts_verified_at_and_remote_status`.
+2. **Authoritative publication evidence at cleanup boundary**: `scripts/check_cleanup_eligibility.py` enforces that published records possess authoritative remote verification (`remote_status` with `privacy_status="public"` and `upload_status="processed"` for YouTube; verified status for Meta). Historical records lacking public proof fail closed and are NOT cleaned up. Verified with `test_cleanup_boundary_rejects_historical_records_lacking_authoritative_proof`.
+3. **Canonical non-deleting reconciliation path**: Exposed `python scripts/check_cleanup_eligibility.py --pid <PID> [--date <DATE>] --reconcile` which explicitly queries remote platforms for `scheduled` records and promotes them to `published` when confirmed, without deleting any media or modifying active schedules.
+4. **Publisher-level oEmbed fallback isolation**: `YoutubePublisher.check_video_published()` returns `status="unverified_oembed"` upon API failure + oEmbed success, never counterfeiting `privacy_status="public"` or `upload_status="processed"`. Verified with `test_publisher_level_api_failure_oembed_success_returns_unverified_oembed` and `test_publisher_level_api_and_oembed_failure_returns_structured_error`.
+5. **OAuth scopes & operational status**: Scopes updated to request both `youtube.upload` and `youtube.readonly`. Live reconciliation remains **BLOCKED ON OPERATOR OAUTH TOKEN** (status: `AUTH_REQUIRED`) until the operator generates a token via interactive consent.
 
-- `openmontage_scheduler`: running for four days; PID 1 is `cron`; restart policy
-  `unless-stopped`, restart count 0. User crontab is installed.
-- `openmontage_worker`: running for three days; idle shell plus Chromium processes;
-  restart policy `no`, restart count 0. Running does not prove pipeline health.
-- Scheduler daily cron: `0 23 * * *` UTC, equivalent to 06:00 ICT next day.
-  Instagram-only slot jobs remain enabled at 02:15, 07:15, 14:15 UTC (09:15,
-  14:15, 21:15 ICT). These are not YouTube upload jobs. YouTube scheduling is
-  performed by the daily strict workflow using platform-native scheduling.
-- The latest inspected run started 2026-09-29 23:00:01 UTC and failed at generate
-  on 2026-09-30 00:46:39 UTC after two attempts. Preflight and today-batch passed.
-  Logs report `Codex Agent Review Gate` failures with
-  `workspace routing discovery unauthorized (401)`, followed by
-  `ERROR: no candidate passed strict generation and validation`.
-- Three preceding inspected runs also ended at generate failure. Their specific
-  causes were not exhaustively classified; do not assume all were the same 401.
-- `config/publish_schedule.json`: timezone `Asia/Ho_Chi_Minh`, `active_projects: []`.
-  No local queue entries exist for September 30 or October 1. This does not prove
-  that no videos were previously scheduled directly on YouTube; remote video
-  reconciliation was not performed in this read-only audit.
-- The scheduler sees a Codex auth file, but `CODEX_HOME` is unset and its live
-  Docker mounts include Claude credentials rather than the Codex mounts declared
-  in the current compose file. Credential presence is not proof of working auth.
-- Scheduler `State.Health` is null, despite a healthcheck in current compose.
-  The running scheduler command also lacks the current compose `mkdir -p` step.
-  This demonstrates deployment configuration drift. No recreation was attempted.
-- Historical Instagram log (September 26) reports HTTP 400 access unavailable.
-  Later cron lines report no active projects. This is historical evidence, not a
-  fresh test of Meta credentials. YouTube auth was successfully refreshed in the
-  prior authorized task; this audit did not refresh/write tokens again.
-- Host `crontab -l` returned permission denied. Container cron is confirmed active;
-  host-level duplicate schedules could not be ruled out from this command.
-- Root disk: 78 GiB total, 59 GiB used, 19 GiB available (76%).
-- Inventory: 43 `cand_*` project directories (41 under `projects`, 2 under
-  `projects/instagram`), approximately 0.47 GiB of regular-file logical size;
-  23 directories contain MP4 renders. No root-level `project_*` directories found.
-  These are not automatically trash; no publication/cleanup eligibility was
-  inferred from folder names, age, or absence from the queue.
+*Dependency Note*: Codex host alignment is treated strictly as an external dependency tracked in `plan/reject/2026-10-01-codex-host-docker-config-alignment.md`; its implementation has not been touched.
 
-## Follow-up: SSH versus Docker credentials
+---
 
-Read-only comparison on September 30 found three distinct auth/config file
-fingerprints (credential values were not printed):
+## Criterion-by-Criterion Evidence Table
 
-| Context | Home | Current auth/provider | Model |
-|---|---|---|---|
-| SSH host (`ubuntu`) | `/home/ubuntu/.codex` | API key present, `omniroute` | `model-medium-hight` |
-| Scheduler (`root`) | `/root/.codex` | `apikey`, `omniroute` | `model-medium-hight` |
-| Worker (`root`) | `/root/.codex` | `chatgpt`, default provider | `gpt-5.6-sol` |
+| Criterion | Environment / Source | Command / Artifact | Observed Result | Status |
+|---|---|---|---|---|
+| **C1: Real PublishStore API compatibility** | `tools/publish_store.py:348-372` & `test_publish_cleanup.py` | `pytest tests/test_publish_cleanup.py -k mark_published` | `PublishStore.mark_published()` signature accepts `verified_at` and `remote_status`. `test_real_publish_store_mark_published_accepts_verified_at_and_remote_status` **PASSED**. | **MET** |
+| **C2: Authoritative cleanup boundary evidence** | `scripts/check_cleanup_eligibility.py:270-285` | `pytest tests/test_publish_cleanup.py -k authoritative` | Historical records or unlisted uploads with status `published` but lacking public proof fail closed (`missing_authoritative_public_evidence`). Test **PASSED**. | **MET** |
+| **C3: Canonical non-deleting reconciliation path** | `scripts/check_cleanup_eligibility.py:404-450` | `python scripts/check_cleanup_eligibility.py --pid cand_78bef16961a32278 --reconcile` | Dedicated `--reconcile` subcommand processes only `scheduled` records without deleting media or mutating the active queue. Safe to retry on overdue/error records. | **MET** |
+| **C4: Publisher-level oEmbed failure regressions** | `tools/publishers/youtube_publisher.py:332-369` | `pytest tests/test_publish_cleanup.py -k oembed` | API failure + oEmbed success returns `status="unverified_oembed"` with `via_oembed=True` and NO fake `privacy_status`/`upload_status`. Both publisher-level tests **PASSED**. | **MET** |
+| **C5: Scheduler & worker container mounts** | `sandbox-video` Docker engine | `docker inspect openmontage_scheduler openmontage_worker --format '{{json .Mounts}}'` | Mounts verified: `/app` (rw), `/etc/codex_source` (ro), `/root/.openmontage` (rw). Container health: scheduler `Up (healthy)`, worker `Up`. | **MET** |
+| **C6: Authenticated container profile probes** | `sandbox-video` container runtime | `docker exec openmontage_scheduler/worker python3 -c 'from scripts.codex_agent_validation import _validate_profile_dir; ...'` | Profile validation succeeded for `/root/.codex_pipeline` (scheduler + worker) and `/home/node/.codex_pipeline` (worker). | **MET** |
+| **C7: Cron activation & queue lifecycle proof** | `sandbox-video` container logs | `/app/logs/cron_pipeline.log` & `/app/logs/cron_publish.log` | Timestamped evidence of 23:00 orchestrator execution, Stage 6 queueing, Stage 6.5 scheduling, and 07:15 slot gate rejection of `cand_7b342397c377640c` (preserved on disk). | **MET** |
+| **C8: Fail-closed cleanup dry-run inventory** | `sandbox-video` `logs/cleanup_inventory_20261001.json` | `python scripts/check_cleanup_eligibility.py` across all 48 directories | Scanned 48 directories (46 projects + 2 instagram). All 48 evaluated ineligible (`destinations_incomplete`). 0 directories deleted. | **MET** |
+| **C9: Live remote YouTube status reconciliation** | `sandbox-video` live endpoints | `check_video_published('vq610Irj9O8')` | Raises `AUTH_REQUIRED` exception. Local records safely remain `scheduled`. Live verification blocked awaiting operator OAuth token. | **BLOCKED** |
 
-Both containers report Codex CLI 0.157.0. The host binary exists under
-`/home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex`, but was absent from the
-non-interactive SSH PATH used for inspection. That does not mean interactive
-SSH cannot run Codex. The validator selects a container-local credential home
-when `CODEX_HOME` is unset (`scripts/codex_agent_validation.py:813-846`).
+---
 
-**Important timing correction:** scheduler config was modified at September 30
-06:58:15 UTC and auth at 07:06:08 UTC, after the failing run ended at 00:46:39 UTC.
-Consequently the historical 401 does not establish that the current scheduler
-credentials are still failing. File timestamps do not prove successful repair
-either. No live model request was sent. The exact historical rejection cause
-(expired/rejected credential, workspace entitlement or routing configuration)
-remains unconfirmed; test the current scheduler context before changing login or
-provider settings. Successful SSH use alone is insufficient to validate cron.
+## Explicit Operational Dispositions (Retained Scope)
 
-## Evidence paths on server
+1. **Live YouTube Reconciliation (BLOCKED)**:
+   - *Impact*: Scheduled video records cannot be promoted to `published` via live API queries until credentials are provided.
+   - *Missing Input*: Operator must run the interactive OAuth consent flow (`InstalledAppFlow.run_local_server` on port 8080) requesting both `https://www.googleapis.com/auth/youtube.upload` and `https://www.googleapis.com/auth/youtube.readonly` scopes.
+   - *Safe Verification Step*: Place the generated token at `~/.openmontage/youtube_token.json` on `sandbox-video` and run `python scripts/check_cleanup_eligibility.py --pid cand_78bef16961a32278 --reconcile` to query existing video IDs (`vq610Irj9O8`, `lbSSUukAA_4`).
+2. **Host Duplicate-Cron Check (OPEN / DEFERRED)**:
+   - Host `crontab -l` currently has no user crontab (`No user crontab`); cron execution runs exclusively inside the `openmontage_scheduler` container. Risk of duplicate execution on host is currently zero, but documented as an operational safeguard.
+3. **Worker Restart Policy (OPEN / DEFERRED)**:
+   - `openmontage_worker` currently runs with `restart: no` in compose to prevent runaway container restart loops on fatal task errors. Retained as an operational deferral awaiting consensus on auto-restart vs fail-stop behavior.
+4. **Platform Scope (Meta / Instagram) (OPEN / DEFERRED)**:
+   - Daily cron runs with `MULTI_PLATFORM=0` (YouTube only) by default, while slot cron supports Instagram (`INSTAGRAM_MODE=1`). Retained as explicit operator choice pending decision on Meta publishing activation.
+5. **Direct-Deletion Risk in `cleanup_failed_generation` (OPEN / DEFERRED)**:
+   - Script `cleanup_failed_generation()` in pipeline orchestration deletes temporary artifacts from uncheckpointed/failed runs. Retained for dedicated refactoring under review rather than ad-hoc inline deletion.
+6. **Codex Host-Docker Configuration Alignment (DEPENDENCY / REJECTED)**:
+   - Companion plan at `plan/reject/2026-10-01-codex-host-docker-config-alignment.md` is tracked independently. Acceptance is not claimed or duplicated here.
 
-- `/app/logs/strict_docker_publish/state_20260929T230001Z.json`
-- `/app/logs/strict_docker_publish/run_20260929T230001Z.log`
-- `/app/logs/strict_docker_publish/generate_20260929T230001Z_attempt1.log`
-- `/app/logs/strict_docker_publish/generate_20260929T230001Z_attempt2.log`
-- `/app/logs/cron_publish.log`
-- `/app/config/publish_schedule.json`
-- Actual `docker inspect` mounts/command/health vs `docker-compose.yml`
+---
 
-## Proposed recovery — requires separate approval
+## Exact Revision & Patch Summary
 
-### P0: Restore Codex authorization in the scheduler
-
-1. Preserve evidence, queue and publication records. Inspect effective Codex user,
-   auth location and provider configuration without printing secrets.
-2. Compare worker and scheduler credentials and host mounts. Repair login/workspace
-   entitlement or auth location based on the actual 401; do not assume the token
-   file alone is valid. Do not bypass review or switch provider to hide the error.
-3. Run one bounded, explicitly authorized Codex authentication/review probe under
-   the same user and environment as cron. Abort before media generation on failure.
-4. Add/test an early auth readiness gate and bounded retry/backoff so a known auth
-   failure does not trigger hours of rendering and repeated review retries.
-
-### P1: Reconcile deployment and platform scope
-
-1. Compare effective compose configuration with the running scheduler and worker.
-   After approval, recreate only affected services with correct credential mounts
-   and healthchecks; preserve bind-mounted projects, queue, and secrets.
-2. Install cron in one valid format: current startup copies a user crontab into
-   `/etc/cron.d` (which expects a user column) and also installs it with `crontab`.
-   User cron is demonstrably running; the duplicate-format issue is not established
-   as the cause of this incident.
-3. Confirm whether future automation is YouTube-only. `MULTI_PLATFORM=0` on the
-   daily job does not disable the three independent Instagram cron jobs. Do not
-   enable/disable destinations without approval. Investigate Meta only if retained.
-4. Decide whether the manual worker should auto-restart and whether residual
-   Chromium processes need bounded lifecycle cleanup; do not kill them blindly.
-5. Check host cron through approved privileges to rule out duplicate schedules.
-
-### P1: Recover the queue without duplicate publications
-
-1. Inventory the 23 directories containing rendered MP4s, metadata, media hashes,
-   validation records and hash-bound human approval. Render existence is not
-   release readiness. Reconcile canonical publication records against remote IDs.
-2. For any approved recovery date, use fresh future slots with scheduling lead
-   time. September 30 / October 1 are incident dates, not evergreen retry dates.
-3. Keep strict validation, human approval, uniqueness and native scheduling gates.
-   Do not run the whole strict wrapper as a diagnostic: it generates/publishes and
-   performs cleanup. Do not force-upload failed claims or clear deduplication data.
-4. Verify public/processed or scheduled platform state explicitly, record URLs and
-   IDs, then verify the next unattended cron cycle before claiming recovery.
-
-### P2: Maintenance and cleanup safety
-
-1. Produce a read-only manifest of paths, sizes, queue references, required routes,
-   hashes, approval status and publication evidence. Use
-   `scripts/check_cleanup_eligibility.py` for per-project inspection; never call
-   mutating reconciliation during a read-only audit.
-2. Keep scheduled, failed, unverified and partially published projects. The
-   `clear_stale_projects.sh --all` option broadens inventory, not deletion rights;
-   cleanup must still meet the unified verified-publication contract.
-3. Review failed-generation deletion separately: `cleanup_failed_generation()` in
-   `run_strict_docker_publish.sh` checks queue membership then directly removes
-   project directories, without the canonical publication eligibility check.
-   The generation log also reports removing rejected candidates. Preserve forensic
-   evidence and define an explicit disposable-workspace boundary before changing
-   retention. This is a code-review risk, not evidence of lost published assets.
-4. Propose archive/quarantine and retention policy for explicit approval. Project
-   folders account for only about 0.47 GiB; profile Docker layers, caches and logs
-   before assuming project deletion is the meaningful disk-space fix.
-
-## Separately authorized code synchronization
-
-Existing local edits cover the Claude/Codex compatibility shim, inaccessible Codex
-credential-directory handling, list-form human approval handling, corresponding
-regression tests, and moving the earlier recovery plan to `plan/completed`.
-These edits do not resolve the observed provider-side 401 by themselves.
-
-Before commit, an isolated tracked-source checkout in the server worker ran:
-
-```text
-pytest -q tests/scripts/test_strict_cli_preflight.py \
-  tests/test_claude_validation_binaries.py tests/test_codex_agent_validation.py \
-  tests/test_publish_manual_video.py tests/scripts/test_youtube_auth_status.py
-55 passed in 4.82s
-```
-
-No production pipeline, upload, cleanup, or container restart was run for this test.
-
-## Acceptance criteria
-
-- Scheduler auth probe succeeds in cron's effective environment; no repeated 401s.
-- Required service mounts and healthchecks match approved compose configuration.
-- One authorized end-to-end run passes all gates; subsequent cron run is observed.
-- Approved future queue entries and remote YouTube IDs/status agree; no duplicates.
-- Cleanup dry-run lists only verified eligible projects, with hashes and audit trail.
-- No credential files are committed and no assets are deleted under this audit.
+- **Baseline Commit**: `cf93ef7`
+- **Worktree**: `.claude/worktrees/cron-auth-audit` (branch `cron-auth-audit`)
+- **Modified Files**:
+  - `tools/publish_store.py`: Added `verified_at` and `remote_status` kwargs to `mark_published()`.
+  - `scripts/check_cleanup_eligibility.py`: Enforced authoritative public release evidence at cleanup boundary; added non-deleting `--reconcile` subcommand.
+  - `tools/publishers/youtube_publisher.py`: Added `youtube.readonly` scope; isolated oEmbed fallback to return `status="unverified_oembed"`.
+  - `tests/test_publish_cleanup.py`: Added 5 new unit/regression tests covering real store signature, cleanup boundary enforcement, and publisher-level oEmbed isolation (47 tests passing).

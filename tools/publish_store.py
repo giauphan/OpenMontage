@@ -353,18 +353,22 @@ class PublishStore:
         video_url: str | None = None,
         platform_id: str | None = None,
         published_at: str | None = None,
+        verified_at: str | None = None,
+        remote_status: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return self.update(
-            key,
-            {
-                "status": "published",
-                "video_id": video_id,
-                "video_url": video_url,
-                "platform_id": platform_id,
-                "published_at": published_at or utc_now(),
-                "updated_at": utc_now(),
-            },
-        )
+        update_data = {
+            "status": "published",
+            "video_id": video_id,
+            "video_url": video_url,
+            "platform_id": platform_id,
+            "published_at": published_at or utc_now(),
+            "updated_at": utc_now(),
+        }
+        if verified_at is not None:
+            update_data["verified_at"] = verified_at
+        if remote_status is not None:
+            update_data["remote_status"] = remote_status
+        return self.update(key, update_data)
 
     def mark_failed(self, key: str, error: str) -> dict[str, Any]:
         return self.update(

@@ -61,11 +61,13 @@ def reconcile_scheduled_record(store: PublishStore, key: str, record: dict[str, 
             from tools.publishers.youtube_publisher import YoutubePublisher
             pub = YoutubePublisher()
             v_status = pub.check_video_published(video_id)
-            # R1: Must require verified public visibility and processed upload status.
-            # Do NOT accept private processed video as public release.
-            # Do NOT use elapsed time fallback.
+            # R1: Must require verified authoritative API public visibility and processed upload status.
+            # Do NOT accept private processed video, unverified oEmbed responses, or elapsed time.
             if (
                 v_status
+                and v_status.get("status") in ("found", None)
+                and not v_status.get("via_oembed")
+                and v_status.get("status") != "unverified_oembed"
                 and v_status.get("privacy_status") == "public"
                 and v_status.get("upload_status") == "processed"
             ):
@@ -270,6 +272,17 @@ def is_project_eligible_for_cleanup(
                     all_store_published = False
                     status = rec.get("status")
                     missing_or_incomplete.append(f"{platform}/{kind} (status={status})")
+                else:
+                    # Require verified public release evidence; unverified uploads do not authorize cleanup
+                    remote_st = rec.get("remote_status") or {}
+                    if platform == "youtube":
+                        if remote_st.get("privacy_status") != "public" or remote_st.get("upload_status") != "processed":
+                            all_store_published = False
+                            missing_or_incomplete.append(f"{platform}/{kind} (missing_authoritative_public_evidence)")
+                    elif platform in ("instagram", "facebook"):
+                        if remote_st.get("status") != "published" and not rec.get("verified_at"):
+                            all_store_published = False
+                            missing_or_incomplete.append(f"{platform}/{kind} (missing_authoritative_public_evidence)")
             else:
                 all_store_published = False
                 missing_or_incomplete.append(f"{platform}/{kind} (status=missing)")
@@ -393,7 +406,15 @@ def main() -> int:
     parser.add_argument("--pid", required=True, help="Project ID")
     parser.add_argument("--dir", help="Project directory path")
     parser.add_argument("--date", help="Publish date (YYYY-MM-DD)")
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Non-deleting reconciliation: query existing remote status for scheduled records and persist authoritative evidence. Never uploads or deletes.",
+    )
     args = parser.parse_args()
+
+    if args.reconcile:
+        return _run_reconciliation(args.pid, args.date)
 
     eligible, reason, _ = is_project_eligible_for_cleanup(
         args.pid,
@@ -406,6 +427,63 @@ def main() -> int:
     else:
         print(f"NOT_ELIGIBLE: {args.pid} ({reason})")
         return 1
+
+
+def _run_reconciliation(project_id: str, date: str | None) -> int:
+    """Canonical, non-deleting reconciliation path (Finding 3).
+
+    Queries existing remote publication status for scheduled records and persists
+    authoritative evidence via mark_published(verified_at, remote_status). It never
+    uploads a new video, never deletes, and is safe to retry: only records in
+    `scheduled` state are transitioned, and only when the remote endpoint confirms
+    public visibility + processed upload. Failed/overdue records stay `scheduled`
+    for a later retry without duplicate uploads.
+    """
+    from scripts.publish_manual_video import get_required_routes_for_project
+    from tools.publish_store import PublishStore
+
+    try:
+        store = PublishStore()
+    except Exception as exc:
+        print(f"RECONCILE_BLOCKED: PublishStore unavailable ({exc})", file=sys.stderr)
+        return 2
+
+    routes = get_required_routes_for_project(project_id)
+    if not routes:
+        print(f"RECONCILE_SKIP: no required routes identified for {project_id}")
+        return 0
+
+    pub_date = date or _infer_publish_date(store, project_id)
+    if not pub_date:
+        print(f"RECONCILE_SKIP: no publish date resolvable for {project_id}")
+        return 0
+
+    updated = reconcile_project_publications(store, project_id, pub_date, routes)
+    if updated:
+        for rec in updated:
+            print(
+                f"RECONCILED: {rec.get('key') or rec.get('platform_id') or rec.get('video_id')} "
+                f"-> published (verified_at={rec.get('verified_at')})"
+            )
+    else:
+        print(f"RECONCILE_NO_CHANGE: {project_id} on {pub_date} (no scheduled record promoted; safe to retry)")
+    return 0
+
+
+def _infer_publish_date(store, project_id: str) -> str | None:
+    """Read-only inference of publish date from an active schedule entry if present."""
+    import json as _json
+    cfg = ROOT / "config" / "publish_schedule.json"
+    if cfg.is_file():
+        try:
+            sched = _json.loads(cfg.read_text(encoding="utf-8"))
+            for item in sched.get("active_projects", []):
+                pid = item.get("project_id") if isinstance(item, dict) else item
+                if pid == project_id and isinstance(item, dict):
+                    return item.get("publish_date")
+        except Exception:
+            pass
+    return None
 
 
 if __name__ == "__main__":

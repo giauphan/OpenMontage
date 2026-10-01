@@ -27,6 +27,7 @@ services:
       "
     stdin_open: true
     tty: true
+    restart: unless-stopped
 
   # Daily publish scheduler (YouTube / Meta / NewsNow automated pipeline)
   scheduler:
@@ -53,7 +54,7 @@ services:
         bash /app/scripts/init_codex_profile.sh /etc/codex_source /root/.codex_pipeline root &&
         bash /app/scripts/init_codex_profile.sh /etc/codex_source /home/node/.codex_pipeline node &&
         mkdir -p /app/logs &&
-        apt-get update && apt-get install -y cron jq &&
+        (command -v cron >/dev/null 2>&1 || apt-get update && apt-get install -y cron jq) &&
         crontab deploy/openmontage.cron &&
         cron -f
       "

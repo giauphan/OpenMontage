@@ -46,3 +46,12 @@ The implementing agent must independently search and inspect the current codebas
 Continue investigating, implementing, and testing within the authorized scope until the acceptance criteria are met or a concrete blocker requires user input. A successful patch or passing narrow test suite alone does not establish completion. If criteria remain unmet or unverified, report the evidence and remaining work rather than marking the plan completed. A plan itself does not authorize deployment, paid calls, publishing, or deletion.
 
 Review feedback should identify the observed failure, evidence, expected outcome, and acceptance gap without prescribing unnecessary implementation details.
+
+## 6. Isolated Implementation Worktrees
+
+- For authorized implementation tasks, create or reuse a dedicated Git worktree on a task-specific branch. Do not implement directly on `main` or in the live deployment checkout. This is the user's standing instruction to create the necessary isolated task branch/worktree; it does not authorize implementation merely because a plan exists.
+- Before editing, inspect the worktree status, identify and report the base revision, branch and worktree path, and check for concurrent work. Never reset, overwrite, stash or move unrelated user changes to make room. Bring any required uncommitted plan or task inputs into the worktree explicitly without removing the originals; do not assume Git worktree creation includes them.
+- Keep edits and tests tied to the same isolated revision. Follow the project's SSH execution rules: use an isolated server worktree and test environment, not the production `/app` mount. Ensure tests cannot mutate live queues, credentials, publication records or media. Git isolation alone does not isolate shared runtime state.
+- Independent agents must use separate worktrees/branches or explicitly disjoint write scopes; never make concurrent changes to the same files without coordination.
+- Report results and remaining blockers against the task branch. Commit, push, merge, deploy, or remove the worktree/branch only when requested or explicitly authorized. Preserve unfinished work and do not clean it up merely to report a clean checkout.
+- Read-only reviews and documentation-only requests do not require creating a worktree unless the user asks.

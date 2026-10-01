@@ -138,7 +138,40 @@ def parse_and_validate_config_toml(content: str) -> dict:
     Returns parsed dictionary of root-level configuration.
     Raises ValueError with details on syntax error or missing/invalid model_provider.
     """
+    # 1. Try tomllib (Python 3.11+) or tomli if available for standard-compliant parsing
+    try:
+        import tomllib
+        data = tomllib.loads(content)
+        if not isinstance(data, dict):
+            raise ValueError("Parsed TOML is not a dictionary")
+        if "model_provider" not in data:
+            raise ValueError("Missing required root-level 'model_provider' in config.toml")
+        mp = data["model_provider"]
+        if not isinstance(mp, str) or not mp.strip():
+            raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
+        return data
+    except ImportError:
+        try:
+            import tomli
+            data = tomli.loads(content)
+            if not isinstance(data, dict):
+                raise ValueError("Parsed TOML is not a dictionary")
+            if "model_provider" not in data:
+                raise ValueError("Missing required root-level 'model_provider' in config.toml")
+            mp = data["model_provider"]
+            if not isinstance(mp, str) or not mp.strip():
+                raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
+            return data
+        except ImportError:
+            pass
+        except Exception as exc:
+            raise ValueError(f"Invalid TOML syntax: {exc}") from exc
+    except Exception as exc:
+        raise ValueError(f"Invalid TOML syntax: {exc}") from exc
+
+    # 2. Strict fallback line-by-line parser if no tomli/tomllib
     root_config = {}
+    seen_keys = set()
     current_table = None
 
     for line_idx, raw_line in enumerate(content.splitlines(), start=1):
@@ -169,6 +202,11 @@ def parse_and_validate_config_toml(content: str) -> dict:
         if not val:
             raise ValueError(f"Line {line_idx}: Missing value after '=': {raw_line}")
 
+        if current_table is None:
+            if key in seen_keys:
+                raise ValueError(f"Line {line_idx}: Duplicate key '{key}' at root level: {raw_line}")
+            seen_keys.add(key)
+
         if val.startswith('"'):
             end_quote = val.find('"', 1)
             if end_quote == -1:
@@ -177,6 +215,7 @@ def parse_and_validate_config_toml(content: str) -> dict:
             if remainder and not remainder.startswith("#"):
                 raise ValueError(f"Line {line_idx}: Unexpected characters after string value: {raw_line}")
             parsed_val = val[1:end_quote]
+            val_type = "string"
         elif val.startswith("'"):
             end_quote = val.find("'", 1)
             if end_quote == -1:
@@ -184,24 +223,43 @@ def parse_and_validate_config_toml(content: str) -> dict:
             remainder = val[end_quote+1:].strip()
             if remainder and not remainder.startswith("#"):
                 raise ValueError(f"Line {line_idx}: Unexpected characters after string value: {raw_line}")
-            parsed_val = val[1:end_quote]
+            parsed_val = val[1:-1]
+            val_type = "string"
+        elif val.lower() in ("true", "false"):
+            parsed_val = val.lower() == "true"
+            val_type = "boolean"
+        elif val.lstrip("-").isdigit():
+            parsed_val = int(val)
+            val_type = "integer"
+        elif val.startswith("[") or val.startswith("{"):
+            val_type = "complex"
+            parsed_val = val
         else:
             val_no_c = val.split("#", 1)[0].strip()
             if not val_no_c:
                 raise ValueError(f"Line {line_idx}: Missing value after '=': {raw_line}")
-            parsed_val = val_no_c
+            # Identify standard unquoted TOML types: float or datetime
+            import re
+            if re.fullmatch(r"[+-]?(0|[1-9](_?[0-9])*)(\.[0-9](_?[0-9])*)?([eE][+-]?[0-9](_?[0-9])*)?", val_no_c) or val_no_c in ("inf", "+inf", "-inf", "nan", "+nan", "-nan"):
+                val_type = "float"
+                parsed_val = float(val_no_c)
+            elif re.fullmatch(r"\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?", val_no_c):
+                val_type = "datetime"
+                parsed_val = val_no_c
+            else:
+                raise ValueError(f"Line {line_idx}: Invalid TOML syntax or value for key '{key}': {val_no_c}")
 
         if current_table is None:
-            root_config[key] = parsed_val
+            root_config[key] = (parsed_val, val_type)
 
     if "model_provider" not in root_config:
         raise ValueError("Missing required root-level 'model_provider' in config.toml")
 
-    model_provider = root_config["model_provider"]
-    if not isinstance(model_provider, str) or not model_provider.strip() or model_provider in ('""', "''"):
+    val, val_type = root_config["model_provider"]
+    if val_type != "string" or not isinstance(val, str) or not val.strip():
         raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
 
-    return root_config
+    return {k: v[0] for k, v in root_config.items()}
 
 
 def _validate_profile_dir(profile_path: Path) -> None:

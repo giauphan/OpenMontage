@@ -45,6 +45,8 @@ cleanup_system_disk_space() { printf 'CLEANUP_STUB\n'; }
 log() { printf '%s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*"; exit 1; }
 write_state() { printf 'STATE %s %s\n' "$1" "$2"; }
+write_heartbeat() { printf 'HEARTBEAT %s\n' "$1"; }
+newsnow_preflight() { printf 'NEWSNOW_STUB\n'; }
 """ + preflight + "\nprintf 'PRODUCTION_REACHED\\n'\n"
 
     # Setup valid CODEX_HOME for tests

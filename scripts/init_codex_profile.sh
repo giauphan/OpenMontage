@@ -31,7 +31,41 @@ if not config_file.is_file() or config_file.stat().st_size == 0:
     sys.exit("Missing or empty config.toml")
 
 content = config_file.read_text(encoding="utf-8")
+
+# 1. Try tomllib or tomli if available
+try:
+    import tomllib
+    data = tomllib.loads(content)
+    if not isinstance(data, dict):
+        sys.exit("Parsed TOML is not a dictionary")
+    if "model_provider" not in data:
+        sys.exit("config.toml missing model_provider configuration")
+    mp = data["model_provider"]
+    if not isinstance(mp, str) or not mp.strip():
+        sys.exit("config.toml missing model_provider configuration")
+    sys.exit(0)
+except ImportError:
+    try:
+        import tomli
+        data = tomli.loads(content)
+        if not isinstance(data, dict):
+            sys.exit("Parsed TOML is not a dictionary")
+        if "model_provider" not in data:
+            sys.exit("config.toml missing model_provider configuration")
+        mp = data["model_provider"]
+        if not isinstance(mp, str) or not mp.strip():
+            sys.exit("config.toml missing model_provider configuration")
+        sys.exit(0)
+    except ImportError:
+        pass
+    except Exception as e:
+        sys.exit(f"Invalid TOML syntax: {e}")
+except Exception as e:
+    sys.exit(f"Invalid TOML syntax: {e}")
+
+# 2. Strict fallback line-by-line parser if no tomli/tomllib
 root_config = {}
+seen_keys = set()
 current_table = None
 
 for line_idx, raw_line in enumerate(content.splitlines(), start=1):
@@ -55,6 +89,12 @@ for line_idx, raw_line in enumerate(content.splitlines(), start=1):
     val = val_part.strip()
     if not key or not val:
         sys.exit(f"Line {line_idx}: missing key or value")
+
+    if current_table is None:
+        if key in seen_keys:
+            sys.exit(f"Line {line_idx}: Duplicate key {key}")
+        seen_keys.add(key)
+
     if val.startswith("\""):
         end_quote = val.find("\"", 1)
         if end_quote == -1:
@@ -63,6 +103,7 @@ for line_idx, raw_line in enumerate(content.splitlines(), start=1):
         if rem and not rem.startswith("#"):
             sys.exit(f"Line {line_idx}: unexpected trailing characters")
         parsed_val = val[1:end_quote]
+        val_type = "string"
     elif val.startswith("\x27"):
         end_quote = val.find("\x27", 1)
         if end_quote == -1:
@@ -70,19 +111,39 @@ for line_idx, raw_line in enumerate(content.splitlines(), start=1):
         rem = val[end_quote+1:].strip()
         if rem and not rem.startswith("#"):
             sys.exit(f"Line {line_idx}: unexpected trailing characters")
-        parsed_val = val[1:end_quote]
+        parsed_val = val[1:-1]
+        val_type = "string"
+    elif val.lower() in ("true", "false"):
+        val_type = "boolean"
+        parsed_val = val.lower() == "true"
+    elif val.lstrip("-").isdigit():
+        val_type = "integer"
+        parsed_val = int(val)
+    elif val.startswith("[") or val.startswith("{"):
+        val_type = "complex"
+        parsed_val = val
     else:
         val_no_c = val.split("#", 1)[0].strip()
         if not val_no_c:
             sys.exit(f"Line {line_idx}: missing value")
-        parsed_val = val_no_c
+        # Identify standard unquoted TOML types: float or datetime
+        import re
+        if re.fullmatch(r"[+-]?(0|[1-9](_?[0-9])*)(\.[0-9](_?[0-9])*)?([eE][+-]?[0-9](_?[0-9])*)?", val_no_c) or val_no_c in ("inf", "+inf", "-inf", "nan", "+nan", "-nan"):
+            val_type = "float"
+            parsed_val = float(val_no_c)
+        elif re.fullmatch(r"\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?", val_no_c):
+            val_type = "datetime"
+            parsed_val = val_no_c
+        else:
+            sys.exit(f"Line {line_idx}: Invalid TOML syntax or value for key {key}: {val_no_c}")
+
     if current_table is None:
-        root_config[key] = parsed_val
+        root_config[key] = (parsed_val, val_type)
 
 if "model_provider" not in root_config:
     sys.exit("config.toml missing model_provider configuration")
-mp = root_config["model_provider"]
-if not isinstance(mp, str) or not mp.strip() or mp in ("\"\"", "\x27\x27"):
+v, v_type = root_config["model_provider"]
+if v_type != "string" or not isinstance(v, str) or not v.strip():
     sys.exit("config.toml missing model_provider configuration")
 ' "$dir"
 }
@@ -130,15 +191,29 @@ if ! flock -n 9; then
   exit 1
 fi
 
-# Stage files in an internal staging subdirectory inside TARGET_DIR so file moves are on the same filesystem
-STAGING_DIR="${TARGET_DIR}/.staging_$$"
+# Stage files in a sibling staging directory on the same filesystem
+STAGING_DIR="${TARGET_DIR}_staging_$$"
+BACKUP_DIR="${TARGET_DIR}_bak_$$"
 mkdir -p "$STAGING_DIR"
 chmod 700 "$STAGING_DIR"
+chown "$TARGET_USER" "$STAGING_DIR"
 
 cleanup() {
   local exit_code=$?
   if [ -n "${STAGING_DIR:-}" ] && [ -d "$STAGING_DIR" ]; then
     rm -rf "$STAGING_DIR" || true
+  fi
+
+  if [ "$exit_code" -ne 0 ]; then
+    # If target is missing but backup exists, restore it!
+    if [ -d "${BACKUP_DIR:-}" ] && [ ! -d "$TARGET_DIR" ]; then
+      echo "[$(date -u +%FT%TZ)] ROLLBACK: Restoring previous profile from backup..." >&2
+      if ! mv "$BACKUP_DIR" "$TARGET_DIR"; then
+        echo "[$(date -u +%FT%TZ)] CRITICAL: Failed to rollback profile from $BACKUP_DIR!" >&2
+      fi
+    elif [ -d "${BACKUP_DIR:-}" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: init failed. Backup directory is retained at $BACKUP_DIR for manual recovery." >&2
+    fi
   fi
   exit "$exit_code"
 }
@@ -166,17 +241,31 @@ if ! validate_err=$(validate_profile_dir "$STAGING_DIR" 2>&1); then
   exit 1
 fi
 
-# R3: Reader-safe atomic activation
-# Atomically replace each file using rename(2) via `mv -f`.
-# The target directory and existing active files are never deleted or unlinked prior to replacement,
-# ensuring concurrent readers never observe a missing directory, missing files, or half-written files.
-for f in auth.json config.toml version.json models_cache.json; do
-  if [ -f "$STAGING_DIR/$f" ]; then
-    mv -f "$STAGING_DIR/$f" "$TARGET_DIR/$f"
+# R3: Profile-level consistency via directory swap
+# Ensure readers never observe mixed versions by displacing the entire directory at once
+if [ -d "$TARGET_DIR" ] && [ "$(ls -A "$TARGET_DIR" 2>/dev/null)" ]; then
+  if ! mv "$TARGET_DIR" "$BACKUP_DIR"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: Failed to move existing profile out of the way" >&2
+    exit 1
   fi
-done
+  if ! mv "$STAGING_DIR" "$TARGET_DIR"; then
+    echo "[$(date -u +%FT%TZ)] ROLLBACK: Activation failed, restoring previous profile from backup..." >&2
+    if ! mv "$BACKUP_DIR" "$TARGET_DIR"; then
+      echo "[$(date -u +%FT%TZ)] CRITICAL: Failed to rollback profile from $BACKUP_DIR! Target is missing!" >&2
+    fi
+    exit 1
+  fi
+  rm -rf "$BACKUP_DIR"
+else
+  # First-time initialization. TARGET_DIR might exist as an empty dir from mkdir -p above.
+  # rmdir it so mv places STAGING_DIR exactly at TARGET_DIR rather than nesting it.
+  rmdir "$TARGET_DIR" 2>/dev/null || true
+  if ! mv "$STAGING_DIR" "$TARGET_DIR"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: Failed to move staging into target" >&2
+    exit 1
+  fi
+fi
 
-rm -rf "$STAGING_DIR"
 trap - EXIT INT TERM
 
 echo "[$(date -u +%FT%TZ)] SUCCESS: Profile initialized at $TARGET_DIR for user $TARGET_USER"

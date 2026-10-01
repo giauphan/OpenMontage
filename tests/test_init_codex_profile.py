@@ -347,8 +347,8 @@ def test_idempotent_validates_existing_target(tmp_path: Path):
     assert "Existing target profile is invalid" in result.stderr
 
 
-def test_atomic_swap_preserves_target_on_activation_failure(tmp_path: Path):
-    """If activation mv fails, trap clears staging and target remains valid."""
+def test_atomic_directory_swap_restores_backup_on_staging_activation_failure(tmp_path: Path):
+    """If moving staging to target fails after target was moved to backup, rollback restores original profile."""
     source = tmp_path / "source"
     target = tmp_path / "target"
     bin_dir = tmp_path / "bin"
@@ -362,12 +362,13 @@ def test_atomic_swap_preserves_target_on_activation_failure(tmp_path: Path):
     (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
     (target / "config.toml").write_text("model_provider = 'original'\n")
 
+    # Mock mv to succeed for target -> backup move, but fail for staging -> target move
     mock_mv = bin_dir / "mv"
     mock_mv.write_text(
         "#!/usr/bin/env bash\n"
         "for arg in \"$@\"; do\n"
-        "  if [[ \"$arg\" == *\".staging_\"* ]]; then\n"
-        "    echo 'MOCK MV ACTIVATION FAILURE' >&2\n"
+        "  if [[ \"$arg\" == *\"_staging_\"* ]]; then\n"
+        "    echo 'MOCK MV STAGING ACTIVATION FAILURE' >&2\n"
         "    exit 1\n"
         "  fi\n"
         "done\n"
@@ -389,12 +390,103 @@ def test_atomic_swap_preserves_target_on_activation_failure(tmp_path: Path):
     )
 
     assert result.returncode == 1
-    assert "MOCK MV ACTIVATION FAILURE" in result.stderr
+    assert "MOCK MV STAGING ACTIVATION FAILURE" in result.stderr
+    assert "ROLLBACK" in result.stderr
     assert target.exists()
     assert (target / "auth.json").exists()
-    # The original active auth.json remains exactly as it was, no files deleted.
-    original = json.loads((target / "auth.json").read_text())
-    assert original["OPENAI_API_KEY"] == "sk-original"
+    assert (target / "config.toml").exists()
+    # Profile was completely restored from backup
+    rolled_back_auth = json.loads((target / "auth.json").read_text())
+    assert rolled_back_auth["OPENAI_API_KEY"] == "sk-original"
+    assert "original" in (target / "config.toml").read_text()
+
+
+def test_first_time_initialization_moves_staging_atomically(tmp_path: Path):
+    """First-time initialization moves entire staging directory atomically without leaving partial state."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-first"}))
+    (source / "config.toml").write_text("model_provider = 'first'\n")
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 0
+    assert "SUCCESS" in result.stdout
+    assert target.exists()
+    assert (target / "auth.json").exists()
+    assert (target / "config.toml").exists()
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-first"
+
+
+def test_flock_concurrency_blocks_overlapping_initialization(tmp_path: Path):
+    """A concurrent process holding the target flock blocks overlapping initialization."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+    (source / "config.toml").write_text("model_provider = 'test'\n")
+
+    lock_file = tmp_path / "target.lock"
+    # Hold the lock in Python
+    import fcntl
+    lock_fd = open(lock_file, "w")
+    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    try:
+        result = _run_init_script(tmp_path, source, target, refresh=True)
+        assert result.returncode == 1
+        assert "Another profile initialization is running" in result.stderr
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+
+
+def test_toml_numeric_model_provider_rejected(tmp_path: Path):
+    """Source config.toml with numeric model_provider is rejected."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+    (source / "config.toml").write_text("model_provider = 123\n")
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 1
+    assert "config.toml missing model_provider" in result.stderr or "Invalid" in result.stderr
+
+
+def test_toml_boolean_model_provider_rejected(tmp_path: Path):
+    """Source config.toml with boolean model_provider is rejected."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+    (source / "config.toml").write_text("model_provider = true\n")
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 1
+    assert "config.toml missing model_provider" in result.stderr or "Invalid" in result.stderr
+
+
+def test_toml_duplicate_model_provider_rejected(tmp_path: Path):
+    """Source config.toml with duplicate model_provider at root is rejected."""
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+    (source / "config.toml").write_text("model_provider = 'first'\nmodel_provider = 'second'\n")
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 1
 
 
 def test_toml_unrelated_model_provider_rejected(tmp_path: Path):

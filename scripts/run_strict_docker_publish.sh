@@ -56,6 +56,13 @@ GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3)}"
 
+# Temp/cleanup and disk-threshold knobs. TMP_ROOT defaults to the container-local
+# /tmp (safe); tests override it so unit runs never touch the host /tmp.
+TMP_ROOT="${TMP_ROOT:-/tmp}"
+MIN_DISK_MB="${MIN_DISK_MB:-2000}"
+MIN_TMP_DISK_MB="${MIN_TMP_DISK_MB:-2000}"
+FAILED_GENERATION_RECOVERY_ROOT="${FAILED_GENERATION_RECOVERY_ROOT:-$ROOT/projects/_failed_generation_recovered}"
+
 log()  { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$RUN_LOG"; }
 fail() {
   local msg="$*"
@@ -64,12 +71,24 @@ fail() {
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "$CURRENT_STAGE" \
       --error-type "STAGE_FAILURE" --message "$msg" || true
   fi
+  write_heartbeat "failed"
   exit 1
 }
 stage() {
   CURRENT_STAGE="$2"
   log ""
   log "===== STAGE $1: $2 ====="
+}
+
+# Heartbeat for independent missed-run detection (checked by
+# scripts/check_missed_runs.py outside the scheduler, so scheduler downtime
+# is still observable).
+write_heartbeat() {
+  local status="$1"
+  local hb="$ROOT/logs/heartbeat/daily_orchestrator.json"
+  mkdir -p "$(dirname "$hb")"
+  jq -n --arg ts "$(date -u +%FT%TZ)" --arg run "$RUN_TS" --arg status "$status" \
+       '{ts:$ts, run_id:$run, status:$status}' > "$hb" 2>/dev/null || true
 }
 
 write_state() {
@@ -81,23 +100,63 @@ write_state() {
 
 cleanup_system_disk_space() {
   log "running pre-flight disk cleanup to prevent low-disk failures..."
-  # Clean old temporary directories in /tmp produced by puppeteer / chromium inside worker
-  rm -rf /tmp/puppeteer_dev_chrome_profile-* 2>/dev/null || true
-  rm -rf /tmp/hyperframes-* 2>/dev/null || true
-  rm -rf /tmp/temp_ig_* 2>/dev/null || true
+  # Only reclaim temp dirs untouched for 2+ hours so in-flight renders/uploads
+  # in the concurrent worker container are never deleted.
+  if [ -d "$TMP_ROOT" ]; then
+    find "$TMP_ROOT" -maxdepth 1 -type d -name "puppeteer_dev_chrome_profile-*" -mmin +120 -exec rm -rf {} + 2>/dev/null || true
+    find "$TMP_ROOT" -maxdepth 1 -type d -name "hyperframes-*" -mmin +120 -exec rm -rf {} + 2>/dev/null || true
+    find "$TMP_ROOT" -maxdepth 1 -type d -name "temp_ig_*" -mmin +120 -exec rm -rf {} + 2>/dev/null || true
+  fi
 
   # Clean old temporary logs in /app/logs
   find "$ROOT/logs" -type f -name "*.log" -mtime +7 -delete 2>/dev/null || true
 
-  local avail_mb
-  avail_mb=$(df -m /tmp | awk 'NR==2 {print $4}')
-  log "available disk space on /tmp: ${avail_mb}MB"
+  local avail_mb tmp_avail_mb
+  avail_mb=$(df -m "$ROOT" | awk 'NR==2 {print $4}')
+  if [ -d "$TMP_ROOT" ]; then
+    tmp_avail_mb=$(df -m "$TMP_ROOT" | awk 'NR==2 {print $4}')
+  else
+    tmp_avail_mb=0
+  fi
+  log "available disk: project=${avail_mb}MB (min ${MIN_DISK_MB}MB), tmp=${tmp_avail_mb}MB (min ${MIN_TMP_DISK_MB}MB)"
+  if [ "$avail_mb" -lt "$MIN_DISK_MB" ] || [ "$tmp_avail_mb" -lt "$MIN_TMP_DISK_MB" ]; then
+    write_state "preflight" "failed" "low_disk"
+    fail "insufficient disk space; blocking generation to avoid unsafe cleanup (project=${avail_mb}MB tmp=${tmp_avail_mb}MB)"
+  fi
+}
+
+# Bounded NewsNow reachability + stale-feed-age preflight (warning-only; the
+# generator enforces MAX_STALE_FEED_AGE_HOURS when it falls back to an old feed).
+newsnow_preflight() {
+  if curl -sf -m 5 -o /dev/null "$NEWSNOW_URL" 2>/dev/null; then
+    log "NewsNow reachable: $NEWSNOW_URL"
+  else
+    log "WARN: NewsNow ($NEWSNOW_URL) unreachable at preflight; generator may fall back to prior feed"
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "preflight" \
+      --error-type "NEWSNOW_UNREACHABLE" --message "NewsNow endpoint unreachable at preflight" || true
+  fi
+  local feed="$ROOT/data/newsnow_feed.json"
+  local max_age_h="${MAX_STALE_FEED_AGE_HOURS:-48}"
+  if [ -f "$feed" ]; then
+    local age_h=$(( ($(date +%s) - $(stat -c %Y "$feed" 2>/dev/null || echo 0)) / 3600 ))
+    log "existing NewsNow feed age: ${age_h}h (max allowed: ${max_age_h}h)"
+    if [ "$age_h" -gt "$max_age_h" ]; then
+      log "WARN: existing NewsNow feed exceeds max stale age; today's fetch must succeed"
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "preflight" \
+        --error-type "STALE_NEWSNOW_FEED" --message "NewsNow feed ${age_h}h old exceeds ${max_age_h}h" || true
+    fi
+  else
+    log "no prior NewsNow feed at $feed; today's fetch must succeed"
+  fi
+  return 0
 }
 
 cleanup_failed_generation() {
   local generate_log="$1"
-  local pid dir schedule_has
+  local pid dir
 
+  # Move (never rm -rf) failed-generation project dirs to a quarantine root so
+  # recovery evidence and unpublished assets are preserved for diagnosis.
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
     schedule_has=$(jq --arg pid "$pid" \
@@ -108,8 +167,9 @@ cleanup_failed_generation() {
     fi
     for dir in "$ROOT/projects/$pid" "$ROOT/projects_news/$pid"; do
       if [ -d "$dir" ]; then
-        rm -rf "$dir"
-        log "cleanup failed-generation project: $pid"
+        mkdir -p "$FAILED_GENERATION_RECOVERY_ROOT"
+        mv "$dir" "$FAILED_GENERATION_RECOVERY_ROOT/$pid"
+        log "quarantined failed-generation project: $pid -> $FAILED_GENERATION_RECOVERY_ROOT/$pid"
       fi
     done
   done < <(
@@ -121,6 +181,7 @@ cleanup_failed_generation() {
 
 # ===== Pre-flight: confirm we're inside Docker =====
 stage 0 "preflight"
+write_heartbeat "started"
 cleanup_system_disk_space
 if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
   [ -f /.dockerenv ] || grep -qE 'docker|containerd|lxc|init' /proc/1/cgroup 2>/dev/null || [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" = "1" ] || fail "must run inside Docker container"
@@ -135,6 +196,7 @@ if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
   [ -s "$CODEX_HOME/config.toml" ] || fail "CODEX_HOME missing config.toml: $CODEX_HOME/config.toml"
 fi
 log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), codex=$(codex --version 2>&1 | head -1), codex_home=$CODEX_HOME)"
+newsnow_preflight
 write_state "preflight" "ok"
 
 # ===== STAGE 1: PREPARE — isolate due-today batch from next-day generation =====
@@ -282,6 +344,16 @@ write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]
 
 # ===== STAGE 6: QUEUE — current-day recovery plus next-day schedule =====
 stage 6 "queue"
+# Serialize schedule reads/writes with publish_active_projects.py and
+# clear_stale_projects.sh, which use fcntl.flock on the same lock file.
+# The lock must be released before stage 7 cleanup (which acquires it).
+QUEUE_LOCK="$SCHEDULE.lock"
+exec 200>"$QUEUE_LOCK"
+if ! flock -x -w "${SCHEDULE_LOCK_WAIT_SECONDS:-300}" 200; then
+  write_state "queue" "failed" "lock_timeout"
+  fail "could not acquire schedule lock $QUEUE_LOCK within ${SCHEDULE_LOCK_WAIT_SECONDS:-300}s; another writer is active"
+fi
+log "acquired schedule lock $QUEUE_LOCK"
 QUEUE_OK=1
 QUEUED_PIDS=()
 TODAY_QUEUED_PIDS=()
@@ -360,6 +432,12 @@ done
 log "queued today: ${TODAY_QUEUED_PIDS[*]:-none}; queued next day: ${NEXT_QUEUED_PIDS[*]:-none}"
 write_state "queue" "ok" "today=$(IFS=,; echo "${TODAY_QUEUED_PIDS[*]}") next=$(IFS=,; echo "${NEXT_QUEUED_PIDS[*]}")"
 
+# Release the schedule lock before platform-schedule and stage 7 cleanup:
+# clear_stale_projects.sh -> deactivate_project re-acquires the same lock, so
+# holding it here would deadlock the cleanup step.
+flock -u 200
+exec 200>&-
+
 stage 6.5 "platform-schedule"
 if [ "${#TODAY_QUEUED_PIDS[@]}" -gt 0 ]; then
   if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$TODAY" 2>&1 | tee -a "$RUN_LOG"; then
@@ -403,4 +481,5 @@ log ""
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
 log "all stages passed; videos platform-scheduled; IG on slot cron"
 write_state "workflow" "completed"
+write_heartbeat "completed"
 exit 0

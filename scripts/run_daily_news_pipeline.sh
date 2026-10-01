@@ -62,6 +62,21 @@ if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output d
   echo "[$(date -u +%FT%TZ)] WARN: NewsNow fetch failed; using existing feed."
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "news_fetch" \
     --reason "NewsNow fetch failed, using fallback feed" --attempt 1 --max-attempts 1 || true
+
+  # Enforce an acceptable stale-feed age on the fallback path. A very old feed
+  # produces stale news content, so fail closed rather than generate from it.
+  MAX_STALE_FEED_AGE_HOURS="${MAX_STALE_FEED_AGE_HOURS:-48}"
+  FEED_FILE="$ROOT/data/newsnow_feed.json"
+  if [ -f "$FEED_FILE" ]; then
+    FEED_MTIME="$(stat -c %Y "$FEED_FILE" 2>/dev/null || echo 0)"
+    FEED_AGE_H=$(( ( $(date +%s) - FEED_MTIME ) / 3600 ))
+    if [ "$FEED_AGE_H" -gt "$MAX_STALE_FEED_AGE_HOURS" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: fallback NewsNow feed is ${FEED_AGE_H}h old (max ${MAX_STALE_FEED_AGE_HOURS}h); refusing to generate from stale feed."
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
+        --error-type "STALE_NEWSNOW_FEED" --message "fallback NewsNow feed ${FEED_AGE_H}h old exceeds max ${MAX_STALE_FEED_AGE_HOURS}h" || true
+      exit 1
+    fi
+  fi
 fi
 
 # Step 1: Select and initialize distinct current topics.
