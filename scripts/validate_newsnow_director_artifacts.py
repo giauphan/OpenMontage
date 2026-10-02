@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from schemas.artifacts import validate_artifact
+from tools.narration_text import check_vietnamese_prose
 
 
 def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
@@ -40,7 +41,10 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
         if "title_en" in normalized and "title" not in normalized:
             normalized["title"] = normalized["title_en"]
         if "title" not in normalized:
-            normalized["title"] = normalized.get("theme") or "Untitled"
+            normalized["title"] = normalized.get("theme") or "Tin tức AI"
+
+        if check_vietnamese_prose(normalized["title"]):
+            return None
 
         if "total_duration" in normalized and "total_duration_seconds" not in normalized:
             normalized["total_duration_seconds"] = float(normalized["total_duration"])
@@ -102,6 +106,9 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
             for key in list(sec.keys()):
                 if key not in valid_sec_keys:
                     del sec[key]
+
+            if sec.get("text") and check_vietnamese_prose(sec["text"]):
+                return None
 
         validate_artifact("script", normalized)
     except Exception:
@@ -171,15 +178,22 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
     for banned in ["OpenMontage", "Montage", "openmontage", "montage"]:
         title_nfc = title_nfc.replace(banned, "AI Tech")
 
+    if check_vietnamese_prose(title_nfc):
+        # Missing or failed localized artifacts cannot be replaced with untranslated source prose
+        # plus generic Vietnamese filler and reported compliant.
+        return False
+
     claims = []
     data_points = brief_data.get("data_points", [])
     if isinstance(data_points, list):
         for dp in data_points:
             if isinstance(dp, dict) and dp.get("claim"):
                 claims.append(str(dp["claim"]))
-    
+
     summary = " ".join(claims[:2]) if claims else "Phát triển đột phá trong hệ sinh thái trí tuệ nhân tạo và công nghệ hiện đại."
     summary_nfc = _ud.normalize("NFC", summary[:180])
+    if check_vietnamese_prose(summary_nfc):
+        summary_nfc = "Phát triển đột phá trong hệ sinh thái trí tuệ nhân tạo và công nghệ hiện đại."
 
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
