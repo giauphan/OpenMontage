@@ -20,11 +20,11 @@ def test_validator_accepts_valid_flat_artifact(tmp_path):
     script = arts / "script_vi.json"
 
     # Director output with theme and sections (no version) is normalized by validator
-    script.write_text(json.dumps({"theme": "T", "total_duration_seconds": 10, "sections": [{"id": "1", "text": "A", "start_seconds": 0, "end_seconds": 10}]}))
+    script.write_text(json.dumps({"theme": "Tin tức công nghệ", "total_duration_seconds": 10, "sections": [{"id": "1", "text": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}]}))
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
     # Valid
-    script.write_text(json.dumps({"version": "1.0", "title": "T", "total_duration_seconds": 10, "sections": [{"id": "1", "text_vi": "A", "text": "E", "start_seconds": 0, "end_seconds": 10}]}))
+    script.write_text(json.dumps({"version": "1.0", "title": "Tin tức công nghệ", "total_duration_seconds": 10, "sections": [{"id": "1", "text_vi": "Nội dung tin tức", "text": "Nội dung công nghệ", "start_seconds": 0, "end_seconds": 10}]}))
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
 
@@ -33,9 +33,9 @@ def test_validator_requires_both_compositions_when_requested(tmp_path):
     artifacts.mkdir()
     (artifacts / "script_vi.json").write_text(json.dumps({
         "version": "1.0",
-        "title": "T",
+        "title": "Tin tức công nghệ",
         "total_duration_seconds": 10,
-        "sections": [{"id": "1", "text": "A", "start_seconds": 0, "end_seconds": 10}],
+        "sections": [{"id": "1", "text": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}],
     }))
 
     assert helper.validate_and_promote_director_artifacts(tmp_path, require_compositions=True) is False
@@ -83,14 +83,14 @@ def test_validator_accepts_comparison_enhancement_cue(tmp_path):
     script = arts / "script_vi.json"
     script.write_text(json.dumps({
         "version": "1.0",
-        "title": "T",
+        "title": "Tin tức công nghệ",
         "total_duration_seconds": 10,
         "sections": [{
             "id": "1",
-            "text": "A",
+            "text": "Nội dung tin tức",
             "start_seconds": 0,
             "end_seconds": 10,
-            "enhancement_cues": [{"type": "comparison", "description": "Before and after"}],
+            "enhancement_cues": [{"type": "comparison", "description": "Trước và sau"}],
         }],
     }))
 
@@ -105,9 +105,9 @@ def test_validator_promotes_nested_checkpoint(tmp_path):
 
     payload = {
         "version": "1.0",
-        "title": "T",
+        "title": "Tin tức công nghệ",
         "total_duration_seconds": 10,
-        "sections": [{"id": "1", "text_vi": "A", "start_seconds": 0, "end_seconds": 10}]
+        "sections": [{"id": "1", "text_vi": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}]
     }
 
     # Stale/old checkpoint check
@@ -125,9 +125,9 @@ def test_validator_promotes_nested_checkpoint(tmp_path):
 
     expected_payload = {
         "version": "1.0",
-        "title": "T",
+        "title": "Tin tức công nghệ",
         "total_duration_seconds": 10.0,
-        "sections": [{"id": "1", "text": "A", "start_seconds": 0.0, "end_seconds": 10.0}]
+        "sections": [{"id": "1", "text": "Nội dung tin tức", "start_seconds": 0.0, "end_seconds": 10.0}]
     }
     assert json.loads(promoted.read_text()) == expected_payload
 
@@ -137,9 +137,9 @@ def test_cli_integration(tmp_path):
     arts.mkdir()
     (arts / "script_vi.json").write_text(json.dumps({
         "version": "1.0",
-        "title": "T",
+        "title": "Tin tức công nghệ",
         "total_duration_seconds": 10,
-        "sections": [{"id": "1", "text_vi": "A", "start_seconds": 0, "end_seconds": 10}]
+        "sections": [{"id": "1", "text_vi": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}]
     }))
 
     env = {"PYTHONPATH": str(Path(helper.__file__).resolve().parents[1])}
@@ -191,13 +191,13 @@ def test_validator_normalizes_director_schema_variants(tmp_path):
     variant_payload = {
         "project_id": "cand_3eb816",
         "version": "2.0",
-        "title_vi": "Test title",
+        "title_vi": "Tin tức công nghệ mới",
         "total_duration_secs": 90,
         "sections": [
             {
                 "id": 1,
-                "label": "Hook",
-                "narration": "Hello world",
+                "label": "Mở đầu",
+                "narration": "Nội dung tin tức công nghệ",
                 "duration_seconds": 10,
                 "audio_file": "s1.wav",
                 "scene_type": "hook"
@@ -214,12 +214,12 @@ def test_validator_normalizes_director_schema_variants(tmp_path):
     
     # Assert normalized values match schema
     assert data["version"] == "1.0"
-    assert data["title"] == "Test title"
+    assert data["title"] == "Tin tức công nghệ mới"
     assert data["total_duration_seconds"] == 90.0
     assert "project_id" not in data # Extraneous root key removed
-    
+
     sec = data["sections"][0]
-    assert sec["text"] == "Hello world"
+    assert sec["text"] == "Nội dung tin tức công nghệ"
     assert sec["start_seconds"] == 0.0
     assert sec["end_seconds"] == 10.0
     assert "scene_type" not in sec # Extraneous section key removed
@@ -231,14 +231,14 @@ def test_validator_normalizes_missing_version_scene_payload(tmp_path):
     arts.mkdir()
     script = arts / "script_vi.json"
     script.write_text(json.dumps({
-        "title": "Test title",
+        "title": "Tin tức công nghệ mới",
         "duration_seconds": 8,
         "scenes": [
             {
                 "id": 1,
                 "start_time": 0,
                 "duration": 8,
-                "narration": "Hello world",
+                "narration": "Nội dung tin tức công nghệ",
             }
         ],
     }))
@@ -250,7 +250,7 @@ def test_validator_normalizes_missing_version_scene_payload(tmp_path):
     assert data["total_duration_seconds"] == 8.0
     assert data["sections"] == [{
         "id": "1",
-        "text": "Hello world",
+        "text": "Nội dung tin tức công nghệ",
         "start_seconds": 0.0,
         "end_seconds": 8.0,
     }]

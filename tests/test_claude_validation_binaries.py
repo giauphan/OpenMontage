@@ -67,6 +67,14 @@ def test_strict_review_uses_canonical_codex_result(monkeypatch, tmp_path):
     monkeypatch.setattr(validation, "resolve_codex_cli", lambda: "/usr/bin/codex")
     monkeypatch.setattr(validation.subprocess, "run", run)
 
+    # R1: Provide a hermetic CODEX_HOME so resolve_and_validate_codex_home does
+    # not probe the host filesystem for credentials/config.
+    codex_home = tmp_path / "codex_home"
+    codex_home.mkdir()
+    (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}')
+    (codex_home / "config.toml").write_text('model_provider = "openai"\n')
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
     validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
     monkeypatch.setattr(validator, "_extract_frames", lambda *_args: [tmp_path / "frame.png"])
     results = validator.claude_agent_strict_review(tmp_path / "video.mp4", tmp_path / "publish_metadata.json")

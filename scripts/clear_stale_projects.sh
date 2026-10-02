@@ -48,7 +48,7 @@ else
             break
         fi
     done
-    if [ -z "$PYTHON_BIN" ]; then
+    if [ -z "${PYTHON_BIN:-}" ]; then
         PYTHON_BIN="python3"
     fi
 fi

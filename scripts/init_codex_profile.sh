@@ -483,38 +483,37 @@ fi
 LEGACY_GEN=""
 TMP_LINK=""
 
-# Prune superseded generations, retaining a retention buffer (the new live gen,
-# the immediately-previous gen as the primary rollback point, plus additional
-# recent generations) so that concurrent long-running readers across successive
-# rapid refreshes never hit a removed generation (ENOENT).
-GEN_RETENTION_COUNT=5
+# Lifetime-aware pruning: a reader resolves the symlink once at process start
+# and holds that generation for its whole run (a codex/director run is at most
+# minutes-to-hours, far below RETENTION_AGE_SECONDS). Pruning by a fixed COUNT
+# is NOT safe: a reader held across more refreshes than the count would have its
+# generation rm -rf'd and hit ENOENT mid-flight. Instead, keep the new live gen
+# and the immediately-previous gen (the primary rollback point) unconditionally,
+# and delete any older generation only once it is older than the retention
+# horizon. A path held by a live reader can therefore never be removed at
+# refresh time. The horizon is overridable for tests (CODEX_PROFILE_RETENTION_HOURS).
+CODEX_RETENTION_HOURS="${CODEX_PROFILE_RETENTION_HOURS:-72}"
+RETENTION_AGE_SECONDS=$(( CODEX_RETENTION_HOURS * 3600 ))
 prune_old_gens() {
-  local keep_new="$1" d count
-  # Build a timestamp-sorted list of all regular generation dirs (excludes
-  # gen_legacy_* migration artifacts which are retained for rollback).
-  local gens=()
+  local keep_new="$1" keep_prev="$2" now d mtime age
+  now="$(date +%s)"
   for d in "$STORE"/gen_*; do
     [ -d "$d" ] || continue
     case "$d" in
       "$STORE"/gen_legacy_*) continue ;;
     esac
-    gens+=("$d")
-  done
-  # Sort by name (gen_<ts>_<pid> => chronological). Keep newest N.
-  local sorted
-  if [ ${#gens[@]} -eq 0 ]; then
-    return 0
-  fi
-  printf '%s\n' "${gens[@]}" | sort -r | (count=0; while IFS= read -r d; do
-    count=$((count + 1))
-    if [ "$count" -le "$GEN_RETENTION_COUNT" ] || [ "$d" = "$keep_new" ]; then
-      :
-    else
+    [ "$d" = "$keep_new" ] && continue
+    if [ -n "$keep_prev" ] && [ "$d" = "$keep_prev" ]; then
+      continue
+    fi
+    mtime="$(stat -c %Y "$d" 2>/dev/null || echo "$now")"
+    age=$(( now - mtime ))
+    if [ "$age" -ge "$RETENTION_AGE_SECONDS" ]; then
       rm -rf "$d" || true
     fi
-  done)
+  done
 }
-prune_old_gens "$NEWGEN"
+prune_old_gens "$NEWGEN" "$OLDGEN"
 
 # The live + retained generations are safe; clear the failure trap.
 NEWGEN=""

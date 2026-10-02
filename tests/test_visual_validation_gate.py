@@ -95,9 +95,15 @@ def test_claude_validator_prompt_contains_html_and_images(tmp_path: Path):
     fake_frame = tmp_path / "fake_frame.png"
     fake_frame.touch()
 
-    with patch.dict("os.environ", {"CLAUDE_AGENT_VALIDATION_MOCK": "0"}), \
+    # R8: hermetic CODEX_HOME so resolve_and_validate_codex_home succeeds on CI
+    codex_home = tmp_path / "codex_home"
+    codex_home.mkdir()
+    (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}')
+    (codex_home / "config.toml").write_text('model_provider = "openai"\n')
+
+    with patch.dict("os.environ", {"CLAUDE_AGENT_VALIDATION_MOCK": "0", "CODEX_HOME": str(codex_home)}), \
          patch.object(validator, "_extract_frames", return_value=[fake_frame]), \
-         patch("scripts.claude_agent_validation.resolve_claude_cli", return_value="claude"), \
+         patch("scripts.codex_agent_validation.resolve_agent_cli", return_value="codex"), \
          patch("scripts.claude_agent_validation.subprocess.run") as mock_subproc:
 
         mock_subproc.return_value = MagicMock(

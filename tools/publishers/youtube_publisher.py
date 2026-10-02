@@ -329,7 +329,12 @@ class YoutubePublisher(BaseTool):
                     "error": f"Missing credential files: secret={secret_file.is_file()}, token={token_file.is_file()}",
                 }
 
-            from googleapiclient.errors import HttpError
+            # HttpError is used only by the string-based type check in the outer
+            # except block; the import must not mask the real authentication error.
+            try:
+                from googleapiclient.errors import HttpError  # noqa: F401
+            except ImportError:
+                pass
             service = self._get_authenticated_service(secret_file, token_file, interactive=False)
             req = service.videos().list(part="status,snippet", id=video_id)
             res = req.execute()

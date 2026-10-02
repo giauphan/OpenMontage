@@ -116,10 +116,11 @@ def test_first_time_initialization_creates_generation_atomically(tmp_path: Path)
     assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-first"
 
 
-def test_successful_refresh_prunes_superseded_generations(tmp_path: Path):
-    """Successful refresh retains a retention buffer (newest 5 non-legacy generations)
-    plus any legacy-migrated generations. 7 total refreshes must leave the oldest 2
-    pruned while keeping the most recent 5 intact."""
+def test_successful_refresh_retains_recent_generations(tmp_path: Path):
+    """Successful refresh is lifetime-aware, not count-based: every recent (non-
+    aged-out) generation is retained regardless of how many refreshes occur, so a
+    long-running reader's held generation is never pruned. 7 refreshes spaced in
+    seconds therefore leave all 7 intact (none exceeds the 72h horizon)."""
     target = tmp_path / "target"
     store = tmp_path / "target.store"
 
@@ -137,15 +138,72 @@ def test_successful_refresh_prunes_superseded_generations(tmp_path: Path):
     for d in sorted(store.iterdir()):
         if d.is_dir() and (d / "auth.json").is_file():
             remaining.append(json.loads((d / "auth.json").read_text())["OPENAI_API_KEY"])
-    # 5 most recent retained: v3, v4, v5, v6, v7. v1 and v2 pruned.
-    assert "sk-v7" in remaining
-    assert "sk-v6" in remaining
-    assert "sk-v5" in remaining
-    assert "sk-v4" in remaining
-    assert "sk-v3" in remaining
-    assert "sk-v2" not in remaining, f"expected v2 pruned with 7+ gens: {remaining}"
-    assert "sk-v1" not in remaining, f"expected v1 pruned with 7+ gens: {remaining}"
+    # Age-gated pruning retains all recent generations; only aged-out ones go.
+    for i in range(1, 8):
+        assert f"sk-v{i}" in remaining, f"expected sk-v{i} retained (not aged out): {remaining}"
     assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-v7"
+
+
+def test_reader_holds_generation_across_more_than_five_refreshes(tmp_path: Path):
+    """Regression for the fixed-count defect: a reader that resolved the live
+    generation must still find that generation present after MORE than five
+    further refreshes (a count-5 prune would have deleted it)."""
+    target = tmp_path / "target"
+
+    src0 = _make_source(tmp_path, "src_reader", "sk-reader")
+    assert _run_init_script(tmp_path, src0, target).returncode == 0
+    # The reader pins the current live generation path (what a real consumer does
+    # at process start via home_path.resolve()).
+    held = target.resolve()
+    assert held.is_dir() and (held / "auth.json").is_file()
+
+    for i in range(6):
+        key = f"sk-{i + 1}"
+        src = _make_source(tmp_path, f"src_{key}", key)
+        r = _run_init_script(tmp_path, src, target, refresh=True)
+        assert r.returncode == 0, r.stderr
+
+    # The generation the reader pinned must not have been removed.
+    assert held.exists(), f"reader-held generation {held} was pruned despite being live at read time"
+
+
+def test_prune_is_age_gated_not_count_gated(tmp_path: Path):
+    """Generations older than the retention horizon are pruned; recent ones are
+    kept. Backdate the oldest two gens past a 1-hour horizon and verify only
+    they are removed."""
+    target = tmp_path / "target"
+    store = tmp_path / "target.store"
+
+    for i in range(3):
+        key = f"sk-age{i + 1}"
+        src = _make_source(tmp_path, f"src_{key}", key)
+        r = _run_init_script(
+            tmp_path, src, target,
+            refresh=(i > 0),
+            env_extra={"CODEX_PROFILE_RETENTION_HOURS": "1"},
+        )
+        assert r.returncode == 0, r.stderr
+
+    # Backdate the two oldest generations beyond the 1-hour horizon.
+    gens = sorted(d for d in store.iterdir() if d.is_dir() and d.name.startswith("gen_"))
+    for d in gens[:2]:
+        old = __import__("time").time() - (2 * 3600)
+        os.utime(d, (old, old))
+
+    # A further refresh (horizon still 1h) must prune only the backdated gens.
+    src = _make_source(tmp_path, "src_age4", "sk-age4")
+    r = _run_init_script(tmp_path, src, target, refresh=True, env_extra={"CODEX_PROFILE_RETENTION_HOURS": "1"})
+    assert r.returncode == 0, r.stderr
+
+    remaining = []
+    for d in sorted(store.iterdir()):
+        if d.is_dir() and (d / "auth.json").is_file():
+            remaining.append(json.loads((d / "auth.json").read_text())["OPENAI_API_KEY"])
+    assert "sk-age4" in remaining
+    assert "sk-age3" in remaining, f"recent gen pruned by age gate: {remaining}"
+    assert "sk-age1" not in remaining, f"aged-out gen sk-age1 should be pruned: {remaining}"
+    assert "sk-age2" not in remaining, f"aged-out gen sk-age2 should be pruned: {remaining}"
+
 
 
 def test_activation_failure_preserves_previous_generation(tmp_path: Path):
