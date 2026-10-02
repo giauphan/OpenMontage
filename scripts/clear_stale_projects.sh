@@ -36,16 +36,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export PYTHONPATH="$ROOT:$REPO_ROOT:${PYTHONPATH:-}"
 
-PYTHON_BIN=""
-for candidate in "${PYTHON_BIN:-}" python3 "$REPO_ROOT/.venv/bin/python3" /usr/bin/python3; do
-    [ -n "$candidate" ] || continue
-    if "$candidate" -c "import scripts.check_cleanup_eligibility" >/dev/null 2>&1; then
-        PYTHON_BIN="$candidate"
-        break
+# Honor a caller-provided PYTHON_BIN (e.g. the pytest interpreter in tests);
+# only fall back to discovery when none was supplied.
+if [ -n "${PYTHON_BIN:-}" ]; then
+    echo "[INFO] Using caller-provided PYTHON_BIN: $PYTHON_BIN" >&2
+else
+    for candidate in python3 "$REPO_ROOT/.venv/bin/python3" /usr/bin/python3; do
+        [ -n "$candidate" ] || continue
+        if "$candidate" -c "import scripts.check_cleanup_eligibility" >/dev/null 2>&1; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
+    done
+    if [ -z "$PYTHON_BIN" ]; then
+        PYTHON_BIN="python3"
     fi
-done
-if [ -z "$PYTHON_BIN" ]; then
-    PYTHON_BIN="python3"
 fi
 
 # Inspect projects, projects_news, and projects/instagram dirs
