@@ -371,7 +371,13 @@ def prepare_narration(text: str, use_ssml: bool = False) -> str:
                  If False (default), uses Vietnamese phonetic approximations.
     """
     if use_ssml:
-        return prepare_narration_ssml(text)
+        normalized = normalize_text(text)
+        if not normalized:
+            raise ValueError("narration text is empty after normalization")
+        language_errors = validate_vietnamese_narration(normalized)
+        if language_errors:
+            raise ValueError(language_errors[0])
+        return prepare_narration_ssml(normalized)
 
     normalized = normalize_text(text)
     if not normalized:

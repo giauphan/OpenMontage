@@ -4,11 +4,17 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from tools.narration_text import (
     check_vietnamese_prose,
+    prepare_narration,
     validate_vietnamese_narration,
     validate_display_text,
 )
 from scripts.validate_publish_metadata import validate_metadata
-from scripts.validate_newsnow_director_artifacts import validate_and_promote_director_artifacts
+from scripts.validate_newsnow_director_artifacts import (
+    _normalize_script_payload,
+    validate_and_promote_director_artifacts,
+)
+from tools.publishers.meta_publisher import MetaPublisher
+from tools.publishers.tiktok_publisher import TiktokPublisher
 from tools.publishers.youtube_publisher import YoutubePublisher
 
 def test_language_heuristics():
@@ -34,6 +40,79 @@ def test_language_heuristics():
     # Term-only identifier without sentence context
     term_err = check_vietnamese_prose("API")
     assert term_err, "Should reject single English term without Vietnamese context"
+
+def test_ssml_narration_rejects_english_prose():
+    with pytest.raises(ValueError, match="narration must be Vietnamese"):
+        prepare_narration(
+            "Xin chào bạn, The last time my family was replaced by technology.",
+            use_ssml=True,
+        )
+
+
+def test_conflicting_script_fields_prefer_vietnamese_or_fail_closed():
+    payload = {
+        "title": "Tin tức công nghệ AI mới nhất",
+        "sections": [{
+            "id": "intro",
+            "text": "The last time my family was replaced by technology.",
+            "text_vi": "Công nghệ mới đang thay đổi cuộc sống.",
+            "duration_seconds": 5,
+        }],
+    }
+    normalized = _normalize_script_payload(payload)
+    assert normalized is not None
+    assert normalized["sections"][0]["text"] == payload["sections"][0]["text_vi"]
+
+
+def test_invalid_fallback_claims_do_not_create_stale_script(tmp_path: Path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "research_brief.json").write_text(json.dumps({
+        "title": "CHOMPI is a magical sampler",
+        "data_points": [{"claim": "It makes music fun."}],
+    }), encoding="utf-8")
+    stale = artifacts / "script_vi.json"
+    stale.write_text(json.dumps({
+        "version": "1.0",
+        "title": "Tin tức công nghệ cũ",
+        "sections": [{"text": "Nội dung cũ đã được phê duyệt.", "duration_seconds": 5}],
+    }), encoding="utf-8")
+    assert not validate_and_promote_director_artifacts(tmp_path, require_compositions=False)
+    assert not stale.exists(), "invalid current source must not leave stale canonical artifact publishable"
+
+
+def test_metadata_validation_blocks_conflicting_source_copy(tmp_path: Path):
+    metadata = tmp_path / "publish_metadata.json"
+    metadata.write_text(json.dumps({
+        "id": "conflicting",
+        "title": "Tin tức công nghệ AI mới nhất #tintuc #congnghe #ai",
+        "description": "The last time my family was replaced by technology #tintuc #congnghe #ai",
+    }), encoding="utf-8")
+    success, errors = validate_metadata(metadata)
+    assert not success
+    assert any("description language error" in error for error in errors)
+
+
+def test_social_publishers_reject_english_caption_before_network(tmp_path: Path):
+    video = tmp_path / "video.mp4"
+    video.touch()
+    (tmp_path / "cookies.json").write_text(json.dumps({"cookies": []}), encoding="utf-8")
+    with patch("tools.publishers.platform_routes.ensure_vertical"):
+        meta_result = MetaPublisher().execute({
+            "video_path": str(video),
+            "caption": "The last time my family was replaced by technology",
+            "page_id": "synthetic-page",
+        })
+        tiktok_result = TiktokPublisher().execute({
+            "video_path": str(video),
+            "caption": "The last time my family was replaced by technology",
+            "cookie_path": str(tmp_path / "cookies.json"),
+        })
+    assert not meta_result.success
+    assert "Vietnamese" in meta_result.error or "English" in meta_result.error
+    assert not tiktok_result.success
+    assert "Vietnamese" in tiktok_result.error or "English" in tiktok_result.error
+
 
 def test_metadata_validation_enforces_vietnamese(tmp_path: Path):
     meta_path = tmp_path / "publish_metadata.json"
