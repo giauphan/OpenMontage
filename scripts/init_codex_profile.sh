@@ -1,64 +1,150 @@
 #!/usr/bin/env bash
 # OpenMontage - Initialize isolated Codex pipeline runtime profile
 # Copies credentials and configuration from read-only host mount source into a private,
-# isolated runtime directory. Replaces the destination atomically as a unit.
+# isolated runtime directory. Replaces the destination files atomically without reader-visible gaps.
 # Validates that JSON/TOML configurations are well-formed and contain required fields.
 set -euo pipefail
+
+validate_profile_dir() {
+  local dir="$1"
+  python3 -c '
+import sys, json
+from pathlib import Path
+
+dir_path = Path(sys.argv[1])
+auth_file = dir_path / "auth.json"
+config_file = dir_path / "config.toml"
+
+if not auth_file.is_file() or auth_file.stat().st_size == 0:
+    sys.exit("Missing or empty auth.json")
+try:
+    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+except Exception as e:
+    sys.exit(f"Invalid JSON in auth.json: {e}")
+if not isinstance(auth_data, dict):
+    sys.exit("auth.json is not a JSON object")
+api_key = auth_data.get("OPENAI_API_KEY")
+if not api_key or not isinstance(api_key, str) or not api_key.strip():
+    sys.exit("auth.json missing or invalid OPENAI_API_KEY")
+
+if not config_file.is_file() or config_file.stat().st_size == 0:
+    sys.exit("Missing or empty config.toml")
+
+content = config_file.read_text(encoding="utf-8")
+root_config = {}
+current_table = None
+
+for line_idx, raw_line in enumerate(content.splitlines(), start=1):
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("["):
+        if line.startswith("[["):
+            if not line.endswith("]]") or len(line) <= 4:
+                sys.exit(f"Line {line_idx}: malformed array-of-tables header")
+            current_table = line[2:-2].strip()
+        else:
+            if not line.endswith("]") or len(line) <= 2:
+                sys.exit(f"Line {line_idx}: malformed table header")
+            current_table = line[1:-1].strip()
+        continue
+    if "=" not in line:
+        sys.exit(f"Line {line_idx}: invalid TOML syntax, expected key = value")
+    key_part, val_part = line.split("=", 1)
+    key = key_part.strip()
+    val = val_part.strip()
+    if not key or not val:
+        sys.exit(f"Line {line_idx}: missing key or value")
+    if val.startswith("\""):
+        end_quote = val.find("\"", 1)
+        if end_quote == -1:
+            sys.exit(f"Line {line_idx}: unterminated double-quoted string")
+        rem = val[end_quote+1:].strip()
+        if rem and not rem.startswith("#"):
+            sys.exit(f"Line {line_idx}: unexpected trailing characters")
+        parsed_val = val[1:end_quote]
+    elif val.startswith("\x27"):
+        end_quote = val.find("\x27", 1)
+        if end_quote == -1:
+            sys.exit(f"Line {line_idx}: unterminated single-quoted string")
+        rem = val[end_quote+1:].strip()
+        if rem and not rem.startswith("#"):
+            sys.exit(f"Line {line_idx}: unexpected trailing characters")
+        parsed_val = val[1:end_quote]
+    else:
+        val_no_c = val.split("#", 1)[0].strip()
+        if not val_no_c:
+            sys.exit(f"Line {line_idx}: missing value")
+        parsed_val = val_no_c
+    if current_table is None:
+        root_config[key] = parsed_val
+
+if "model_provider" not in root_config:
+    sys.exit("config.toml missing model_provider configuration")
+mp = root_config["model_provider"]
+if not isinstance(mp, str) or not mp.strip() or mp in ("\"\"", "\x27\x27"):
+    sys.exit("config.toml missing model_provider configuration")
+' "$dir"
+}
 
 SOURCE_DIR="${1:-${CODEX_SOURCE_DIR:-/etc/codex_source}}"
 TARGET_DIR="${2:-${CODEX_HOME:-/root/.codex_pipeline}}"
 TARGET_USER="${3:-$(id -u -n)}"
 
-if [ ! -d "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/auth.json" ]; then
-  echo "[$(date -u +%FT%TZ)] INIT INFO: Source directory $SOURCE_DIR lacking auth.json. Skipping replacement."
+# R2: If source directory or required source files are missing, fail visibly unless target already holds valid runtime.
+if [ ! -d "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/auth.json" ] || [ ! -f "$SOURCE_DIR/config.toml" ]; then
+  if [ -d "$TARGET_DIR" ] && [ -f "$TARGET_DIR/auth.json" ] && [ -f "$TARGET_DIR/config.toml" ]; then
+    if validate_err=$(validate_profile_dir "$TARGET_DIR" 2>&1); then
+      echo "[$(date -u +%FT%TZ)] INIT INFO: Source directory $SOURCE_DIR missing/incomplete, but valid target profile exists at $TARGET_DIR. Reusing existing runtime."
+      exit 0
+    else
+      echo "[$(date -u +%FT%TZ)] INIT ERROR: Source $SOURCE_DIR lacks auth.json/config.toml and existing target at $TARGET_DIR is invalid: $validate_err" >&2
+      exit 1
+    fi
+  else
+    echo "[$(date -u +%FT%TZ)] INIT ERROR: Source $SOURCE_DIR lacks auth.json/config.toml and no valid target exists at $TARGET_DIR." >&2
+    exit 1
+  fi
+fi
+
+# Do not overwrite if target already exists, unless explicitly refreshed.
+if [ -d "$TARGET_DIR" ] && ([ -e "$TARGET_DIR/auth.json" ] || [ -e "$TARGET_DIR/config.toml" ]) && [ "${REFRESH_CODEX_PROFILE:-0}" != "1" ]; then
+  if ! validate_err=$(validate_profile_dir "$TARGET_DIR" 2>&1); then
+    echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target profile is invalid: $validate_err" >&2
+    exit 1
+  fi
+  echo "[$(date -u +%FT%TZ)] INIT INFO: Existing target profile at $TARGET_DIR is valid and REFRESH_CODEX_PROFILE!=1. Skipping replacement."
   exit 0
 fi
 
-if [ ! -f "$SOURCE_DIR/config.toml" ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: source directory missing config.toml" >&2
+# Ensure target directory exists with secure permissions before staging
+mkdir -p "$TARGET_DIR"
+chmod 700 "$TARGET_DIR"
+chown "$TARGET_USER" "$TARGET_DIR"
+
+# R3: Concurrency protection via non-blocking flock
+LOCK_FILE="${TARGET_DIR}.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Another profile initialization is running for $TARGET_DIR" >&2
   exit 1
 fi
 
-# Do not overwrite if it already exists and holds valid auth, unless explicitly refreshed.
-if [ -s "$TARGET_DIR/auth.json" ] && [ "${REFRESH_CODEX_PROFILE:-0}" != "1" ]; then
-  # Still validate the existing target directory
-  if ! jq -e '.OPENAI_API_KEY | type == "string" and length > 0' "$TARGET_DIR/auth.json" >/dev/null 2>&1; then
-    echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target auth.json lacks valid OPENAI_API_KEY." >&2
-    exit 1
-  fi
-  if [ ! -s "$TARGET_DIR/config.toml" ] || ! grep -q -E "^[[:space:]]*model_provider[[:space:]]*=" "$TARGET_DIR/config.toml"; then
-    echo "[$(date -u +%FT%TZ)] INIT ERROR: Existing target config.toml lacks valid model_provider." >&2
-    exit 1
-  fi
-  exit 0
-fi
-
-# Create a staging directory for atomic replacement
-STAGING_DIR="${TARGET_DIR}_staging_$$"
-BACKUP_DIR=""
+# Stage files in an internal staging subdirectory inside TARGET_DIR so file moves are on the same filesystem
+STAGING_DIR="${TARGET_DIR}/.staging_$$"
 mkdir -p "$STAGING_DIR"
 chmod 700 "$STAGING_DIR"
 
 cleanup() {
   local exit_code=$?
-  # If TARGET_DIR was moved to BACKUP_DIR, but STAGING failed to become TARGET_DIR, restore BACKUP_DIR
-  if [ -n "${BACKUP_DIR:-}" ] && [ -d "$BACKUP_DIR" ] && [ ! -d "$TARGET_DIR" ]; then
-    echo "[$(date -u +%FT%TZ)] RESTORE: Restoring backup profile to $TARGET_DIR after activation failure" >&2
-    mv "$BACKUP_DIR" "$TARGET_DIR" || true
-  fi
-  # Clean up staging directory
   if [ -n "${STAGING_DIR:-}" ] && [ -d "$STAGING_DIR" ]; then
     rm -rf "$STAGING_DIR" || true
-  fi
-  # Clean up backup directory if target is present
-  if [ -n "${BACKUP_DIR:-}" ] && [ -d "$BACKUP_DIR" ] && [ -d "$TARGET_DIR" ]; then
-    rm -rf "$BACKUP_DIR" || true
   fi
   exit "$exit_code"
 }
 trap cleanup EXIT INT TERM
 
-# Copy complete configuration snapshot
+# Copy complete configuration snapshot into staging
 cp -a "$SOURCE_DIR/auth.json" "$STAGING_DIR/auth.json"
 if [ -f "$SOURCE_DIR/config.toml" ]; then
   cp -a "$SOURCE_DIR/config.toml" "$STAGING_DIR/config.toml"
@@ -70,55 +156,27 @@ if [ -f "$SOURCE_DIR/models_cache.json" ]; then
   cp -a "$SOURCE_DIR/models_cache.json" "$STAGING_DIR/models_cache.json"
 fi
 
-# Apply correct ownership and permissions before making active
+# Apply correct ownership and permissions to staged files
 chown -R "$TARGET_USER" "$STAGING_DIR"
 chmod 600 "$STAGING_DIR"/*
 
-# Validate JSON/TOML structural integrity & presence of keys
-if ! jq -e '.|type=="object"' "$STAGING_DIR/auth.json" >/dev/null 2>&1; then
-  echo "[$(date -u +%FT%TZ)] ERROR: auth.json from source is invalid JSON" >&2
+# Validate staged profile before activation
+if ! validate_err=$(validate_profile_dir "$STAGING_DIR" 2>&1); then
+  echo "[$(date -u +%FT%TZ)] ERROR: $validate_err" >&2
   exit 1
 fi
 
-if ! jq -e '.OPENAI_API_KEY | type == "string" and length > 0' "$STAGING_DIR/auth.json" >/dev/null 2>&1; then
-  echo "[$(date -u +%FT%TZ)] ERROR: auth.json missing OPENAI_API_KEY payload" >&2
-  exit 1
-fi
-
-if [ ! -f "$STAGING_DIR/config.toml" ] || ! grep -q -E "^[[:space:]]*model_provider[[:space:]]*=" "$STAGING_DIR/config.toml"; then
-  echo "[$(date -u +%FT%TZ)] ERROR: config.toml missing model_provider configuration" >&2
-  exit 1
-fi
-
-# Atomic replacement: swap the staging directory into the target location
-# Key rotation procedure:
-# 1. Update source files in /etc/codex_source (or CODEX_SOURCE_DIR).
-# 2. Run init_codex_profile.sh with REFRESH_CODEX_PROFILE=1 to force replacement.
-# 3. Restart containers with: docker compose restart scheduler worker
-#    (Note: `docker compose up -d` will NOT pick up mounted file updates if container spec is unchanged).
-LOCK_FILE="${TARGET_DIR}.lock"
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  echo "[$(date -u +%FT%TZ)] ERROR: Another profile initialization is running for $TARGET_DIR" >&2
-  exit 1
-fi
-
-if [ -d "$TARGET_DIR" ]; then
-  BACKUP_DIR="${TARGET_DIR}_bak_$$"
-  mv "$TARGET_DIR" "$BACKUP_DIR"
-  if ! mv "$STAGING_DIR" "$TARGET_DIR"; then
-    echo "[$(date -u +%FT%TZ)] ERROR: Failed to activate staging directory to $TARGET_DIR" >&2
-    exit 1
+# R3: Reader-safe atomic activation
+# Atomically replace each file using rename(2) via `mv -f`.
+# The target directory and existing active files are never deleted or unlinked prior to replacement,
+# ensuring concurrent readers never observe a missing directory, missing files, or half-written files.
+for f in auth.json config.toml version.json models_cache.json; do
+  if [ -f "$STAGING_DIR/$f" ]; then
+    mv -f "$STAGING_DIR/$f" "$TARGET_DIR/$f"
   fi
-  rm -rf "$BACKUP_DIR"
-  BACKUP_DIR=""
-else
-  if ! mv "$STAGING_DIR" "$TARGET_DIR"; then
-    echo "[$(date -u +%FT%TZ)] ERROR: Failed to activate staging directory to $TARGET_DIR" >&2
-    exit 1
-  fi
-fi
+done
 
+rm -rf "$STAGING_DIR"
 trap - EXIT INT TERM
 
 echo "[$(date -u +%FT%TZ)] SUCCESS: Profile initialized at $TARGET_DIR for user $TARGET_USER"

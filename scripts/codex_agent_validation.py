@@ -132,6 +132,78 @@ def _probe_audio_streams(video_path: Path) -> str:
         return f"audio streams: probe failed ({exc})"
 
 
+
+def parse_and_validate_config_toml(content: str) -> dict:
+    """Parse and validate config.toml ensuring well-formed TOML and valid root-level model_provider.
+    Returns parsed dictionary of root-level configuration.
+    Raises ValueError with details on syntax error or missing/invalid model_provider.
+    """
+    root_config = {}
+    current_table = None
+
+    for line_idx, raw_line in enumerate(content.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("["):
+            if line.startswith("[["):
+                if not line.endswith("]]") or len(line) <= 4:
+                    raise ValueError(f"Line {line_idx}: Malformed array-of-tables header: {raw_line}")
+                current_table = line[2:-2].strip()
+            else:
+                if not line.endswith("]") or len(line) <= 2:
+                    raise ValueError(f"Line {line_idx}: Malformed table header: {raw_line}")
+                current_table = line[1:-1].strip()
+            continue
+
+        if "=" not in line:
+            raise ValueError(f"Line {line_idx}: Invalid TOML syntax, expected key = value: {raw_line}")
+
+        key_part, val_part = line.split("=", 1)
+        key = key_part.strip()
+        val = val_part.strip()
+
+        if not key:
+            raise ValueError(f"Line {line_idx}: Missing key before '=': {raw_line}")
+        if not val:
+            raise ValueError(f"Line {line_idx}: Missing value after '=': {raw_line}")
+
+        if val.startswith('"'):
+            end_quote = val.find('"', 1)
+            if end_quote == -1:
+                raise ValueError(f"Line {line_idx}: Unterminated double-quoted string: {raw_line}")
+            remainder = val[end_quote+1:].strip()
+            if remainder and not remainder.startswith("#"):
+                raise ValueError(f"Line {line_idx}: Unexpected characters after string value: {raw_line}")
+            parsed_val = val[1:end_quote]
+        elif val.startswith("'"):
+            end_quote = val.find("'", 1)
+            if end_quote == -1:
+                raise ValueError(f"Line {line_idx}: Unterminated single-quoted string: {raw_line}")
+            remainder = val[end_quote+1:].strip()
+            if remainder and not remainder.startswith("#"):
+                raise ValueError(f"Line {line_idx}: Unexpected characters after string value: {raw_line}")
+            parsed_val = val[1:end_quote]
+        else:
+            val_no_c = val.split("#", 1)[0].strip()
+            if not val_no_c:
+                raise ValueError(f"Line {line_idx}: Missing value after '=': {raw_line}")
+            parsed_val = val_no_c
+
+        if current_table is None:
+            root_config[key] = parsed_val
+
+    if "model_provider" not in root_config:
+        raise ValueError("Missing required root-level 'model_provider' in config.toml")
+
+    model_provider = root_config["model_provider"]
+    if not isinstance(model_provider, str) or not model_provider.strip() or model_provider in ('""', "''"):
+        raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
+
+    return root_config
+
+
 def _validate_profile_dir(profile_path: Path) -> None:
     """Validate that profile_path contains valid auth.json, config.toml, and required credentials."""
     auth_file = profile_path / "auth.json"
@@ -158,8 +230,10 @@ def _validate_profile_dir(profile_path: Path) -> None:
     except Exception as exc:
         raise RuntimeError(f"Configured CODEX_HOME could not read config.toml: {profile_path}") from exc
 
-    if not re.search(r"(?m)^[ \t]*model_provider[ \t]*=", config_content):
-        raise RuntimeError(f"Configured CODEX_HOME config.toml missing model_provider: {profile_path}")
+    try:
+        parse_and_validate_config_toml(config_content)
+    except Exception as exc:
+        raise RuntimeError(f"Configured CODEX_HOME config.toml is invalid or missing model_provider: {profile_path} ({exc})") from exc
 
 
 def resolve_and_validate_codex_home(env: Optional[Dict[str, str]] = None) -> str:
