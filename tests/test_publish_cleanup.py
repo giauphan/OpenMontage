@@ -1160,7 +1160,7 @@ def test_publisher_level_api_and_oembed_failure_returns_structured_error(monkeyp
     monkeypatch.setenv("YOUTUBE_CLIENT_SECRET_FILE", str(secret_file))
     monkeypatch.setenv("YOUTUBE_TOKEN_PATH", str(token_file))
 
-    def mock_get_auth(self, s, t):
+    def mock_get_auth(self, s, t, *args, **kwargs):
         raise ValueError("AUTH_REQUIRED: Please authenticate by visiting URL")
 
     monkeypatch.setattr(YoutubePublisher, "_get_authenticated_service", mock_get_auth)

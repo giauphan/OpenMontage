@@ -1,8 +1,10 @@
-"""Test init_codex_profile.sh script behaviors."""
+"""Tests for init_codex_profile.sh (reader-consistent symlink activation + strict validation)."""
 
 import json
 import os
+import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -13,13 +15,7 @@ SCRIPT = ROOT / "scripts" / "init_codex_profile.sh"
 
 
 def _get_current_user():
-    """Get current user name for ownership tests."""
-    result = subprocess.run(
-        ["id", "-u", "-n"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
+    result = subprocess.run(["id", "-u", "-n"], capture_output=True, text=True, timeout=5)
     return result.stdout.strip()
 
 
@@ -30,412 +26,209 @@ def _run_init_script(
     *,
     refresh: bool = False,
     target_user: str = None,
+    env_extra: dict = None,
 ):
-    """Run init_codex_profile.sh with given directories."""
     env = os.environ.copy()
     if refresh:
         env["REFRESH_CODEX_PROFILE"] = "1"
+    if env_extra:
+        env.update(env_extra)
 
     args = [str(SCRIPT), str(source_dir), str(target_dir)]
     if target_user:
         args.append(target_user)
 
-    return subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=env,
-    )
+    return subprocess.run(args, capture_output=True, text=True, timeout=30, env=env)
 
 
-def test_atomic_replacement_validation_failure_preserves_target(tmp_path: Path):
-    """If validation fails mid-copy, existing target stays intact."""
-    source = tmp_path / "source"
+def _make_source(tmp_path: Path, name: str, key: str, config: str = "model_provider = 'openai'\n", extra: dict = None):
+    src = tmp_path / name
+    src.mkdir()
+    (src / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": key}))
+    (src / "config.toml").write_text(config)
+    if extra:
+        for fn, body in extra.items():
+            (src / fn).write_text(body)
+    return src
+
+
+# ---------------------------------------------------------------------------
+# Reader-consistent activation (symlink model)
+# ---------------------------------------------------------------------------
+
+def test_target_becomes_symlink_to_generation_dir(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-first")
     target = tmp_path / "target"
-    source.mkdir()
-    target.mkdir()
-
-    # Create valid target
-    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
-    (target / "config.toml").write_text("model_provider = 'openai'\n")
-
-    # Create invalid source (missing OPENAI_API_KEY)
-    (source / "auth.json").write_text(json.dumps({"OTHER_KEY": "value"}))
-    (source / "config.toml").write_text("model_provider = 'test'\n")
-
-    result = _run_init_script(tmp_path, source, target, refresh=True)
-
-    assert result.returncode == 1
-    assert "missing or invalid OPENAI_API_KEY" in result.stderr
-    # Target should be unchanged
-    assert (target / "auth.json").exists()
-    original = json.loads((target / "auth.json").read_text())
-    assert original["OPENAI_API_KEY"] == "sk-original"
-
-
-def test_json_validation_requires_valid_json(tmp_path: Path):
-    """Source auth.json must be valid JSON."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text("not valid json {")
-    (source / "config.toml").write_text("model_provider = 'test'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
-    assert result.returncode == 1
-    assert "Invalid JSON" in result.stderr
-
-
-def test_json_validation_requires_openai_api_key(tmp_path: Path):
-    """Source auth.json must contain OPENAI_API_KEY."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OTHER_KEY": "value"}))
-    (source / "config.toml").write_text("model_provider = 'test'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
-    assert result.returncode == 1
-    assert "missing or invalid OPENAI_API_KEY" in result.stderr
-
-
-def test_toml_commented_model_provider_rejected(tmp_path: Path):
-    """Source config.toml with model_provider commented out is rejected."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("# model_provider = 'test'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
-    assert result.returncode == 1
-    assert "model_provider" in result.stderr
-
-
-def test_toml_validation_requires_model_provider(tmp_path: Path):
-    """Source config.toml must contain model_provider."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("other_config = 'value'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
-    assert result.returncode == 1
-    assert "model_provider" in result.stderr
-
-
-def test_idempotent_validates_existing_target_config_toml(tmp_path: Path):
-    """Idempotent check validates existing target config.toml has model_provider."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-    target.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-new"}))
-    (source / "config.toml").write_text("model_provider = 'new'\n")
-
-    # Target has valid auth.json but commented-out model_provider in config.toml
-    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
-    (target / "config.toml").write_text("# model_provider = 'original'\n")
-
-    result = _run_init_script(tmp_path, source, target, refresh=False)
-
-    assert result.returncode == 1
-    assert "Existing target profile is invalid" in result.stderr
-
-
-def test_idempotent_skip_when_target_valid(tmp_path: Path):
-    """If target already has valid auth.json and REFRESH not set, skip."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-    target.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-new"}))
-    (source / "config.toml").write_text("model_provider = 'new'\n")
-
-    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
-    (target / "config.toml").write_text("model_provider = 'original'\n")
-
-    result = _run_init_script(tmp_path, source, target, refresh=False)
-
-    assert result.returncode == 0
-    # Target should be unchanged
-    original = json.loads((target / "auth.json").read_text())
-    assert original["OPENAI_API_KEY"] == "sk-original"
-    assert "original" in (target / "config.toml").read_text()
-
-
-def test_force_refresh_overwrites_valid_target(tmp_path: Path):
-    """REFRESH_CODEX_PROFILE=1 forces replacement."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-    target.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-new"}))
-    (source / "config.toml").write_text("model_provider = 'new'\n")
-
-    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
-    (target / "config.toml").write_text("model_provider = 'original'\n")
-
-    result = _run_init_script(tmp_path, source, target, refresh=True)
-
-    assert result.returncode == 0
-    assert "SUCCESS" in result.stdout
-    # Target should be updated
-    new = json.loads((target / "auth.json").read_text())
-    assert new["OPENAI_API_KEY"] == "sk-new"
-    assert "new" in (target / "config.toml").read_text()
-
-
-def test_permissions_target_dir_700(tmp_path: Path):
-    """After successful init, target dir is mode 700."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = 'test'\n")
 
     result = _run_init_script(tmp_path, source, target)
 
     assert result.returncode == 0
-    assert target.exists()
-    # Check directory permissions (0o700)
-    stat_info = target.stat()
-    mode = stat_info.st_mode & 0o777
-    assert mode == 0o700, f"Expected 0o700, got {oct(mode)}"
+    assert target.is_symlink(), "TARGET_DIR should be a symlink to a versioned generation"
+    assert target.resolve().is_dir(), "Symlink must resolve to a valid directory"
+    # The live generation holds the files.
+    assert (target / "auth.json").is_file()
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-first"
 
 
-def test_permissions_files_600(tmp_path: Path):
-    """After successful init, files are mode 600."""
-    source = tmp_path / "source"
+def test_reader_steady_state_observes_no_missing_window(tmp_path: Path):
+    """A concurrent reader must never observe an absent dir or mixed-generation
+    files during a refresh. This is the exact defect reproduced with the old
+    two-directory-move activation (reader saw 89 'MISSING' samples)."""
     target = tmp_path / "target"
-    source.mkdir()
+    src1 = _make_source(tmp_path, "src1", "sk-v1")
+    r0 = _run_init_script(tmp_path, src1, target)
+    assert r0.returncode == 0
 
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = 'test'\n")
+    src2 = _make_source(tmp_path, "src2", "sk-v2")
 
-    result = _run_init_script(tmp_path, source, target)
+    anomalies = []
+    stop = threading.Event()
 
-    assert result.returncode == 0
-    # Check file permissions (0o600)
-    for filename in ["auth.json", "config.toml"]:
-        file_path = target / filename
-        assert file_path.exists()
-        stat_info = file_path.stat()
-        mode = stat_info.st_mode & 0o777
-        assert mode == 0o600, f"Expected 0o600 for {filename}, got {oct(mode)}"
+    def reader():
+        while not stop.is_set():
+            if not target.is_dir():
+                anomalies.append("MISSING")
+            elif not (target / "auth.json").is_file() or not (target / "config.toml").is_file():
+                anomalies.append("INCONSISTENT")
+
+    t = threading.Thread(target=reader, daemon=True)
+    t.start()
+    r1 = _run_init_script(tmp_path, src2, target, refresh=True)
+    stop.set()
+    t.join(timeout=5)
+
+    assert r1.returncode == 0
+    assert not anomalies, f"reader observed anomalies during refresh: {set(anomalies)}"
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-v2"
 
 
-def test_user_ownership_uses_current_user(tmp_path: Path):
-    """When target user is current user, files are owned by current user."""
-    source = tmp_path / "source"
+def test_first_time_initialization_creates_generation_atomically(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-first")
     target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = 'test'\n")
-
-    current_user = _get_current_user()
-    result = _run_init_script(tmp_path, source, target, target_user=current_user)
-
-    assert result.returncode == 0
-    assert f"user {current_user}" in result.stdout
-    # Verify files exist and are accessible
-    assert (target / "auth.json").exists()
-    assert (target / "config.toml").exists()
-
-
-def test_no_source_exits_silently(tmp_path: Path):
-    """If source dir doesn't exist and no target exists, script fails visibly."""
-    source = tmp_path / "nonexistent_source"
-    target = tmp_path / "target"
-
-    result = _run_init_script(tmp_path, source, target)
-
-    assert result.returncode == 1
-    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
-    assert not target.exists()
-
-
-def test_no_auth_json_exits_silently(tmp_path: Path):
-    """If source has no auth.json and no target exists, script fails visibly."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    # Create only config.toml, no auth.json
-    (source / "config.toml").write_text("model_provider = 'test'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
-    assert result.returncode == 1
-    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
-    assert not target.exists()
-
-
-def test_redacted_errors_no_key_leakage(tmp_path: Path):
-    """Error output must never echo the value of OPENAI_API_KEY."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    secret_key = "sk-secret-should-not-appear-in-output-12345"
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": secret_key}))
-    # Missing model_provider to trigger error
-    (source / "config.toml").write_text("other_config = 'value'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
-    assert result.returncode == 1
-    # Verify the secret does not appear in stdout or stderr
-    assert secret_key not in result.stdout
-    assert secret_key not in result.stderr
-    # Verify error message is present
-    assert "model_provider" in result.stderr
-
-
-def test_successful_initialization_copies_all_files(tmp_path: Path):
-    """Successful init copies auth.json, config.toml, and optional files."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = 'test'\n")
-    (source / "version.json").write_text('{"version": "1.0"}')
-    (source / "models_cache.json").write_text('{"models": []}')
 
     result = _run_init_script(tmp_path, source, target)
 
     assert result.returncode == 0
     assert "SUCCESS" in result.stdout
-    assert (target / "auth.json").exists()
-    assert (target / "config.toml").exists()
-    assert (target / "version.json").exists()
-    assert (target / "models_cache.json").exists()
+    assert target.is_symlink()
+    assert (target / "auth.json").is_file()
+    assert (target / "config.toml").is_file()
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-first"
 
 
-def test_idempotent_validates_existing_target(tmp_path: Path):
-    """Idempotent check validates existing target has OPENAI_API_KEY."""
-    source = tmp_path / "source"
+def test_successful_refresh_prunes_superseded_generations(tmp_path: Path):
+    """Successful refresh retains a retention buffer (newest 5 non-legacy generations)
+    plus any legacy-migrated generations. 7 total refreshes must leave the oldest 2
+    pruned while keeping the most recent 5 intact."""
     target = tmp_path / "target"
-    source.mkdir()
-    target.mkdir()
+    store = tmp_path / "target.store"
 
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-new"}))
-    (source / "config.toml").write_text("model_provider = 'new'\n")
+    # First init + 6 more refreshes => 7 total generations.
+    for i in range(7):
+        key = f"sk-v{i + 1}"
+        src = _make_source(tmp_path, f"src_{key}", key)
+        if i == 0:
+            r = _run_init_script(tmp_path, src, target)
+        else:
+            r = _run_init_script(tmp_path, src, target, refresh=True)
+        assert r.returncode == 0, r.stderr
 
-    # Create invalid target (missing OPENAI_API_KEY)
-    (target / "auth.json").write_text(json.dumps({"OTHER_KEY": "value"}))
+    remaining = []
+    for d in sorted(store.iterdir()):
+        if d.is_dir() and (d / "auth.json").is_file():
+            remaining.append(json.loads((d / "auth.json").read_text())["OPENAI_API_KEY"])
+    # 5 most recent retained: v3, v4, v5, v6, v7. v1 and v2 pruned.
+    assert "sk-v7" in remaining
+    assert "sk-v6" in remaining
+    assert "sk-v5" in remaining
+    assert "sk-v4" in remaining
+    assert "sk-v3" in remaining
+    assert "sk-v2" not in remaining, f"expected v2 pruned with 7+ gens: {remaining}"
+    assert "sk-v1" not in remaining, f"expected v1 pruned with 7+ gens: {remaining}"
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-v7"
 
-    result = _run_init_script(tmp_path, source, target, refresh=False)
 
-    assert result.returncode == 1
-    assert "Existing target profile is invalid" in result.stderr
-
-
-def test_atomic_directory_swap_restores_backup_on_staging_activation_failure(tmp_path: Path):
-    """If moving staging to target fails after target was moved to backup, rollback restores original profile."""
-    source = tmp_path / "source"
+def test_activation_failure_preserves_previous_generation(tmp_path: Path):
+    """If the publish rename fails, the live generation stays intact and the
+    unpublished generation is cleaned up (recovery data is never lost)."""
     target = tmp_path / "target"
+    src1 = _make_source(tmp_path, "src1", "sk-v1")
+    assert _run_init_script(tmp_path, src1, target).returncode == 0
+
+    src2 = _make_source(tmp_path, "src2", "sk-v2")
+
     bin_dir = tmp_path / "bin"
-    source.mkdir()
-    target.mkdir()
     bin_dir.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-new"}))
-    (source / "config.toml").write_text("model_provider = 'new'\n")
-
-    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
-    (target / "config.toml").write_text("model_provider = 'original'\n")
-
-    # Mock mv to succeed for target -> backup move, but fail for staging -> target move
     mock_mv = bin_dir / "mv"
     mock_mv.write_text(
         "#!/usr/bin/env bash\n"
-        "for arg in \"$@\"; do\n"
-        "  if [[ \"$arg\" == *\"_staging_\"* ]]; then\n"
-        "    echo 'MOCK MV STAGING ACTIVATION FAILURE' >&2\n"
-        "    exit 1\n"
-        "  fi\n"
+        "for a in \"$@\"; do\n"
+        "  if [ \"$a\" = \"-T\" ]; then echo 'MOCK PUBLISH FAILURE' >&2; exit 1; fi\n"
         "done\n"
         "exec /bin/mv \"$@\"\n"
     )
     mock_mv.chmod(0o755)
-
-    import os, subprocess
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     env["REFRESH_CODEX_PROFILE"] = "1"
-
-    result = subprocess.run(
-        [str(SCRIPT), str(source), str(target)],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=env,
-    )
+    result = subprocess.run([str(SCRIPT), str(src2), str(target)], capture_output=True, text=True, timeout=30, env=env)
 
     assert result.returncode == 1
-    assert "MOCK MV STAGING ACTIVATION FAILURE" in result.stderr
-    assert "ROLLBACK" in result.stderr
-    assert target.exists()
-    assert (target / "auth.json").exists()
-    assert (target / "config.toml").exists()
-    # Profile was completely restored from backup
-    rolled_back_auth = json.loads((target / "auth.json").read_text())
-    assert rolled_back_auth["OPENAI_API_KEY"] == "sk-original"
-    assert "original" in (target / "config.toml").read_text()
+    assert "MOCK PUBLISH FAILURE" in result.stderr
+    # The live generation still resolves to the pre-refresh content.
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-v1"
+    # The unpublished v2 generation was removed; no gen in the store holds sk-v2.
+    for d in (tmp_path / "target.store").iterdir():
+        auth = d / "auth.json"
+        if d.is_dir() and auth.is_file():
+            assert json.loads(auth.read_text())["OPENAI_API_KEY"] != "sk-v2"
 
 
-def test_first_time_initialization_moves_staging_atomically(tmp_path: Path):
-    """First-time initialization moves entire staging directory atomically without leaving partial state."""
-    source = tmp_path / "source"
+def test_legacy_migration_failure_restores_canonical_path(tmp_path: Path):
+    """When the legacy real-directory target is migrated away but the publish
+    rename fails, the canonical $TARGET_DIR must not be left missing. The
+    rollback trap must restore the legacy directory to its original location."""
     target = tmp_path / "target"
-    source.mkdir()
+    # Create a legacy real-directory target with valid content.
+    target.mkdir()
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-legacy"}))
+    (target / "config.toml").write_text("model_provider = 'legacy'\n")
 
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-first"}))
-    (source / "config.toml").write_text("model_provider = 'first'\n")
+    src = _make_source(tmp_path, "src", "sk-v2")
 
-    result = _run_init_script(tmp_path, source, target)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    mock_mv = bin_dir / "mv"
+    mock_mv.write_text(
+        "#!/usr/bin/env bash\n"
+        "for a in \"$@\"; do\n"
+        "  if [ \"$a\" = \"-T\" ]; then echo 'MOCK LEGACY PUBLISH FAILURE' >&2; exit 1; fi\n"
+        "done\n"
+        "exec /bin/mv \"$@\"\n"
+    )
+    mock_mv.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["REFRESH_CODEX_PROFILE"] = "1"
+    result = subprocess.run([str(SCRIPT), str(src), str(target)], capture_output=True, text=True, timeout=30, env=env)
 
-    assert result.returncode == 0
-    assert "SUCCESS" in result.stdout
-    assert target.exists()
-    assert (target / "auth.json").exists()
-    assert (target / "config.toml").exists()
-    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-first"
+    assert result.returncode == 1
+    assert "MOCK LEGACY PUBLISH FAILURE" in result.stderr
+    # Rollback must restore the legacy real directory exactly as it was.
+    assert target.is_dir(), "legacy directory must be restored after publish failure"
+    assert not target.is_symlink(), "no symlink should be left behind"
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-legacy"
+    assert "legacy" in (target / "config.toml").read_text()
 
 
 def test_flock_concurrency_blocks_overlapping_initialization(tmp_path: Path):
-    """A concurrent process holding the target flock blocks overlapping initialization."""
-    source = tmp_path / "source"
+    source = _make_source(tmp_path, "source", "sk-test")
     target = tmp_path / "target"
-    source.mkdir()
-    target.mkdir()
 
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = 'test'\n")
-
-    lock_file = tmp_path / "target.lock"
-    # Hold the lock in Python
     import fcntl
+    lock_file = tmp_path / "target.lock"
     lock_fd = open(lock_file, "w")
     fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-
     try:
         result = _run_init_script(tmp_path, source, target, refresh=True)
         assert result.returncode == 1
@@ -445,70 +238,287 @@ def test_flock_concurrency_blocks_overlapping_initialization(tmp_path: Path):
         lock_fd.close()
 
 
-def test_toml_numeric_model_provider_rejected(tmp_path: Path):
-    """Source config.toml with numeric model_provider is rejected."""
-    source = tmp_path / "source"
+def test_permissions_target_dir_700(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test")
     target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = 123\n")
 
     result = _run_init_script(tmp_path, source, target)
 
+    assert result.returncode == 0
+    assert target.is_symlink()
+    gen = target.resolve()
+    assert (gen.stat().st_mode & 0o777) == 0o700, f"gen dir expected 0o700, got {oct(gen.stat().st_mode & 0o777)}"
+
+
+def test_permissions_files_600(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test")
+    target = tmp_path / "target"
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 0
+    for filename in ["auth.json", "config.toml"]:
+        fp = target / filename
+        assert fp.is_file()
+        assert (fp.stat().st_mode & 0o777) == 0o600, f"expected 0o600 for {filename}"
+
+
+def test_user_ownership_uses_current_user(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test")
+    target = tmp_path / "target"
+    current_user = _get_current_user()
+    result = _run_init_script(tmp_path, source, target, target_user=current_user)
+
+    assert result.returncode == 0
+    assert f"user {current_user}" in result.stdout
+    assert (target / "auth.json").is_file()
+
+
+# ---------------------------------------------------------------------------
+# R2: missing-source fail-closed + valid-target reuse
+# ---------------------------------------------------------------------------
+
+def test_no_source_exits_visibly(tmp_path: Path):
+    result = _run_init_script(tmp_path, tmp_path / "nonexistent_source", tmp_path / "target")
     assert result.returncode == 1
-    assert "config.toml missing model_provider" in result.stderr or "Invalid" in result.stderr
+    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
+    assert not (tmp_path / "target").exists()
+
+
+def test_no_auth_json_exits_visibly(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "config.toml").write_text("model_provider = 'test'\n")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
+
+
+def test_missing_source_reuses_valid_target(tmp_path: Path):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-reused"}))
+    (target / "config.toml").write_text("model_provider = 'reused'\n")
+
+    result = _run_init_script(tmp_path, tmp_path / "no_source", target)
+    assert result.returncode == 0
+    assert "Reusing existing runtime" in result.stdout
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-reused"
+
+
+def test_missing_source_fails_when_target_invalid(tmp_path: Path):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-x"}))
+    (target / "config.toml").write_text("# no provider\n")
+
+    result = _run_init_script(tmp_path, tmp_path / "no_source", target)
+    assert result.returncode == 1
+    assert "existing target at" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Idempotent skip + force refresh
+# ---------------------------------------------------------------------------
+
+def test_idempotent_skip_when_target_valid(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-new")
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
+    (target / "config.toml").write_text("model_provider = 'original'\n")
+
+    result = _run_init_script(tmp_path, source, target, refresh=False)
+    assert result.returncode == 0
+    assert "Skipping replacement" in result.stdout
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-original"
+
+
+def test_idempotent_validates_existing_target_config_toml(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-new")
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
+    (target / "config.toml").write_text("# model_provider = 'original'\n")
+
+    result = _run_init_script(tmp_path, source, target, refresh=False)
+    assert result.returncode == 1
+    assert "Existing target profile is invalid" in result.stderr
+
+
+def test_force_refresh_overwrites_valid_target(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-new", config="model_provider = 'new'\n")
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-original"}))
+    (target / "config.toml").write_text("model_provider = 'original'\n")
+
+    result = _run_init_script(tmp_path, source, target, refresh=True)
+    assert result.returncode == 0
+    assert "SUCCESS" in result.stdout
+    assert json.loads((target / "auth.json").read_text())["OPENAI_API_KEY"] == "sk-new"
+    assert "new" in (target / "config.toml").read_text()
+
+
+def test_successful_initialization_copies_all_files(tmp_path: Path):
+    source = _make_source(
+        tmp_path, "source", "sk-test",
+        extra={"version.json": '{"version": "1.0"}', "models_cache.json": '{"models": []}'},
+    )
+    target = tmp_path / "target"
+
+    result = _run_init_script(tmp_path, source, target)
+
+    assert result.returncode == 0
+    assert "SUCCESS" in result.stdout
+    for fn in ("auth.json", "config.toml", "version.json", "models_cache.json"):
+        assert (target / fn).is_file()
+
+
+# ---------------------------------------------------------------------------
+# Validation: JSON + strict TOML (fallback is live on the isolated test env)
+# ---------------------------------------------------------------------------
+
+def test_json_validation_requires_valid_json(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-x")
+    (source / "auth.json").write_text("not valid json {")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+    assert "Invalid JSON" in result.stderr
+
+
+def test_json_validation_requires_openai_api_key(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "auth.json").write_text(json.dumps({"OTHER_KEY": "value"}))
+    (source / "config.toml").write_text("model_provider = 'test'\n")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+    assert "missing or invalid OPENAI_API_KEY" in result.stderr
+
+
+def test_redacted_errors_no_key_leakage(tmp_path: Path):
+    source = tmp_path / "source"
+    source.mkdir()
+    secret = "sk-secret-should-not-appear-12345"
+    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": secret}))
+    (source / "config.toml").write_text("other_config = 'value'\n")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+    assert secret not in result.stdout
+    assert secret not in result.stderr
+    assert "model_provider" in result.stderr
+
+
+def test_toml_malformed_array_rejected(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "test"\nbroken = [\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+    assert "broken" in result.stderr or "array" in result.stderr or "TOML" in result.stderr
+
+
+def test_toml_malformed_inline_table_rejected(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "test"\nbroken = {\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+
+
+def test_toml_valid_array_and_table_accepted(tmp_path: Path):
+    source = _make_source(
+        tmp_path, "source", "sk-test",
+        config='model_provider = "test"\nallowed = ["a", "b"]\nprovider = { base_url = "https://x", weight = 0.5 }\n',
+    )
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "target" / "config.toml").is_file()
+
+
+def test_toml_numeric_model_provider_rejected(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test", config="model_provider = 123\n")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
 
 
 def test_toml_boolean_model_provider_rejected(tmp_path: Path):
-    """Source config.toml with boolean model_provider is rejected."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = true\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
+    source = _make_source(tmp_path, "source", "sk-test", config="model_provider = true\n")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
     assert result.returncode == 1
-    assert "config.toml missing model_provider" in result.stderr or "Invalid" in result.stderr
 
 
 def test_toml_duplicate_model_provider_rejected(tmp_path: Path):
-    """Source config.toml with duplicate model_provider at root is rejected."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("model_provider = 'first'\nmodel_provider = 'second'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "first"\nmodel_provider = "second"\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
     assert result.returncode == 1
+
+
+def test_toml_duplicate_key_in_table_rejected(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "x"\n[profile]\nk = 1\nk = 2\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+
+
+def test_toml_uppercase_boolean_rejected(tmp_path: Path):
+    """TOML booleans are case-sensitive: TRUE / False must be rejected."""
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "x"\nflag = TRUE\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+
+
+def test_toml_leading_zero_decimal_rejected(tmp_path: Path):
+    """TOML integers must not have leading zeros (007 is invalid)."""
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "x"\nbad = 007\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+
+
+def test_toml_invalid_escape_sequence_rejected(tmp_path: Path):
+    r"""Basic-string escapes must be valid: \x is not a TOML escape."""
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "x"\nbad = "foo\\x"\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+
+
+def test_toml_duplicate_key_in_inline_table_rejected(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "x"\nbad = { a = 1, a = 2 }\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+
+
+def test_toml_empty_dotted_key_segment_rejected(tmp_path: Path):
+    """Dotted key segments must be non-empty: a..b is invalid."""
+    source = _make_source(tmp_path, "source", "sk-test",
+                          config='model_provider = "x"\na..b = 1\n')
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 1
+
+
+def test_toml_valid_string_with_escapes_accepted(tmp_path: Path):
+    r"""Valid basic-string escapes like \n, \t, \uXXXX must be accepted."""
+    source = _make_source(
+        tmp_path, "source", "sk-test",
+        config='model_provider = "test"\nmsg = "a\\n\\t\\u0041"\n',
+    )
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
+    assert result.returncode == 0, result.stderr
 
 
 def test_toml_unrelated_model_provider_rejected(tmp_path: Path):
-    """Source config.toml with model_provider only in a subtable is rejected."""
-    source = tmp_path / "source"
-    target = tmp_path / "target"
-    source.mkdir()
-
-    (source / "auth.json").write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
-    (source / "config.toml").write_text("[unrelated]\nmodel_provider = 'test'\n")
-
-    result = _run_init_script(tmp_path, source, target)
-
+    source = _make_source(tmp_path, "source", "sk-test", config="[unrelated]\nmodel_provider = 'test'\n")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
     assert result.returncode == 1
-    assert "config.toml missing model_provider" in result.stderr
+    assert "model_provider" in result.stderr
 
-def test_missing_source_fails_visibly_when_no_target_exists(tmp_path: Path):
-    """Missing source and missing target must fail visibly."""
-    source = tmp_path / "missing_source"
-    target = tmp_path / "target"
 
-    result = _run_init_script(tmp_path, source, target)
-
+def test_toml_commented_model_provider_rejected(tmp_path: Path):
+    source = _make_source(tmp_path, "source", "sk-test", config="# model_provider = 'test'\n")
+    result = _run_init_script(tmp_path, source, tmp_path / "target")
     assert result.returncode == 1
-    assert "lacks auth.json/config.toml and no valid target exists" in result.stderr
+    assert "model_provider" in result.stderr

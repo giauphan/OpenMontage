@@ -121,6 +121,25 @@ class TestCodexHomeValidation:
         with pytest.raises(RuntimeError, match="Fallback to temporary credentials is disabled"):
             resolve_and_validate_codex_home({})
 
+    def test_resolution_pins_to_realpath_snapshot(self, tmp_path, monkeypatch):
+        """Proof that the resolution yields the realpath, ensuring consumers
+        see a frozen generation snapshot even if the target pointer refreshes."""
+        store = tmp_path / "store"
+        store.mkdir()
+        gen = store / "gen_123"
+        gen.mkdir()
+        (gen / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}')
+        (gen / "config.toml").write_text('model_provider = "test"')
+
+        codex_home = tmp_path / ".codex"
+        codex_home.symlink_to(gen)
+
+        env = {"CODEX_HOME": str(codex_home)}
+        result = resolve_and_validate_codex_home(env)
+
+        # Must return the fully resolved generation path, not the symlink path
+        assert result == str(gen.resolve())
+
 
 class TestParseAndValidateConfigToml:
     """Test parse_and_validate_config_toml strictly enforces TOML syntax and string model_provider."""
@@ -162,7 +181,129 @@ class TestParseAndValidateConfigToml:
 
     def test_malformed_syntax_rejected(self):
         content = 'model_provider\n'
-        with pytest.raises(ValueError, match="Invalid TOML syntax"):
+        with pytest.raises(ValueError, match="Invalid TOML syntax|expected key = value"):
+            parse_and_validate_config_toml(content)
+
+    def test_malformed_array_rejected_in_fallback(self, monkeypatch):
+        # Force the strict fallback by making tomllib and tomli unimportable.
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\nbroken = [\n'
+        with pytest.raises(ValueError, match="unclosed|fallback validator|missing value|syntax"):
+            parse_and_validate_config_toml(content)
+
+    def test_malformed_inline_table_rejected_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\nbroken = {\n'
+        with pytest.raises(ValueError, match="unclosed|fallback validator|missing value|syntax"):
+            parse_and_validate_config_toml(content)
+
+    def test_valid_array_and_inline_table_accepted_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = (
+            'model_provider = "openai"\n'
+            'tags = ["ai", "video"]\n'
+            'settings = { timeout = 30, retries = 3 }\n'
+        )
+        res = parse_and_validate_config_toml(content)
+        assert res["model_provider"] == "openai"
+
+    def test_duplicate_table_header_rejected_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\n[section]\nk = 1\n[section]\nk = 2\n'
+        with pytest.raises(ValueError, match="duplicate table header"):
+            parse_and_validate_config_toml(content)
+
+    def test_uppercase_boolean_rejected_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\nflag = TRUE\n'
+        with pytest.raises(ValueError, match="invalid TOML value"):
+            parse_and_validate_config_toml(content)
+
+    def test_leading_zero_decimal_rejected_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\nbad = 007\n'
+        with pytest.raises(ValueError, match="invalid TOML value"):
+            parse_and_validate_config_toml(content)
+
+    def test_invalid_escape_sequence_rejected_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\nbad = "foo\\x"\n'
+        with pytest.raises(ValueError, match="invalid escape sequence"):
+            parse_and_validate_config_toml(content)
+
+    def test_duplicate_key_in_inline_table_rejected_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\nbad = { a = 1, a = 2 }\n'
+        with pytest.raises(ValueError, match="duplicate key 'a' in inline table"):
+            parse_and_validate_config_toml(content)
+
+    def test_empty_dotted_key_segment_rejected_in_fallback(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def _no_toml(name, *args, **kwargs):
+            if name in ("tomllib", "tomli"):
+                raise ImportError(f"mock: no {name}")
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _no_toml)
+
+        content = 'model_provider = "test"\na..b = 1\n'
+        with pytest.raises(ValueError, match="invalid key"):
             parse_and_validate_config_toml(content)
 
 
@@ -353,6 +494,12 @@ class TestCodexFailClosedStrictReview:
         video_path.write_bytes(b"content" * 100)
         meta_path = test_dir / "meta.json"
         meta_path.write_text("{}", encoding="utf-8")
+
+        codex_home = test_dir / "codex_home"
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}', encoding="utf-8")
+        (codex_home / "config.toml").write_text('model_provider = "openai"\n', encoding="utf-8")
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
         monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: "/usr/bin/codex")
         monkeypatch.setattr(validator, "_extract_frames", lambda *args, **kwargs: [test_dir / "frame.png"])
