@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -392,6 +393,9 @@ def test_stale_script_dry_run_identifies_published_vs_pending(tmp_path):
 
     env = dict(os.environ)
     env["OPENMONTAGE_ROOT"] = str(tmp_path)
+    # Hermetic interpreter selection: use the running pytest interpreter so the
+    # eligibility module resolves regardless of host system-python dependencies.
+    env["PYTHON_BIN"] = sys.executable
 
     res = subprocess.run(
         ["bash", str(script_path), "--dry-run", "--all"],
