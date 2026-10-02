@@ -34,7 +34,8 @@ def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tm
     cand_dir.mkdir()
     (cand_dir / "publish_metadata.json").write_text(json.dumps({
         "id": "cand_A",
-        "title": "T",
+        "title": "Tin tức công nghệ #tintuc #congnghe #ai",
+        "description": "Bản tin công nghệ hàng ngày #tintuc #congnghe #ai",
         "status": "generated",
         "yt_shorts": "renders/final_reels_vi_9x16.mp4",
         "ig_reels": "renders/final_reels_vi_9x16.mp4",
