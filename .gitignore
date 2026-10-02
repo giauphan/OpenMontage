@@ -115,4 +115,4 @@ venv/
 !package-lock.json
 logs
 .claude/worktrees/
-.env.*
+.env.*plan/
