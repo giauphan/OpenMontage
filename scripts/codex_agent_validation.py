@@ -1167,43 +1167,47 @@ Return a valid JSON object matching this schema:
                 ValidationResult(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
             ]
 
-        # Early check: Missing HyperFrames HTML source must fail review immediately
-        comp_path = self.project_dir / ("hyperframes_reels/index.html" if "reels" in video_path.name else "hyperframes/index.html")
-        if not comp_path.is_file():
-            comp_path = self.project_dir / "hyperframes/index.html"
-
-        if not comp_path.is_file():
-            return [
-                ValidationResult(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
-                    details={"error": "Missing HyperFrames HTML source"},
-                )
-            ]
-
-        # Early check: Frame extraction
-        frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-review-"))
-        frame_paths = self._extract_frames(abs_video_path, frame_dir) if abs_video_path.is_file() and abs_video_path.stat().st_size > 0 else []
-        if not frame_paths:
-            return [
-                ValidationResult(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
-                    details={"error": "Frame extraction failed"},
-                )
-            ]
+        # R6/R7: Hoist missing-HTML and frame-extraction pre-checks before the
+        # CLI gate so strict-mode failures are reported even when no CLI binary
+        # is available on the host.
+        if self.strict_mode:
+            comp_path = self.project_dir / (
+                "hyperframes_reels/index.html"
+                if "reels" in Path(video_path).name
+                else "hyperframes/index.html"
+            )
+            if not comp_path.is_file():
+                comp_path = self.project_dir / "hyperframes/index.html"
+            if not comp_path.is_file():
+                return [
+                    ValidationResult(
+                        check_name="Visual Quality",
+                        passed=False,
+                        message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
+                        details={"error": "Missing HyperFrames HTML source"},
+                    )
+                ]
+            _pre_frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-pre-"))
+            try:
+                _pre_frames = self._extract_frames(abs_video_path, _pre_frame_dir)
+            except Exception:
+                _pre_frames = []
+            if not _pre_frames:
+                return [
+                    ValidationResult(
+                        check_name="Visual Quality",
+                        passed=False,
+                        message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
+                        details={"error": "Frame extraction failed"},
+                    )
+                ]
 
         claude_mod = sys.modules.get("scripts.claude_agent_validation")
-        agent_bin = ""
         if claude_mod and hasattr(claude_mod, "resolve_claude_cli"):
             claude_fn = getattr(claude_mod, "resolve_claude_cli")
-            try:
-                c_bin = claude_fn()
-                if c_bin:
-                    agent_bin = c_bin
-                elif getattr(claude_fn, "__name__", "") == "<lambda>":
+            if getattr(claude_fn, "__name__", "") == "<lambda>":
+                claude_bin = claude_fn()
+                if not claude_bin:
                     return [
                         ValidationResult(
                             check_name="CLAUDE Agent Review Gate",
@@ -1212,11 +1216,8 @@ Return a valid JSON object matching this schema:
                             details={"error": "claude CLI not found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
                         )
                     ]
-            except Exception:
-                pass
 
-        if not agent_bin:
-            agent_bin = resolve_agent_cli()
+        agent_bin = resolve_agent_cli()
         if not agent_bin:
             if self.strict_mode:
                 return [
