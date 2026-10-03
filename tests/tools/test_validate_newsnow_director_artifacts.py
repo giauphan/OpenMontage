@@ -20,11 +20,11 @@ def test_validator_accepts_valid_flat_artifact(tmp_path):
     script = arts / "script_vi.json"
 
     # Director output with theme and sections (no version) is normalized by validator
-    script.write_text(json.dumps({"theme": "Tin tức công nghệ", "total_duration_seconds": 10, "sections": [{"id": "1", "text": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}]}))
+    script.write_text(json.dumps({"theme": "Tin tức công nghệ", "total_duration_seconds": 10, "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}]}), encoding="utf-8")
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
-    # Valid
-    script.write_text(json.dumps({"version": "1.0", "title": "Tin tức công nghệ", "total_duration_seconds": 10, "sections": [{"id": "1", "text_vi": "Nội dung tin tức", "text": "Nội dung công nghệ", "start_seconds": 0, "end_seconds": 10}]}))
+    # Valid: Vietnamese text_vi preferred over English text
+    script.write_text(json.dumps({"version": "1.0", "title": "Tin tức công nghệ", "total_duration_seconds": 10, "sections": [{"id": "1", "text_vi": "Nội dung mới đây", "text": "Hello world", "start_seconds": 0, "end_seconds": 10}]}), encoding="utf-8")
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
 
@@ -35,8 +35,8 @@ def test_validator_requires_both_compositions_when_requested(tmp_path):
         "version": "1.0",
         "title": "Tin tức công nghệ",
         "total_duration_seconds": 10,
-        "sections": [{"id": "1", "text": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}],
-    }))
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}],
+    }), encoding="utf-8")
 
     assert helper.validate_and_promote_director_artifacts(tmp_path, require_compositions=True) is False
 
@@ -87,12 +87,12 @@ def test_validator_accepts_comparison_enhancement_cue(tmp_path):
         "total_duration_seconds": 10,
         "sections": [{
             "id": "1",
-            "text": "Nội dung tin tức",
+            "text": "Nội dung mới đây",
             "start_seconds": 0,
             "end_seconds": 10,
-            "enhancement_cues": [{"type": "comparison", "description": "Trước và sau"}],
+            "enhancement_cues": [{"type": "comparison", "description": "Before and after"}],
         }],
-    }))
+    }), encoding="utf-8")
 
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
@@ -107,12 +107,12 @@ def test_validator_promotes_nested_checkpoint(tmp_path):
         "version": "1.0",
         "title": "Tin tức công nghệ",
         "total_duration_seconds": 10,
-        "sections": [{"id": "1", "text_vi": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}]
+        "sections": [{"id": "1", "text_vi": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}]
     }
 
     # Stale/old checkpoint check
     import os
-    checkpoint.write_text(json.dumps({"artifacts": {"script": payload}}))
+    checkpoint.write_text(json.dumps({"artifacts": {"script": payload}}), encoding="utf-8")
     st = checkpoint.stat()
     assert helper.validate_and_promote_director_artifacts(tmp_path, min_mtime_ns=st.st_mtime_ns + 1000000000) is False
 
@@ -127,9 +127,9 @@ def test_validator_promotes_nested_checkpoint(tmp_path):
         "version": "1.0",
         "title": "Tin tức công nghệ",
         "total_duration_seconds": 10.0,
-        "sections": [{"id": "1", "text": "Nội dung tin tức", "start_seconds": 0.0, "end_seconds": 10.0}]
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0.0, "end_seconds": 10.0}]
     }
-    assert json.loads(promoted.read_text()) == expected_payload
+    assert json.loads(promoted.read_text(encoding="utf-8")) == expected_payload
 
 
 def test_cli_integration(tmp_path):
@@ -139,8 +139,8 @@ def test_cli_integration(tmp_path):
         "version": "1.0",
         "title": "Tin tức công nghệ",
         "total_duration_seconds": 10,
-        "sections": [{"id": "1", "text_vi": "Nội dung tin tức", "start_seconds": 0, "end_seconds": 10}]
-    }))
+        "sections": [{"id": "1", "text_vi": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}]
+    }), encoding="utf-8")
 
     env = {"PYTHONPATH": str(Path(helper.__file__).resolve().parents[1])}
     res = subprocess.run([sys.executable, str(helper.__file__), str(tmp_path)], env=env, capture_output=True, text=True)
@@ -191,13 +191,13 @@ def test_validator_normalizes_director_schema_variants(tmp_path):
     variant_payload = {
         "project_id": "cand_3eb816",
         "version": "2.0",
-        "title_vi": "Tin tức công nghệ mới",
+        "title_vi": "Tin tức công nghệ",
         "total_duration_secs": 90,
         "sections": [
             {
                 "id": 1,
-                "label": "Mở đầu",
-                "narration": "Nội dung tin tức công nghệ",
+                "label": "Hook",
+                "narration": "Chào mừng bạn",
                 "duration_seconds": 10,
                 "audio_file": "s1.wav",
                 "scene_type": "hook"
@@ -205,21 +205,21 @@ def test_validator_normalizes_director_schema_variants(tmp_path):
         ]
     }
 
-    checkpoint.write_text(json.dumps({"artifacts": {"script": variant_payload}}))
+    checkpoint.write_text(json.dumps({"artifacts": {"script": variant_payload}}), encoding="utf-8")
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
-    
+
     promoted = tmp_path / "artifacts" / "script_vi.json"
     assert promoted.is_file()
-    data = json.loads(promoted.read_text())
-    
+    data = json.loads(promoted.read_text(encoding="utf-8"))
+
     # Assert normalized values match schema
     assert data["version"] == "1.0"
-    assert data["title"] == "Tin tức công nghệ mới"
+    assert data["title"] == "Tin tức công nghệ"
     assert data["total_duration_seconds"] == 90.0
     assert "project_id" not in data # Extraneous root key removed
 
     sec = data["sections"][0]
-    assert sec["text"] == "Nội dung tin tức công nghệ"
+    assert sec["text"] == "Chào mừng bạn"
     assert sec["start_seconds"] == 0.0
     assert sec["end_seconds"] == 10.0
     assert "scene_type" not in sec # Extraneous section key removed
@@ -231,26 +231,26 @@ def test_validator_normalizes_missing_version_scene_payload(tmp_path):
     arts.mkdir()
     script = arts / "script_vi.json"
     script.write_text(json.dumps({
-        "title": "Tin tức công nghệ mới",
+        "title": "Tin tức công nghệ",
         "duration_seconds": 8,
         "scenes": [
             {
                 "id": 1,
                 "start_time": 0,
                 "duration": 8,
-                "narration": "Nội dung tin tức công nghệ",
+                "narration": "Chào mừng bạn",
             }
         ],
-    }))
+    }), encoding="utf-8")
 
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
-    data = json.loads(script.read_text())
+    data = json.loads(script.read_text(encoding="utf-8"))
     assert data["version"] == "1.0"
     assert data["total_duration_seconds"] == 8.0
     assert data["sections"] == [{
         "id": "1",
-        "text": "Nội dung tin tức công nghệ",
+        "text": "Chào mừng bạn",
         "start_seconds": 0.0,
         "end_seconds": 8.0,
     }]

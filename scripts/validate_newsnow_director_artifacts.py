@@ -80,7 +80,20 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
                 continue
 
             sec["id"] = str(sec.get("id") or f"sec_{idx}")
-            sec["text"] = sec.get("text") or sec.get("text_vi") or sec.get("text_va") or sec.get("narration_vi") or sec.get("narration") or sec.get("narrator") or ""
+            candidate_texts = [
+                sec.get("text_vi"), sec.get("narration_vi"),
+                sec.get("text_va"), sec.get("text"),
+                sec.get("narration"), sec.get("narrator")
+            ]
+            selected = ""
+            for ct in candidate_texts:
+                if isinstance(ct, str) and ct.strip():
+                    if not check_vietnamese_prose(ct):
+                        selected = ct
+                        break
+                    elif not selected:
+                        selected = ct
+            sec["text"] = selected
             # Normalize Vietnamese diacritics
             if isinstance(sec["text"], str):
                 sec["text"] = _ud.normalize("NFC", sec["text"])
@@ -417,6 +430,19 @@ def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     canonical_script = artifacts_dir / "script_vi.json"
+
+    # Fail closed if research brief is explicitly invalid / non-Vietnamese
+    brief_path = artifacts_dir / "research_brief.json"
+    if brief_path.is_file():
+        try:
+            brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
+            brief_title = brief_data.get("title") or brief_data.get("topic") or ""
+            if brief_title and check_vietnamese_prose(brief_title):
+                if canonical_script.is_file():
+                    canonical_script.unlink(missing_ok=True)
+                return False
+        except Exception:
+            pass
 
     if canonical_script.is_file():
         try:

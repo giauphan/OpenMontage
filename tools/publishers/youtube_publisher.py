@@ -165,6 +165,14 @@ class YoutubePublisher(BaseTool):
         title = inputs["title"][:100]
         description = inputs.get("description", "")
 
+        from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short
+
+        try:
+            ensure_vertical(video_path)
+            ensure_youtube_short(video_path)
+        except ValueError as geom_err:
+            return ToolResult(success=False, error=str(geom_err))
+
         from tools.narration_text import check_vietnamese_prose
         title_errors = check_vietnamese_prose(title)
         if title_errors:
@@ -179,14 +187,6 @@ class YoutubePublisher(BaseTool):
                     success=False,
                     error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
                 )
-
-        from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short
-
-        try:
-            ensure_vertical(video_path)
-            ensure_youtube_short(video_path)
-        except ValueError as geom_err:
-            return ToolResult(success=False, error=str(geom_err))
 
         secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
         if not secret_file_str:
