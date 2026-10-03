@@ -54,6 +54,6 @@ def test_youtube_publisher_rejects_over_sixty_seconds(monkeypatch, tmp_path):
     monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 60.01)
 
     publisher = module.YoutubePublisher()
-    result = publisher.execute({"video_path": str(video), "title": "Title #Shorts"})
+    result = publisher.execute({"video_path": str(video), "title": "Chiều tin công nghệ AI"})
     assert not result.success
     assert "60 seconds" in (result.error or "")

@@ -25,9 +25,18 @@ def records_with_facebook_status(status):
     date = "2026-09-05"
     topic = "topic"
     records = {
-        publish_key(date, topic, "youtube", "short"): {"status": "published"},
-        publish_key(date, topic, "instagram", "reels"): {"status": "published"},
-        publish_key(date, topic, "facebook", "reels"): {"status": status},
+        publish_key(date, topic, "youtube", "short"): {
+            "status": "published",
+            "remote_status": {"privacy_status": "public", "upload_status": "processed"},
+        },
+        publish_key(date, topic, "instagram", "reels"): {
+            "status": "published",
+            "remote_status": {"status": "published"},
+        },
+        publish_key(date, topic, "facebook", "reels"): {
+            "status": status,
+            "remote_status": {"status": "published"} if status == "published" else None,
+        },
     }
     return date, topic, records
 

@@ -27,19 +27,67 @@ from tools.publish_store import PublishStore, publish_key, file_sha256
 from tools.publishers.platform_routes import PLATFORM_ROUTES
 
 
-def reconcile_scheduled_record(store: PublishStore, key: str, record: dict[str, Any]) -> dict[str, Any]:
+def _classify_outcome(outcomes: list | None, route: str, outcome: str, detail: str) -> None:
+    """Record a per-route reconciliation outcome for CLI reporting (no-op when None)."""
+    if outcomes is not None:
+        outcomes.append({"route": route, "outcome": outcome, "detail": detail})
+
+
+def _classify_youtube_outcome(v_status: Any) -> tuple[str, str]:
+    """Classify a YouTube remote-check result: a hard API/auth failure is an
+    actionable block; 'still not proven public' is a safe pending state."""
+    if v_status is None:
+        return "blocked_error", "remote check returned no status (auth/API unavailable)"
+    status = v_status.get("status")
+    if status == "error" or v_status.get("error_type") in ("auth_required", "http_error", "unavailable"):
+        detail = str(v_status.get("error") or v_status.get("error_type") or status)
+        return "blocked_error", detail[:300]
+    return "pending_unverified", f"remote status={v_status.get('privacy_status') or status or 'unknown'} is not authoritative public+processed"
+
+
+def _classify_meta_outcome(m_status: Any, platform: str) -> tuple[str, str]:
+    """Classify a Meta remote-check result: a hard API/auth failure is an
+    actionable block; 'still not proven published' is a safe pending state."""
+    if m_status is None:
+        return "blocked_error", f"{platform} remote check returned no status (auth/API unavailable)"
+    status = m_status.get("status")
+    if status == "error" or m_status.get("error_type") in ("auth_required", "http_error", "unavailable"):
+        detail = str(m_status.get("error") or m_status.get("error_type") or status)
+        return "blocked_error", detail[:300]
+    if status != "published":
+        return "pending_unverified", f"{platform} remote status={status or 'unknown'} is not published"
+    return "promoted", "Graph API confirmed published"
+
+
+def reconcile_scheduled_record(
+    store: PublishStore,
+    key: str,
+    record: dict[str, Any],
+    outcomes: list | None = None,
+) -> dict[str, Any]:
     """Attempt to reconcile a remotely scheduled publication that may have gone live.
-    
+
     CRITICAL SAFETY (R1): Fails closed. Never uses elapsed time, upload acceptance,
     or processing status alone to authorize publication. Requires authoritative
     evidence of public visibility and completed publication.
+
+    When ``outcomes`` (a list) is supplied, a per-route outcome record is appended
+    for this attempt so callers can distinguish blocked verification (hard API/auth
+    failure) from legitimate pending/no-op states. The return type is unchanged.
     """
+    platform = record.get("platform")
+    # Records carry no explicit kind; the canonical routes are youtube/short and
+    # instagram|facebook/reels (matching write_audit_tombstone's platform_records).
+    kind = "short" if platform == "youtube" else "reels"
+    route = f"{platform}/{kind}" if platform else "?"
     status = record.get("status")
     if status != "scheduled":
+        _classify_outcome(outcomes, route, "no_op", f"record status is {status!r}")
         return record
 
     scheduled_for = record.get("scheduled_for")
     if not scheduled_for:
+        _classify_outcome(outcomes, route, "no_op", "no scheduled_for timestamp")
         return record
 
     try:
@@ -47,13 +95,15 @@ def reconcile_scheduled_record(store: PublishStore, key: str, record: dict[str, 
         now_dt = datetime.now(timezone.utc)
         if now_dt < sched_dt:
             # Scheduled time in the future; cannot be published yet
+            _classify_outcome(outcomes, route, "not_due", f"scheduled for {scheduled_for}")
             return record
     except Exception:
+        _classify_outcome(outcomes, route, "no_op", f"unparseable scheduled_for {scheduled_for!r}")
         return record
 
-    platform = record.get("platform")
     video_id = record.get("video_id") or record.get("platform_id")
     if not video_id:
+        _classify_outcome(outcomes, route, "pending_unverified", "no remote id to verify; waiting for upload registration")
         return record
 
     if platform == "youtube":
@@ -80,9 +130,13 @@ def reconcile_scheduled_record(store: PublishStore, key: str, record: dict[str, 
                     verified_at=now_iso,
                     remote_status=v_status,
                 )
+                _classify_outcome(outcomes, route, "promoted", "authoritative public+processed evidence persisted")
                 return updated
+            outcome, detail = _classify_youtube_outcome(v_status)
+            _classify_outcome(outcomes, route, outcome, detail)
         except Exception as exc:
             print(f"DEBUG: YouTube status check failed for {video_id}: {exc}", file=sys.stderr)
+            _classify_outcome(outcomes, route, "blocked_error", f"exception: {exc}")
 
     elif platform in ("instagram", "facebook"):
         try:
@@ -102,10 +156,15 @@ def reconcile_scheduled_record(store: PublishStore, key: str, record: dict[str, 
                     verified_at=now_iso,
                     remote_status=m_status,
                 )
+                _classify_outcome(outcomes, route, "promoted", "Graph API confirmed published")
                 return updated
+            outcome, detail = _classify_meta_outcome(m_status, platform)
+            _classify_outcome(outcomes, route, outcome, detail)
         except Exception as exc:
             print(f"DEBUG: Meta status check failed for {video_id} ({platform}): {exc}", file=sys.stderr)
+            _classify_outcome(outcomes, route, "blocked_error", f"exception: {exc}")
 
+    _classify_outcome(outcomes, route, "pending_unverified", "remote check returned no authoritative evidence")
     return record
 
 
@@ -114,17 +173,22 @@ def reconcile_project_publications(
     project_id: str,
     date: str,
     routes: list[tuple[str, str]],
-) -> list[dict[str, Any]]:
-    """Explicit mutating operation to reconcile scheduled records for a project."""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Explicit mutating operation to reconcile scheduled records for a project.
+
+    Returns (updated_records, outcomes): promotions plus a per-route outcome
+    list that distinguishes blocked verification from legitimate pending/no-op.
+    """
     updated_records = []
+    outcomes: list[dict[str, Any]] = []
     for platform, kind in routes:
         key = publish_key(date, project_id, platform, kind)
         rec = store.get(key)
         if rec and rec.get("status") == "scheduled":
-            updated = reconcile_scheduled_record(store, key, rec)
+            updated = reconcile_scheduled_record(store, key, rec, outcomes=outcomes)
             if updated and updated.get("status") == "published":
                 updated_records.append(updated)
-    return updated_records
+    return updated_records, outcomes
 
 
 def is_project_eligible_for_cleanup(
@@ -280,7 +344,10 @@ def is_project_eligible_for_cleanup(
                             all_store_published = False
                             missing_or_incomplete.append(f"{platform}/{kind} (missing_authoritative_public_evidence)")
                     elif platform in ("instagram", "facebook"):
-                        if remote_st.get("status") != "published" and not rec.get("verified_at"):
+                        # R1: a bare verified_at timestamp is NOT authoritative remote evidence.
+                        # The platform record must carry the Graph-API confirmation that the
+                        # media is publicly published. Symmetric to the YouTube check above.
+                        if remote_st.get("status") != "published":
                             all_store_published = False
                             missing_or_incomplete.append(f"{platform}/{kind} (missing_authoritative_public_evidence)")
             else:
@@ -458,16 +525,26 @@ def _run_reconciliation(project_id: str, date: str | None) -> int:
         print(f"RECONCILE_SKIP: no publish date resolvable for {project_id}")
         return 0
 
-    updated = reconcile_project_publications(store, project_id, pub_date, routes)
-    if updated:
-        for rec in updated:
-            print(
-                f"RECONCILED: {rec.get('key') or rec.get('platform_id') or rec.get('video_id')} "
-                f"-> published (verified_at={rec.get('verified_at')})"
-            )
-    else:
-        print(f"RECONCILE_NO_CHANGE: {project_id} on {pub_date} (no scheduled record promoted; safe to retry)")
-    return 0
+    updated, outcomes = reconcile_project_publications(store, project_id, pub_date, routes)
+    for rec in updated:
+        print(
+            f"RECONCILED: {rec.get('key') or rec.get('platform_id') or rec.get('video_id')} "
+            f"-> published (verified_at={rec.get('verified_at')})"
+        )
+    blocked = [o for o in outcomes if o["outcome"] == "blocked_error"]
+    pending = [o for o in outcomes if o["outcome"] == "pending_unverified"]
+    for o in blocked:
+        print(
+            f"RECONCILE_BLOCKED: {project_id} [{o['route']}] {o['detail']}",
+            file=sys.stderr,
+        )
+    for o in pending:
+        print(f"RECONCILE_PENDING: {project_id} [{o['route']}] {o['detail']}")
+    if not updated and not blocked and not pending:
+        print(
+            f"RECONCILE_NO_CHANGE: {project_id} on {pub_date} (no scheduled record promoted; safe to retry)"
+        )
+    return 2 if blocked else 0
 
 
 def _infer_publish_date(store, project_id: str) -> str | None:

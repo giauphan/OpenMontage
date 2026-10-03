@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -392,6 +393,9 @@ def test_stale_script_dry_run_identifies_published_vs_pending(tmp_path):
 
     env = dict(os.environ)
     env["OPENMONTAGE_ROOT"] = str(tmp_path)
+    # Hermetic interpreter selection: use the running pytest interpreter so the
+    # eligibility module resolves regardless of host system-python dependencies.
+    env["PYTHON_BIN"] = sys.executable
 
     res = subprocess.run(
         ["bash", str(script_path), "--dry-run", "--all"],
@@ -1160,7 +1164,7 @@ def test_publisher_level_api_and_oembed_failure_returns_structured_error(monkeyp
     monkeypatch.setenv("YOUTUBE_CLIENT_SECRET_FILE", str(secret_file))
     monkeypatch.setenv("YOUTUBE_TOKEN_PATH", str(token_file))
 
-    def mock_get_auth(self, s, t):
+    def mock_get_auth(self, s, t, *args, **kwargs):
         raise ValueError("AUTH_REQUIRED: Please authenticate by visiting URL")
 
     monkeypatch.setattr(YoutubePublisher, "_get_authenticated_service", mock_get_auth)

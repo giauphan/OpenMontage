@@ -1,67 +1,55 @@
-"""News selection and research generation using Codex CLI."""
-import subprocess  # re-exported so tests can patch lib.claude_news_selector.subprocess.run
+"""Bounded LLM selection and research generation using the Claude CLI.
 
-from lib.codex_news_selector import CodexNewsSelector
+Backwards-compatible alias of :class:`CodexNewsSelector` that restores the
+Claude CLI invocation contract the NewsNow pipeline tests rely on. The CLI
+invocation deliberately does NOT pass the approvals-off bypass flag.
+"""
+import json
+import logging
+import os
+import re
+import shlex
+import subprocess
 from typing import Any, Dict, List, Optional
+
+from lib.codex_news_selector import TIMEOUT_SECONDS, CodexNewsSelector
+
+logger = logging.getLogger(__name__)
+
+_HARNESS_VARS = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SSE_PORT",
+    "CLAUDE_SESSION_ID",
+    "ANTHROPIC_MODEL",
+)
 
 
 class ClaudeNewsSelector(CodexNewsSelector):
-    """Backwards-compatible alias for CodexNewsSelector.
+    """Claude CLI variant of :class:`CodexNewsSelector` (backward-compatible)."""
 
-    Keeps ``subprocess`` importable at module level so callers and test
-    fixtures can patch ``lib.claude_news_selector.subprocess.run`` without
-    reaching into the internal ``codex_news_selector`` module.
-    """
-
-    def __init__(self, cli_path: str = "codex"):
-        super().__init__(cli_path=cli_path)
-
-    # ------------------------------------------------------------------
-    # Public alias expected by external callers that pre-date the rename
-    # ------------------------------------------------------------------
+    def __init__(self, cli_path: str = "claude"):
+        # Keep the caller-provided CLI path verbatim so the alias is
+        # host-independent and the Claude CLI contract is testable.
+        self.cli_path = cli_path
 
     def _run_claude(self, prompt: str) -> Optional[Dict[str, Any]]:
-        """Execute the CLI and return parsed JSON output.
+        """Run the Claude CLI and parse JSON from its (possibly markdown-wrapped) stdout."""
+        env = os.environ.copy()
+        for var in _HARNESS_VARS:
+            env.pop(var, None)
 
-        Uses a bash ``env -u`` wrapper for non-codex CLIs so that Claude
-        Code environment variables are stripped at the shell level without
-        manipulating the env dict.  subprocess is accessed through this
-        module so test fixtures can patch ``lib.claude_news_selector.subprocess.run``.
-        """
-        import json
-        import re
-        from pathlib import Path
-
-        is_codex = "codex" in Path(self.cli_path).name.lower()
-
-        if is_codex:
-            cmd = [
-                self.cli_path,
-                "exec",
-                "--dangerously-bypass-approvals-and-sandbox",
-                "--json",
-                prompt,
-            ]
+        scrub = " ".join(f"-u {var}" for var in _HARNESS_VARS)
+        inner = (
+            f"env {scrub} {self.cli_path} -p --model claude-opus-4-7 "
+            f"{shlex.quote(prompt)}"
+        )
+        if os.geteuid() == 0:
+            cmd = ["su", "node", "-s", "/bin/bash", "-c", inner]
         else:
-            # Strip Claude Code session vars at the shell level via env -u.
-            strip_vars = " ".join(
-                f"-u {v}"
-                for v in (
-                    "CLAUDECODE",
-                    "CLAUDE_CODE_ENTRYPOINT",
-                    "CLAUDE_CODE_SSE_PORT",
-                    "CLAUDE_SESSION_ID",
-                    "ANTHROPIC_MODEL",
-                )
-            )
-            inner = (
-                f"{self.cli_path} -p --model claude-opus-4-7"
-                f" --dangerously-skip-permissions {prompt}"
-            )
-            cmd = ["bash", "-c", f"env {strip_vars} {inner}"]
+            cmd = ["bash", "-c", inner]
 
         try:
-            from lib.codex_news_selector import TIMEOUT_SECONDS
             proc = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -69,74 +57,50 @@ class ClaudeNewsSelector(CodexNewsSelector):
                 timeout=TIMEOUT_SECONDS,
                 check=False,
                 stdin=subprocess.DEVNULL,
+                env=env,
             )
-            output = proc.stdout.strip() if proc.stdout else ""
-            if not output:
-                return None
-            if "hit your limit" in output.lower():
-                return None
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Claude CLI execution failed (%s)", exc)
+            return None
 
-            # Parse markdown-wrapped JSON if present.
-            if "```" in output:
-                match_code = re.search(
-                    r"```(?:json)?\s*(\{.*?\})\s*```", output, re.DOTALL
-                )
-                if match_code:
-                    output = match_code.group(1)
+        output = proc.stdout.strip()
+        if not output:
+            return None
 
-            idx = output.find("{")
-            last_idx = output.rfind("}")
-            if idx != -1 and last_idx > idx:
-                json_str = output[idx: last_idx + 1]
-                json_str = re.sub(r",\s*([\}\]])", r"\1", json_str)
-                try:
-                    return json.loads(json_str)
-                except Exception:
-                    pass
+        fenced = re.search(r"```[a-zA-Z]*\s*(\{.*\})\s*```", output, re.DOTALL)
+        if fenced:
+            output = fenced.group(1)
+
+        idx = output.find("{")
+        last = output.rfind("}")
+        if idx != -1 and last > idx:
+            try:
+                return json.loads(output[idx : last + 1])
+            except Exception:
+                pass
+        try:
+            return json.loads(output)
         except Exception:
-            pass
+            return None
 
-        return None
-
-    # ------------------------------------------------------------------
-    # Override: tighten source-URL provenance check
-    # ------------------------------------------------------------------
-
-    def _validate_output(
-        self,
-        data: Dict[str, Any],
-        candidates: List[Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
-        """Validate selector output and reject foreign source URLs.
-
-        In addition to the base-class checks (candidate ID membership,
-        research_draft shape), this override rejects any result whose
-        ``research_draft.sources[*].url`` is not anchored in the candidate
-        URL set.  A foreign URL indicates the LLM hallucinated a source
-        outside the provided candidate pool, which must not pass the gate.
-        """
+    def _validate_output(self, data, candidates):
         result = super()._validate_output(data, candidates)
         if result is None:
             return None
-
-        # Build the set of allowed URL prefixes from candidate URLs.
-        from urllib.parse import urlparse
-
-        candidate_hosts: set = set()
-        for c in candidates:
-            url = c.get("canonical_url") or c.get("original_url") or c.get("url") or ""
-            if url:
-                parsed = urlparse(url)
-                candidate_hosts.add(f"{parsed.scheme}://{parsed.netloc}")
-
-        sources = result.get("research_draft", {}).get("sources", [])
-        for source in sources:
-            src_url = source.get("url", "")
-            if not src_url:
+        draft = result.get("research_draft") or {}
+        valid_urls = set()
+        for cand in candidates:
+            for key in ("canonical_url", "original_url"):
+                url = cand.get(key)
+                if url:
+                    valid_urls.add(url)
+        if not valid_urls:
+            return result
+        for source in draft.get("sources") or []:
+            if not isinstance(source, dict):
                 continue
-            parsed = urlparse(src_url)
-            src_host = f"{parsed.scheme}://{parsed.netloc}"
-            if candidate_hosts and src_host not in candidate_hosts:
+            url = source.get("url")
+            if url and url not in valid_urls:
+                logger.warning("Rejecting selection: foreign research source URL %s", url)
                 return None
-
         return result

@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -87,6 +88,7 @@ def test_clear_stale_preserves_active_and_unverified_removes_verified(tmp_path: 
     env = dict(os.environ)
     env["OPENMONTAGE_ROOT"] = str(tmp_path)
     env["PYTHONPATH"] = f"{ROOT}:{tmp_path}:{env.get('PYTHONPATH', '')}"
+    env["PYTHON_BIN"] = sys.executable
 
     res = subprocess.run(
         ["bash", str(SCRIPT), "--all"],
@@ -133,6 +135,7 @@ def test_clear_stale_unverified_survives_regardless_of_age(tmp_path: Path):
 
     env = dict(os.environ)
     env["OPENMONTAGE_ROOT"] = str(tmp_path)
+    env["PYTHON_BIN"] = sys.executable
 
     res = subprocess.run(
         ["bash", str(scripts_dir / "clear_stale_projects.sh")],

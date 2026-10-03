@@ -117,3 +117,20 @@ def test_rejects_mostly_english():
     english_text = "Are you sure that was your idea, or did the AI put it there? Chatbots are now experts at changing people's minds."
     with pytest.raises(ValueError, match="narration must be Vietnamese"):
         prepare_narration(english_text)
+
+
+def test_ssml_mode_cannot_bypass_language_validation():
+    """Regression: the SSML path must run the Vietnamese language gate before
+    wrapping text in <phoneme> tags, so untranslatable English narration is
+    rejected identically in both preparation modes."""
+    english_text = "Are you sure that was your idea, or did the AI put it there? Chatbots are now experts at changing people's minds."
+    with pytest.raises(ValueError, match="narration must be Vietnamese"):
+        prepare_narration(english_text, use_ssml=True)
+
+
+def test_ssml_mode_still_tags_valid_vietnamese_narration():
+    text = "Hệ thống AI chạy trên GPU với CUDA và CPU hiệu năng cao."
+    out = prepare_narration(text, use_ssml=True)
+    assert out.startswith("<speak>")
+    assert '<phoneme alphabet="ipa" ph="ˈkuː.də">CUDA</phoneme>' in out
+
