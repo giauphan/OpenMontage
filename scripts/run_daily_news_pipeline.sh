@@ -351,7 +351,7 @@ materialize_hyperframes_assets() {
     cp "$project_root/assets/voice/narration.mp3" "$narration"
   fi
   if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
-    jq -r 'if (.sections // null) then [.sections[]? | .text // .text_vi // .narration // .narration_vi // empty] | join(" ") else (.text // .text_vi // .narration // .script // empty) end' "$script_json" > "$narration_text"
+    jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .narration_vi // .text // .narration // empty] | join(" ") else (.text_vi // .narration_vi // .text // .narration // .script // empty) end' "$script_json" > "$narration_text"
   fi
   if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
     tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
