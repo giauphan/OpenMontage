@@ -1080,22 +1080,23 @@ Return a valid JSON object matching this schema:
 
         is_codex = "codex" in Path(agent_bin).name.lower()
         env = os.environ.copy()
-        try:
-            resolved_home = resolve_and_validate_codex_home(env)
-            env["CODEX_HOME"] = resolved_home
-        except RuntimeError as e:
-            raise RuntimeError(f"Configured CODEX_HOME resolution failed: {e}")
+        if is_codex:
+            try:
+                resolved_home = resolve_and_validate_codex_home(env)
+                env["CODEX_HOME"] = resolved_home
+            except RuntimeError as e:
+                raise RuntimeError(f"Configured CODEX_HOME resolution failed: {e}")
 
-        if is_codex and not env.get("OPENAI_API_KEY"):
-            auth_file = Path(resolved_home) / "auth.json"
-            if auth_file.is_file():
-                try:
-                    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
-                    api_key = auth_data.get("OPENAI_API_KEY")
-                    if api_key and isinstance(api_key, str) and api_key.strip():
-                        env["OPENAI_API_KEY"] = api_key.strip()
-                except Exception:
-                    pass
+            if not env.get("OPENAI_API_KEY"):
+                auth_file = Path(resolved_home) / "auth.json"
+                if auth_file.is_file():
+                    try:
+                        auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                        api_key = auth_data.get("OPENAI_API_KEY")
+                        if api_key and isinstance(api_key, str) and api_key.strip():
+                            env["OPENAI_API_KEY"] = api_key.strip()
+                    except Exception:
+                        pass
 
         if is_codex:
             cmd = [
@@ -1223,6 +1224,41 @@ Return a valid JSON object matching this schema:
                 ValidationResult(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
                 ValidationResult(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
             ]
+
+        # R6/R7: Hoist missing-HTML and frame-extraction pre-checks before the
+        # CLI gate so strict-mode failures are reported even when no CLI binary
+        # is available on the host.
+        if self.strict_mode:
+            comp_path = self.project_dir / (
+                "hyperframes_reels/index.html"
+                if "reels" in Path(video_path).name
+                else "hyperframes/index.html"
+            )
+            if not comp_path.is_file():
+                comp_path = self.project_dir / "hyperframes/index.html"
+            if not comp_path.is_file():
+                return [
+                    ValidationResult(
+                        check_name="Visual Quality",
+                        passed=False,
+                        message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
+                        details={"error": "Missing HyperFrames HTML source"},
+                    )
+                ]
+            _pre_frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-pre-"))
+            try:
+                _pre_frames = self._extract_frames(abs_video_path, _pre_frame_dir)
+            except Exception:
+                _pre_frames = []
+            if not _pre_frames:
+                return [
+                    ValidationResult(
+                        check_name="Visual Quality",
+                        passed=False,
+                        message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
+                        details={"error": "Frame extraction failed"},
+                    )
+                ]
 
         claude_mod = sys.modules.get("scripts.claude_agent_validation")
         if claude_mod and hasattr(claude_mod, "resolve_claude_cli"):

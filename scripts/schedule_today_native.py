@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.publish_config import load_config, publish_timezone
+from scripts.validate_publish_metadata import validate_metadata
 from tools.publish_store import PublishStore
 from tools.publishers.platform_routes import youtube_shorts_title
 from tools.publishers.youtube_publisher import YoutubePublisher
@@ -80,6 +81,11 @@ def main():
         meta_status = topic_meta.get("status","")
         if meta_status in ("published", "scheduled"):
             print(f"failed {proj}: status '{meta_status}'")
+            failed = True
+            continue
+        meta_valid, meta_errors = validate_metadata(meta_path)
+        if not meta_valid:
+            print(f"failed {proj}: metadata language or structure validation failed: {meta_errors}")
             failed = True
             continue
         yt_rel = topic_meta.get("yt_shorts")

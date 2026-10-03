@@ -312,12 +312,18 @@ class TestCodexFailClosedStrictReview:
 
     def test_strict_review_fails_when_agent_cli_missing(self, monkeypatch):
         test_dir = Path(tempfile.mkdtemp())
+        # Pre-checks (missing-HTML / frame extraction) run before the CLI gate
+        # in strict mode; supply valid composition + frames so this test
+        # isolates the CLI-missing fail-closed path specifically.
+        (test_dir / "hyperframes").mkdir(parents=True, exist_ok=True)
+        (test_dir / "hyperframes" / "index.html").write_text("<html><body>scene</body></html>", encoding="utf-8")
         validator = CodexAgentValidator(test_dir, strict_mode=True)
         video_path = test_dir / "video.mp4"
         video_path.write_bytes(b"content" * 100)
         meta_path = test_dir / "meta.json"
         meta_path.write_text("{}", encoding="utf-8")
 
+        monkeypatch.setattr(validator, "_extract_frames", lambda *a, **k: [test_dir / "frame.png"])
         monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: None)
         results = validator.codex_agent_strict_review(video_path, meta_path)
         assert len(results) == 1
@@ -327,6 +333,10 @@ class TestCodexFailClosedStrictReview:
 
     def test_strict_review_fails_on_cli_exception(self, monkeypatch):
         test_dir = Path(tempfile.mkdtemp())
+        # Supply valid composition + frames so the pre-checks pass and this
+        # test isolates the CLI-exception fail-closed path specifically.
+        (test_dir / "hyperframes").mkdir(parents=True, exist_ok=True)
+        (test_dir / "hyperframes" / "index.html").write_text("<html><body>scene</body></html>", encoding="utf-8")
         validator = CodexAgentValidator(test_dir, strict_mode=True)
         video_path = test_dir / "video.mp4"
         video_path.write_bytes(b"content" * 100)
@@ -334,6 +344,7 @@ class TestCodexFailClosedStrictReview:
         meta_path.write_text("{}", encoding="utf-8")
 
         monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: "/usr/bin/codex")
+        monkeypatch.setattr(validator, "_extract_frames", lambda *a, **k: [test_dir / "frame.png"])
         def _mock_exec(*args, **kwargs):
             raise subprocess.TimeoutExpired(cmd=["codex"], timeout=30)
         monkeypatch.setattr(validator, "_execute_cli_review", _mock_exec)
@@ -353,6 +364,12 @@ class TestCodexFailClosedStrictReview:
         video_path.write_bytes(b"content" * 100)
         meta_path = test_dir / "meta.json"
         meta_path.write_text("{}", encoding="utf-8")
+
+        codex_home = test_dir / "codex_home"
+        codex_home.mkdir(parents=True, exist_ok=True)
+        (codex_home / "auth.json").write_text('{"OPENAI_API_KEY": "sk-test"}', encoding="utf-8")
+        (codex_home / "config.toml").write_text('model_provider = "openai"\n', encoding="utf-8")
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
         monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: "/usr/bin/codex")
         monkeypatch.setattr(validator, "_extract_frames", lambda *args, **kwargs: [test_dir / "frame.png"])

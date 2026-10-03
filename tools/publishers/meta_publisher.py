@@ -286,6 +286,13 @@ class MetaPublisher(BaseTool):
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
+        caption = inputs.get("caption", "")
+        if caption:
+            from tools.narration_text import check_vietnamese_prose
+            caption_errors = check_vietnamese_prose(caption)
+            if caption_errors:
+                return ToolResult(success=False, error=f"Invalid Meta caption (non-Vietnamese prose): {caption_errors[0]}")
+
         from tools.publishers.platform_routes import ensure_vertical
 
         try:
