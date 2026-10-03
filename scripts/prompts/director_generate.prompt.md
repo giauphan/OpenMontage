@@ -29,4 +29,7 @@ Content & Quality for both:
   * NEVER let tickers, status bars, or bottom chips overlap or collide with footer metadata, captions, or cards.
   * Give `.meta`, footer elements, and the bottom of `.scene` adequate bottom padding (e.g. `margin-bottom: 90px;` or `padding-bottom: 120px;`) so all text remains completely clear and unclipped.
 - Add a slow, continuous background/layer movement spanning the entire duration of every scene to prevent failure of the frozen-canvas check (max 50% static frames). Do NOT use <video> elements or CSS @keyframes for this; use only GSAP.
+- Render contract:
+  * The composition root element MUST carry `data-composition-id="main"`.
+  * Register the GSAP master timeline on `window.__timelines['main']` (e.g. `window.__timelines = window.__timelines || {}; window.__timelines['main'] = tl;`) so the runtime can drive playback and the frozen-canvas check.
 
