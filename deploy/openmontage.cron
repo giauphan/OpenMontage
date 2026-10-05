@@ -35,6 +35,10 @@ CODEX_HOME=/root/.codex_pipeline
 # 14:15 UTC (21:15 Vietnam) — Publish slot 3 (Instagram only)
 15 14 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 21:15 --only-platform instagram >> logs/cron_publish.log 2>&1
 
+# Hourly, independent of generation success. Canonical verified-publication guards
+# remain mandatory; no age-based deletion and no publishing. flock prevents overlap.
+35 * * * * cd /app && PYTHONPATH=/app /usr/bin/flock -n /app/logs/published_cleanup.lock /usr/bin/python3 -m scripts.cleanup_published_projects --apply >> logs/cron_cleanup.log 2>&1
+
 # Folder structure:
 # - projects/ - New generated projects (daily pipeline)
 # - projects/instagram/ - Projects moved here after YouTube/FB scheduling (Instagram cron processing)
