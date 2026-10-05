@@ -42,7 +42,11 @@ def _template_provenance_gate(project_dir) -> tuple[bool, str | None, str | None
         except FileNotFoundError:
             catalog = {"packages": []}
         pkg = template_provenance.get_package(catalog, template_id)
-        if pkg is not None and pkg.get("review_status", "pending") != "approved":
+        if pkg is None:
+            return False, None, template_id, [
+                f"template package {template_id!r} not found in catalog; scheduling blocked"
+            ]
+        if pkg.get("review_status", "pending") != "approved":
             return False, None, template_id, [
                 f"package {template_id} review_status is '{pkg.get('review_status', 'pending')}', not 'approved'; production activation is blocked"
             ]

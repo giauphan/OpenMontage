@@ -210,9 +210,9 @@ def verify_project_provenance(
         elif _sha256(reels_html) != reels_hash:
             reasons.append("reels composition hash mismatch (stale or tampered)")
 
-    expected_css = composition_source_sha256(full_html, reels_html)
-    recorded_css = prov.get("composition_source_sha256")
-    if recorded_css and recorded_css != expected_css:
+    expected_comp_hash = composition_source_sha256(full_html, reels_html)
+    recorded_comp_hash = prov.get("composition_source_sha256")
+    if recorded_comp_hash and recorded_comp_hash != expected_comp_hash:
         reasons.append("composition_source_sha256 mismatch (stale or tampered)")
 
     cap_ok, cap_reasons = caption_display_verified(full_html, reels_html)
@@ -225,7 +225,7 @@ def verify_project_provenance(
         "ok": ok,
         "reasons": reasons,
         "template_id": template_id,
-        "composition_source_sha256": expected_css,
+        "composition_source_sha256": expected_comp_hash,
         "caption_display_verified": cap_ok,
     }
 
