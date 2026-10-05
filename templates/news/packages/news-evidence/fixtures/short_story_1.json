@@ -1,0 +1,33 @@
+{
+  "template": "news-evidence",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "kicker": "SỐ LIỆU",
+  "title": "Tăng Trưởng Nhanh",
+  "duration": 50,
+  "narration": "Một con số chỉ có ý nghĩa khi được đặt cạnh chuẩn so sánh rõ ràng. Năm 2025 tăng trưởng đạt +47%, cao hơn mức nền.",
+  "narration_short": "+47% so với 2024.",
+  "slots": {
+    "hook": {
+      "heading": "Tăng Trưởng Nhanh",
+      "text": "Một con số chỉ có ý nghĩa khi được đặt cạnh chuẩn so sánh rõ ràng.",
+      "start": 0,
+      "end": 10
+    },
+    "metric": {
+      "heading": "Tăng trưởng",
+      "text": "+47%",
+      "label": "doanh thu TMĐT 2025 tăng 47% so với 2024",
+      "source_url": "https://www.moit.gov.vn/thong-ke-tmdt-2025",
+      "start": 10,
+      "end": 28
+    },
+    "comparison": {
+      "heading": "So sánh",
+      "text": "Vượt mức trung bình khu vực (+29%).",
+      "label": "trung bình ASEAN +29%",
+      "start": 28,
+      "end": 42
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "$id": "openmontage/news_templates/catalog",
+  "title": "OpenMontage News Template Catalog",
+  "catalog_version": "1.0.0",
+  "updated": "2026-10-04",
+  "description": "Registry of all news template packages. Each entry declares identity, version, variants, editorial suitability, and review status. Catalog listing alone does not imply production eligibility; explicit release approval is required before production activation.",
+  "packages": [
+    {
+      "id": "news-debate",
+      "version": "1.0.0",
+      "package_dir": "packages/news-debate",
+      "content_schema": "packages/news-debate/content.schema.json",
+      "variants": ["full", "short"],
+      "status": "draft",
+      "review_status": "pending",
+      "suitable_for": {
+        "topics": ["dispute", "quotation", "risk_debate", "opinion", "context"],
+        "description": "Attributed statements, risk debates, and contextualized uncertainty with proper source grounding"
+      },
+      "integrity": {
+        "full_html_sha256": "3bf87a423f6eefb6ea58e4144cc1e9d93ab8c1ed25b0bd8710d53c7a9471a826",
+        "short_html_sha256": "2e8d08b85ba5eacc45cf06ec3c7958028a982cc884ec61a0fe2a96bbc7e8b18b"
+      },
+      "previews": [],
+      "created": "2026-10-04"
+    },
+    {
+      "id": "news-evidence",
+      "version": "1.0.0",
+      "package_dir": "packages/news-evidence",
+      "content_schema": "packages/news-evidence/content.schema.json",
+      "variants": ["full", "short"],
+      "status": "draft",
+      "review_status": "pending",
+      "suitable_for": {
+        "topics": ["metrics", "comparison", "quantitative", "statistics", "baseline"],
+        "description": "Sourced metrics, comparable results, baselines and caveats. Not eligible without comparable evidence."
+      },
+      "integrity": {
+        "full_html_sha256": "9cc777aecd4ed96b7ab7b97fb8df9c75d6ee36797fee05c6467c4743928525c4",
+        "short_html_sha256": "9983b7090a5e69a72493ba68b7ab810fa9cbdec813aad2826ef1ad818a3bbb96"
+      },
+      "previews": [],
+      "created": "2026-10-04"
+    },
+    {
+      "id": "news-explainer",
+      "version": "1.0.0",
+      "package_dir": "packages/news-explainer",
+      "content_schema": "packages/news-explainer/content.schema.json",
+      "variants": ["full", "short"],
+      "status": "draft",
+      "review_status": "pending",
+      "suitable_for": {
+        "topics": ["product_change", "capability", "how_it_works", "limitations", "technical"],
+        "description": "Product changes, capabilities, technical steps and limitations. No fake screenshots or undocumented features."
+      },
+      "integrity": {
+        "full_html_sha256": "bc4e9ac122d310a912b43c1ff805a0ab216f49f0c0f4efb19c8200847539a6ff",
+        "short_html_sha256": "ea4375d587eee2ebecbd20768d2703355b1dbc7676ff45f102cd2e89bcc39f19"
+      },
+      "previews": [],
+      "created": "2026-10-04"
+    }
+  ]
+}

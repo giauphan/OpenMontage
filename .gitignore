@@ -113,6 +113,7 @@ venv/
 *.json
 !package.json
 !package-lock.json
+!templates/news/**/*.json
 logs
 .claude/worktrees/
 .env.*plan/

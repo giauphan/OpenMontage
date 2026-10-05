@@ -1,0 +1,31 @@
+{
+  "template": "news-explainer",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "kicker": "HƯỚNG DẪN",
+  "title": "Ba Bước Dùng Trợ Lý",
+  "duration": 50,
+  "narration": "Trợ lý mới giúp bạn đọc ngữ cảnh dự án và đề xuất cải tiến. Mở dự án, xem gợi ý, rồi áp dụng thay đổi. Kết quả cần kiểm tra trước khi triển khai.",
+  "narration_short": "Ba bước: phân tích, xem gợi ý, áp dụng.",
+  "slots": {
+    "hook": {
+      "heading": "Ba Bước Dùng Trợ Lý",
+      "text": "Trợ lý mới giúp bạn đọc ngữ cảnh dự án và đề xuất cải tiến.",
+      "start": 0,
+      "end": 10
+    },
+    "capability": {
+      "heading": "Khả năng",
+      "text": "Đọc ngữ cảnh và đề xuất cải tiến.",
+      "label": "Trợ lý v2.0",
+      "start": 10,
+      "end": 30
+    },
+    "steps": {
+      "heading": "Ba bước",
+      "text": "Mở dự án, xem gợi ý, áp dụng thay đổi.",
+      "start": 30,
+      "end": 45
+    }
+  }
+}
