@@ -28,6 +28,14 @@ hyperframes/
 hyperframes_reels/
 tests/qa/output/
 
+# Template package source HTML baselines (shipped for integrity verification)
+!templates/news/packages/news-debate/hyperframes/
+!templates/news/packages/news-debate/hyperframes_reels/
+!templates/news/packages/news-evidence/hyperframes/
+!templates/news/packages/news-evidence/hyperframes_reels/
+!templates/news/packages/news-explainer/hyperframes/
+!templates/news/packages/news-explainer/hyperframes_reels/
+
 # Project workspaces (generated assets, renders — all regenerable)
 projects/
 projects_archive/

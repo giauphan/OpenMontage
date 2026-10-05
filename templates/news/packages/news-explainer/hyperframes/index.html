@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>news-explainer — HyperFrames v1.0.0</title>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    :root { --accent: #06d6a0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0a1410; color: #f1f1f1; font-family: "BeVietnamPro", Inter, system-ui, sans-serif; }
+    #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #0a1410; }
+    .bg-fill { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 80%, rgba(6,214,160,.08) 0%, transparent 55%), linear-gradient(180deg, #0a1410 0%, #0d1f1a 100%); }
+    .clip { position: absolute; inset: 0; }
+    .scene-inner { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 120px 80px 160px; text-align: center; }
+    .kicker { font-size: 26px; font-weight: 700; letter-spacing: .35em; text-transform: uppercase; color: var(--accent); margin-bottom: 32px; padding: 8px 24px; border: 2px solid var(--accent); border-radius: 6px; }
+    .title { font-size: 56px; font-weight: 900; line-height: 1.15; color: #fff; max-width: 900px; margin: 0 auto 40px; }
+    .scene-heading { font-size: 30px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; color: var(--accent); margin-bottom: 36px; }
+    .scene-text { font-size: 34px; font-weight: 400; line-height: 1.6; color: #c8d8d4; max-width: 860px; margin: 0; }
+    .capability-card { width: 100%; max-width: 820px; padding: 48px 56px; border: 1px solid rgba(6,214,160,.3); border-radius: 16px; background: rgba(6,214,160,.07); }
+    .capability-label { display: block; font-size: 28px; font-weight: 700; color: var(--accent); margin-bottom: 16px; }
+    .capability-text { font-size: 36px; line-height: 1.5; color: #fff; margin: 0; }
+    .steps-list { list-style: none; padding: 0; margin: 0; width: 100%; max-width: 820px; text-align: left; }
+    .steps-list li { font-size: 32px; font-weight: 400; line-height: 1.5; color: #d5e5e0; padding: 18px 0 18px 52px; border-left: 3px solid var(--accent); margin-bottom: 14px; position: relative; }
+    .steps-list li::before { content: attr(data-step); position: absolute; left: 0; top: 18px; font-size: 28px; font-weight: 900; color: var(--accent); }
+    .limitation-box { width: 100%; max-width: 820px; padding: 42px 48px; border: 1px solid rgba(255,255,255,.12); border-left: 4px solid var(--accent); border-radius: 12px; background: rgba(255,255,255,.03); text-align: left; }
+    .limitation-box p { font-size: 32px; line-height: 1.55; color: #c8d8d4; margin: 0; }
+    .caption { position: absolute; bottom: 64px; left: 60px; right: 60px; display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.95); text-align: center; padding: 16px 0; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-duration="45">
+    <div class="bg-fill"></div>
+    <audio id="narration" class="clip" data-start="0" data-duration="45" data-track-index="0" src="assets/narration.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="45" data-track-index="0" src="assets/music-bg.mp3"></audio>
+
+    <section id="scene-hook" class="clip" data-start="0" data-duration="8" data-track-index="1">
+      <div class="scene-inner">
+        <span class="kicker">HƯỚNG DẪN</span>
+        <h1 class="title">Cách Trợ Lý Mới Giúp Viết Mã Nhanh Hơn</h1>
+        <p class="scene-text">Tính năng mới cho phép đề xuất đoạn mã dựa trên ngữ cảnh dự án, thay vì chỉ hoàn thành dòng lệnh.</p>
+      </div>
+    </section>
+
+    <section id="scene-capability" class="clip" data-start="8" data-duration="14" data-track-index="2">
+      <div class="scene-inner">
+        <span class="scene-heading">Tính năng chính</span>
+        <div class="capability-card">
+          <span class="capability-label">Trợ lý v2.0</span>
+          <p class="capability-text">Hiểu ngữ cảnh mã nguồn · Đề xuất cải tiến hiệu suất · Tạo tài liệu tự động</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="scene-steps" class="clip" data-start="22" data-duration="14" data-track-index="3">
+      <div class="scene-inner">
+        <span class="scene-heading">Các bước</span>
+        <ol class="steps-list">
+          <li data-step="1">Mở dự án và chọn phân tích</li>
+          <li data-step="2">Xem các gợi ý cải tiến</li>
+          <li data-step="3">Áp dụng thay đổi vào mã nguồn</li>
+          <li data-step="4">Chạy kiểm thử để xác nhận</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="scene-limitations" class="clip" data-start="36" data-duration="9" data-track-index="4">
+      <div class="scene-inner">
+        <span class="scene-heading">Hạn chế</span>
+        <div class="limitation-box">
+          <p>Hiện hỗ trợ Python và JavaScript. Kết quả cần được kiểm tra và xác nhận trước khi triển khai vào môi trường sản xuất.</p>
+        </div>
+      </div>
+    </section>
+
+    <div id="caption-0" class="caption clip" data-start="0.5" data-duration="6.5" data-track-index="10">Tính năng mới giúp viết mã nhanh hơn nhờ ngữ cảnh dự án.</div>
+    <div id="caption-1" class="caption clip" data-start="8.5" data-duration="12.5" data-track-index="10">Trợ lý v2.0: hiểu ngữ cảnh, đề xuất cải tiến, tạo tài liệu.</div>
+    <div id="caption-2" class="caption clip" data-start="22.5" data-duration="12.5" data-track-index="10">Bốn bước: phân tích, xem gợi ý, áp dụng, kiểm thử.</div>
+    <div id="caption-3" class="caption clip" data-start="36.5" data-duration="7.5" data-track-index="10">Hỗ trợ Python và JavaScript; cần xác nhận trước khi triển khai.</div>
+  </div>
+
+  <script>
+    (function() {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      tl.from('#scene-hook .scene-inner',          { opacity: 0, y: 40, duration: .7, ease: 'power2.out' }, .1);
+      tl.from('#scene-capability .scene-inner',    { opacity: 0, y: 40, duration: .7, ease: 'power2.out' }, 8.1);
+      tl.from('.capability-card',                  { opacity: 0, scale: .9, duration: .8, ease: 'back.out(1.4)' }, 9);
+      tl.from('#scene-steps .scene-inner',         { opacity: 0, y: 40, duration: .7, ease: 'power2.out' }, 22.1);
+      tl.from('#scene-limitations .scene-inner',   { opacity: 0, y: 40, duration: .7, ease: 'power2.out' }, 36.1);
+      tl.from('#caption-0', { opacity: 0, y: 16, duration: .4 }, .5);
+      tl.from('#caption-1', { opacity: 0, y: 16, duration: .4 }, 8.5);
+      tl.from('#caption-2', { opacity: 0, y: 16, duration: .4 }, 22.5);
+      tl.from('#caption-3', { opacity: 0, y: 16, duration: .4 }, 36.5);
+      window.__timelines.main = tl;
+    })();
+  </script>
+</body>
+</html>

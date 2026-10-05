@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>news-debate — HyperFrames v1.0.0</title>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    :root { --accent: #e63946; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0a0a14; color: #f1f1f1; font-family: 'BeVietnamPro', Inter, system-ui, sans-serif; }
+    #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #0a0a14; }
+    .bg-fill { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 40%, rgba(230,57,70,0.08) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(84,158,255,0.05) 0%, transparent 50%); }
+    .clip { position: absolute; inset: 0; }
+    .scene-inner { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 120px 80px 160px 80px; text-align: center; }
+    .kicker { font-size: 26px; font-weight: 700; letter-spacing: 0.35em; text-transform: uppercase; color: var(--accent); margin-bottom: 32px; padding: 8px 24px; border: 2px solid var(--accent); border-radius: 6px; }
+    .title { font-size: 56px; font-weight: 900; line-height: 1.15; color: #fff; max-width: 900px; margin: 0 auto 40px; }
+    .scene-text { font-size: 34px; font-weight: 400; line-height: 1.6; color: #ccc; max-width: 860px; margin: 0; }
+    .scene-heading { font-size: 30px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); margin-bottom: 36px; }
+    .statement { font-size: 42px; font-weight: 300; line-height: 1.5; color: #fff; max-width: 860px; margin: 0 auto 32px; font-style: italic; border-left: 3px solid var(--accent); padding-left: 32px; text-align: left; }
+    .attribution { font-size: 26px; font-weight: 600; color: #aaa; margin: 0; max-width: 860px; text-align: left; }
+    .tag-row { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 24px; }
+    .tag { font-size: 22px; font-weight: 500; color: var(--accent); border: 1px solid var(--accent); border-radius: 20px; padding: 6px 20px; }
+    .caption { position: absolute; bottom: 64px; left: 60px; right: 60px; display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,0.95); text-align: center; padding: 16px 0; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-duration="45">
+    <div class="bg-fill"></div>
+
+    <audio id="narration" class="clip" data-start="0" data-duration="45" data-track-index="0" src="assets/narration.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="45" data-track-index="0" src="assets/music-bg.mp3"></audio>
+
+    <section id="scene-hook" class="clip" data-start="0" data-duration="8" data-track-index="1">
+      <div class="scene-inner">
+        <span class="kicker">TRÌNH BÀY Ý KIẾN</span>
+        <h1 class="title">AI Có Đang Gây Mất Việc Cho Người Lao Động?</h1>
+        <p class="scene-text">Câu hỏi lớn nhất trong lĩnh vực công nghệ hiện nay không chỉ là AI sẽ mạnh hơn bao giờ, mà là con người sẽ thích ứng như thế nào.</p>
+      </div>
+    </section>
+
+    <section id="scene-statement" class="clip" data-start="8" data-duration="14" data-track-index="2">
+      <div class="scene-inner">
+        <span class="scene-heading">Ý kiến chuyên gia</span>
+        <blockquote class="statement">Công nghệ chỉ thay thế những ai không biết sử dụng công nghệ. Vấn đề là chúng ta không đầu tư đủ cho đào tạo.</blockquote>
+        <p id="statement-attribution" class="attribution">— Tiến sĩ Lê Minh Đức, Trưởng nhóm Nghiên cứu AI, ĐH Bách Khoa TP.HCM</p>
+      </div>
+    </section>
+
+    <section id="scene-context" class="clip" data-start="22" data-duration="14" data-track-index="3">
+      <div class="scene-inner">
+        <span class="scene-heading">Bối cảnh số liệu</span>
+        <p class="scene-text">Báo cáo 2025 từ ILO dự báo 14% lực lượng lao động toàn cầu có thể bị ảnh hưởng trong vòng 5 năm tới. Việt Nam đứng thứ 3 trong khu vực Đông Nam Á về mức độ ảnh hưởng.</p>
+        <div class="tag-row">
+          <span class="tag">ILO 2025</span>
+          <span class="tag">Lao động</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="scene-takeaway" class="clip" data-start="36" data-duration="9" data-track-index="4">
+      <div class="scene-inner">
+        <span class="scene-heading">Lời kết</span>
+        <p class="scene-text">Đầu tư vào giáo dục công nghệ không còn là lựa chọn — đó là điều kiện tồn tại của mỗi doanh nghiệp trong thập kỷ tới.</p>
+      </div>
+    </section>
+
+    <div id="caption-0" class="caption clip" data-start="0.5" data-duration="6.5" data-track-index="10">
+      Các chuyên gia đang tranh luận về tác động của AI đến thị trường lao động.
+    </div>
+    <div id="caption-1" class="caption clip" data-start="8.5" data-duration="12.5" data-track-index="10">
+      Công nghệ thay thế những ai không biết sử dụng công nghệ.
+    </div>
+    <div id="caption-2" class="caption clip" data-start="22.5" data-duration="12.5" data-track-index="10">
+      ILO: 14% lao động toàn cầu có thể bị ảnh hưởng trong 5 năm tới.
+    </div>
+    <div id="caption-3" class="caption clip" data-start="36.5" data-duration="7.5" data-track-index="10">
+      Đào tạo kỹ năng số là điều kiện bắt buộc, không phải lựa chọn.
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      tl.from('#scene-hook .scene-inner',       { opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }, 0.1);
+      tl.from('#scene-statement .scene-inner',  { opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }, 8.1);
+      tl.from('#statement-attribution',         { opacity: 0, duration: 0.5, ease: 'power2.out' }, 12);
+      tl.from('#scene-context .scene-inner',    { opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }, 22.1);
+      tl.from('#scene-takeaway .scene-inner',   { opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }, 36.1);
+      tl.from('#caption-0', { opacity: 0, y: 16, duration: 0.4 }, 0.5);
+      tl.from('#caption-1', { opacity: 0, y: 16, duration: 0.4 }, 8.5);
+      tl.from('#caption-2', { opacity: 0, y: 16, duration: 0.4 }, 22.5);
+      tl.from('#caption-3', { opacity: 0, y: 16, duration: 0.4 }, 36.5);
+      window.__timelines['main'] = tl;
+    })();
+  </script>
+</body>
+</html>

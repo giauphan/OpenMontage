@@ -76,9 +76,9 @@ def derive_captions(narration: str, duration: float, max_captions: int) -> list[
     cues: list[dict[str, Any]] = []
     words_per_cap = max(1, len(words) // n_caps)
     for i in range(n_caps):
-        chunk = words[
-            i * words_per_cap : (i + 1) * words_per_cap if i < n_caps - 1 else len(words)
-        ]
+        start_index = i * words_per_cap
+        end_index = (i + 1) * words_per_cap if i < n_caps - 1 else len(words)
+        chunk = words[start_index:end_index]
         text = " ".join(chunk).strip()
         if not text:
             continue
@@ -185,9 +185,13 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
 
     cap_html, cap_tl = _caption_elements(captions, track_index=10)
 
-    s1_start, s1_dur = timing["hook"]
-    s2_start, s2_dur = timing["statement"]
-    s4_start, s4_dur = timing["takeaway"]
+    s1_start, s1_end = timing["hook"]
+    s2_start, s2_end = timing["statement"]
+    s4_start, s4_end = timing["takeaway"]
+
+    s1_dur = max(0.5, s1_end - s1_start)
+    s2_dur = max(0.5, s2_end - s2_start)
+    s4_dur = max(0.5, s4_end - s4_start)
 
     attr_line = (
         f"        <p id=\"statement-attribution\" class=\"attribution\">{e_stmt_attr}</p>\n"
@@ -287,7 +291,7 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         f"  <div id=\"root\" data-composition-id=\"main\" data-width=\"1080\" data-height=\"1920\" data-duration=\"{_fmt_time(total)}\">\n"
         "    <div class=\"bg-fill\"></div>\n"
         f"    <audio id=\"narration\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"{audio_src}\"></audio>\n"
-        "    <audio id=\"music-bg\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"assets/music-bg.mp3\"></audio>\n"
+        f"    <audio id=\"music-bg\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"assets/music-bg.mp3\"></audio>\n"
         f"    <section id=\"scene-hook\" class=\"clip\" data-start=\"{_fmt_time(s1_start)}\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"1\">\n"
         "      <div class=\"scene-inner\">\n"
         f"        <span class=\"kicker\">{e_kicker}</span>\n"
@@ -446,7 +450,7 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         "        <div class=\"metric-card\">\n"
         f"          <p id=\"metric-value\" class=\"metric-value\">{e_metric_value}</p>\n"
         f"          <p class=\"metric-label\">{e_metric_desc}</p>\n"
-        "          <div class=\"comparison-label\">{e_comp_label}</div>\n"
+        f"          <div class=\"comparison-label\">{e_comp_label}</div>\n"
         f"          <p class=\"comparison-text\">{e_comp_text}</p>\n"
         "        </div>\n"
         "      </div>\n"

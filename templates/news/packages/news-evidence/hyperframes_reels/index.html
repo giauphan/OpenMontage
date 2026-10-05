@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1080, height=1920" />
+  <title>news-evidence (reels) — HyperFrames v1.0.0</title>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    :root { --accent: #3b82f6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #08111f; color: #f1f1f1; font-family: "Be Vietnam Pro", Inter, system-ui, sans-serif; }
+    #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #08111f; }
+    .bg-fill { position: absolute; inset: 0; background: radial-gradient(ellipse at 75% 25%, rgba(59,130,246,.14) 0%, transparent 58%), linear-gradient(160deg, #08111f 0%, #0d1b32 100%); }
+    .clip { position: absolute; inset: 0; }
+    .scene-inner { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 110px 70px 170px; text-align: center; }
+    .kicker { font-size: 22px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--accent); margin-bottom: 24px; padding: 6px 20px; border: 2px solid var(--accent); border-radius: 6px; }
+    .title { font-size: 48px; font-weight: 900; line-height: 1.1; color: #fff; max-width: 940px; margin: 0 auto 28px; }
+    .scene-text { font-size: 30px; font-weight: 400; line-height: 1.5; color: #d5deed; max-width: 900px; margin: 0; }
+    .metric-card { width: 100%; max-width: 780px; padding: 44px 48px; border: 1px solid rgba(130,180,255,.35); border-radius: 16px; background: rgba(59,130,246,.10); }
+    .metric-value { font-size: 88px; line-height: 1; font-weight: 900; color: var(--accent); margin: 0 0 14px; }
+    .metric-label { font-size: 24px; line-height: 1.4; color: #d5deed; margin: 0; }
+    .comparison-label { font-size: 22px; color: #91b8f4; margin: 24px 0 10px; text-transform: uppercase; letter-spacing: .15em; }
+    .comparison-text { font-size: 32px; line-height: 1.4; color: #fff; margin: 0; max-width: 860px; }
+    .caption { position: absolute; bottom: 70px; left: 70px; right: 70px; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.95); text-align: center; padding: 14px 0; }
+  </style>
+</head>
+<body>
+  <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-duration="40">
+    <div class="bg-fill"></div>
+    <audio id="narration" class="clip" data-start="0" data-duration="40" data-track-index="0" src="assets/narration_reels.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="40" data-track-index="0" src="assets/music-bg.mp3"></audio>
+
+    <section id="scene-hook" class="clip" data-start="0" data-duration="10" data-track-index="1">
+      <div class="scene-inner">
+        <span class="kicker">SỐ LIỆU</span>
+        <h1 class="title">Doanh Thu TMĐT Vượt Kỳ Vọng</h1>
+        <p class="scene-text">Một con số chỉ có ý nghĩa khi được đặt cạnh chuẩn so sánh rõ ràng.</p>
+      </div>
+    </section>
+
+    <section id="scene-metric" class="clip" data-start="10" data-duration="16" data-track-index="2">
+      <div class="scene-inner">
+        <div class="metric-card">
+          <p id="metric-value" class="metric-value">+47%</p>
+          <p class="metric-label">Tăng trưởng TMĐT 2025 so với 2024 · Nguồn: Bộ Công Thương</p>
+          <div class="comparison-label">So với trung bình ASEAN</div>
+          <p class="comparison-text">Việt Nam vượt 1,6 lần mức trung bình khu vực (+29%).</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="scene-caveat" class="clip" data-start="26" data-duration="14" data-track-index="3">
+      <div class="scene-inner">
+        <span class="kicker">LƯU Ý</span>
+        <p class="scene-text">Số liệu bao gồm giao dịch trong nước; không tính kim ngạch xuất khẩu kỹ thuật số quốc tế.</p>
+      </div>
+    </section>
+
+    <div id="caption-0" class="caption clip" data-start="0.5" data-duration="8" data-track-index="10">Doanh thu TMĐT tăng 47%, mức cao nhất khu vực.</div>
+    <div id="caption-1" class="caption clip" data-start="10.5" data-duration="13" data-track-index="10">+47% so với 2024 · Vượt trung bình ASEAN 1,6 lần.</div>
+    <div id="caption-2" class="caption clip" data-start="26.5" data-duration="11.5" data-track-index="10">Lưu ý: không bao gồm xuất khẩu kỹ thuật số quốc tế.</div>
+  </div>
+
+  <script>
+    (function() {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      tl.from('#scene-hook .scene-inner',   { opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }, 0.1);
+      tl.from('#scene-metric .scene-inner',  { opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }, 10.1);
+      tl.from('#metric-value',               { opacity: 0, scale: 0.82, duration: 0.8, ease: 'back.out(1.4)' }, 10.5);
+      tl.from('#scene-caveat .scene-inner',  { opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }, 26.1);
+      tl.from('#caption-0', { opacity: 0, y: 14, duration: 0.4 }, 0.5);
+      tl.from('#caption-1', { opacity: 0, y: 14, duration: 0.4 }, 10.5);
+      tl.from('#caption-2', { opacity: 0, y: 14, duration: 0.4 }, 26.5);
+      window.__timelines.main = tl;
+    })();
+  </script>
+</body>
+</html>
