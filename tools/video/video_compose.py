@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import math
 import logging
 import shutil
 import subprocess
@@ -398,6 +399,42 @@ class VideoCompose(BaseTool):
         except Exception:
             return False
 
+    def _probe_video_stream_duration(self, video_path: Path) -> float:
+        """Return the selected video stream's duration in seconds.
+
+        Raises a descriptive error if a reliable duration is unavailable so
+        the caller can fail before launching the mux.
+        """
+        try:
+            out = subprocess.check_output(
+                [
+                    "ffprobe", "-v", "error",
+                    "-select_streams", "v:0",
+                    "-show_entries", "stream=duration",
+                    "-of", "default=nw=1:nk=1",
+                    str(video_path),
+                ],
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=15,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Could not probe video stream duration for {video_path}: {exc}") from exc
+
+        raw = out.strip()
+        if not raw:
+            raise RuntimeError(f"No video stream duration reported for {video_path}")
+
+        try:
+            duration = float(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"Unparseable video stream duration {raw!r} for {video_path}") from exc
+
+        if not math.isfinite(duration) or duration <= 0:
+            raise RuntimeError(f"Video stream duration for {video_path} is not finite and positive ({raw!r})")
+
+        return duration
+
     def _mux_external_audio(self, video_path: Path, audio_path: str | Path) -> ToolResult:
         """Atomically replace a rendered video's audio with the approved mix."""
 
@@ -405,12 +442,19 @@ class VideoCompose(BaseTool):
         if not audio.is_file():
             return ToolResult(success=False, error=f"Mixed audio not found: {audio}")
 
+        try:
+            video_duration = self._probe_video_stream_duration(video_path)
+        except Exception as exc:
+            return ToolResult(success=False, error=str(exc))
+
+        mux_timeout = math.ceil(max(60, 2 * video_duration))
+
         temp_output = video_path.with_name(
             f".{video_path.stem}.audio-mux-{time.time_ns()}{video_path.suffix}"
         )
         try:
             self.run_command([
-                "ffmpeg", "-y",
+                "ffmpeg", "-nostdin", "-y",
                 "-i", str(video_path),
                 "-i", str(audio),
                 "-map", "0:v:0",
@@ -418,17 +462,22 @@ class VideoCompose(BaseTool):
                 "-c:v", "copy",
                 "-c:a", "aac",
                 "-b:a", "192k",
-                "-af", "apad",
-                "-shortest",
+                "-af", f"apad=whole_dur={video_duration:.3f}",
+                "-t", f"{video_duration:.3f}",
                 "-movflags", "+faststart",
                 str(temp_output),
-            ])
+            ], timeout=mux_timeout)
             if not temp_output.is_file():
                 return ToolResult(
                     success=False,
                     error=f"Audio mux completed but output file is missing: {temp_output}",
                 )
             temp_output.replace(video_path)
+        except subprocess.TimeoutExpired as exc:
+            return ToolResult(
+                success=False,
+                error=f"Audio mux timed out after {mux_timeout}s for {video_path}: {exc}",
+            )
         except Exception as exc:
             return ToolResult(success=False, error=f"Could not mux mixed audio: {exc}")
         finally:
