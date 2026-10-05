@@ -15,6 +15,7 @@ import platform
 import subprocess
 import shutil
 import time
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -191,6 +192,20 @@ def _instrument_execute(fn: Callable) -> Callable:
             })
 
         started = time.monotonic()
+
+        # AgentLens tracing: open the tool span before execution (optional, non-fatal).
+        _trace_tool: Any = None
+        try:
+            from lib import tracing
+            if tracing.is_active():
+                _trace_tool = tracing.record_tool_start(
+                    tool_name,
+                    arguments=inputs if isinstance(inputs, dict) else None,
+                    tool_call_id=f"om-{uuid.uuid4().hex[:8]}",
+                )
+        except Exception:
+            pass
+
         try:
             result = fn(self, inputs, *args, **kwargs)
         except Exception as exc:
@@ -200,9 +215,22 @@ def _instrument_execute(fn: Callable) -> Callable:
                     "error": str(exc)[:300],
                     "duration_s": round(time.monotonic() - started, 2),
                 })
+            if _trace_tool is not None:
+                try:
+                    from lib import tracing
+                    tracing.record_tool_error(_trace_tool, exc)
+                except Exception:
+                    pass
             raise
         finally:
             depth_state.value = depth
+
+        if _trace_tool is not None:
+            try:
+                from lib import tracing
+                tracing.record_tool_result(_trace_tool, result)
+            except Exception:
+                pass
 
         if project_dir is None:
             # The tool may have created its own project dir during execute

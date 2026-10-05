@@ -213,6 +213,13 @@ def init_project(
     Returns the project directory.
     """
     _validate_style_playbook(style_playbook)
+    # AgentLens: open the conversation for this pipeline run (no-op if tracing
+    # SDK not installed or WANDB_API_KEY unset).
+    try:
+        from lib import tracing
+        tracing.start_run(project_id)
+    except Exception:
+        pass
     base = pipeline_dir or PROJECTS_DIR
     project_dir = base / project_id
     for sub in (
@@ -437,6 +444,16 @@ def write_checkpoint(
     metadata: Optional[dict] = None,
 ) -> Path:
     """Write a checkpoint file for a pipeline stage."""
+    # AgentLens tracing: start or end the stage turn span.
+    _tracing_active = False
+    try:
+        from lib import tracing
+        _tracing_active = tracing.is_active()
+        if _tracing_active and status == "in_progress":
+            tracing.start_stage(stage)
+    except Exception:
+        pass
+
     # Backfill identity fields from the project marker so omitted kwargs
     # cannot bypass either gate enforcement or style validation.
     marker = None
@@ -560,6 +577,14 @@ def write_checkpoint(
     _archive_superseded_checkpoint(path, stage)
     import os
     os.replace(tmp_path, path)
+
+    # AgentLens: end the stage turn span for terminal statuses.
+    if _tracing_active:
+        try:
+            from lib import tracing
+            tracing.end_stage(stage, error=error)
+        except Exception:
+            pass
 
     return path
 
