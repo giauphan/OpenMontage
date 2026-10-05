@@ -1,0 +1,157 @@
+name: multi-shot
+version: "1.0"
+description: >
+  Production-ready, resumable multi-shot AI video workflow. Generates and
+  assembles 2..N independently generated clips with explicit character/style
+  identity, continuity, references, per-shot recovery, ordered FFmpeg assembly,
+  optional audio/captions, and machine-readable evidence.
+category: generated
+stability: beta
+default_checkpoint_policy: guided
+
+# The agent orchestrates this pipeline through director skills; Python tools
+# only persist state, build prompts, schedule bound technical jobs, and do
+# deterministic media transforms. No Python handler chooses creative policy
+# or advances production gates.
+
+required_skills:
+  - meta/reviewer
+  - meta/checkpoint-protocol
+
+compatible_playbooks:
+  recommended:
+    - flat-motion-graphics
+  also_works:
+    - clean-professional
+    - premium-minimalist
+  custom_allowed: true
+
+stages:
+  - name: idea
+    skill: pipelines/multi-shot/idea-director
+    produces:
+      - request
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Shot policy has min >= 2 and max >= min
+      - Resolution and fps are positive finite numbers
+      - Composition runtime choice surfaced to the user (not a silent default)
+    success_criteria:
+      - Schema-valid request artifact
+
+  - name: story
+    skill: pipelines/multi-shot/story-director
+    required_artifacts_in:
+      - request
+    produces:
+      - story
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Beats cover hook, escalation, climax, and resolution/punchline
+      - Main character identified
+    success_criteria:
+      - Schema-valid story artifact
+
+  - name: identity
+    skill: pipelines/multi-shot/identity-director
+    required_artifacts_in:
+      - story
+    produces:
+      - character_bible
+      - style_bible
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Every character has locked_identity.type
+      - style_bible.render_rules non-empty
+    success_criteria:
+      - Schema-valid character_bible and style_bible
+
+  - name: shot_plan
+    skill: pipelines/multi-shot/shot-plan-director
+    required_artifacts_in:
+      - character_bible
+      - style_bible
+    produces:
+      - shot_plan
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - At least 2 shots
+      - Unique stable ids and contiguous orders
+      - Each shot has start_state and end_state
+    success_criteria:
+      - Schema-valid shot_plan artifact
+      - Cross-field validation passes
+
+  - name: planning
+    skill: pipelines/multi-shot/planning-director
+    required_artifacts_in:
+      - shot_plan
+    produces:
+      - continuity_state
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Continuity state initialized
+      - Planning artifacts persisted to disk
+    success_criteria:
+      - Project workspace initialized
+      - Run manifest written
+
+  - name: assets
+    skill: pipelines/multi-shot/assets-director
+    required_artifacts_in:
+      - continuity_state
+    produces:
+      - asset_manifest
+    tools_available:
+      - video_selector
+      - tts_selector
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Provider errors map to internal error codes
+      - Concurrency bounded to configured max
+    success_criteria:
+      - All shots tracked in run manifest with statuses
+
+  - name: edit
+    skill: pipelines/multi-shot/edit-director
+    required_artifacts_in:
+      - asset_manifest
+    produces:
+      - edit_decisions
+    tools_available:
+      - video_compose
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Ordered concat respects shot plan order
+      - Missing shots block finalization
+    success_criteria:
+      - Schema-valid edit_decisions artifact
+
+  - name: compose
+    skill: pipelines/multi-shot/compose-director
+    required_artifacts_in:
+      - edit_decisions
+    produces:
+      - render_report
+    tools_available:
+      - video_compose
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Final duration tolerance passes
+      - No partial video passed to final
+    success_criteria:
+      - Schema-valid render_report artifact
+      - final_video.mp4 exists in renders/
