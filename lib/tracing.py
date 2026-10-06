@@ -17,7 +17,8 @@ Called from ``lib/checkpoint.py`` and ``tools/base_tool.py``:
     stop()                  – at process exit / final stage completion
 
 Project routing is controlled by the ``WANDB_AGENTLENS_PROJECT`` env var
-(default: ``giauphan/openmontage``) and ``WANDB_API_KEY``.
+(default: ``playgamelade6-abc/project-server-140``). Credentials come from
+the W&B login (``~/.netrc``) or ``WANDB_API_KEY``.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ _conversation: Optional[Any] = None  # current Conversation object
 _active_turns: dict[str, Any] = {}   # stage name -> Turn object
 _initialized = False
 
-_DEFAULT_PROJECT = "giauphan/openmontage"
+_DEFAULT_PROJECT = "playgamelade6-abc/project-server-140"
 
 
 def _project_name() -> str:
@@ -53,12 +54,11 @@ def _ensure_sdk() -> Optional[Any]:
     global _tracing, _initialized
     if _tracing is not None:
         return _tracing
-    api_key = os.environ.get("WANDB_API_KEY")
-    if not api_key:
-        return None
     try:
         from coreweave.forge.agentlens import tracing
-        tracing.init(_project_name(), api_key=api_key, service_name="openmontage")
+        # api_key left None so the SDK falls back to WANDB_API_KEY or a
+        # local `wandb login` credential (~/.netrc) in place.
+        tracing.init(_project_name(), service_name="openmontage")
         _tracing = tracing
         _initialized = True
         return _tracing
