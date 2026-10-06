@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/news_templates/base_content",
+  "title": "News template content instance (shared shape)",
+  "description": "Shared envelope for all three news template content instances. Each package ships a content.schema.json that mirrors this shape plus its own slot keys and required slots. The materializer validates content against the package schema before binding; all strings are display Vietnamese (or proper names/technical terms) and are escaped when rendered as DOM text.",
+  "type": "object",
+  "required": ["template", "template_version", "variant", "title", "duration", "narration", "slots"],
+  "properties": {
+    "template": { "type": "string", "enum": ["news-debate", "news-evidence", "news-explainer"] },
+    "template_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "variant": {
+      "type": "string",
+      "enum": ["full", "short"],
+      "description": "full = long-form (hyperframes/), short = Reels <= 60s (hyperframes_reels/)."
+    },
+    "kicker": { "type": "string", "description": "Short uppercase badge label, e.g. TIN NÓNG. Vietnamese or a well-known acronym." },
+    "title": { "type": "string", "minLength": 3, "description": "Viewer-facing Vietnamese headline. No brand names." },
+    "duration": { "type": "number", "minimum": 8, "description": "Composition duration in seconds. short variant must be <= 60." },
+    "narration": { "type": "string", "minLength": 1, "description": "Full narration prose for the full variant. Vietnamese, grounded, no invented numbers." },
+    "narration_short": {
+      "type": "string",
+      "description": "Coherent short-variant narration (not a blind truncation of `narration`). Required for variant=short; must fit the Reels window."
+    },
+    "caption_lines": {
+      "type": "array",
+      "description": "Deterministic visible-caption cues. Each is shown on screen during [start,end] and synced to narration. If omitted, the materializer derives them from narration deterministically.",
+      "items": {
+        "type": "object",
+        "required": ["text", "start", "end"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1 },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "slots": {
+      "type": "object",
+      "description": "Per-slot content. Each value maps to a fixed scene slot in the package composition. Package schema declares which slot keys are allowed and which are required.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["heading", "text", "start", "end"],
+        "properties": {
+          "heading": { "type": "string", "minLength": 1, "description": "Scene heading (Vietnamese)." },
+          "text": { "type": "string", "minLength": 1, "description": "Scene body / narration for this slot (Vietnamese)." },
+          "attribution": { "type": "string", "description": "Speaker/attribution. Proper names allowed." },
+          "source_url": { "type": "string", "description": "Reference URL (not displayed as UI text unless labelled a source)." },
+          "label": { "type": "string", "description": "Short badge/label inside the slot." },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "media": {
+      "type": "array",
+      "description": "Optional verified media bindings. The template only plays provided, locally-staged files; no placeholder or invented media.",
+      "items": {
+        "type": "object",
+        "required": ["src", "start", "end"],
+        "properties": {
+          "src": { "type": "string", "pattern": "^assets/[^/]+\\.(mp4|webm|mp3)$" },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "minimum": 0 },
+          "volume": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "theme": {
+      "type": "object",
+      "description": "Bounded palette override. The materializer only accepts a finite set of accent tokens; arbitrary per-run styling is not allowed.",
+      "properties": {
+        "accent": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,38 @@
+{
+  "template": "news-evidence",
+  "template_version": "1.0.0",
+  "variant": "full",
+  "kicker": "SỐ LIỆU",
+  "title": "Doanh Thu TMĐT Vượt Kỳ Vọng",
+  "duration": 45,
+  "narration": "Doanh thu thương mại điện tử tăng 47% trong năm 2025, vượt mức trung bình ASEAN 1,6 lần. Tuy nhiên, số liệu này chỉ bao gồm giao dịch trong nước, chưa tính kim ngạch xuất khẩu kỹ thuật số quốc tế.",
+  "slots": {
+    "hook": {
+      "heading": "Doanh Thu TMĐT Vượt Kỳ Vọng",
+      "text": "Một con số chỉ có ý nghĩa khi được đặt cạnh chuẩn so sánh rõ ràng.",
+      "start": 0,
+      "end": 10
+    },
+    "metric": {
+      "heading": "Tăng trưởng",
+      "text": "+47%",
+      "label": "doanh thu TMĐT 2025 tăng 47% so với 2024",
+      "source_url": "https://www.moit.gov.vn/thong-ke-tmdt-2025",
+      "start": 10,
+      "end": 26
+    },
+    "comparison": {
+      "heading": "So sánh",
+      "text": "Việt Nam vượt 1,6 lần mức trung bình khu vực (+29%).",
+      "label": "trung bình ASEAN +29%",
+      "start": 26,
+      "end": 40
+    },
+    "caveat": {
+      "heading": "Lưu ý",
+      "text": "Số liệu bao gồm giao dịch trong nước; không tính kim ngạch xuất khẩu kỹ thuật số quốc tế.",
+      "start": 40,
+      "end": 45
+    }
+  }
+}

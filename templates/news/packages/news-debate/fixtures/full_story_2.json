@@ -1,0 +1,37 @@
+{
+  "template": "news-debate",
+  "template_version": "1.0.0",
+  "variant": "full",
+  "kicker": "Ý KIẾN",
+  "title": "Chuyển Đổi Số: Cơ Hội Hay Rủi Ro?",
+  "duration": 45,
+  "narration": "Chuyển đổi số không còn là lựa chọn. Nhưng liệu mỗi doanh nghiệp đều sẵn sàng? Trích dẫn từ hiệp định chuyển đổi số quốc gia: 89% doanh nghiệp đã triển khai ít nhất một giải pháp số. Tuy nhiên, 43% vẫn thiếu nhân lực chất lượng cao. Tương lai thuộc về những người dám thay đổi.",
+  "slots": {
+    "hook": {
+      "heading": "Chuyển Đổi Số: Cơ Hội Hay Rủi Ro?",
+      "text": "Câu hỏi đang chia rẽ ngành: nên đi nhanh hay nên đi đúng hướng?",
+      "start": 0,
+      "end": 10
+    },
+    "statement": {
+      "heading": "Quan điểm",
+      "text": "Chuyển đổi số không phải là công nghệ — đó là cách chúng ta nghĩ về khách hàng, sản phẩm và cơ hội.",
+      "attribution": "Trích dẫn từ Hiệp định Chuyển đổi số quốc gia",
+      "start": 10,
+      "end": 27
+    },
+    "context": {
+      "heading": "Bối cảnh",
+      "text": "89% doanh nghiệp đã triển khai ít nhất một giải pháp số; nhưng 43% vẫn thiếu nhân lực chất lượng cao — rủi ro lớn nhất không phải công nghệ, mà là thiếu hụt kỹ năng.",
+      "source_url": "https://www.moit.gov.vn/hiep-dinh-chuyen-doi-so",
+      "start": 27,
+      "end": 38
+    },
+    "takeaway": {
+      "heading": "Kết luận",
+      "text": "Tương lai thuộc về những doanh nghiệp dám thay đổi và biết đầu tư vào con người.",
+      "start": 38,
+      "end": 45
+    }
+  }
+}

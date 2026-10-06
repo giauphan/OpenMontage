@@ -1,0 +1,36 @@
+{
+  "template": "news-explainer",
+  "template_version": "1.0.0",
+  "variant": "full",
+  "kicker": "HƯỚNG DẪN",
+  "title": "Cách Trợ Lý Mới Viết Mã Nhanh Hơn",
+  "duration": 45,
+  "narration": "Trợ lý mới không chỉ hoàn thành câu lệnh. Nó đọc ngữ cảnh dự án, đề xuất cải tiến và tạo tài liệu để bạn kiểm tra. Hãy mở dự án, chọn phân tích, xem gợi ý rồi áp dụng thay đổi phù hợp. Công cụ hỗ trợ Python và JavaScript; mọi kết quả cần được kiểm tra trước khi triển khai.",
+  "slots": {
+    "hook": {
+      "heading": "Cách Trợ Lý Mới Viết Mã Nhanh Hơn",
+      "text": "Trợ lý mới không chỉ hoàn thành câu lệnh — nó đọc ngữ cảnh dự án.",
+      "start": 0,
+      "end": 10
+    },
+    "capability": {
+      "heading": "Khả năng",
+      "text": "Đọc ngữ cảnh, đề xuất cải tiến và tạo tài liệu.",
+      "label": "Trợ lý v2.0",
+      "start": 10,
+      "end": 25
+    },
+    "steps": {
+      "heading": "Ba bước",
+      "text": "Mở dự án và chọn phân tích; xem gợi ý cải tiến; áp dụng thay đổi phù hợp.",
+      "start": 25,
+      "end": 38
+    },
+    "limitations": {
+      "heading": "Hạn chế",
+      "text": "Hỗ trợ Python và JavaScript. Kết quả cần được kiểm tra trước khi triển khai.",
+      "start": 38,
+      "end": 45
+    }
+  }
+}

@@ -21,6 +21,29 @@ if str(ROOT) not in sys.path:
 
 from schemas.artifacts import validate_artifact
 from tools.narration_text import check_vietnamese_prose
+from tools.news import template_provenance
+
+
+def _detect_templated(project_dir: Path) -> bool:
+    if (project_dir / "template_provenance.json").is_file():
+        return True
+    if (project_dir / "artifacts" / "template_selection.json").is_file():
+        return True
+    return False
+
+
+def validate_templated_compositions(project_dir: Path, require_compositions: bool = True) -> bool:
+    """Templated path: compositions come from the approved package materializer.
+
+    Rejects free-form/generic fallbacks. Requires: both canonical composition
+    files, a valid provenance record (template_id in approved set, current bytes
+    match recorded hashes, version matches catalog), and verified visible
+    Vietnamese captions.
+    """
+    if not _has_required_compositions(project_dir):
+        return False
+    prov = template_provenance.verify_project_provenance(project_dir)
+    return bool(prov["ok"])
 
 
 def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
@@ -178,6 +201,11 @@ def _has_required_compositions(project_dir: Path) -> bool:
 
 def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
     """Autonomously synthesize valid script_vi.json and hyperframes compositions from research_brief.json."""
+    # Free-form/generic HTML synthesis is blocked on the templated path. A
+    # templated project (provenance or template selection present) must be
+    # materialized from an approved package, never filled with generic HTML.
+    if _detect_templated(project_dir):
+        return False
     brief_path = project_dir / "artifacts" / "research_brief.json"
     if not brief_path.is_file():
         return False
@@ -426,7 +454,13 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
     return True
 
 
-def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int = 0, require_compositions: bool = False) -> bool:
+def validate_and_promote_director_artifacts(
+    project_dir: Path,
+    min_mtime_ns: int = 0,
+    require_compositions: bool = False,
+    template_package: str | None = None,
+    template_version: str | None = None,
+) -> bool:
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     canonical_script = artifacts_dir / "script_vi.json"
@@ -443,6 +477,22 @@ def validate_and_promote_director_artifacts(project_dir: Path, min_mtime_ns: int
                 return False
         except Exception:
             pass
+
+    # Templated path: compositions come from the approved package materializer.
+    # Block the free-form / generic synthesis fallback and verify provenance +
+    # caption display instead. The templated path always requires both
+    # compositions and a valid, byte-matching provenance record.
+    if template_package is not None or _detect_templated(project_dir):
+        if template_version:
+            prov_path = project_dir / "template_provenance.json"
+            if prov_path.is_file():
+                try:
+                    prov = json.loads(prov_path.read_text(encoding="utf-8"))
+                    if prov.get("template_version") != template_version:
+                        return False
+                except Exception:
+                    return False
+        return validate_templated_compositions(project_dir, require_compositions=True)
 
     if canonical_script.is_file():
         try:
@@ -487,6 +537,8 @@ def main() -> int:
     parser.add_argument("project_dir", type=Path, help="Path to project directory")
     parser.add_argument("--min-mtime-ns", type=int, default=0, help="Minimum allowed checkpoint mtime nanoseconds")
     parser.add_argument("--require-compositions", action="store_true", help="Require both canonical HyperFrames compositions")
+    parser.add_argument("--template-package", default=None, help="Approved template package id (enforces the templated path and blocks free-form synthesis)")
+    parser.add_argument("--template-version", default=None, help="Expected template version")
     args = parser.parse_args()
 
     project_dir = args.project_dir.resolve()
@@ -498,9 +550,13 @@ def main() -> int:
         project_dir,
         min_mtime_ns=args.min_mtime_ns,
         require_compositions=args.require_compositions,
+        template_package=args.template_package,
+        template_version=args.template_version,
     )
     if not ok:
         required = "script artifact and both compositions" if args.require_compositions else "canonical script artifact"
+        if args.template_package is not None:
+            required = "templated compositions with valid provenance and verified captions"
         print(f"ERROR: missing or invalid {required} for {project_dir.name}", file=sys.stderr)
         return 1
 

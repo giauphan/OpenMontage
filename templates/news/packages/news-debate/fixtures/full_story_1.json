@@ -1,0 +1,37 @@
+{
+  "template": "news-debate",
+  "template_version": "1.0.0",
+  "variant": "full",
+  "kicker": "TRÁNH LUẬN",
+  "title": "AI Có Đang Thay Thế Con Người?",
+  "duration": 45,
+  "narration": "Câu hỏi không còn là liệu AI có mạnh hơn, mà là chúng ta chuẩn bị kịp chưa. Tiến sĩ Lê Minh Đức nhận định rằng rủi ro lớn nhất không phải AI thay thế con người, mà là chúng ta không chuẩn bị kịp tốc độ thay đổi. Theo Bộ Công Thương, 70% doanh nghiệp vừa và nhỏ chưa có chiến lược chuyển đổi số. Đào tạo kỹ năng số không còn là lựa chọn, đó là điều kiện tồn tại.",
+  "slots": {
+    "hook": {
+      "heading": "AI Có Đang Thay Thế Con Người?",
+      "text": "Câu hỏi không còn là liệu AI có mạnh hơn, mà là chúng ta chuẩn bị kịp chưa.",
+      "start": 0,
+      "end": 10
+    },
+    "statement": {
+      "heading": "Nhận định",
+      "text": "Rủi ro lớn nhất không phải AI thay thế con người, mà là chúng ta không chuẩn bị kịp tốc độ thay đổi.",
+      "attribution": "Tiến sĩ Lê Minh Đức, Viện Nghiên cứu Trí tuệ nhân tạo",
+      "start": 10,
+      "end": 28
+    },
+    "context": {
+      "heading": "Thực trạng",
+      "text": "Theo báo cáo của Bộ Công Thương, 70% doanh nghiệp vừa và nhỏ chưa có chiến lược chuyển đổi số.",
+      "source_url": "https://www.moit.gov.vn/bao-cao-chenh-doi-so",
+      "start": 28,
+      "end": 40
+    },
+    "takeaway": {
+      "heading": "Kết luận",
+      "text": "Đào tạo kỹ năng số không còn là lựa chọn, đó là điều kiện tồn tại.",
+      "start": 40,
+      "end": 45
+    }
+  }
+}

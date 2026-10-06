@@ -17,6 +17,11 @@ if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
 fi
 export PYTHONPATH="$ROOT"
 export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
+# Templated news path: when 1, projects must carry a template selection +
+# typed content instance and compositions are materialized deterministically
+# from the approved package (no free-form HTML, no repair/sed mutation).
+# Development-only; production activation is a separate explicit approval.
+NEWS_TEMPLATE_MODE="${NEWS_TEMPLATE_MODE:-0}"
 
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
@@ -228,9 +233,62 @@ if [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ] && [ ! -s "$PROJECT_DIR/hy
     cp "$PROJECT_DIR/hyperframes_reels/index.html" "$PROJECT_DIR/hyperframes/index.html" || true
 fi
 
+# ---- Templated path: materialize deterministic compositions from a typed
+# content instance. In templated mode the director emits
+# artifacts/template_selection.json (template_id/template_version) and
+# artifacts/template_content.json (a schema-valid content instance) instead
+# of free-form HTML. The materializer produces byte-stable compositions and
+# records template_provenance.json. Free-form HTML, repair, and sed mutation
+# are bypassed so the provenance hashes stay intact. Production activation
+# remains blocked on catalog review_status == "approved" (enforced by the
+# scheduler provenance gate in schedule_today_native.py). ----
+TEMPLATE_MODE=0
+TEMPLATE_PACKAGE=""
+TEMPLATE_VERSION=""
+CONTENT_INSTANCE=""
+if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
+  sel="$PROJECT_DIR/artifacts/template_selection.json"
+  cnt="$PROJECT_DIR/artifacts/template_content.json"
+  if [ -s "$sel" ] && [ -s "$cnt" ]; then
+    TEMPLATE_MODE=1
+    TEMPLATE_PACKAGE="$(jq -r '.template_id // empty' "$sel" 2>/dev/null)"
+    TEMPLATE_VERSION="$(jq -r '.template_version // empty' "$sel" 2>/dev/null)"
+    CONTENT_INSTANCE="$cnt"
+    if [ -z "$TEMPLATE_PACKAGE" ]; then
+      echo "[$(date -u +%FT%TZ)] FATAL type=templated_no_package project=$PROJECT_ID" >&2
+      continue
+    fi
+    echo "[$(date -u +%FT%TZ)] TEMPLATE_MODE project=$PROJECT_ID package=$TEMPLATE_PACKAGE version=$TEMPLATE_VERSION" \
+      >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+    if "$PY" "$ROOT/scripts/materialize_news_template.py" \
+        --package "$TEMPLATE_PACKAGE" \
+        --content "$CONTENT_INSTANCE" \
+        --project-dir "$ROOT/projects/$PROJECT_ID" \
+        --variant both > "$ROOT/logs/materializer_${PROJECT_ID}.json" 2>> "$ROOT/logs/directors_${PROJECT_ID}.log"; then
+      DIRECTOR_EXIT=0
+      echo "[$(date -u +%FT%TZ)] templated materialization OK project=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
+        --message "Templated compositions materialized deterministically" || true
+    else
+      MAT_EXIT=$?
+      echo "[$(date -u +%FT%TZ)] FATAL type=templated_materialize_failed project=$PROJECT_ID exit=$MAT_EXIT" >&2
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
+        --error-type "TEMPLATE_MATERIALIZATION_FAILED" --message "Materializer exited $MAT_EXIT" || true
+      DIRECTOR_EXIT=6
+    fi
+  else
+    echo "[$(date -u +%FT%TZ)] FATAL type=templated_content_missing project=$PROJECT_ID" >&2
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
+      --error-type "TEMPLATED_CONTENT_MISSING" --message "template_selection.json or template_content.json missing in templated mode" || true
+    continue
+  fi
+fi
+
 # set -e moved down to protect retry loop
 
 if [ "$DIRECTOR_ARTIFACT_FALLBACK" -eq 1 ]; then
+  :
+elif [ "$TEMPLATE_MODE" -eq 1 ]; then
   :
 elif jq empty "$DIRECTORS_JSON" 2>/dev/null; then
   jq -r '"session_id=\(.session_id // "?") is_error=\(.is_error // "?") turns=\(.num_turns // "?") cost_usd=\(.total_cost_usd // "?")"' \
@@ -251,6 +309,14 @@ ELAPSED=$((END_TS - START_TS))
 MAX_DIRECTOR_RETRIES="${MAX_DIRECTOR_RETRIES:-3}"
 DIRECTOR_ATTEMPT=1
 
+# Templated mode materializes in the block above; no generative retry loop.
+if [ "$TEMPLATE_MODE" -eq 1 ]; then
+  if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
+    DIRECTOR_EXIT=0
+  else
+    DIRECTOR_EXIT=6
+  fi
+else
 while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; do
   if [ "$DIRECTOR_ATTEMPT" -ge "$MAX_DIRECTOR_RETRIES" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: director artifacts incomplete or failed after $MAX_DIRECTOR_RETRIES attempts" >> "$DIRECTORS_LOG"
@@ -286,9 +352,11 @@ while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_dire
     DIRECTOR_EXIT=6
   fi
 done
+fi
 
 set -e
-if [ $DIRECTOR_EXIT -ne 0 ]; then
+# Autonomous synthesis is a free-form fallback; blocked on the templated path.
+if [ $DIRECTOR_EXIT -ne 0 ] && [ "$TEMPLATE_MODE" -ne 1 ]; then
   if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
     echo "[$(date -u +%FT%TZ)] directors recovered via autonomous synthesis project=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
     DIRECTOR_EXIT=0
@@ -461,7 +529,13 @@ fi
     if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
   done
-  "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict
+  # Repair is a generic mutation path; skip it on templated compositions so
+  # provenance hashes recorded by the materializer stay valid.
+  if [ "${TEMPLATE_MODE:-0}" -eq 1 ]; then
+    echo "skip repair_hyperframes_quality (templated compositions are deterministic)"
+  else
+    "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict
+  fi
 }
 if ! materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"; then
   echo "[$(date -u +%FT%TZ)] ERROR: HyperFrames asset materialization/repair failed for $PROJECT_ID" >&2
@@ -491,7 +565,12 @@ if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html"
 fi
 
 # Fix composition asset references (incorrect relative paths)
-sed -i 's|\.\./assets/|assets/|g' "$FULL_COMP/index.html" "$REELS_COMP/index.html"
+# Skip on templated compositions to preserve byte-stable materializer output.
+if [ "${TEMPLATE_MODE:-0}" -eq 1 ]; then
+  echo "skip sed asset rewrite (templated compositions)"
+else
+  sed -i 's|\.\./assets/|assets/|g' "$FULL_COMP/index.html" "$REELS_COMP/index.html"
+fi
 
 rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
@@ -664,11 +743,25 @@ if [ -z "$DESCRIPTION" ]; then
 fi
 DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai #vietnam"
 
+# On the templated path, bind template provenance into the publish metadata so
+# downstream tooling can carry the deterministic composition + content hashes.
+TEMPLATE_PROV_JSON="{}"
+if [ "${TEMPLATE_MODE:-0}" -eq 1 ] && [ -s template_provenance.json ]; then
+  TEMPLATE_PROV_JSON=$(jq -c '{
+    template_id: .template_id,
+    template_version: .template_version,
+    composition_source_sha256: .composition_source_sha256,
+    content_instance_sha256: .content_instance_sha256,
+    caption_display_verified: .caption_display_verified
+  }' template_provenance.json) || TEMPLATE_PROV_JSON="{}"
+fi
+
 jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
   --arg description "$DESCRIPTION" \
   --argjson feed_stale "$FEED_STALE" \
+  --argjson template_prov "$TEMPLATE_PROV_JSON" \
   '{
     id: $id,
     topic: $title,
@@ -679,7 +772,7 @@ jq -n \
     fb_video: "renders/final_full_vi_9x16.mp4",
     ig_reels: "renders/final_reels_vi_9x16.mp4",
     feed_stale: $feed_stale
-  }' > publish_metadata.json
+  } + (if ($template_prov|length) > 0 then $template_prov else {} end)' > publish_metadata.json
 
 # Step 4.5: Run copyright preflight (if files exist)
 if [ -f "renders/final_full_vi_9x16.mp4" ]; then

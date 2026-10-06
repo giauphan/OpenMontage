@@ -1,0 +1,31 @@
+{
+  "template": "news-debate",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "kicker": "TRANH LUẬN",
+  "title": "Chuyện Người Thay Thế",
+  "duration": 50,
+  "narration": "Câu chuyện về hai nhà lập trình — một dùng AI, một không. Kết quả bất ngờ khiến cả hai đều bất mãng.",
+  "narration_short": "Một doanh nghiệp áp dụng AI, một không. Kết quả bất ngờ.",
+  "slots": {
+    "hook": {
+      "heading": "Chuyện Người Thay Thế",
+      "text": "Câu chuyện về hai nhà lập trình — một dùng AI, một không.",
+      "start": 0,
+      "end": 8
+    },
+    "statement": {
+      "heading": "Quan điểm",
+      "text": "Tôi nghĩ AI chỉ là công cụ — quyết định sống động vẫn do người ta gánh vác.",
+      "attribution": "Hoàng Thị Mai",
+      "start": 8,
+      "end": 42
+    },
+    "takeaway": {
+      "heading": "Triển vọng",
+      "text": "Tương lai không phải của máy, mà của những người biết dùng máy một cách tỉnh táo.",
+      "start": 42,
+      "end": 50
+    }
+  }
+}

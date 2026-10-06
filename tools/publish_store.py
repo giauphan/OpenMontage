@@ -269,6 +269,8 @@ class PublishStore:
         asset_path: str | None = None,
         source_topic: str | None = None,
         scheduled_for: str | None = None,
+        content_hash: str | None = None,
+        template_id: str | None = None,
     ) -> tuple[str, bool, dict[str, Any] | None]:
         if not title or not asset_path:
             raise ValueError("title and asset_path are required for duplicate protection")
@@ -298,6 +300,8 @@ class PublishStore:
             "asset_path": str(asset_path),
             "source_sha256": source_sha256,
             "visual_sha256": visual_sha256,
+            "content_hash": content_hash,
+            "template_id": template_id,
             "scheduled_for": scheduled_for,
             "status": status,
             "claimed_at": now,
