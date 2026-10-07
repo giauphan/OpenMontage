@@ -38,15 +38,25 @@ def load_schema(name: str) -> dict:
 
     name: one of MULTISHOT_ARTIFACT_NAMES.
     """
+    if name not in MULTISHOT_ARTIFACT_NAMES:
+        raise ValueError(f"Unknown multi-shot artifact name: {name!r}")
     path = SCHEMA_DIR / f"{name}.schema.json"
     if not path.exists():
         raise FileNotFoundError(f"Multi-shot schema not found: {path}")
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        schema = json.load(f)
+    if name == "run_manifest":
+        # Additive persistence fields; legacy manifests without a revision read as 0.
+        schema["properties"]["revision"] = {"type": "integer", "minimum": 0}
+        shot = schema["properties"]["shots"]["additionalProperties"]
+        shot["properties"]["input_hash"] = {"type": "string"}
+    return schema
 
 
 def validate(name: str, data: dict[str, Any]) -> None:
     """Validate a data dict against the named multi-shot schema. Raises on failure."""
+    # JSON allows no NaN/Infinity, even where a permissive number schema would.
+    json.dumps(data, allow_nan=False)
     schema = load_schema(name)
     jsonschema.validate(instance=data, schema=schema)
 

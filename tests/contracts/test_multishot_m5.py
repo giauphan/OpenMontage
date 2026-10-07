@@ -12,6 +12,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -34,15 +36,23 @@ def _spec(shot_id):
 class TestResume:
     """TASK 019 — 6-shot crash after shots 1–3 complete; restart reuses them."""
 
+    def _sched(self, tmp_path, max_concurrency=3):
+        return JobScheduler(FakeProvider(), dest_dir=str(tmp_path), max_concurrency=max_concurrency,
+                            sleep=lambda d: None, download_validator=lambda path, spec: {"valid": True})
+
     def test_resume_reuses_completed_and_runs_remaining_in_order(self, tmp_path):
-        provider = FakeProvider({})
-        sched = JobScheduler(provider, max_concurrency=3, dest_dir=str(tmp_path),
-                             sleep=lambda d: None)
+        sched = self._sched(tmp_path)
+        provider = sched.provider
         specs = [_spec(f"shot_{i:03d}") for i in range(1, 7)]
-        completed = {f"shot_{i:03d}": {"file_path": str(tmp_path / f"shot_{i:03d}.mp4")}
+        completed = {f"shot_{i:03d}": {"file_path": str(tmp_path / f"shot_{i:03d}.mp4"),
+                                       "input_hash": _spec(f"shot_{i:03d}").fingerprint(), "content_hash": "sha256:d",
+                                       "validation": {"valid": True, "input_hash": _spec(f"shot_{i:03d}").fingerprint(), "content_hash": "sha256:d"}}
                      for i in range(1, 4)}
         for p in completed.values():
             Path(p["file_path"]).write_bytes(b"prior")
+            import hashlib
+            p["content_hash"] = "sha256:" + hashlib.sha256(b"prior").hexdigest()
+            p["validation"]["content_hash"] = p["content_hash"]
         outcomes = sched.run_all(specs, resume=completed)
 
         # Shots 1–3 reused without re-submission.
@@ -57,10 +67,10 @@ class TestResume:
 
     def test_crash_mid_shot_reconciles_running_handle_no_duplicate(self, tmp_path):
         # Prior run submitted shot_004 attempt 1 (handle known) before crash.
-        provider = FakeProvider({})
-        provider.submit("shot_004", 1, "sha256:x")
+        provider = FakeProvider({("shot_004", 1): "ok", ("shot_004", "download"): "ok"})
         sub_before = len(provider.submissions_for("shot_004"))
-        sched = JobScheduler(provider, dest_dir=str(tmp_path), sleep=lambda d: None)
+        sched = JobScheduler(provider, dest_dir=str(tmp_path), sleep=lambda d: None,
+                             download_validator=lambda path, spec: {"valid": True})
         outcome = sched.run_one(_spec("shot_004"),
                                 resume_handle="handle-shot_004-1", resume_attempts=0)
         assert outcome.status == "completed"
@@ -72,8 +82,9 @@ class TestSingleShotRetry:
     """TASK 020 — shot 4 failed transiently; retry only shot 4, others untouched."""
 
     def test_retry_only_failed_shot(self, tmp_path):
-        provider = FakeProvider({("shot_004", 1): "PROVIDER_5XX", ("shot_004", 2): "ok"})
-        sched = JobScheduler(provider, dest_dir=str(tmp_path), sleep=lambda d: None)
+        provider = FakeProvider({("shot_004", 1): "PROVIDER_5XX", ("shot_004", 2): "ok", ("shot_004", "download"): "ok"})
+        sched = JobScheduler(provider, dest_dir=str(tmp_path), sleep=lambda d: None,
+                             download_validator=lambda path, spec: {"valid": True})
         outcome = sched.run_one(_spec("shot_004"))
         assert outcome.status == "completed"
         assert len(outcome.attempts) == 2
@@ -97,14 +108,14 @@ class TestRegeneration:
     def test_charactermaster_change_invalidates_derived_keyframes(self, tmp_path):
         store = new_reference_store()
         master = tmp_path / "char_master.png"
-        master.write_bytes(b"master")
-        register_character_master(store, "mochi", master)
+        Image.new("RGB", (2, 2), "red").save(master)
+        register_character_master(store, "char_mochi", master)
         for i in range(1, 4):
             kf = tmp_path / f"kf_{i:03d}.png"
-            kf.write_bytes(b"kf")
+            Image.new("RGB", (2, 2), "blue").save(kf)
             register_shot_keyframe(store, f"shot_{i:03d}", kf,
-                                   derived_from_character="mochi")
-        invalidated = invalidate_dependent_jobs(store, "character_master:mochi")
+                                   derived_from_character="char_mochi")
+        invalidated = invalidate_dependent_jobs(store, "character_master:char_mochi")
         assert invalidated == {"shot_001", "shot_002", "shot_003"}
 
 
@@ -112,8 +123,10 @@ class TestMetrics:
     """Plan §8 — the run summary exposes the required observability fields."""
 
     def _outcomes(self, tmp_path):
-        provider = FakeProvider({("shot_001", 1): "RATE_LIMIT", ("shot_001", 2): "ok"})
-        sched = JobScheduler(provider, dest_dir=str(tmp_path), sleep=lambda d: None)
+        provider = FakeProvider({("shot_001", 1): "RATE_LIMIT", ("shot_001", 2): "ok",
+                                 ("shot_002", 1): "ok"})
+        sched = JobScheduler(provider, dest_dir=str(tmp_path), sleep=lambda d: None,
+                             download_validator=lambda path, spec: {"valid": True})
         return sched.run_all([_spec("shot_001"), _spec("shot_002")])
 
     def test_summary_has_required_metric_fields(self, tmp_path):

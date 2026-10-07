@@ -84,22 +84,43 @@ def _format_character_lock(characters: list[dict]) -> str:
 def _format_environment_lock(shot: dict, continuity: dict) -> str:
     location = shot.get("location", "unspecified location")
     environment_state = continuity.get("environment_state", {})
+    accepted_end_state = continuity.get("accepted_end_state")
+
+    if accepted_end_state and "environment" in accepted_end_state:
+        env_str = f"Established environment state: {_json(accepted_end_state.get('environment'))}\n"
+    elif environment_state:
+        env_str = f"Established environment state: {_json(environment_state)}\n"
+    else:
+        env_str = "Established environment state: {}\n"
+
     return (
         f"Location: {location}\n"
-        f"Established environment state: {_json(environment_state)}\n"
+        f"{env_str}"
         "Preserve established layout, lighting direction, scale, and set dressing."
     )
 
 
 def _format_continuity(continuity: dict) -> str:
     previous = continuity.get("accepted_through_shot")
-    return (
-        f"Continuity version: {continuity.get('version')}\n"
-        f"Previous accepted shot: {previous if previous is not None else 'INITIAL STATE'}\n"
-        f"Character state: {_json(continuity.get('character_state', {}))}\n"
-        f"Environment state: {_json(continuity.get('environment_state', {}))}\n"
-        f"Object state: {_json(continuity.get('object_state', {}))}"
-    )
+    accepted_end_state = continuity.get("accepted_end_state")
+
+    if accepted_end_state:
+        return (
+            f"Continuity version: {continuity.get('version')}\n"
+            f"Previous accepted shot: {previous if previous is not None else 'INITIAL STATE'}\n"
+            f"Character state: {_json(accepted_end_state.get('character', {}))}\n"
+            f"Environment state: {_json(accepted_end_state.get('environment', {}))}\n"
+            f"Props state: {_json(accepted_end_state.get('props', {}))}\n"
+            f"Object state: {_json(continuity.get('object_state', {}))}"
+        )
+    else:
+        return (
+            f"Continuity version: {continuity.get('version')}\n"
+            f"Previous accepted shot: {previous if previous is not None else 'INITIAL STATE'}\n"
+            f"Character state: {_json(continuity.get('character_state', {}))}\n"
+            f"Environment state: {_json(continuity.get('environment_state', {}))}\n"
+            f"Object state: {_json(continuity.get('object_state', {}))}"
+        )
 
 
 def build_multishot_prompt(

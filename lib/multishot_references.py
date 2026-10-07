@@ -19,6 +19,8 @@ import hashlib
 from pathlib import Path
 from typing import Any, Optional
 
+from PIL import Image
+
 from lib.multishot_schemas import MultishotValidationError
 
 KEY_CHARACTER_MASTER = "character_master"
@@ -27,9 +29,14 @@ KEY_SHOT_KEYFRAME = "keyframe"
 
 
 def content_hash(path: Path) -> str:
-    """Return the sha256 content hash of a file, prefixed ``sha256:``."""
+    """Return the sha256 content hash of a readable image file."""
     if not Path(path).is_file():
         raise MultishotValidationError(f"Reference file not found: {path}")
+    try:
+        with Image.open(path) as image:
+            image.verify()
+    except (OSError, ValueError) as exc:
+        raise MultishotValidationError(f"Reference file is not a readable image: {path}") from exc
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -48,11 +55,12 @@ def register_character_master(
     path: Path,
 ) -> dict[str, Any]:
     """Register (or replace) the master reference for a character."""
+    master_hash = content_hash(path)
     record = {
         "kind": KEY_CHARACTER_MASTER,
         "owner": character_id,
         "path": str(path),
-        "content_hash": content_hash(path),
+        "content_hash": master_hash,
     }
     store["references"][f"character_master:{character_id}"] = record
     return record
@@ -79,18 +87,35 @@ def register_shot_keyframe(
     path: Path,
     *,
     derived_from_character: Optional[str] = None,
+    derived_from_characters: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Register or replace the keyframe owned by a single shot.
 
     ``derived_from_character`` records the provenance key for one-reference
     providers that derive the shot keyframe from the character master.
+    ``derived_from_characters`` handles multi-character provenance.
     """
+    keyframe_hash = content_hash(path)
+
+    char_hashes = {}
+    if derived_from_character:
+        char_hashes[derived_from_character] = store["references"].get(f"character_master:{derived_from_character}", {}).get("content_hash")
+    if derived_from_characters:
+        for char in derived_from_characters:
+            char_hashes[char] = store["references"].get(f"character_master:{char}", {}).get("content_hash")
+
     record = {
         "kind": KEY_SHOT_KEYFRAME,
         "owner": shot_id,
         "path": str(path),
-        "content_hash": content_hash(path),
+        "content_hash": keyframe_hash,
         "derived_from_character": derived_from_character,
+        "derived_from_characters": list(char_hashes.keys()) if char_hashes else None,
+        "derived_from_character_hash": (
+            store["references"].get(f"character_master:{derived_from_character}", {}).get("content_hash")
+            if derived_from_character else None
+        ),
+        "derived_from_character_hashes": char_hashes if char_hashes else None,
     }
     store["references"][f"keyframe:{shot_id}"] = record
     store["shots"].setdefault(shot_id, {"keyframe": record["content_hash"]})
@@ -126,6 +151,8 @@ def generation_reference_keys(
             raise MultishotValidationError(
                 f"Shot {shot.get('id')} references unknown character {char_id!r}"
             )
+        # Instead of appending multiple times, just ensure it's in the list
+    if f"keyframe:{shot['id']}" not in keys:
         keys.append(f"keyframe:{shot['id']}")
     if supports_environment:
         keys.append(KEY_ENVIRONMENT)
@@ -146,7 +173,19 @@ def validate_generation_ready(
     """
     required = generation_reference_keys(shot, character_bible, supports_environment=supports_environment)
     present: list[str] = []
-    for key in required:
+
+    # In order to return unique reference keys without disrupting the loop
+    # We will build a unique list. Note that generation_reference_keys may contain duplicates
+    # since keyframe:{shot_id} is appended for each character, but we only validate it once per unique key.
+
+    # Actually generation_reference_keys appending keyframe:{shot["id"]} per character
+    # creates multiple same elements. Let's fix that uniqueness logic.
+    unique_required = []
+    for k in required:
+        if k not in unique_required:
+            unique_required.append(k)
+
+    for key in unique_required:
         record = store["references"].get(key)
         if record is None:
             raise MultishotValidationError(
@@ -154,10 +193,58 @@ def validate_generation_ready(
                 f"reference {key!r} is absent"
             )
         owner = record.get("owner")
-        if key.startswith("keyframe:") and owner != shot.get("id"):
+        if key.startswith("keyframe:"):
+            if owner != shot.get("id"):
+                raise MultishotValidationError(
+                    f"Generation blocked for shot {shot.get('id')}: keyframe owner "
+                    f"is {owner!r}"
+                )
+            path = Path(record["path"])
+            if content_hash(path) != record.get("content_hash"):
+                raise MultishotValidationError(
+                    f"Generation blocked for shot {shot.get('id')}: keyframe content changed"
+                )
+
+            # Verify that provenance covers all required characters.
+            char_ids = shot.get("characters", [])
+            derived_chars = record.get("derived_from_characters") or []
+            if record.get("derived_from_character") and record.get("derived_from_character") not in derived_chars:
+                derived_chars.append(record.get("derived_from_character"))
+
+            for char_id in char_ids:
+                if char_id not in derived_chars:
+                    raise MultishotValidationError(
+                        f"Generation blocked for shot {shot.get('id')}: keyframe provenance missing character {char_id}"
+                    )
+
+            # Check masters
+            hashes = record.get("derived_from_character_hashes") or {}
+
+            for character_id in derived_chars:
+                master = store["references"].get(f"character_master:{character_id}")
+
+                 # Fallback logic for derived_from_character_hash
+                expected_hash = hashes.get(character_id)
+                if expected_hash is None and character_id == record.get("derived_from_character"):
+                    expected_hash = record.get("derived_from_character_hash")
+
+                if (
+                    master is None
+                    or master.get("content_hash") != expected_hash
+                    or content_hash(Path(master["path"])) != master.get("content_hash")
+                ):
+                    raise MultishotValidationError(
+                        f"Generation blocked for shot {shot.get('id')}: master provenance changed"
+                    )
+                # Verify master ownership
+                if master.get("owner") != character_id:
+                    raise MultishotValidationError(
+                        f"Generation blocked for shot {shot.get('id')}: master owner is not {character_id}"
+                    )
+
+        elif content_hash(Path(record["path"])) != record.get("content_hash"):
             raise MultishotValidationError(
-                f"Generation blocked for shot {shot.get('id')}: keyframe owner "
-                f"is {owner!r}"
+                f"Generation blocked for shot {shot.get('id')}: reference content changed"
             )
         present.append(key)
     return present
@@ -187,7 +274,13 @@ def invalidate_dependent_jobs(
 
 def _keyframe_derived_from(store: dict[str, Any], shot_id: str, character_id: str) -> bool:
     record = shot_keyframe(store, shot_id)
-    return record is not None and record.get("derived_from_character") == character_id
+    if not record:
+        return False
+    if record.get("derived_from_character") == character_id:
+        return True
+    if record.get("derived_from_characters") and character_id in record.get("derived_from_characters", []):
+        return True
+    return False
 
 
 def reference_changed(

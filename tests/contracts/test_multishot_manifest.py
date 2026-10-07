@@ -31,6 +31,12 @@ class TestMultishotManifest:
         assert manifest["category"] == "generated"
         assert manifest["stability"] == "beta"
 
+    def test_canonical_brief_and_concrete_tool_contract(self):
+        manifest = load_pipeline("multi-shot")
+        assert manifest["stages"][0]["produces"] == ["brief", "request"]
+        for stage in manifest["stages"]:
+            assert "multishot" in stage["tools_available"]
+
     def test_manifest_listed(self):
         assert "multi-shot" in list_pipelines()
 

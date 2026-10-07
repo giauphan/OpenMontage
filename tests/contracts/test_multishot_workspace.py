@@ -26,7 +26,7 @@ from lib.multishot_workspace import (
     init_multishot_project, resolve_path, write_json_atomic, read_json_atomic,
     init_run_manifest, load_run_manifest, update_shot_status,
     set_project_status, sha256_of_dict, generate_stable_project_id,
-    _validate_id, _safe_shot_filename,
+    _validate_id, _safe_shot_filename, mutate_run_manifest, write_artifact,
 )
 
 
@@ -60,7 +60,7 @@ class TestInitProject:
         assert project_dir.exists()
         for subdir in (
             "artifacts", "assets/images", "assets/video", "assets/audio",
-            "assets/music", "renders",
+            "assets/music", "renders", "history",
             PLANNING_DIR, REFERENCES_DIR, KEYFRAMES_DIR, PROMPTS_DIR,
             RAW_DIR, NORMALIZED_DIR, FINAL_DIR, REPORTS_DIR,
         ):
@@ -161,6 +161,88 @@ class TestRunManifest:
         with pytest.raises(ValueError, match="Cannot mutate"):
             update_shot_status(manifest, "shot_001", project_dir=project_dir,
                                status="RUNNING", required_status="COMPLETED")
+
+
+@pytest.mark.parametrize("identifier", [".", "..", "C:drive", "CON", "x.", "a b"])
+def test_unsafe_ids(identifier):
+    with pytest.raises(ValueError, match="unsafe"):
+        _validate_id(identifier)
+
+
+def test_existing_directory_gets_canonical_marker(tmp_path):
+    (tmp_path / "partial").mkdir()
+    project = init_multishot_project("partial", title="Recovered", pipeline_dir=tmp_path)
+    assert json.loads((project / "project.json").read_text())["pipeline_type"] == "multi-shot"
+    assert (project / "history").is_dir()
+
+
+def test_symlink_prefix_escape_rejected(tmp_path):
+    project = init_multishot_project("safe", title="Safe", pipeline_dir=tmp_path)
+    sibling = tmp_path / "safe-other"
+    sibling.mkdir()
+    (project / RAW_DIR).rmdir()
+    (project / RAW_DIR).symlink_to(sibling, target_is_directory=True)
+    with pytest.raises(ValueError, match="escapes"):
+        resolve_path(project, RAW_DIR, "shot_001", ".mp4")
+
+
+def test_stale_same_project_snapshot_cannot_overwrite(tmp_path):
+    project = init_multishot_project("cas", title="CAS", pipeline_dir=tmp_path)
+    original = init_run_manifest(project, 2)
+    stale = load_run_manifest(project)
+    update_shot_status(original, "shot_001", project_dir=project, status="RUNNING")
+    with pytest.raises(ValueError, match="Stale"):
+        update_shot_status(stale, "shot_002", project_dir=project, status="RUNNING")
+    assert load_run_manifest(project)["revision"] == 1
+    assert set(load_run_manifest(project)["shots"]) == {"shot_001"}
+
+
+def test_failed_mutation_preserves_memory_and_disk(tmp_path):
+    import copy
+    project = init_multishot_project("cas", title="CAS", pipeline_dir=tmp_path)
+    manifest = init_run_manifest(project, 2)
+    before = copy.deepcopy(manifest)
+    import jsonschema
+    with pytest.raises(jsonschema.ValidationError):
+        update_shot_status(manifest, "shot_001", project_dir=project, status="INVALID")
+    assert manifest == before == load_run_manifest(project)
+
+
+def test_concurrent_mutations_have_exactly_one_winner(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    project = init_multishot_project("cas", title="CAS", pipeline_dir=tmp_path)
+    init_run_manifest(project, 2)
+    barrier = Barrier(2)
+
+    def update(shot_id):
+        snapshot = load_run_manifest(project)
+        barrier.wait(timeout=5)
+        try:
+            update_shot_status(snapshot, shot_id, project_dir=project, status="RUNNING")
+            return True
+        except ValueError as exc:
+            assert "Stale" in str(exc)
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(update, ["shot_001", "shot_002"]))
+    assert sorted(results) == [False, True]
+    assert load_run_manifest(project)["revision"] == 1
+
+
+def test_supporting_records_validate_at_persistence_boundary(tmp_path):
+    import jsonschema
+    project = init_multishot_project("records", title="Records", pipeline_dir=tmp_path)
+    from lib.multishot_schemas import MultishotValidationError
+    with pytest.raises(MultishotValidationError):
+        write_json_atomic(project / PLANNING_DIR / "request.json", {})
+    with pytest.raises(ValueError, match="Unknown artifact"):
+        write_artifact(project, "requset", {})
+    path = project / REPORTS_DIR / "run_manifest.json"
+    path.write_text('{}')
+    with pytest.raises(jsonschema.ValidationError):
+        load_run_manifest(project)
 
 
 class TestHelpers:

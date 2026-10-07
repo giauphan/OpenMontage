@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/multishot/job",
+  "title": "Provider Job Record",
+  "description": "Per-shot provider job lifecycle — status machine, attempt tracking, hashes, errors.",
+  "type": "object",
+  "required": ["shot_id", "provider", "model", "status", "attempt", "max_attempts", "submitted_at", "updated_at", "input_hash"],
+  "properties": {
+    "shot_id": { "type": "string", "pattern": "^shot_\\d{3}$" },
+    "provider": { "type": "string" },
+    "model": { "type": "string" },
+    "provider_job_id": {
+      "type": ["string", "null"],
+      "description": "Remote job handle; null until submission succeeds."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["PENDING", "INTENT", "SUBMISSION_UNKNOWN", "SUBMITTED", "RUNNING", "DOWNLOADING", "RETRY_PENDING", "COMPLETED", "FAILED", "PERMANENTLY_FAILED"]
+    },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "max_attempts": { "type": "integer", "minimum": 1 },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "input_hash": {
+      "type": "string",
+      "description": "sha256 of canonical prompt + references for this shot."
+    },
+    "error_code": {
+      "type": ["string", "null"],
+      "enum": [
+        "AUTH_ERROR", "RATE_LIMIT", "QUOTA_EXCEEDED", "INVALID_INPUT",
+        "SAFETY_REFUSAL", "PROVIDER_5XX", "TIMEOUT", "JOB_FAILED",
+        "DOWNLOAD_FAILED", "CORRUPT_OUTPUT", "UNKNOWN_PROVIDER_ERROR",
+                "SUBMISSION_UNKNOWN", "STALE_INPUT", "INELIGIBLE", "CAPACITY", null
+      ]
+    },
+    "error": { "type": ["string", "null"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "spec": { "type": "object", "description": "Redacted input snapshot; signed URLs and credentials are never persisted." },
+        "idempotency_key": { "type": ["string", "null"] },
+        "cost_reservation_id": { "type": ["string", "null"] },
+        "file_path": { "type": ["string", "null"] },
+        "content_hash": { "type": ["string", "null"] },
+        "validation": { "type": ["object", "null"] },
+        "imported": { "type": "boolean" },
+        "transitions": { "type": "array", "items": { "type": "object" } },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["attempt", "started_at", "finished_at", "status", "error_code"],
+            "properties": {
+              "attempt": { "type": "integer", "minimum": 1 },
+              "started_at": { "type": "number" },
+              "finished_at": { "type": "number" },
+              "status": { "type": "string" },
+              "error_code": { "type": ["string", "null"] },
+              "idempotency_key": { "type": ["string", "null"] },
+              "provider_job_id": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+          }
+        }
+  },
+  "additionalProperties": false
+}

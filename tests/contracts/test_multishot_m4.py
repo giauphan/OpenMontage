@@ -40,38 +40,45 @@ def _clean_probe(profile=None):
 
 class TestAudioMux:
     def test_silent_base_no_audio_flags(self):
-        argv = build_audio_mux_args("base.mp4", "out.mp4")
+        argv = build_audio_mux_args("base.mp4", "out.mp4", get_profile("tiktok"))
         assert argv[0] == "ffmpeg"
         assert "base.mp4" in argv
         assert "out.mp4" in argv
-        assert "-c:a" not in argv
+        # Audio from base is now mapped via "0:a?" instead of copy directly
+        assert "-map" in argv
+        assert "0:a?" in argv
 
     def test_narration_bounded_mux(self):
         argv = build_audio_mux_args(
-            "base.mp4", "out.mp4", narration="narr.mp3", max_duration_sec=42.5,
+            "base.mp4", "out.mp4", get_profile("tiktok"), narration="narr.mp3", max_duration_sec=42.5,
         )
         assert "narr.mp3" in argv
         assert "-t" in argv and "42.5" in argv
 
     def test_multi_audio_uses_amix(self):
         argv = build_audio_mux_args(
-            "base.mp4", "out.mp4", narration="n.mp3", music="m.mp3",
+            "base.mp4", "out.mp4", get_profile("tiktok"), narration="n.mp3", music="m.mp3",
         )
         joined = " ".join(argv)
         assert "-filter_complex" in argv
-        assert "amix" in joined
-        assert "inputs=2" in joined
+        assert "sidechaincompress" in joined
 
     def test_subtitle_sidecar_not_burned(self):
-        argv = build_audio_mux_args("base.mp4", "out.mp4", subtitles="sub.srt")
+        argv = build_audio_mux_args("base.mp4", "out.mp4", get_profile("tiktok"), subtitles="sub.srt")
         assert "-c:a" in argv
-        assert not any(a.startswith("-vf") for a in argv)
+        assert "-map 1:s" in " ".join(argv)
+        assert "-c:s" in argv and "mov_text" in argv
+        vf_idx = argv.index("-vf")
+        assert "subtitles=" not in argv[vf_idx + 1]
 
     def test_subtitle_burned_uses_vf(self):
         argv = build_audio_mux_args(
-            "base.mp4", "out.mp4", subtitles="sub.srt", burn_subtitles=True,
+            "base.mp4", "out.mp4", get_profile("tiktok"), subtitles="sub.srt", burn_subtitles=True,
         )
+        assert "-c:v" in argv and get_profile("tiktok").codec in argv
+        assert "-crf" in argv
         assert "-vf" in argv and any("subtitles=" in a for a in argv)
+
 
 
 class TestFinalValidation:

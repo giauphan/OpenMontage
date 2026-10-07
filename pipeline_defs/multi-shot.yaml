@@ -30,8 +30,9 @@ stages:
   - name: idea
     skill: pipelines/multi-shot/idea-director
     produces:
+      - brief
       - request
-    tools_available: []
+    tools_available: [multishot]
     checkpoint_required: true
     human_approval_default: false
     review_focus:
@@ -47,7 +48,7 @@ stages:
       - request
     produces:
       - story
-    tools_available: []
+    tools_available: [multishot]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -63,7 +64,7 @@ stages:
     produces:
       - character_bible
       - style_bible
-    tools_available: []
+    tools_available: [multishot]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -79,7 +80,7 @@ stages:
       - style_bible
     produces:
       - shot_plan
-    tools_available: []
+    tools_available: [multishot]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -96,7 +97,7 @@ stages:
       - shot_plan
     produces:
       - continuity_state
-    tools_available: []
+    tools_available: [multishot]
     checkpoint_required: true
     human_approval_default: true
     review_focus:
@@ -113,6 +114,7 @@ stages:
     produces:
       - asset_manifest
     tools_available:
+      - multishot
       - video_selector
       - tts_selector
     checkpoint_required: true
@@ -130,6 +132,7 @@ stages:
     produces:
       - edit_decisions
     tools_available:
+      - multishot
       - video_compose
     checkpoint_required: true
     human_approval_default: true
@@ -146,6 +149,7 @@ stages:
     produces:
       - render_report
     tools_available:
+      - multishot
       - video_compose
     checkpoint_required: true
     human_approval_default: true

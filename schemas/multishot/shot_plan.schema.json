@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/multishot/shot_plan",
+  "title": "Shot Plan",
+  "description": "Ordered shot list — each shot has unique stable id, unique contiguous order, positive duration, start/end state, character lock, props, and transition_out.",
+  "type": "object",
+  "required": ["version", "shots"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "target_duration_sec": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Aggregate target the planner aimed for."
+    },
+    "shots": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["id", "order", "duration_sec", "start_state", "end_state"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^shot_\\d{3}$"
+          },
+          "scene_id": {
+            "type": "string",
+            "description": "Mapping to scene_plan / existing scene if present."
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "duration_sec": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "location": { "type": "string" },
+          "characters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^char_[a-zA-Z0-9_]+$"
+            }
+          },
+          "start_state": {
+            "type": "object",
+            "required": ["character", "environment"],
+            "properties": {
+              "character": { "type": "string" },
+              "environment": { "type": "string" },
+              "props": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          },
+          "action": { "type": "string", "minLength": 1 },
+          "expression": { "type": "string" },
+          "camera": { "type": "string" },
+          "motion": { "type": "string" },
+          "props": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "end_state": {
+            "type": "object",
+            "required": ["character", "environment"],
+            "properties": {
+              "character": { "type": "string" },
+              "environment": { "type": "string" },
+              "props": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          },
+          "transition_out": {
+            "type": "string",
+            "enum": ["hard_cut"],
+            "default": "hard_cut"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

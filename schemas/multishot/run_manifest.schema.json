@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/multishot/run_manifest",
+  "title": "Run Manifest",
+  "description": "Machine-readable run state — project status across shots, per-shot hashes and statuses.",
+  "type": "object",
+  "required": ["project_id", "schema_version", "project_status", "created_at", "updated_at", "shot_count", "shots"],
+  "properties": {
+    "project_id": { "type": "string" },
+    "schema_version": { "type": "string", "const": "1.0" },
+    "project_status": {
+      "type": "string",
+      "enum": [
+        "CREATED", "PLANNED", "REFERENCES_READY", "GENERATING",
+        "PARTIAL", "SHOTS_READY", "NORMALIZED", "ASSEMBLED",
+        "FINALIZING", "COMPLETED", "FAILED"
+      ]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "shot_count": { "type": "integer", "minimum": 2 },
+    "shots": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING", "RUNNING", "NORMALIZED", "STALE",
+              "FAILED", "PERMANENTLY_FAILED"
+            ]
+          },
+          "prompt_hash": { "type": "string" },
+          "keyframe_hash": { "type": "string" },
+          "video_hash": { "type": "string" },
+          "normalized_hash": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

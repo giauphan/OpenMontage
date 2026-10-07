@@ -55,3 +55,7 @@ Review feedback should identify the observed failure, evidence, expected outcome
 - Independent agents must use separate worktrees/branches or explicitly disjoint write scopes; never make concurrent changes to the same files without coordination.
 - Report results and remaining blockers against the task branch. Commit, push, merge, deploy, or remove the worktree/branch only when requested or explicitly authorized. Preserve unfinished work and do not clean it up merely to report a clean checkout.
 - Read-only reviews and documentation-only requests do not require creating a worktree unless the user asks.
+
+## 7. Local Coding Agents; Remote Validation Only
+
+Follow `AGENTS.md`'s execution-location rule: launch Claude CLI/editor coding agents locally and make source changes in the local task worktree. Never launch coding agents over SSH or implement source changes on `sandbox-video`. Synchronize the exact local revision safely, then use the isolated server checkout only for setup, execution, tests, builds and renders. This supersedes older prompts directing coding work to the server.

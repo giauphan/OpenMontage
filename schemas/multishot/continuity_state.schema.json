@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/multishot/continuity_state",
+  "title": "Continuity State",
+  "description": "Mutable production state carried forward after each accepted shot \u2014 version, accepted_through_shot, character/environment/object state.",
+  "type": "object",
+  "required": [
+    "version",
+    "accepted_through_shot",
+    "character_state",
+    "environment_state",
+    "object_state",
+    "accepted_end_state_fingerprint"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "accepted_through_shot": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Latest shot id whose continuity_out has been accepted; null when nothing accepted yet."
+    },
+    "character_state": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "clothing_state": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "body_state": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "emotion": {
+            "type": "string"
+          },
+          "held_objects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "environment_state": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      }
+    },
+    "object_state": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "accepted_end_state_fingerprint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Fingerprint of the exact end_state payload that was accepted."
+    },
+    "accepted_order": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "The order of the shot that was last accepted, for contiguity validation."
+    },
+    "accepted_end_state": {
+      "type": ["object", "null"],
+      "description": "The verbatim narrative end state payload that was accepted, if available."
+    }
+  },
+  "additionalProperties": false
+}

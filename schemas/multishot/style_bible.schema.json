@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/multishot/style_bible",
+  "title": "Style Bible",
+  "description": "Visual style lock shared across every shot prompt — rendering rules that must never be violated.",
+  "type": "object",
+  "required": ["version", "visual_style", "render_rules"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "visual_style": { "type": "string", "minLength": 1 },
+    "lighting": { "type": "string" },
+    "camera_language": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "motion": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "color": { "type": "string" },
+    "render_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+# H3 focused correction
+
+Claude Haiku 4.5 only, remote sandbox-video. Read AGENT_GUIDE.md and PROJECT_CONTEXT.md. Use Read/Edit/Write/Glob/Grep only; no Bash or permission modifications. Supervisor tests. 15-minute task. Write scope lib/multishot_final.py, tests/contracts/test_multishot_media_recovery.py, tests/contracts/test_multishot_m4.py, 16_H3_RESULT.md. No unrelated edits.
+
+Actual remote collection failure: TINY_PROFILE in test_multishot_media_recovery.py passes unsupported audio_bitrate and audio_sample_rate and omits REQUIRED name/aspect_ratio. Read lib/media_profiles.py and construct MediaProfile(name="test", width=320,height=240,aspect_ratio=AspectRatio.STANDARD_4_3,fps=30,codec="libx264",audio_codec="aac",crf=28). Never invent fields.
+
+Fix concrete source errors and missing test coverage:
+1. build_audio_mux_args single narration branch uses audio through video filter copy. Replace with anull. Keep optional profile default compatible with existing 2-argument builder callers if any; inspect callers.
+2. Profile currently only applies CRF/pixel-format for burn; dimensions/fps aren't enforced. Always encode video to supplied profile with scale/pad/setsar/fps, then subtitle filter if burn. Use profile.codec and pixel_format. Check dimensions/fps/duration/decode_ok of ALL completed temp outputs before publication. Reject nonfinite/nonpositive duration/timeout. Clamp duration to base duration even if caller gives larger max. Use UUID unique sibling temp path. Preserve existing output on any failure.
+3. Current tests only actually execute silent base and ducking. Add real EXECUTION for single narration (would catch copy), mux subtitle (ffprobe subtitle codec mov_text), burn subtitle (decode raw rgb frame and compare with no-caption frame), source-audio-only preservation and three external audio tracks with fades. Probe actual outputs. Test bounds with longer audio than base.
+4. test_boundary_color_concat currently checks only duration. Decode RGB pixels at 0.5 and 1.5 seconds via subprocess ffmpeg -ss -frames:v 1 -f rawvideo -pix_fmt rgb24 pipe:1, assert first red dominant and second blue dominant. Tiny fixture subprocesses must have timeouts.
+5. Remove verbose comments that just narrate uncertainty. No assertion bypasses, no production validation bypass. Report actual unverified changes only. Do not rewrite unrelated final validation gate; H4 will bind revision/final provenance.

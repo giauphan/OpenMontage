@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/multishot/request",
+  "title": "Multi-Shot Request",
+  "description": "User-facing production request — topic, targets, aspect, dimensions, shot policy, and audio flags.",
+  "type": "object",
+  "required": ["topic", "aspect_ratio", "resolution", "fps", "shot_policy"],
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_\\-]{1,128}$",
+      "description": "Client-supplied stable project handle; empty-string coerced by workspace init into a stable server-assigned id."
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "target_duration_sec": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Target total video duration. Used for planning shot count / duration distribution; not hard-bounded by the request itself."
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^[a-z]{2}([-_][A-Za-z]{4})?([-_][A-Za-z]{2})?$",
+      "description": "BCP-47 language tag for narration/subtitles."
+    },
+    "aspect_ratio": {
+      "type": "string",
+      "enum": ["16:9", "9:16", "1:1", "4:3", "21:9"]
+    },
+    "resolution": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "fps": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Target frame rate for rendered output."
+    },
+    "shot_policy": {
+      "type": "object",
+      "required": ["min_shots", "max_shots"],
+      "properties": {
+        "min_shots": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "max_shots": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Must be >= min_shots; validated cross-field."
+        },
+        "preferred_min_duration_sec": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "preferred_max_duration_sec": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "narration": { "type": "boolean", "default": true },
+        "music": { "type": "boolean", "default": true },
+        "sfx": { "type": "boolean", "default": true },
+        "subtitles": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

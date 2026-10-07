@@ -21,7 +21,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.multishot_jobs import (
     FakeProvider,
-    JobScheduler,
+    JobScheduler as ProductionJobScheduler,
+    file_hash,
     JobSpec,
     backoff_delay,
     canonical_input_hash,
@@ -29,6 +30,13 @@ from lib.multishot_jobs import (
     RETRYABLE_ERRORS,
     PERMANENT_ERRORS,
 )
+
+
+def JobScheduler(*args, **kwargs):
+    """Explicit trusted validator for legacy fake bytes, never production media."""
+    kwargs.setdefault("download_validator", lambda path, spec: {"valid": True})
+    kwargs.setdefault("poll_interval", 0)
+    return ProductionJobScheduler(*args, **kwargs)
 
 
 def _spec(shot_id="shot_001"):
@@ -102,12 +110,22 @@ class TestRetry:
         assert sched.run_one(_spec("shot_001")).status == "permanently_failed"
 
     def test_download_failed_retries_then_succeeds(self, tmp_path):
-        provider = FakeProvider({("shot_001", 1): "DOWNLOAD_FAILED",
-                                 ("shot_001", 2): "ok"})
+        from lib.multishot_jobs import ProviderError
+        class InterruptedDownload(FakeProvider):
+            calls = 0
+            def download(self, handle, dest_dir):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ProviderError("DOWNLOAD_FAILED")
+                return super().download(handle, dest_dir)
+        provider = InterruptedDownload()
         sched, _ = self._sched(provider, tmp_path)
         outcome = sched.run_one(_spec("shot_001"))
         assert outcome.status == "completed"
         assert Path(outcome.file_path).exists()
+        assert provider.submissions_for("shot_001") == [1]
+        assert provider.calls == 2
+        assert len(outcome.attempts) == 1
 
     def test_exhausted_retries_reports_failed(self, tmp_path):
         provider = FakeProvider({("shot_001", a): "PROVIDER_5XX" for a in (1, 2, 3)})
@@ -169,7 +187,12 @@ class TestRecovery:
         specs = [_spec(f"shot_{i:03d}") for i in range(1, 4)]
         existing = str(tmp_path / "shot_001.mp4")
         Path(existing).write_bytes(b"prior-output")
-        outcomes = sched.run_all(specs, resume={"shot_001": {"file_path": existing}})
+        digest = file_hash(existing)
+        inputs = specs[0].fingerprint()
+        outcomes = sched.run_all(specs, resume={"shot_001": {
+            "file_path": existing, "input_hash": inputs, "content_hash": digest,
+            "validation": {"valid": True, "input_hash": inputs, "content_hash": digest},
+        }})
         assert outcomes[0].status == "completed"
         assert outcomes[0].file_path == existing
         assert provider.submissions_for("shot_001") == []

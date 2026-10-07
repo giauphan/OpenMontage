@@ -20,6 +20,10 @@ import hashlib
 import json
 import os
 import time
+import re
+import tempfile
+from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -38,6 +42,10 @@ def _validate_id(name: str, label: str = "id") -> None:
     """Reject unsafe ids used for directory names or file stem names."""
     if not name:
         raise ValueError(f"{label} must be non-empty")
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", name):
+        raise ValueError(f"{label} {name!r} is unsafe")
+    if name.upper() in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+        raise ValueError(f"{label} {name!r} is unsafe")
     if len(name) > 256:
         raise ValueError(f"{label} too long: {len(name)} > 256")
     for c in _UNSAFE_ID_PATTERNS:
@@ -109,8 +117,20 @@ def init_multishot_project(
     base = pipeline_dir or PROJECTS_DIR
     project_dir = base / project_id
 
-    if not project_dir.exists():
-        init_project(project_id, title=title, pipeline_type=pipeline_type, pipeline_dir=pipeline_dir)
+    if pipeline_type != "multi-shot":
+        raise ValueError("pipeline_type must be 'multi-shot'")
+    if project_dir.is_symlink():
+        raise ValueError("unsafe project directory symlink")
+    with project_lock(project_dir):
+        marker_path = project_dir / "project.json"
+        if marker_path.exists():
+            marker = read_json_atomic(marker_path)
+            if marker.get("project_id") != project_id or marker.get("pipeline_type") != pipeline_type:
+                raise ValueError("project marker identity mismatch")
+        else:
+            init_project(project_id, title=title, pipeline_type=pipeline_type, pipeline_dir=base)
+        for subdir in ("artifacts", "assets/images", "assets/video", "assets/audio", "assets/music", "renders", "history"):
+            (project_dir / subdir).mkdir(parents=True, exist_ok=True)
 
     # Multi-shot-specific dirs
     for subdir in (
@@ -176,7 +196,7 @@ def resolve_path(
         resolved = path.resolve()
     except OSError:
         resolved = path.absolute()
-    if not str(resolved).startswith(str(project_dir.resolve())):
+    if not resolved.is_relative_to(project_dir.resolve()):
         raise ValueError(f"path escapes project dir: {path}")
 
     return resolved
@@ -186,20 +206,89 @@ def resolve_path(
 # Atomic persistence
 # ------------------------------------------------------------------
 
+@contextmanager
+def project_lock(project_dir: Path, timeout: float = 10.0):
+    """Bounded cross-process mutation lock, released by the OS after a crash.
+
+    Lock files are intentionally retained: unlinking a lock file can allow two
+    processes to lock different inodes. This lock is not reentrant.
+    """
+    project_dir.mkdir(parents=True, exist_ok=True)
+    with open(project_dir / ".multishot.lock", "a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (BlockingIOError, OSError):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Project mutation lock busy: {project_dir}")
+                time.sleep(0.02)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _validate_record_path(path: Path, data: Any) -> None:
+    from schemas.multishot import MULTISHOT_ARTIFACT_NAMES
+    from schemas.artifacts import validate_artifact
+    if path.suffix == ".json" and path.stem in MULTISHOT_ARTIFACT_NAMES:
+        validate_artifact(path.stem, data)
+
+
+def write_artifact(project_dir: Path, name: str, data: dict) -> Path:
+    """Persist a registered supporting record to canonical artifacts/.
+
+    Checkpoint payloads remain inline objects, not filename references. This
+    operation never advances stages or grants approval.
+    """
+    from schemas.artifacts import ARTIFACT_NAMES, validate_artifact
+    if name not in ARTIFACT_NAMES:
+        raise ValueError(f"Unknown artifact {name!r}")
+    validate_artifact(name, data)
+    path = project_dir / "artifacts" / f"{name}.json"
+    with project_lock(project_dir):
+        write_json_atomic(path, data)
+    return path
+
+
 def write_json_atomic(path: Path, data: Any) -> None:
     """Write JSON to path atomically (temp + rename + fsync).
 
     Raises on failure; the destination is either the new file or nothing.
     """
+    _validate_record_path(path, data)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.parent / f".tmp_{path.name}_{int(time.time() * 1000)}"
+    fd, filename = tempfile.mkstemp(prefix=f".tmp_{path.name}_", dir=path.parent)
+    tmp = Path(filename)
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, allow_nan=False)
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(path)
+        os.replace(tmp, path)
+        if os.name != "nt":
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     except Exception:
         if tmp.exists():
             tmp.unlink(missing_ok=True)
@@ -209,7 +298,9 @@ def write_json_atomic(path: Path, data: Any) -> None:
 def read_json_atomic(path: Path) -> Any:
     """Read a JSON file; raises FileNotFoundError if absent, json.JSONDecodeError otherwise."""
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    _validate_record_path(path, data)
+    return data
 
 
 # ------------------------------------------------------------------
@@ -230,6 +321,7 @@ def _new_run_manifest(project_id: str, shot_count: int) -> dict:
     return {
         "project_id": project_id,
         "schema_version": "1.0",
+        "revision": 0,
         "project_status": "CREATED",
         "created_at": now,
         "updated_at": now,
@@ -247,17 +339,24 @@ def init_run_manifest(
     shot_count: int,
 ) -> dict:
     """Create or load the run manifest, returning the data dict."""
-    manifest_path = _run_manifest_path(project_dir)
-    if manifest_path.exists():
-        return read_json_atomic(manifest_path)
-    manifest = _new_run_manifest(project_dir.name, shot_count)
-    write_json_atomic(manifest_path, manifest)
-    return manifest
+    with project_lock(project_dir):
+        manifest_path = _run_manifest_path(project_dir)
+        if manifest_path.exists():
+            manifest = load_run_manifest(project_dir)
+            if manifest["shot_count"] != shot_count:
+                raise ValueError("run_manifest shot_count mismatch")
+            return manifest
+        manifest = _new_run_manifest(project_dir.name, shot_count)
+        write_json_atomic(manifest_path, manifest)
+        return manifest
 
 
 def load_run_manifest(project_dir: Path) -> dict:
     """Load the current run manifest or raise FileNotFoundError."""
-    return read_json_atomic(_run_manifest_path(project_dir))
+    manifest = read_json_atomic(_run_manifest_path(project_dir))
+    if manifest["project_id"] != project_dir.name:
+        raise ValueError("run_manifest project_id mismatch")
+    return manifest
 
 
 def mutate_run_manifest(
@@ -280,27 +379,22 @@ def mutate_run_manifest(
     Returns:
         The updated manifest dict.
     """
-    if required_status and manifest.get("project_status") != required_status:
-        raise ValueError(
-            f"Cannot mutate run_manifest: expected status {required_status!r}, "
-            f"got {manifest.get('project_status')!r}"
-        )
-
-    # Re-read from disk each time to catch external mutations (fail-closed).
-    manifest_path = _run_manifest_path(project_dir)
-    if manifest_path.exists():
-        disk = read_json_atomic(manifest_path)
-        # Require project_id match — reject corrupted/wrong-project data.
-        if disk.get("project_id") != manifest.get("project_id"):
-            raise ValueError(
-                f"run_manifest project_id mismatch on disk: "
-                f"{disk.get('project_id')!r} vs {manifest.get('project_id')!r}"
-            )
-
-    updater(manifest)
-    manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
-    write_json_atomic(manifest_path, manifest)
-    return manifest
+    with project_lock(project_dir):
+        disk = load_run_manifest(project_dir)
+        if disk != manifest:
+            raise ValueError("Stale run_manifest snapshot; reload before mutation")
+        if required_status and disk["project_status"] != required_status:
+            raise ValueError(f"Cannot mutate run_manifest: expected status {required_status!r}")
+        updated = deepcopy(disk)
+        updater(updated)
+        if updated.get("project_id") != disk["project_id"]:
+            raise ValueError("run_manifest project_id is immutable")
+        updated["revision"] = disk.get("revision", 0) + 1
+        updated["updated_at"] = datetime.now(timezone.utc).isoformat()
+        write_json_atomic(_run_manifest_path(project_dir), updated)
+        manifest.clear()
+        manifest.update(updated)
+        return manifest
 
 
 def set_project_status(
@@ -314,11 +408,10 @@ def set_project_status(
     """
     if new_status not in _VALID_PROJECT_STATUSES:
         raise ValueError(f"Invalid project_status {new_status!r}")
-    manifest["project_status"] = new_status
     return mutate_run_manifest(
         manifest,
         project_dir=project_dir,
-        updater=lambda m: None,
+        updater=lambda m: m.update(project_status=new_status),
     )
 
 

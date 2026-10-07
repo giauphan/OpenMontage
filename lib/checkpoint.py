@@ -125,6 +125,7 @@ def _validate_artifacts_for_stage(
     stage: str,
     status: str,
     artifacts: dict[str, Any],
+    pipeline_type: str | None = None,
 ) -> None:
     # Valid stages come from the pipeline manifest (get_pipeline_stages), which
     # can declare stages beyond the 9 canonical ones (e.g. character-animation's
@@ -142,8 +143,18 @@ def _validate_artifacts_for_stage(
             f"canonical artifact {required_artifact!r}"
         )
 
+    if pipeline_type == "multi-shot" and status in {"completed", "awaiting_human"}:
+        from lib.pipeline_loader import load_pipeline_readonly
+        manifest = load_pipeline_readonly(pipeline_type)
+        definition = next(s for s in manifest["stages"] if s["name"] == stage)
+        for name in definition.get("produces", []):
+            if name not in artifacts:
+                raise CheckpointValidationError(f"Stage {stage!r} must include artifact {name!r}")
+
     for artifact_name, artifact_data in artifacts.items():
         if artifact_name not in ARTIFACT_NAMES:
+            if pipeline_type == "multi-shot":
+                raise CheckpointValidationError(f"Unknown artifact {artifact_name!r}; register a schema first")
             continue
         if not isinstance(artifact_data, dict):
             raise CheckpointValidationError(
@@ -183,7 +194,7 @@ def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
     if not isinstance(artifacts, dict):
         raise CheckpointValidationError("Checkpoint artifacts must be a dictionary")
 
-    _validate_artifacts_for_stage(stage, status, artifacts)
+    _validate_artifacts_for_stage(stage, status, artifacts, pipeline_type)
 
     try:
         jsonschema.validate(instance=checkpoint, schema=_load_checkpoint_schema())
@@ -229,6 +240,7 @@ def init_project(
         "assets/audio",
         "assets/music",
         "renders",
+        HISTORY_DIRNAME,
     ):
         (project_dir / sub).mkdir(parents=True, exist_ok=True)
 
@@ -458,13 +470,18 @@ def write_checkpoint(
     # cannot bypass either gate enforcement or style validation.
     marker = None
     marker_path = pipeline_dir / project_id / PROJECT_MARKER_FILENAME
-    if marker_path.exists() and (not pipeline_type or not style_playbook):
+    if marker_path.exists():
         try:
             with open(marker_path, encoding="utf-8") as f:
                 marker = json.load(f)
         except (json.JSONDecodeError, OSError):
             marker = None
     if isinstance(marker, dict):
+        if marker.get("pipeline_type") == "multi-shot" and (
+            marker.get("project_id") != project_id
+            or (pipeline_type is not None and pipeline_type != "multi-shot")
+        ):
+            raise CheckpointValidationError("Project marker identity mismatch")
         if not pipeline_type and marker.get("pipeline_type"):
             pipeline_type = marker["pipeline_type"]
         if not style_playbook and marker.get("style_playbook"):
@@ -540,6 +557,9 @@ def write_checkpoint(
         checkpoint["error"] = error
     if metadata is not None:
         checkpoint["metadata"] = metadata
+
+    # Reject invalid supporting records before any persistence side effects.
+    validate_checkpoint(checkpoint)
 
     # Merge decision_log: if this checkpoint carries new decisions,
     # append them to the project-level decision log file, then write the

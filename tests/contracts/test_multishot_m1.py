@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -230,10 +231,10 @@ class TestReferences:
     def _store_with_refs(self, tmp_path):
         store = new_reference_store()
         char_master = tmp_path / "character_master.png"
-        char_master.write_bytes(b"master-bytes")
+        Image.new("RGB", (2, 2), "red").save(char_master)
         register_character_master(store, "char_mochi", char_master)
         kf = tmp_path / "shot_001.png"
-        kf.write_bytes(b"keyframe-bytes")
+        Image.new("RGB", (2, 2), "blue").save(kf)
         register_shot_keyframe(store, "shot_001", kf, derived_from_character="char_mochi")
         return store, char_master, kf
 
@@ -254,7 +255,7 @@ class TestReferences:
     def test_changed_reference_invalidates_dependent_jobs(self, tmp_path):
         store, _, kf = self._store_with_refs(tmp_path)
         before_ref = store["references"]["keyframe:shot_001"]["content_hash"]
-        kf.write_bytes(b"new-bytes")
+        Image.new("RGB", (2, 2), "green").save(kf)
         register_shot_keyframe(store, "shot_001", kf, derived_from_character="char_mochi")
         after_ref = store["references"]["keyframe:shot_001"]["content_hash"]
         assert before_ref != after_ref
@@ -263,14 +264,14 @@ class TestReferences:
 
     def test_character_master_change_invalidates_derived_shots(self, tmp_path):
         store, char_master, _ = self._store_with_refs(tmp_path)
-        char_master.write_bytes(b"new-master")
+        Image.new("RGB", (2, 2), "green").save(char_master)
         register_character_master(store, "char_mochi", char_master)
         stale = invalidate_dependent_jobs(store, "character_master:char_mochi")
         assert "shot_001" in stale
 
     def test_content_hash_is_sha256(self, tmp_path):
         f = tmp_path / "a.png"
-        f.write_bytes(b"hello")
+        Image.new("RGB", (2, 2), "red").save(f)
         h = content_hash(f)
         assert h.startswith("sha256:")
         assert len(h) == 7 + 64  # "sha256:" is 7 chars + 64 hex

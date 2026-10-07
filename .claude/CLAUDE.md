@@ -10,9 +10,11 @@ Skipping it WILL cause you to take the wrong action.
 
 Additional execution rule below applies alongside `AGENT_GUIDE.md`.
 
-## Remote execution (required)
+## Local coding; remote execution (required)
 
-Run every project environment, setup, dependency-install, build, test, server, render, and other project command on `sandbox-video` over SSH. Do not run project commands on the local machine.
+Follow the repository-root `AGENTS.md` execution-location rule. Run Claude CLI/editor coding agents locally in the authorized task worktree. Do not launch coding agents over SSH or implement source changes on `sandbox-video`.
+
+Run project setup, dependency installation, builds, tests, application commands, servers and renders on `sandbox-video` over SSH, in an isolated test checkout/environment. Local coding-agent launches and source inspection/editing are permitted; local runtime workloads are not.
 
 Use this exact SSH prefix:
 
@@ -20,10 +22,10 @@ Use this exact SSH prefix:
 ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video "<command>"
 ```
 
-Run commands from the remote project root:
+Run commands from the isolated remote task checkout, not the existing stable checkout. The SSH command structure is:
 
 ```bash
-ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video "cd ~/OpenMontage && <command>"
+ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video "cd <isolated-remote-checkout> && <command>"
 ```
 
-Use local filesystem tools only for reading and editing source files. When a command needs newly edited source, ensure the remote checkout contains those changes before running it.
+Safely synchronize the exact local source revision to the isolated remote checkout before validation. Preserve unrelated work and never overwrite the stable server checkout. Older prompts directing coding agents to the server are superseded by this rule.
