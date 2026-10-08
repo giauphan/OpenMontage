@@ -253,6 +253,7 @@ class MultishotSession:
                 "prompt": prompt,
                 "references": copy.deepcopy(ordered_refs),
                 "continuity_in": copy.deepcopy(continuity_in),
+                "reference_store": copy.deepcopy(reference_store),
                 "reference_review": copy.deepcopy(reference_review),
             }
             input_hash = _hash(bound_input)
@@ -279,6 +280,7 @@ class MultishotSession:
         return marker.get("title", self.project_dir.name)
 
     def bind_job_spec(self, shot_id: str, revision: int, spec_dict: dict) -> dict:
+        import hashlib
         from lib.multishot_jobs import JobSpec, canonical_input_hash
 
         with project_lock(self.project_dir):
@@ -313,13 +315,20 @@ class MultishotSession:
                 raise ValueError("JobSpec prompt must match bound input")
             if spec.references != bound_input.get("references"):
                 raise ValueError("JobSpec references must match bound input")
-            expected_prompt_hash = canonical_input_hash(
-                provider=spec.provider,
-                model=spec.model,
-                settings=spec.settings,
-                prompt=spec.prompt,
-                reference_hashes=spec.reference_hashes,
-            )
+            # kling_official requires prompt_hash = sha256:<sha256(prompt bytes)>.
+            # All other providers use canonical_input_hash (legacy offline convention).
+            if spec.provider == "kling_official":
+                expected_prompt_hash = (
+                    "sha256:" + hashlib.sha256(spec.prompt.encode("utf-8")).hexdigest()
+                )
+            else:
+                expected_prompt_hash = canonical_input_hash(
+                    provider=spec.provider,
+                    model=spec.model,
+                    settings=spec.settings,
+                    prompt=spec.prompt,
+                    reference_hashes=spec.reference_hashes,
+                )
             if spec.prompt_hash != expected_prompt_hash:
                 raise ValueError("JobSpec prompt_hash does not match render inputs")
 
@@ -510,6 +519,8 @@ class MultishotSession:
                 "revision": s["revision"],
                 "status": s["status"],
                 "bound_input": copy.deepcopy(s["bound_input"]),
+                "job_spec": copy.deepcopy(s["job_spec"]),
+                "job_input_hash": s.get("job_input_hash"),
                 "media_result": copy.deepcopy(s["media_result"]),
                 "review": copy.deepcopy(s["review"]),
             })
@@ -521,6 +532,8 @@ class MultishotSession:
 
             s["status"] = "PENDING"
             s["bound_input"] = None
+            s["job_spec"] = None
+            s["job_input_hash"] = None
             s["media_result"] = None
             s["review"] = None
 
@@ -558,12 +571,16 @@ class MultishotSession:
                                  "revision": sinfo["revision"],
                                  "status": sinfo["status"],
                                  "bound_input": copy.deepcopy(sinfo["bound_input"]),
+                                 "job_spec": copy.deepcopy(sinfo["job_spec"]),
+                                 "job_input_hash": sinfo.get("job_input_hash"),
                                  "media_result": copy.deepcopy(sinfo["media_result"]),
                                  "review": copy.deepcopy(sinfo["review"]),
                              })
                              sinfo["revision"] += 1
                              sinfo["status"] = "STALE"
                              sinfo["bound_input"] = None
+                             sinfo["job_spec"] = None
+                             sinfo["job_input_hash"] = None
                              sinfo["media_result"] = None
                              sinfo["review"] = None
                              sinfo["continuity_before"] = None
@@ -625,12 +642,16 @@ class MultishotSession:
                     "revision": s["revision"],
                     "status": s["status"],
                     "bound_input": copy.deepcopy(s["bound_input"]),
+                    "job_spec": copy.deepcopy(s["job_spec"]),
+                    "job_input_hash": s.get("job_input_hash"),
                     "media_result": copy.deepcopy(s["media_result"]),
                     "review": copy.deepcopy(s["review"]),
                 })
                 s["revision"] += 1
                 s["status"] = "PENDING"
                 s["bound_input"] = None
+                s["job_spec"] = None
+                s["job_input_hash"] = None
                 s["media_result"] = None
                 s["review"] = None
                 if sid in state["continuity"]:
@@ -646,12 +667,16 @@ class MultishotSession:
                                  "revision": dsinfo["revision"],
                                  "status": dsinfo["status"],
                                  "bound_input": copy.deepcopy(dsinfo["bound_input"]),
+                                 "job_spec": copy.deepcopy(dsinfo["job_spec"]),
+                                 "job_input_hash": dsinfo.get("job_input_hash"),
                                  "media_result": copy.deepcopy(dsinfo["media_result"]),
                                  "review": copy.deepcopy(dsinfo["review"]),
                              })
                              dsinfo["revision"] += 1
                              dsinfo["status"] = "STALE"
                              dsinfo["bound_input"] = None
+                             dsinfo["job_spec"] = None
+                             dsinfo["job_input_hash"] = None
                              dsinfo["media_result"] = None
                              dsinfo["review"] = None
                              if dsid in state["continuity"]:

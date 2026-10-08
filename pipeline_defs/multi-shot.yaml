@@ -1,10 +1,12 @@
 name: multi-shot
 version: "1.0"
 description: >
-  Production-ready, resumable multi-shot AI video workflow. Generates and
-  assembles 2..N independently generated clips with explicit character/style
-  identity, continuity, references, per-shot recovery, ordered FFmpeg assembly,
-  optional audio/captions, and machine-readable evidence.
+  Beta multi-shot AI video workflow (not production-ready; no claim of end-to-end
+  or quality release completion). Generates and assembles 2..N independently
+  generated clips with explicit character/style identity, continuity, references,
+  per-shot recovery, ordered FFmpeg assembly, optional audio/captions, and
+  machine-readable evidence. Live provider and human quality gates blocked
+  pending approval; stable cron not activated.
 category: generated
 stability: beta
 default_checkpoint_policy: guided

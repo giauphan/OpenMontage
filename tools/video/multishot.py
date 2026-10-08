@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any, Optional, Dict
 
 from lib.multishot_session import MultishotSession
-from lib.multishot_workspace import init_multishot_project
+from lib.multishot_workspace import init_multishot_project, REPORTS_DIR
 from lib.multishot_continuity import snapshot
+from lib.multishot_finalize_operations import finalize_session, validate_completion
+from lib.media_profiles import AspectRatio, MediaProfile
 
 from tools.base_tool import (
     BaseTool,
@@ -38,7 +40,7 @@ class Multishot(BaseTool):
     install_instructions = "Built-in."
     capability = "multishot_orchestration"
     provider = "openmontage"
-    capabilities = ["init", "status", "prepare_shot", "bind_input", "bind_job_spec", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint"]
+    capabilities = ["init", "status", "prepare_shot", "bind_input", "bind_job_spec", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint", "finalize", "validate_completion", "generate"]
 
     input_schema = {
         "type": "object",
@@ -46,7 +48,7 @@ class Multishot(BaseTool):
         "properties": {
             "operation": {
                 "type": "string",
-                "enum": ["init", "status", "prepare_shot", "bind_input", "bind_job_spec", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint"]
+                "enum": ["init", "status", "prepare_shot", "bind_input", "bind_job_spec", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint", "finalize", "validate_completion", "generate"]
             },
             "project_id": {
                 "type": "string",
@@ -59,6 +61,9 @@ class Multishot(BaseTool):
         },
         "additionalProperties": True
     }
+
+    def __init__(self, provider_factory: Optional[Callable[[], Any]] = None):
+        self._provider_factory = provider_factory
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         operation = inputs.get("operation")
@@ -84,6 +89,12 @@ class Multishot(BaseTool):
                 return self._invalidate_reference(inputs)
             elif operation == "checkpoint":
                 return self._checkpoint(inputs)
+            elif operation == "finalize":
+                return self._finalize(inputs)
+            elif operation == "validate_completion":
+                return self._validate_completion(inputs)
+            elif operation == "generate":
+                return self._generate(inputs)
             else:
                 return ToolResult(success=False, error=f"Unknown operation: {operation}")
         except ValueError as e:
@@ -197,6 +208,52 @@ class Multishot(BaseTool):
             }
         )
 
+    def _generate(self, inputs: dict[str, Any]) -> ToolResult:
+        from lib.multishot_generation import execute_generation
+
+        project_dir = self._get_project_dir(inputs)
+        self._validate_project_marker(project_dir)
+        shot_id = inputs.get("shot_id")
+        provider = inputs.get("provider")
+        model = inputs.get("model")
+        settings = inputs.get("settings")
+        spend_approved = inputs.get("spend_approved")
+        budget_usd = inputs.get("budget_usd")
+        estimated_usd = inputs.get("estimated_usd")
+        reference_store = inputs.get("reference_store")
+        reference_review = inputs.get("reference_review")
+
+        if not shot_id or not provider or not model or settings is None or spend_approved is None or budget_usd is None or estimated_usd is None or reference_store is None or reference_review is None:
+            return ToolResult(
+                success=False,
+                error="shot_id, provider, model, settings, spend_approved, budget_usd, estimated_usd, reference_store, and reference_review required"
+            )
+
+        kwargs = {
+            "project_dir": project_dir,
+            "shot_id": shot_id,
+            "provider": provider,
+            "model": model,
+            "settings": settings,
+            "spend_approved": spend_approved,
+            "budget_usd": budget_usd,
+            "estimated_usd": estimated_usd,
+            "reference_store": reference_store,
+            "reference_review": reference_review,
+            "provider_factory": self._provider_factory,
+        }
+
+        for opt in ("deadline_seconds", "max_polls", "poll_interval"):
+            if opt in inputs:
+                kwargs[opt] = inputs[opt]
+
+        res = execute_generation(**kwargs)
+        status = res.get("status")
+        if status == "completed":
+            return ToolResult(success=True, data=res)
+        else:
+            return ToolResult(success=False, data=res, error=res.get("outcome", {}).get("error", f"Generation status: {status}"))
+
     def _bind_input(self, inputs: dict[str, Any]) -> ToolResult:
         project_dir = self._get_project_dir(inputs)
         self._validate_project_marker(project_dir)
@@ -307,6 +364,49 @@ class Multishot(BaseTool):
             data={"stale_ids": stale_ids}
         )
 
+    def _profile_from_inputs(self, inputs: dict[str, Any]) -> MediaProfile:
+        profile = inputs.get("profile")
+        if not isinstance(profile, dict):
+            raise ValueError("profile must be a dict")
+        required = {"name", "width", "height", "aspect_ratio", "fps", "codec", "audio_codec", "crf"}
+        if not required.issubset(profile):
+            raise ValueError("profile is missing required fields")
+        try:
+            values = dict(profile)
+            values["aspect_ratio"] = AspectRatio(values["aspect_ratio"])
+            return MediaProfile(**values)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("profile has invalid media profile fields") from exc
+
+    def _finalize(self, inputs: dict[str, Any]) -> ToolResult:
+        project_dir = self._get_project_dir(inputs)
+        self._validate_project_marker(project_dir)
+        profile = self._profile_from_inputs(inputs)
+        evidence = finalize_session(
+            project_dir,
+            profile,
+            narration=inputs.get("narration"),
+            music=inputs.get("music"),
+            sfx=inputs.get("sfx"),
+            subtitles=inputs.get("subtitles"),
+            burn_subtitles=inputs.get("burn_subtitles", False),
+            ducking_threshold_db=inputs.get("ducking_threshold_db", -20.0),
+            ducking_ratio=inputs.get("ducking_ratio", 5.0),
+            audio_fade_in_sec=inputs.get("audio_fade_in_sec"),
+            audio_fade_out_sec=inputs.get("audio_fade_out_sec"),
+        )
+        return ToolResult(
+            success=True,
+            data=evidence,
+            artifacts=[evidence["final_path"], str(project_dir / REPORTS_DIR / "render_report.json")],
+        )
+
+    def _validate_completion(self, inputs: dict[str, Any]) -> ToolResult:
+        project_dir = self._get_project_dir(inputs)
+        self._validate_project_marker(project_dir)
+        result = validate_completion(project_dir)
+        return ToolResult(success=result["valid"], data=result, error=None if result["valid"] else result["reason"])
+
     def _checkpoint(self, inputs: dict[str, Any]) -> ToolResult:
         from lib.checkpoint import write_checkpoint, CheckpointValidationError
 
@@ -319,6 +419,15 @@ class Multishot(BaseTool):
 
         if not stage or artifacts is None:
             return ToolResult(success=False, error="stage and artifacts required")
+
+        if stage == "compose":
+            completion = validate_completion(project_dir)
+            if not completion["valid"]:
+                return ToolResult(
+                    success=False,
+                    error=f"Cannot complete compose: {completion['reason']}",
+                    data=completion,
+                )
 
         root_dir = inputs.get("root_dir")
         if root_dir:

@@ -4,6 +4,10 @@ Start here. This is the complete operating guide and agent contract for OpenMont
 
 For architecture, key files, and conventions see [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 
+## Execution Location — Local Coding, Server Runs Only
+
+Follow the binding execution-location rules in `AGENTS.md`: all implementation and coding-agent sessions stay in the local workspace or authorized local task worktree. Never author or patch source over SSH. The server may receive already locally authored code through controlled synchronization and run setup, pipelines, tests, builds, and renders. Fix failures locally, then synchronize and rerun. Generated production artifacts and runtime state may be written remotely. Preserve the stable server checkout; changes to deployment or cron require explicit authorization. These rules override older remote-coding prompts.
+
 ## First Interaction — Onboarding
 
 When the user's first message is vague, exploratory, or asks what you can do ("make me a video", "what can you do?", "help me create something", "I want to make content"), read the onboarding skill **before** doing anything else:

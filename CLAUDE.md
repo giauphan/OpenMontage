@@ -24,10 +24,6 @@ Use this exact SSH prefix:
 ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video "<command>"
 ```
 
-Run commands from the remote project root:
-
-```bash
-ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video "cd ~/OpenMontage && <command>"
-```
+Run validation commands from the authorized isolated remote checkout, not the stable server checkout. Announce the action and target checkout before SSH commands. Never author or patch source through remote shell commands or scripts; fix bugs locally and synchronize the locally authored revision. Pipeline-generated artifacts and runtime state may be written remotely. Do not update stable deployment or activate cron without explicit authorization.
 
 Source inspection and editing, including Claude coding-agent work, stay local. Before remote execution, safely synchronize the exact local source revision into the isolated remote checkout without overwriting unrelated work. Review the agent's changes and verify remotely before claiming completion. Older prompts that direct coding agents to the server are superseded by this rule.

@@ -10,6 +10,13 @@ The production workflow is defined in `AGENT_GUIDE.md`. The execution-location r
 
 ## Local coding; remote execution only
 
+**All implementation happens here in the local workspace or its authorized local task worktree. The SSH server runs the pipeline; it is not a development machine.**
+
+- Never author or patch application source, tests, scripts, pipeline definitions, or agent instructions on the server—not with an editor, shell redirection, `sed`, `apply_patch`, Python file writes, or a coding agent. If remote execution reveals a bug, fix it locally and synchronize again.
+- Remote source files may change only by synchronizing an already locally authored revision (for example, Git fast-forward or a controlled file transfer). This is delivery, not permission to implement remotely. Verify the synchronized revision or file hashes before execution.
+- Pipeline-generated artifacts, media, logs, checkpoints, and runtime state may be written on the server during authorized execution; they are not application source changes.
+- Before SSH commands, state whether the action is synchronization, setup, execution, validation, or read-only inspection, and identify the target checkout. Keep experimental validation isolated; do not update the stable checkout or activate cron/deployment without explicit authorization.
+
 - Run Claude CLI, the Claude editor extension, and other coding agents **locally**, in the authorized local workspace or isolated task worktree. Agent launch and source inspection/editing are local development activities, not remote project execution.
 - **Never launch a coding agent over SSH or ask an agent on `sandbox-video` to implement or edit source code.** The server is an execution and validation environment, not a coding workstation.
 - Run project setup, dependency installation, tests, builds, application commands, servers and renders on `sandbox-video` over SSH, using the project's prescribed SSH configuration and an isolated test checkout/environment. Do not run those workloads locally or against live production state.

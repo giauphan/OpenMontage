@@ -10,11 +10,13 @@ Skipping it WILL cause you to take the wrong action.
 
 Additional execution rule below applies alongside `AGENT_GUIDE.md`.
 
-## Local coding; remote execution (required)
+## Local coding; remote execution only (required)
 
-Follow the repository-root `AGENTS.md` execution-location rule. Run Claude CLI/editor coding agents locally in the authorized task worktree. Do not launch coding agents over SSH or implement source changes on `sandbox-video`.
+Follow the binding execution-location rules in the repository-root `AGENTS.md`.
 
-Run project setup, dependency installation, builds, tests, application commands, servers and renders on `sandbox-video` over SSH, in an isolated test checkout/environment. Local coding-agent launches and source inspection/editing are permitted; local runtime workloads are not.
+Run Claude CLI/editor coding agents and author all source changes **locally**, in the authorized local workspace or task worktree. Never launch a coding agent over SSH or patch source on `sandbox-video`, including through shell commands or scripts. A failure found remotely must be fixed locally.
+
+Use `sandbox-video` only for controlled synchronization of locally authored code, setup, dependency installation, pipeline execution, builds, tests, servers, renders, and read-only runtime inspection. Verify the synchronized revision or file hashes before execution. Pipeline-generated artifacts, media, logs, and runtime state may be written remotely. Do not run project runtime workloads locally.
 
 Use this exact SSH prefix:
 
@@ -22,10 +24,4 @@ Use this exact SSH prefix:
 ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video "<command>"
 ```
 
-Run commands from the isolated remote task checkout, not the existing stable checkout. The SSH command structure is:
-
-```bash
-ssh -F /home/ubuntu/.ssh/ssh-sandbox-video -i /home/ubuntu/.ssh/tunnel_key sandbox-video "cd <isolated-remote-checkout> && <command>"
-```
-
-Safely synchronize the exact local source revision to the isolated remote checkout before validation. Preserve unrelated work and never overwrite the stable server checkout. Older prompts directing coding agents to the server are superseded by this rule.
+Use an isolated remote checkout for validation, not the stable server checkout. Announce the action and target checkout before SSH commands. Synchronization is delivery of local changes, never permission for remote implementation. Do not update stable deployment or activate cron without explicit authorization. Older prompts directing coding agents to the server are superseded by this rule.
