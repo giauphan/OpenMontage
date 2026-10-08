@@ -144,22 +144,8 @@ def test_missing_middle_3_shot_failure(temp_project, custom_profile, mochi_artif
     session.record_result("shot_001", 1, res1)
     session.review_shot("shot_001", 1, True, artifacts["shot_plan"]["shots"][0]["end_state"], "tester", "ok")
 
-    # 3 bound/completed
-    # Notice we try to bind shot 3 while shot 2 is still PENDING
-    # This might fail earlier depending on continuity logic, but if we assume it works:
-    session.bind_input("shot_003", "prompt3", [])
-    out3 = temp_project / "s3.mp4"
-    res3 = generate_color_clip(out3, "green", 1.0, custom_profile)
-    res3["validation"]["input_hash"] = session.get_state()["shots"]["shot_003"]["bound_input"]["input_hash"]
-    res3["input_hash"] = res3["validation"]["input_hash"]
-    session.record_result("shot_003", 1, res3)
-
-    # We shouldn't be able to review/accept shot 3 if shot 2 is not accepted!
-    with pytest.raises(ValueError, match="Predecessor no longer accepted|predecessor"):
-        session.review_shot("shot_003", 1, True, artifacts["shot_plan"]["shots"][2]["end_state"], "tester", "ok")
-
-    # Even if we bypassed the review error, finalizer should reject it on pending shot 2
-    with pytest.raises(ValueError, match="status is PENDING but must be ACCEPTED"):
+    # Shot 2 remains pending, so finalization must reject the incomplete sequence.
+    with pytest.raises(ValueError, match="Shot shot_002 status is PENDING but must be ACCEPTED"):
         finalize_session(temp_project, custom_profile)
 
 def test_stale_source_invalidation(temp_project, custom_profile, mochi_artifacts):
@@ -186,10 +172,96 @@ def test_stale_source_invalidation(temp_project, custom_profile, mochi_artifacts
     finalize_session(temp_project, custom_profile)
     assert validate_completion(temp_project)["valid"] is True
 
-    # Regenerate S1
-    session.regenerate_shot("shot_001", {})
+    # Regenerate S1 with its existing schema-valid end state.
+    session.regenerate_shot(
+        "shot_001",
+        artifacts["shot_plan"]["shots"][0]["end_state"],
+    )
 
     assert validate_completion(temp_project)["valid"] is False
+
+def test_completion_rejects_corrupted_accepted_source(temp_project, custom_profile, mochi_artifacts):
+    session = MultishotSession(temp_project)
+    artifacts = mochi_artifacts
+    session.initialize(artifacts)
+    for shot_id, color in (("shot_001", "red"), ("shot_002", "blue")):
+        session.bind_input(shot_id, shot_id, [])
+        output = temp_project / f"{shot_id}.mp4"
+        result = generate_color_clip(output, color, 1.0, custom_profile)
+        input_hash = session.get_state()["shots"][shot_id]["bound_input"]["input_hash"]
+        result["input_hash"] = input_hash
+        result["validation"]["input_hash"] = input_hash
+        session.record_result(shot_id, 1, result)
+        session.review_shot(
+            shot_id, 1, True,
+            artifacts["shot_plan"]["shots"][int(shot_id[-1]) - 1]["end_state"],
+            "tester", "ok",
+        )
+
+    finalize_session(temp_project, custom_profile)
+    source = temp_project / "shot_001.mp4"
+    source.write_bytes(source.read_bytes() + b"corrupt")
+
+    result = validate_completion(temp_project)
+    assert result["valid"] is False
+    assert "tampered" in result["reason"]
+
+
+def test_completion_rejects_mutated_audio(temp_project, custom_profile, mochi_artifacts):
+    session = MultishotSession(temp_project)
+    artifacts = mochi_artifacts
+    session.initialize(artifacts)
+    for shot_id, color in (("shot_001", "red"), ("shot_002", "blue")):
+        session.bind_input(shot_id, shot_id, [])
+        output = temp_project / f"{shot_id}.mp4"
+        result = generate_color_clip(output, color, 1.0, custom_profile)
+        input_hash = session.get_state()["shots"][shot_id]["bound_input"]["input_hash"]
+        result["input_hash"] = input_hash
+        result["validation"]["input_hash"] = input_hash
+        session.record_result(shot_id, 1, result)
+        session.review_shot(
+            shot_id, 1, True,
+            artifacts["shot_plan"]["shots"][int(shot_id[-1]) - 1]["end_state"],
+            "tester", "ok",
+        )
+
+    audio = temp_project / "narration.wav"
+    import subprocess
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", str(audio)],
+        check=True, capture_output=True,
+    )
+    finalize_session(temp_project, custom_profile, narration=str(audio), ducking_ratio=3.0)
+    audio.write_bytes(audio.read_bytes() + b"changed")
+
+    result = validate_completion(temp_project)
+    assert result["valid"] is False
+    assert "mismatched" in result["reason"] or "tampered" in result["reason"]
+
+
+def test_completion_remains_valid_after_session_reload(temp_project, custom_profile, mochi_artifacts):
+    session = MultishotSession(temp_project)
+    artifacts = mochi_artifacts
+    session.initialize(artifacts)
+    for shot_id, color in (("shot_001", "red"), ("shot_002", "blue")):
+        session.bind_input(shot_id, shot_id, [])
+        output = temp_project / f"{shot_id}.mp4"
+        result = generate_color_clip(output, color, 1.0, custom_profile)
+        input_hash = session.get_state()["shots"][shot_id]["bound_input"]["input_hash"]
+        result["input_hash"] = input_hash
+        result["validation"]["input_hash"] = input_hash
+        session.record_result(shot_id, 1, result)
+        session.review_shot(
+            shot_id, 1, True,
+            artifacts["shot_plan"]["shots"][int(shot_id[-1]) - 1]["end_state"],
+            "tester", "ok",
+        )
+
+    finalize_session(temp_project, custom_profile)
+    reloaded_session = MultishotSession(temp_project)
+    assert reloaded_session.get_state()["final_evidence"]
+    assert validate_completion(temp_project) == {"valid": True, "reason": "Pass"}
+
 
 def test_preserved_previous_final_on_failure(temp_project, custom_profile, mochi_artifacts):
     session = MultishotSession(temp_project)
@@ -214,19 +286,20 @@ def test_preserved_previous_final_on_failure(temp_project, custom_profile, mochi
 
     prev_evidence = finalize_session(temp_project, custom_profile)
     prev_path = prev_evidence["final_path"]
+    from lib.multishot_session import _file_hash
+    prev_bytes = Path(prev_path).read_bytes()
+    prev_hash = _file_hash(Path(prev_path))
 
     assert os.path.exists(prev_path)
 
-    # Introduce bad data implicitly dropping status via regen and attempting arbitrary finalize
-    # Mock status check to force failure in FFmpeg
-    session.regenerate_shot("shot_001", {})
+    session.regenerate_shot(
+        "shot_001",
+        artifacts["shot_plan"]["shots"][0]["end_state"],
+    )
 
-    # Re-completing the newly bound s1 with bad file
     session.bind_input("shot_001", "prompt1a", [])
     out_bad = temp_project / "s1bad.txt"
-    with open(out_bad, "w") as f:
-        f.write("corrupt video data")
-    from lib.multishot_session import _file_hash
+    out_bad.write_text("corrupt video data")
     ch = _file_hash(out_bad)
 
     res_bad = {
@@ -239,7 +312,7 @@ def test_preserved_previous_final_on_failure(temp_project, custom_profile, mochi
               "input_hash": session.get_state()["shots"]["shot_001"]["bound_input"]["input_hash"],
               "content_hash": ch,
               "duration_sec": 1.0,
-              "decode_ok": True, # Forged
+              "decode_ok": True,
               "has_video": True,
               "width": custom_profile.width,
               "height": custom_profile.height,
@@ -247,11 +320,12 @@ def test_preserved_previous_final_on_failure(temp_project, custom_profile, mochi
               "video_codec": custom_profile.codec
          }
     }
-    session.record_result("shot_001", 2, res_bad)
-    session.review_shot("shot_001", 2, True, {}, "tester", "ok")
+    with pytest.raises(ValueError, match="Media file is unreadable or has no video stream"):
+        session.record_result("shot_001", 2, res_bad)
 
-    with pytest.raises(ValueError):
-         finalize_session(temp_project, custom_profile)
+    with pytest.raises(ValueError, match="Shot shot_001 status is BOUND but must be ACCEPTED"):
+        finalize_session(temp_project, custom_profile)
 
-    # Previous final path was untouched
-    assert os.path.exists(prev_path)
+    assert Path(prev_path).read_bytes() == prev_bytes
+    assert _file_hash(Path(prev_path)) == prev_hash
+    assert validate_completion(temp_project)["valid"] is False

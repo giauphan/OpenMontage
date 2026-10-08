@@ -38,7 +38,7 @@ class Multishot(BaseTool):
     install_instructions = "Built-in."
     capability = "multishot_orchestration"
     provider = "openmontage"
-    capabilities = ["init", "status", "prepare_shot", "bind_input", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint"]
+    capabilities = ["init", "status", "prepare_shot", "bind_input", "bind_job_spec", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint"]
 
     input_schema = {
         "type": "object",
@@ -46,7 +46,7 @@ class Multishot(BaseTool):
         "properties": {
             "operation": {
                 "type": "string",
-                "enum": ["init", "status", "prepare_shot", "bind_input", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint"]
+                "enum": ["init", "status", "prepare_shot", "bind_input", "bind_job_spec", "record_result", "review", "regenerate", "invalidate_reference", "checkpoint"]
             },
             "project_id": {
                 "type": "string",
@@ -72,6 +72,8 @@ class Multishot(BaseTool):
                 return self._prepare_shot(inputs)
             elif operation == "bind_input":
                 return self._bind_input(inputs)
+            elif operation == "bind_job_spec":
+                return self._bind_job_spec(inputs)
             elif operation == "record_result":
                 return self._record_result(inputs)
             elif operation == "review":
@@ -101,16 +103,36 @@ class Multishot(BaseTool):
             from lib.paths import PROJECTS_DIR
             root_dir = PROJECTS_DIR.resolve()
 
-        project_dir = (root_dir / project_id).resolve()
-        if not str(project_dir).startswith(str(root_dir)):
-            raise ValueError("Project directory escaping root")
+        project_path = root_dir / project_id
+        if project_path.is_symlink():
+            raise ValueError("Unsafe project directory symlink")
+
+        project_dir = project_path.resolve()
+        try:
+            project_dir.relative_to(root_dir)
+        except ValueError as exc:
+            raise ValueError("Project directory escaping root") from exc
 
         return project_dir
 
     def _validate_project_marker(self, project_dir: Path):
-        """Validate project marker exists for operations that require an initialized project."""
-        if not (project_dir / "project.json").exists():
+        """Validate project marker exists and identifies a multi-shot project."""
+        marker_path = project_dir / "project.json"
+        if not marker_path.is_file():
             raise ValueError("Project marker missing, project not initialized")
+
+        try:
+            with marker_path.open(encoding="utf-8") as marker_file:
+                marker = json.load(marker_file)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("Project marker is not readable JSON") from exc
+
+        if (
+            not isinstance(marker, dict)
+            or marker.get("project_id") != project_dir.name
+            or marker.get("pipeline_type") != "multi-shot"
+        ):
+            raise ValueError("Project marker identity mismatch")
 
     def _init(self, inputs: dict[str, Any]) -> ToolResult:
         project_id = inputs["project_id"]
@@ -164,12 +186,15 @@ class Multishot(BaseTool):
 
         session = MultishotSession(project_dir)
 
-        # Build prompt using stored artifacts and current continuity state
-        prompt, ordered_refs = session.prepare_shot_prompt(shot_id, reference_store, reference_review)
+        prepared = session.prepare_shot_prompt(shot_id, reference_store, reference_review)
 
         return ToolResult(
             success=True,
-            data={"prompt": prompt, "references": ordered_refs}
+            data={
+                "prompt": prepared["prompt"],
+                "references": prepared["references"],
+                "shot": prepared["shot"],
+            }
         )
 
     def _bind_input(self, inputs: dict[str, Any]) -> ToolResult:

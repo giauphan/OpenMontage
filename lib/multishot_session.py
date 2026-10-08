@@ -1,4 +1,5 @@
 import copy
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -82,6 +83,8 @@ class MultishotSession:
                     "planned_end_state": copy.deepcopy(shot.get("end_state", {})),
                     "status": "PENDING",
                     "bound_input": None,
+                    "job_spec": None,
+                    "job_input_hash": None,
                     "media_result": None,
                     "review": None,
                     "history": []
@@ -171,9 +174,171 @@ class MultishotSession:
                     raise ValueError(f"Cannot re-bind a different input without regeneration")
 
             s["bound_input"] = input_val
+            s["job_spec"] = None
+            s["job_input_hash"] = None
             s["status"] = "BOUND"
             self._write(state["revision"], state)
             return copy.deepcopy(s)
+
+    def prepare_shot_prompt(self, shot_id: str, reference_store: dict, reference_review: dict) -> dict:
+        from lib.multishot_prompt_builder import build_multishot_prompt
+        from lib.multishot_references import validate_generation_ready
+
+        if not isinstance(reference_review, dict):
+            raise ValueError("Explicit reference_review is required")
+        if reference_review.get("approved") is not True:
+            raise ValueError(
+                f"Shot preparation rejected by reference review notes: "
+                f"{reference_review.get('notes', 'No notes provided')}"
+            )
+        reviewer = reference_review.get("reviewer")
+        if not isinstance(reviewer, str) or not reviewer.strip():
+            raise ValueError("reference_review reviewer must be a non-empty string")
+
+        with project_lock(self.project_dir):
+            state = self._read()
+            if shot_id not in state["shots"]:
+                raise ValueError(f"Unknown shot {shot_id}")
+            shot_state = state["shots"][shot_id]
+            shot_order = shot_state["order"]
+            predecessor_id = None
+            predecessor_order = -1
+            for candidate_id, candidate in state["shots"].items():
+                if candidate["order"] < shot_order and candidate["order"] > predecessor_order:
+                    predecessor_order = candidate["order"]
+                    predecessor_id = candidate_id
+            if predecessor_id and state["shots"][predecessor_id]["status"] != "ACCEPTED":
+                raise ValueError(
+                    f"Cannot prepare shot {shot_id}: predecessor {predecessor_id} is not ACCEPTED"
+                )
+
+            artifacts = state["artifacts"]
+            shot = next(
+                item for item in artifacts["shot_plan"]["shots"] if item["id"] == shot_id
+            )
+            continuity_in = continuity_in_for_shot(
+                state.get("continuity", {}), shot_order, predecessor_id
+            )
+            references = reference_store.get("references")
+            if not isinstance(references, dict):
+                raise ValueError("reference_store must contain a references object")
+            required_keys = validate_generation_ready(
+                reference_store,
+                shot,
+                artifacts["character_bible"],
+            )
+            ordered_refs = []
+            for key in required_keys:
+                record = references[key]
+                sha256 = record.get("sha256", record.get("content_hash"))
+                if not sha256:
+                    raise ValueError(f"Reference {key} is missing sha256")
+                ordered_refs.append({
+                    "path": record["path"],
+                    "sha256": sha256,
+                    "key": key,
+                    "owner": record.get("owner"),
+                })
+
+            prompt = build_multishot_prompt(
+                project_title=self._project_title(),
+                request=artifacts["request"],
+                story=artifacts["story"],
+                character_bible=artifacts["character_bible"],
+                style_bible=artifacts["style_bible"],
+                shot=shot,
+                continuity_in=continuity_in,
+            )
+            bound_input = {
+                "prompt": prompt,
+                "references": copy.deepcopy(ordered_refs),
+                "continuity_in": copy.deepcopy(continuity_in),
+                "reference_review": copy.deepcopy(reference_review),
+            }
+            input_hash = _hash(bound_input)
+            bound_input["input_hash"] = input_hash
+
+            if shot_state["status"] != "PENDING" and shot_state.get("bound_input"):
+                existing = shot_state["bound_input"]
+                if existing.get("input_hash") != input_hash:
+                    raise ValueError("Cannot re-bind a different input without regeneration")
+                return {"prompt": prompt, "references": ordered_refs, "shot": copy.deepcopy(shot_state)}
+
+            state["final_evidence"] = None
+            state["assembly_evidence"] = None
+            shot_state["bound_input"] = bound_input
+            shot_state["job_spec"] = None
+            shot_state["job_input_hash"] = None
+            shot_state["status"] = "BOUND"
+            self._write(state["revision"], state)
+            return {"prompt": prompt, "references": ordered_refs, "shot": copy.deepcopy(shot_state)}
+
+    def _project_title(self) -> str:
+        from lib.multishot_workspace import read_json_atomic
+        marker = read_json_atomic(self.project_dir / "project.json")
+        return marker.get("title", self.project_dir.name)
+
+    def bind_job_spec(self, shot_id: str, revision: int, spec_dict: dict) -> dict:
+        from lib.multishot_jobs import JobSpec, canonical_input_hash
+
+        with project_lock(self.project_dir):
+            state = self._read()
+            if shot_id not in state["shots"]:
+                raise ValueError(f"Unknown shot {shot_id}")
+            shot = state["shots"][shot_id]
+            if shot["revision"] != revision:
+                raise ValueError(
+                    f"Stale bind: requested revision {revision}, but shot is at {shot['revision']}"
+                )
+            if not isinstance(spec_dict, dict):
+                raise ValueError("job_spec must be an object")
+            try:
+                spec = JobSpec(**copy.deepcopy(spec_dict))
+                spec.validate()
+            except TypeError as exc:
+                raise ValueError(f"Invalid JobSpec: {exc}") from exc
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+
+            if spec.shot_id != shot_id:
+                raise ValueError("JobSpec shot_id mismatch")
+            if spec.revision != revision:
+                raise ValueError("JobSpec revision mismatch")
+            if spec.duration_sec != shot["planned_duration_sec"]:
+                raise ValueError("JobSpec duration must match planned_duration_sec")
+            bound_input = shot.get("bound_input")
+            if not bound_input:
+                raise ValueError("Shot does not have bound input")
+            if spec.prompt != bound_input.get("prompt"):
+                raise ValueError("JobSpec prompt must match bound input")
+            if spec.references != bound_input.get("references"):
+                raise ValueError("JobSpec references must match bound input")
+            expected_prompt_hash = canonical_input_hash(
+                provider=spec.provider,
+                model=spec.model,
+                settings=spec.settings,
+                prompt=spec.prompt,
+                reference_hashes=spec.reference_hashes,
+            )
+            if spec.prompt_hash != expected_prompt_hash:
+                raise ValueError("JobSpec prompt_hash does not match render inputs")
+
+            job_input_hash = spec.fingerprint()
+            job_spec = asdict(spec)
+            job_spec["input_hash"] = job_input_hash
+            existing = shot.get("job_spec")
+            if existing is not None:
+                if shot.get("job_input_hash") == job_input_hash:
+                    return copy.deepcopy(shot)
+                raise ValueError("Cannot bind changed job_spec in the same revision")
+
+            state["final_evidence"] = None
+            state["assembly_evidence"] = None
+            shot["job_spec"] = job_spec
+            shot["job_input_hash"] = job_input_hash
+            shot["status"] = "BOUND"
+            self._write(state["revision"], state)
+            return copy.deepcopy(shot)
 
     def record_result(self, shot_id: str, revision: int, outcome: dict) -> dict:
         with project_lock(self.project_dir):
@@ -185,10 +350,13 @@ class MultishotSession:
                 raise ValueError(f"Cannot record result in status {s['status']}")
 
             bound_input = s.get("bound_input")
-            if not bound_input or "input_hash" not in bound_input:
+            expected_input_hash = s.get("job_input_hash") or (
+                bound_input.get("input_hash") if bound_input else None
+            )
+            if not bound_input or not expected_input_hash:
                 raise ValueError("Shot does not have bound input")
 
-            if outcome.get("input_hash") != bound_input["input_hash"]:
+            if outcome.get("input_hash") != expected_input_hash:
                 raise ValueError("Outcome input_hash mismatch")
 
             if not outcome.get("status"):
@@ -220,7 +388,7 @@ class MultishotSession:
                  raise ValueError("Missing validation evidence")
             if validation.get("valid") is not True:
                  raise ValueError("Validation evidence must have valid=True")
-            if validation.get("input_hash") != bound_input["input_hash"]:
+            if validation.get("input_hash") != expected_input_hash:
                  raise ValueError("Validation evidence input_hash mismatch")
             if validation.get("content_hash") != actual_checksum:
                  raise ValueError("Validation evidence content_hash mismatch")
@@ -247,7 +415,7 @@ class MultishotSession:
             final_outcome["content_hash"] = actual_checksum
             final_outcome["validation"] = fresh_probe
             final_outcome["validation"]["valid"] = True
-            final_outcome["validation"]["input_hash"] = bound_input["input_hash"]
+            final_outcome["validation"]["input_hash"] = expected_input_hash
             final_outcome["validation"]["content_hash"] = actual_checksum
 
             s["media_result"] = final_outcome
