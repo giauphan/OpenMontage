@@ -49,3 +49,11 @@ The completed final remote broad regression reported 1249 passed, 7 skipped, and
 - **N7:** agreed budget and controlled deploy/cron activation, followed by real observation; not authorized or completed.
 
 No stable checkout was changed. No spending or publishing occurred. No deployment or cron activation occurred. See the status and plan history in [`../plan/pending/collap-group/61_DAILY_NEWS_RELEASE_PLAN.md`](../plan/pending/collap-group/61_DAILY_NEWS_RELEASE_PLAN.md).
+
+## 2026-10-09 rehearsal-bundle follow-up — partial, not done
+
+The actual `scripts/run_daily_news_pipeline.sh --rehearsal-bundle` mode consumes exactly three frozen, unique evidence bundles in a marked stage isolating environment and live state; an explicit source-age policy is mandatory. Live fetch, production, director, and TTS are disabled. The mode shares existing downstream validators and caption/render stages, but a positive complete render was not run. Atomic marked copies preserve interruption state. Strict fixture review requires both markers; publication gates reject fixtures carrying either marker.
+
+A real shell subprocess test supplied three invalid evidence bundles. Real validators rejected and quarantined all three, with no external providers invoked. Results report successful, failed, and quarantined counts plus exit status; all three bundles must succeed for rehearsal success. Remote final regression: 1298 passed, 7 skipped, 19 subtests in 144.48s. JUnit: `projects/render-freeze-rehearsal/qa/daily-entrypoint-regression-results.xml`.
+
+Selection acquisition was skipped and is not covered. Do not call this an all-source-to-video E2E run. N5 remains open pending three complete successful runs and real recovery/resume with complete frozen input bundles. N6 human content/sample approval and N7 policy, budget, deployment, and real observation remain open. No runtime source changed in this documentation update; stable deployment state is unchanged, with no spending or publication.

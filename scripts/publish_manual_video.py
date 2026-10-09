@@ -119,6 +119,11 @@ def enforce_batch_gap(last_publish_time: str | None) -> None:
 
 
 def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, strict: bool = False) -> None:
+    rehearsal_marker = project_dir / "OFFLINE_REHEARSAL_TEST_ONLY.json"
+    if rehearsal_marker.exists() or rehearsal_marker.is_symlink():
+        raise ValueError(
+            f"Release blocked: offline rehearsal test-only marker present in {project_dir.name}"
+        )
     ffprobe = shutil.which("ffprobe") or ""
     ffmpeg = shutil.which("ffmpeg") or ""
     if not ffprobe:

@@ -106,7 +106,12 @@ def _load_json(path: Path, label: str) -> Any:
         raise ValueError(f"cannot read {label}: {exc}") from exc
 
 
-def _copy_project_bundle(source: Path, destination: Path) -> dict[str, str]:
+def _copy_project_bundle(
+    source: Path,
+    destination: Path | None,
+    *,
+    allow_existing_destination: bool = False,
+) -> dict[str, str]:
     if source.is_symlink() or not source.is_dir():
         raise ValueError("project bundle must be a non-symlink directory")
 
@@ -149,7 +154,27 @@ def _copy_project_bundle(source: Path, destination: Path) -> dict[str, str]:
                 else:
                     raise ValueError(f"project bundle contains a non-regular entry: {relative}")
 
-    destination.mkdir(parents=True)
+    if destination is None:
+        return {}
+
+    if allow_existing_destination:
+        if destination.is_symlink() or not destination.is_dir():
+            raise ValueError("pre-marked copy destination must be a non-symlink directory")
+        marker = destination / TEST_ONLY_MARKER
+        if marker.is_symlink() or not marker.is_file():
+            raise ValueError("pre-marked copy destination lacks its release-blocking marker")
+        if set(destination.iterdir()) != {marker}:
+            raise ValueError("pre-marked copy destination must contain only its release-blocking marker")
+        try:
+            marker_data = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError("pre-marked copy destination has an invalid release-blocking marker") from exc
+        if marker_data != {"test_only": True, "purpose": "daily-news-rehearsal"}:
+            raise ValueError("pre-marked copy destination has an invalid release-blocking marker")
+        if any(relative == Path(TEST_ONLY_MARKER) for _, relative, _, _ in entries):
+            raise ValueError("project bundle may not replace the release-blocking marker")
+    else:
+        destination.mkdir(parents=True)
     hashes: dict[str, str] = {}
     for source_path, relative, is_dir, expected_size in sorted(entries, key=lambda item: (len(item[1].parts), item[1].as_posix())):
         target = destination / relative

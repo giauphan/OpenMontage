@@ -1600,8 +1600,36 @@ def main():
     parser.add_argument("--retry", type=int, default=3, help="Maximum retry attempts")
     parser.add_argument("--ffprobe", type=str, default="ffprobe", help="Path to ffprobe binary")
     parser.add_argument("--ffmpeg", type=str, default="ffmpeg", help="Path to ffmpeg binary")
+    parser.add_argument(
+        "--test-review-reply", type=Path, default=None,
+        help=argparse.SUPPRESS,
+    )
 
     args = parser.parse_args()
+    if args.test_review_reply is not None:
+        if os.environ.get("OPENMONTAGE_REHEARSAL") != "1":
+            parser.error("--test-review-reply is only allowed in rehearsal mode")
+        project_root = Path(args.project_dir)
+        project_marker = project_root / ".openmontage-test-only"
+        release_marker = project_root / "OFFLINE_REHEARSAL_TEST_ONLY.json"
+        if not project_marker.is_file() or not release_marker.is_file() or release_marker.is_symlink():
+            parser.error("test reviewer transport requires both test-only markers, including the canonical release-blocking marker")
+        try:
+            marker_data = json.loads(release_marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            parser.error(f"invalid canonical test-only marker: {exc}")
+        if marker_data != {"test_only": True, "purpose": "daily-news-rehearsal"}:
+            parser.error("canonical test-only marker contents are invalid")
+        try:
+            reply_text = args.test_review_reply.read_text(encoding="utf-8")
+            json.loads(reply_text)
+        except (OSError, ValueError) as exc:
+            parser.error(f"invalid frozen reviewer reply: {exc}")
+        review_transport = lambda command, **kwargs: subprocess.CompletedProcess(
+            args=command, returncode=0, stdout=reply_text, stderr=""
+        )
+    else:
+        review_transport = None
 
     if args.strict is None:
         args.strict = True
@@ -1617,7 +1645,11 @@ def main():
     ]
     metadata_path = project_dir / "publish_metadata.json"
 
-    validator = CodexAgentValidator(project_dir=project_dir, strict_mode=args.strict)
+    validator = CodexAgentValidator(
+        project_dir=project_dir,
+        strict_mode=args.strict,
+        review_transport=review_transport,
+    )
 
     ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
     if args.ffprobe != "ffprobe":

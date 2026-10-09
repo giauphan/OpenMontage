@@ -88,7 +88,7 @@ def test_unsafe_composition_is_rejected_with_actionable_error(tmp_path, js, mess
 def test_seek_errors_reach_retry_context_and_success_clears_them(tmp_path):
     pipeline = (ROOT / "scripts" / "run_daily_news_pipeline.sh").read_text(encoding="utf-8")
     start = pipeline.index("validate_current_director_artifacts() {")
-    end = pipeline.index("\n}\n\nif [ \"$TEMPLATE_MODE\"", start) + 2
+    end = pipeline.index("\n}\n", start) + 2
     validator_function = pipeline[start:end]
     append_retry_context = next(
         line.strip() for line in pipeline.splitlines()

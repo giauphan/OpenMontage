@@ -168,3 +168,66 @@ refuses existing output roots and paths inside the source checkout. Metadata is
 always synthetic and source metadata is never copied. The output contains
 separate reports for both fixture transports plus `qa-summary.json`. No render, news-generation
 step, publication, or human review is performed.
+
+## Full daily entrypoint frozen-bundle mode
+
+`bash scripts/run_daily_news_pipeline.sh --rehearsal-bundle PATH` now selects a
+separate frozen-input path in the **actual daily entrypoint**. It first requires
+the root marker `.openmontage-rehearsal-root.json` to contain exactly
+`{"test_only":true,"purpose":"daily-news-rehearsal"}`. It rejects git worktrees,
+`.env` files, symlinked roots/paths, existing `projects` or `logs` state, a
+pre-existing NewsNow feed, and an existing live `config/publish_schedule.json`;
+it also refuses `PRODUCTION_RELEASE=1` or
+`STRICT_PRODUCTION` or `PRODUCTION_RELEASE` set to any nonempty value.
+`NEWS_MAX_SOURCE_AGE_HOURS` is mandatory, finite, and in
+`(0, 720]`; it is validated before bundle copying and is never defaulted. This
+preflight runs before `.env` sourcing, log creation, acquisition, or director
+invocation. The manifest must live under the staged root and use version 1:
+
+```json
+{
+  "version": 1,
+  "bundles": [
+    {"project_id": "fixture-one", "project_dir": "bundles/one"},
+    {"project_id": "fixture-two", "project_dir": "bundles/two"},
+    {"project_id": "fixture-three", "project_dir": "bundles/three"}
+  ]
+}
+```
+
+Each bundle is a complete project tree containing nonempty
+`artifacts/research_brief.json`, `script_vi.json`, `proposal_packet.json`,
+`selector_reply.json`, `director_reply.json`, `reviewer_reply.json`, and
+`news_evidence.json` (the existing version-2.0, script-hash-bound evidence
+contract), plus `assets/narration.mp3`, `assets/music-bg.mp3`, and both
+HyperFrames `index.html` compositions. Bundle paths must stay under the manifest
+folder, exactly three project IDs, selected candidate IDs, and topic titles must
+be unique, and existing staged project destinations are never overwritten.
+Bundles reuse the existing replay copier's symlink/credential denial plus 500-file,
+1,000-entry, and 2 GB limits. After successful staging, the helper writes an
+empty-active-project synthetic publish schedule for configuration loading; it
+never uses or overwrites a live schedule. The selector/director reply files are
+retained fixture provenance;
+the director reply is copied to the director result log rather than invoking an
+agent. The reviewer reply is passed to `CodexAgentValidator`'s existing public
+injected review transport; the real frame/audio/quality checks and actual review
+response parser still run. Captions use the existing cached-only Vietnamese ASR
+path (`local_files_only=True`); no model download fallback is enabled.
+
+The entrypoint bypasses live fetch/produce and director execution only. A guard
+inside `run_directors` also rejects any accidental direct or retry-path call. Use
+an explicit freshness value when invoking, for example:
+
+```sh
+NEWS_MAX_SOURCE_AGE_HOURS=24 bash scripts/run_daily_news_pipeline.sh \\
+  --rehearsal-bundle /isolated/stage/manifest.json
+```
+
+It then
+joins the same evidence validation, asset materialization, caption installation,
+HyperFrames render, and strict quality/reviewer validation paths used by normal
+runs. These renders are test outputs, not release artifacts. Each staged project
+receives `OFFLINE_REHEARSAL_TEST_ONLY.json`; the shared `news_release_gate` and
+publishing preflight reject projects carrying it. Rehearsal output is never
+queued or published by this entrypoint. Run only in the required network-none
+isolated container; this local implementation session did not execute it.

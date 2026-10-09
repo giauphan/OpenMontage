@@ -2,12 +2,65 @@
 # Daily AI news video generation pipeline.
 # Selects trending topic, runs directors pipeline, generates Vietnamese video (120s + 60s Reels), updates publish_schedule.json.
 set -euo pipefail
+REHEARSAL_MANIFEST=""
+if [ "${1:-}" = "--rehearsal-bundle" ]; then
+  [ "$#" -eq 2 ] && [ -n "$2" ] || {
+    echo "Usage: $0 [--rehearsal-bundle NONEMPTY_MANIFEST]" >&2
+    exit 2
+  }
+  REHEARSAL_MANIFEST="$2"
+elif [ "$#" -ne 0 ]; then
+  echo "Usage: $0 [--rehearsal-bundle MANIFEST]" >&2
+  exit 2
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+REHEARSAL_TERMINAL_STAGE="preflight"
+REHEARSAL_SUCCESSFUL_IDS=()
+REHEARSAL_IDS_FILE=""
+write_rehearsal_report_on_exit() {
+  local original_status=$?
+  trap - EXIT
+  if [ -n "${REHEARSAL_IDS_FILE:-}" ]; then rm -f "$REHEARSAL_IDS_FILE"; fi
+  if [ -n "$REHEARSAL_MANIFEST" ]; then
+    python3 "$ROOT/scripts/write_daily_news_rehearsal_report.py" \
+      --root "$ROOT" --manifest "$REHEARSAL_MANIFEST" \
+      --exit-status "$original_status" --terminal-stage "$REHEARSAL_TERMINAL_STAGE" \
+      --successful-ids "$(IFS=,; printf '%s' "${REHEARSAL_SUCCESSFUL_IDS[*]:-}")" || true
+  fi
+  exit "$original_status"
+}
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  trap write_rehearsal_report_on_exit EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
+
+# This gate runs before .env, logs, network clients, credentials, or tools.
+# The staging checkout must carry an explicit durable test-only marker.
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  [ -z "${PRODUCTION_RELEASE:-}" ] && [ -z "${STRICT_PRODUCTION:-}" ] || {
+    echo "ERROR: rehearsal mode is forbidden in production environments" >&2; exit 2;
+  }
+  [ -n "${NEWS_MAX_SOURCE_AGE_HOURS:-}" ] || {
+    echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be explicitly set for rehearsal" >&2; exit 2;
+  }
+  python3 -c 'import math,sys; v=float(sys.argv[1]); sys.exit(0 if math.isfinite(v) and 0 < v <= 720 else 1)' \
+    "$NEWS_MAX_SOURCE_AGE_HOURS" 2>/dev/null || {
+      echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be finite and in (0, 720]" >&2; exit 2;
+    }
+  REHEARSAL_IDS_FILE="$(mktemp)"
+  python3 "$ROOT/scripts/prepare_daily_news_rehearsal.py" \
+    --manifest "$REHEARSAL_MANIFEST" --root "$ROOT" \
+    --max-source-age-hours "$NEWS_MAX_SOURCE_AGE_HOURS" > "$REHEARSAL_IDS_FILE" || exit $?
+  mapfile -t REHEARSAL_PROJECT_IDS < "$REHEARSAL_IDS_FILE"
+  REHEARSAL_TERMINAL_STAGE="frozen_inputs_staged"
+fi
+
 mkdir -p "$ROOT/logs"
 
-if [ -f .env ]; then
+if [ -z "$REHEARSAL_MANIFEST" ] && [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
@@ -47,6 +100,9 @@ elif [ -x "$ROOT/venv/bin/python3" ]; then
 else
   PY="$(command -v python3)"
 fi
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  NEWS_TEMPLATE_MODE=0
+fi
 
 # NEWS_EVIDENCE_GATE_FUNCTIONS_BEGIN
 validate_news_generation_config() {
@@ -81,6 +137,14 @@ fi
   exit 1
 }
 
+# Rehearsal inputs are frozen, copied, and marked test-only by the preflight helper.
+# Never execute acquisition/production selectors in this branch.
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  REHEARSAL_TERMINAL_STAGE="directors_and_validation"
+  FEED_STALE=0
+  PROJECT_IDS=("${REHEARSAL_PROJECT_IDS[@]}")
+  export OPENMONTAGE_REHEARSAL=1
+else
 # Step 0: Fetch current NewsNow sources with stale fallback.
 FEED_STALE=0
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
@@ -120,18 +184,22 @@ if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
   exit 1
 fi
+fi
 
 SUCCESSFUL_COUNT=0
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
+  REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
   cd "$ROOT"
-  chmod 777 "$ROOT" 2>/dev/null || true
+  if [ -z "$REHEARSAL_MANIFEST" ]; then
+    chmod 777 "$ROOT" 2>/dev/null || true
+  fi
   PROJECT_DIR="$ROOT/projects/$PROJECT_ID"
-  if [ -d "$PROJECT_DIR" ]; then
+  if [ -d "$PROJECT_DIR" ] && [ -z "$REHEARSAL_MANIFEST" ]; then
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
   mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
-  chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true
+  if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
 
 # Step 2.5: Run Directors pipeline via Codex CLI (unattended, logged) (P2)
@@ -159,14 +227,19 @@ render_director_prompt() {
   fi
   printf '%s\n' "$result"
 }
-PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
-  echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
-  exit 1
-}
-DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
-  echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
-  exit 1
-}
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  PROMPT_STR=""
+  DIRECTOR_SYSTEM_NOTE=""
+else
+  PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
+    echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
+    exit 1
+  }
+  DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
+    echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
+    exit 1
+  }
+fi
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
 DIRECTOR_ARTIFACTS_READY=0
@@ -174,6 +247,10 @@ DIRECTOR_ARTIFACTS_READY=0
 # A director timeout must fail closed rather than publishing stale content.
 
 run_directors() {
+  if [ -n "$REHEARSAL_MANIFEST" ]; then
+    echo "ERROR: director invocation is disabled in rehearsal mode" >&2
+    return 125
+  fi
   local prompt="${1:-$PROMPT_STR}"
   local session_id="${2:-}"
   local resume_flag=""
@@ -232,14 +309,19 @@ run_directors() {
   fi
 }
 
-if ! command -v timeout >/dev/null 2>&1; then
-  echo "[$(date -u +%FT%TZ)] ERROR: timeout command is required for directors" >> "$DIRECTORS_LOG"
-  exit 1
-fi
-
-run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
-DIRECTOR_EXIT=$?
 DIRECTOR_ARTIFACT_FALLBACK=0
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  cp "$PROJECT_DIR/artifacts/director_reply.json" "$DIRECTORS_JSON"
+  DIRECTOR_EXIT=0
+  DIRECTOR_ARTIFACT_FALLBACK=1
+else
+  if ! command -v timeout >/dev/null 2>&1; then
+    echo "[$(date -u +%FT%TZ)] ERROR: timeout command is required for directors" >> "$DIRECTORS_LOG"
+    exit 1
+  fi
+  run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+  DIRECTOR_EXIT=$?
+fi
 if [ "$DIRECTOR_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: directors timed out; refusing stale artifacts" >> "$DIRECTORS_LOG"
 fi
@@ -354,7 +436,7 @@ validate_current_director_artifacts() {
   return "$status"
 }
 
-if [ "$TEMPLATE_MODE" -eq 1 ]; then
+if [ -n "$REHEARSAL_MANIFEST" ] || [ "$TEMPLATE_MODE" -eq 1 ]; then
   if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
     DIRECTOR_EXIT=0
   else
@@ -468,6 +550,7 @@ else
 fi
 
 # Step 3: Render video (120s + 60s Reels) + sanity check (P4)
+REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:render_and_quality"
 cd "$ROOT/projects/$PROJECT_ID"
 chmod -R 777 . 2>/dev/null || true
 mkdir -p renders
@@ -517,7 +600,7 @@ materialize_hyperframes_assets() {
   if [ ! -s "$narration" ] || { [ -s "$narration_text" ] && [ "$narration_text" -nt "$narration" ]; }; then
     narration_stale=1
   fi
-  if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
+  if [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
     "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
     edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
@@ -535,12 +618,20 @@ materialize_hyperframes_assets() {
     return 1
   fi
   if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
+    if [ -n "$REHEARSAL_MANIFEST" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: frozen rehearsal background music is missing for $PROJECT_ID" >&2
+      return 1
+    fi
     echo "[$(date -u +%FT%TZ)] WARN: background music asset missing for $PROJECT_ID, using fallback"
     cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
   fi
   local music_duration
   music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
   if ! awk -v d="$music_duration" 'BEGIN{exit !(d > 5)}'; then
+    if [ -n "$REHEARSAL_MANIFEST" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: frozen rehearsal background music duration ${music_duration}s <=5s for $PROJECT_ID" >&2
+      return 1
+    fi
     echo "[$(date -u +%FT%TZ)] WARN: background music duration ${music_duration}s <=5s for $PROJECT_ID, using fallback"
     cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
     music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
@@ -719,11 +810,16 @@ VAL_SCRIPT="$ROOT/scripts/codex_agent_validation.py"
 for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
   echo "[$(date -u +%FT%TZ)] Codex Validation Attempt $retry/$MAX_RETRIES"
 
+  REVIEW_ARGS=()
+  if [ -n "$REHEARSAL_MANIFEST" ]; then
+    REVIEW_ARGS=(--test-review-reply "$PROJECT_DIR/artifacts/reviewer_reply.json")
+  fi
   if "$PY" "$ROOT/scripts/codex_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
       --strict \
       --retry "$MAX_RETRIES" \
       --ffprobe "$FFPROBE_BIN" \
-      --ffmpeg "$FFMPEG_BIN"; then
+      --ffmpeg "$FFMPEG_BIN" \
+      "${REVIEW_ARGS[@]}"; then
     VALIDATION_EXIT=0
   else
     VALIDATION_EXIT=$?
@@ -844,6 +940,10 @@ if [ -f "renders/final_reels_vi_9x16.mp4" ]; then
 fi
 
 SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  REHEARSAL_SUCCESSFUL_IDS+=("$PROJECT_ID")
+fi
+REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:completed"
 if [ $SUCCESSFUL_COUNT -ge 3 ]; then
   echo "[$(date -u +%FT%TZ)] Successfully generated and validated 3 projects. Breaking loop early."
   break
@@ -854,10 +954,16 @@ done
 # Step 5: (Removed atomic activation; now handled strictly by run_strict_docker_publish.sh's queue-next-day stage)
 cd "$ROOT"
 
+if [ -n "$REHEARSAL_MANIFEST" ] && [ "$SUCCESSFUL_COUNT" -ne 3 ]; then
+  REHEARSAL_TERMINAL_STAGE="incomplete_rehearsal"
+  echo "[$(date -u +%FT%TZ)] ERROR: rehearsal requires all three requested projects to pass; got $SUCCESSFUL_COUNT" >&2
+  exit 1
+fi
 if [ "$SUCCESSFUL_COUNT" -eq 0 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: no candidate passed strict generation and validation" >&2
   exit 1
 fi
 
+REHEARSAL_TERMINAL_STAGE="completed"
 echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE, Successful: $SUCCESSFUL_COUNT)"
 # Next-day scheduling and publishing is now fully managed by the strict orchestrator.
