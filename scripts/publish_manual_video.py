@@ -263,6 +263,11 @@ def publish_batch(
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
     root = Path(__file__).resolve().parents[1]
 
+    # News evidence is an unconditional release gate, independent of quality
+    # preflight toggles and force/retry modes. It must precede claims and uploads.
+    from lib.news_release_gate import require_news_evidence
+    require_news_evidence(project_dir, metadata=metadata)
+
     # Metadata contract: the shared route table owns platform -> field/kind mapping.
     # DEFAULT BEHAVIOR: Single-platform publishing to prevent duplicates
     # Multi-platform mode can be enabled via MULTI_PLATFORM=1 environment variable
@@ -1009,6 +1014,8 @@ def main():
         sys.exit(1)
 
     try:
+        from lib.news_release_gate import require_news_evidence
+        require_news_evidence(project_path, metadata=metadata)
         enforce_release_preflight(project_path, metadata, strict=True, force=args.force)
     except Exception as exc:
         print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")

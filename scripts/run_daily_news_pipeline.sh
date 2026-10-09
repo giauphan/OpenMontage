@@ -48,6 +48,34 @@ else
   PY="$(command -v python3)"
 fi
 
+# NEWS_EVIDENCE_GATE_FUNCTIONS_BEGIN
+validate_news_generation_config() {
+  if [ -z "${NEWS_MAX_SOURCE_AGE_HOURS:-}" ]; then
+    echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be explicitly configured in (0, 720] hours" >&2
+    return 1
+  fi
+  "$PY" -c 'import math,sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and 0 < value <= 720 else 1)' \
+    "$NEWS_MAX_SOURCE_AGE_HOURS" || {
+      echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be finite and in (0, 720]" >&2
+      return 1
+    }
+}
+
+validate_project_news_evidence() {
+  local project_dir="$1" validation_log="$2"
+  if "$PY" "$ROOT/scripts/validate_news_evidence.py" "$project_dir" \
+      --max-source-age-hours "$NEWS_MAX_SOURCE_AGE_HOURS" >"$validation_log" 2>&1; then
+    return 0
+  fi
+  echo "ERROR: news evidence validation failed for $project_dir; see $validation_log" >&2
+  return 1
+}
+# NEWS_EVIDENCE_GATE_FUNCTIONS_END
+
+if ! validate_news_generation_config; then
+  exit 1
+fi
+
 "$PY" -c 'from scripts.publish_config import load_config; load_config()' || {
   echo "ERROR: invalid publish timezone configuration" >&2
   exit 1
@@ -87,7 +115,7 @@ fi
 # Step 1: Select and initialize distinct current topics.
 PRODUCE_LOG="$ROOT/logs/news_produce_$(date -u +%Y%m%dT%H%M%SZ).log"
 "$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG" || true
-mapfile -t PROJECT_IDS < <(grep '^PROJECT_ID=' "$PRODUCE_LOG" | cut -d= -f2)
+mapfile -t PROJECT_IDS < <(grep -E '^PROJECT_ID=[A-Za-z0-9_-]{1,128}$' "$PRODUCE_LOG" | cut -d= -f2 | awk '!seen[$0]++ && $0 != "_failed_generation_recovered" && index($0, "_failed_generation_recovered_") != 1')
 if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
   exit 1
@@ -388,7 +416,15 @@ if [ $DIRECTOR_EXIT -ne 0 ] && [ "$TEMPLATE_MODE" -ne 1 ]; then
   fi
 fi
 
-if [ $DIRECTOR_EXIT -eq 0 ]; then
+if [ "$DIRECTOR_EXIT" -eq 0 ]; then
+  NEWS_EVIDENCE_LOG="$(mktemp "$ROOT/logs/news_evidence_${PROJECT_ID}_XXXXXX.json")"
+  if ! validate_project_news_evidence "$PROJECT_DIR" "$NEWS_EVIDENCE_LOG"; then
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \
+      --error-type "NEWS_EVIDENCE_INVALID" --message "Frozen source evidence failed validation" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "news evidence missing or invalid; see $NEWS_EVIDENCE_LOG" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
+  fi
   echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID exit=0 elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
@@ -411,6 +447,12 @@ if [ $DIRECTOR_EXIT -eq 0 ]; then
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
         --error-type "MISSING_REELS_COMPOSITION" --message "Reels composition index.html missing or empty" || true
     fi
+    COMPOSITION_FAILURE_REASON="missing required HyperFrames composition:"
+    [ -s "$HYPER_FULL" ] || COMPOSITION_FAILURE_REASON="$COMPOSITION_FAILURE_REASON full"
+    [ -s "$HYPER_REELS" ] || COMPOSITION_FAILURE_REASON="$COMPOSITION_FAILURE_REASON reels"
+    COMPOSITION_FAILURE_REASON="$COMPOSITION_FAILURE_REASON; see $ROOT/logs/directors_${PROJECT_ID}.log"
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "$COMPOSITION_FAILURE_REASON" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
     continue
   fi
 else
@@ -419,6 +461,9 @@ else
   echo "  see full transcript: $DIRECTORS_LOG" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
     --error-type "DIRECTOR_FAILURE" --message "Director run failed with exit code $DIRECTOR_EXIT" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "Director run failed with exit code $DIRECTOR_EXIT after $DIRECTOR_ATTEMPT attempt(s); see $DIRECTORS_LOG" \
+    || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -478,36 +523,8 @@ materialize_hyperframes_assets() {
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
 
-  # Generate Vietnamese subtitles with word timestamps for caption synchronization
-if [ -s "$narration" ] && command -v "$PY" >/dev/null 2>&1; then
-  local subtitle_text="$narration_text.prepared"
-  [ -s "$subtitle_text" ] || subtitle_text="$narration_text"
-  
-  echo "[$(date -u +%FT%TZ)] Generating Vietnamese subtitles..."
-  mkdir -p "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
-  
-  if [ -s "$subtitle_text" ]; then
-    "$PY" "$ROOT/scripts/generate_vn_subtitles.py" \
-      "$subtitle_text" \
-      "$narration" \
-      "$project_root/hyperframes/assets/subtitles.srt" \
-      "$project_root/hyperframes/assets/word_timestamps.json" \
-      3 || { echo "[$(date -u +%FT%TZ)] ERROR: Subtitle generation failed" >&2; return 1; }
-    echo "[$(date -u +%FT%TZ)] Vietnamese subtitles generated"
-
-    # Generate reels subtitles if audio exists.
-    if [ -s "$reels_narration" ]; then
-      "$PY" "$ROOT/scripts/generate_vn_subtitles.py" \
-        "$subtitle_text" \
-        "$reels_narration" \
-        "$project_root/hyperframes_reels/assets/subtitles.srt" \
-        "$project_root/hyperframes_reels/assets/word_timestamps.json" \
-        3 || { echo "[$(date -u +%FT%TZ)] ERROR: Reels subtitle generation failed"; return 1; }
-    fi
-  else
-    echo "[$(date -u +%FT%TZ)] WARNING: No subtitle text available" >&2
-  fi
-fi
+  # Captions are generated after the Reels narration has its final audio bytes,
+  # and each rendition is transcribed independently in strict cached-only mode.
   if [ ! -s "$narration" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
     return 1
@@ -541,6 +558,8 @@ fi
   else
     cp "$narration" "$reels_narration"
   fi
+  "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" || return 1
+  "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" || return 1
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
     if [ "$composition" = "hyperframes_reels" ]; then
@@ -559,13 +578,22 @@ fi
   if [ "${TEMPLATE_MODE:-0}" -eq 1 ]; then
     echo "skip repair_hyperframes_quality (templated compositions are deterministic)"
   else
-    "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict
+    "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict || return 1
   fi
+  for composition in hyperframes hyperframes_reels; do
+    local target="$project_root/$composition/assets"
+    "$PY" "$ROOT/scripts/install_news_captions.py" \
+      "$project_root/$composition/index.html" \
+      "$target/narration.mp3" \
+      "$target/word_timestamps.json" || return 1
+  done
 }
 if ! materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"; then
   echo "[$(date -u +%FT%TZ)] ERROR: HyperFrames asset materialization/repair failed for $PROJECT_ID" >&2
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "asset_materialization" --project-id "$PROJECT_ID" \
     --error-type "HYPERFRAMES_ASSET_REPAIR_FAILED" --message "HyperFrames asset materialization or repair failed" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "HyperFrames asset materialization or repair failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -585,7 +613,8 @@ fi
 
 if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html" ] || [ ! -f "$REELS_COMP/index.html" ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID; skipping candidate" >&2
-  rm -rf "$ROOT/projects/$PROJECT_ID"
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "missing full/reels HyperFrames composition index" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -615,6 +644,8 @@ if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Base render validation failed for $PROJECT_ID" >&2
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "render_validation" --project-id "$PROJECT_ID" \
     --error-type "RENDER_VALIDATION_FAILED" --message "Base render validation failed" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "Base render quality validation failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -627,6 +658,8 @@ for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
   fi
 done
 if [ $RENDER_MISSING -ne 0 ]; then
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "one or more expected renders are missing or empty" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -669,6 +702,8 @@ if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/r
   }' > "$PROJECT_DIR/publish_metadata.json"
 else
   echo "[$(date -u +%FT%TZ)] ERROR: Missing video files for $PROJECT_ID" >&2
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "publish metadata not created because one or more video files are missing" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -721,8 +756,9 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
     --error-type "VALIDATION_FAILED" --message "Codex agent validation failed after $MAX_RETRIES attempts" \
     --attempt "$MAX_RETRIES" --max-attempts "$MAX_RETRIES" || true
 
-  echo "[$(date -u +%FT%TZ)] Removing failed project directory and continuing to next candidate." >&2
-  rm -rf "$ROOT/projects/$PROJECT_ID"
+  echo "[$(date -u +%FT%TZ)] Preserving failed project in quarantine and continuing to next candidate." >&2
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "Codex validation failed after $MAX_RETRIES attempts" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 

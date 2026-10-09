@@ -6,9 +6,11 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+from tests.fixtures.news_evidence import write_reviewed_news_evidence
+
 ROOT = Path(__file__).resolve().parents[1]
 
-def test_publish_manual_video_skips_duplicates_and_avoids_facebook(tmp_path: Path):
+def test_publish_manual_video_skips_duplicates_and_avoids_facebook(tmp_path: Path, monkeypatch):
     from scripts.publish_manual_video import publish_batch
     
     project_dir = tmp_path / "projects" / "cand_A"
@@ -32,6 +34,8 @@ def test_publish_manual_video_skips_duplicates_and_avoids_facebook(tmp_path: Pat
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir()
     (artifacts_dir / "narration_vi_text.txt").write_text("Chào mọi người hôm nay chúng ta có tin tức mới.", encoding="utf-8")
+    write_reviewed_news_evidence(project_dir)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     
     # Store that claims to have already scheduled / published everything
     class DummyStore:
@@ -121,6 +125,7 @@ def _setup_valid_pipeline_project(tmp_path: Path):
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     (artifacts_dir / "narration_vi_text.txt").write_text("Chào mọi người hôm nay có tin tức mới.", encoding="utf-8")
+    write_reviewed_news_evidence(project_dir)
 
     from tests.contracts.test_phase0_contracts import sample_artifact
     stages_info = [
@@ -406,10 +411,11 @@ def test_preflight_blocks_on_target_account_mismatch(tmp_path: Path):
             enforce_release_preflight(project_dir, metadata, platforms=platforms, strict=False)
 
 
-def test_force_flag_cannot_bypass_preflight_failure(tmp_path: Path):
+def test_force_flag_cannot_bypass_preflight_failure(tmp_path: Path, monkeypatch):
     from scripts.publish_manual_video import publish_batch
 
     project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     # Break checkpoint
     (project_dir / "checkpoint_script.json").unlink()
 
@@ -423,10 +429,11 @@ def test_force_flag_cannot_bypass_preflight_failure(tmp_path: Path):
     assert store_mock.claim.call_count == 0
 
 
-def test_distinguish_scheduled_from_published_state(tmp_path: Path):
+def test_distinguish_scheduled_from_published_state(tmp_path: Path, monkeypatch):
     from scripts.publish_manual_video import publish_batch
 
     project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     metadata["publish_time"] = "09:15"
     metadata["publish_date"] = "2026-09-30"
 
@@ -461,11 +468,12 @@ def test_distinguish_scheduled_from_published_state(tmp_path: Path):
         assert store.scheduled_calls[0][1]["video_id"] == "yt_sched_123"
 
 
-def test_publish_manual_video_cli_full_success_calls_deactivate_project(tmp_path: Path):
+def test_publish_manual_video_cli_full_success_calls_deactivate_project(tmp_path: Path, monkeypatch):
     """F01: Verify that CLI completion in main() passes project_path to deactivate_project without NameError."""
     import scripts.publish_manual_video as pmv
 
     project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     metadata["publish_time"] = "09:15"
     (project_dir / "publish_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
 
@@ -498,11 +506,12 @@ def test_publish_manual_video_cli_full_success_calls_deactivate_project(tmp_path
         assert mock_deact.call_args[1]["project_dir"] == project_dir
 
 
-def test_publish_manual_video_cli_partial_success_retains_project(tmp_path: Path):
+def test_publish_manual_video_cli_partial_success_retains_project(tmp_path: Path, monkeypatch):
     """F01 & F09: Partial platform success returns 0 and retains project without calling deactivate_project."""
     import scripts.publish_manual_video as pmv
 
     project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     metadata["publish_time"] = "09:15"
     (project_dir / "publish_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
 
@@ -546,11 +555,12 @@ def test_get_required_routes_not_narrowed_by_instagram_mode(tmp_path: Path, monk
     assert ("instagram", "reels") in routes
 
 
-def test_resumable_instagram_reservation(tmp_path: Path):
+def test_resumable_instagram_reservation(tmp_path: Path, monkeypatch):
     """F08: Resumable ownership transition for pre-created reservation without remote ID."""
     from scripts.publish_manual_video import publish_batch
 
     project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     metadata["publish_time"] = "09:15"
     metadata["publish_date"] = "2026-09-30"
 
@@ -590,11 +600,12 @@ def test_resumable_instagram_reservation(tmp_path: Path):
         assert store.published[0][1]["video_id"] == "ig_media_999"
 
 
-def test_instagram_upload_records_published_immediately(tmp_path: Path):
+def test_instagram_upload_records_published_immediately(tmp_path: Path, monkeypatch):
     """F08: Instagram uploads record published status immediately, not scheduled."""
     from scripts.publish_manual_video import publish_batch
 
     project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     metadata["publish_time"] = "09:15"
     metadata["publish_date"] = "2026-09-30"
 

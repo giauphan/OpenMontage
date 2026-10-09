@@ -190,6 +190,17 @@ command -v python3 >/dev/null  || fail "python3 missing"
 command -v ffmpeg   >/dev/null  || fail "ffmpeg missing"
 command -v ffprobe  >/dev/null  || fail "ffprobe missing"
 command -v codex    >/dev/null  || fail "codex CLI missing"
+# Strict pipeline candidates are news by definition. Require explicit freshness
+# policy before any generation or paid provider stage can begin.
+if ! "$PY" -c 'import math, os, sys; value=os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS"); valid=False
+try:
+    age=float(value) if value is not None and value.strip() else float("nan")
+    valid=math.isfinite(age) and 0 < age <= 720
+except (TypeError, ValueError, OverflowError):
+    pass
+sys.exit(0 if valid else 1)'; then
+  fail "NEWS_MAX_SOURCE_AGE_HOURS is required and must be a finite number in (0, 720]"
+fi
 if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
   [ -d "$CODEX_HOME" ] || fail "CODEX_HOME does not exist: $CODEX_HOME"
   [ -s "$CODEX_HOME/auth.json" ] || fail "CODEX_HOME missing auth.json: $CODEX_HOME/auth.json"
@@ -283,6 +294,12 @@ for PID in "${PROJECT_IDS[@]}"; do
   log "verifying $PID"
   # 4a. Project directory exists.
   [ -d "$PDIR" ] || { log "FAIL $PID: project dir missing"; continue; }
+  # Every candidate emitted by the daily-news generator is news, regardless of
+  # identity heuristics used by shared publishing entry points.
+  if ! "$PY" -c 'import os, sys; from lib.news_release_gate import require_news_evidence; require_news_evidence(sys.argv[1], os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS", ""), metadata={"pipeline_type": "newsnow"})' "$PDIR" >> "$VERIFY_LOG" 2>&1; then
+    log "FAIL $PID: required news evidence invalid or missing"
+    continue
+  fi
   # 4b. publish_metadata.json exists + valid JSON + has required fields.
   META="$PDIR/publish_metadata.json"
   [ -f "$META" ] || { log "FAIL $PID: publish_metadata.json missing"; continue; }

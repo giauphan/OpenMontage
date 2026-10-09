@@ -7,6 +7,8 @@ Must be a flat JSON file at {{PROJECT_DIR}}/artifacts/script_vi.json (do not emb
 Schema keys: version (1.0), title, total_duration_seconds, sections (array of: id, text, start_seconds, end_seconds).
 Content: 100% correct Vietnamese spelling, exact grammatical tone marks, correct technical terminology. Rich spoken-word narration, 150-250 spoken words total (45-60s expected spoken duration). No dead air. Use a strong 3-second hook.
 
+News evidence is a required external input. Use and preserve only supplied frozen source materials at {{PROJECT_DIR}}/artifacts/news_evidence.json and its referenced content files; keep every factual statement grounded in the supplied research brief and source excerpts. Never create or edit news_evidence.json, claim that editorial review occurred, fill reviewer/reviewed_at fields, or invent citations, excerpts, URLs, source dates, or verification. If required evidence or source content is missing, report a blocking failure rather than filling gaps. Human source retrieval and review are external prerequisites; the pipeline will validate the finished script against the independently reviewed evidence before narration or render.
+
 2. hyperframes/index.html & hyperframes_reels/index.html
 hyperframes/index.html: The complete story with no sections/narration removed. Portrait 1080x1920 CSS layout. Duration matches the full text.
 hyperframes_reels/index.html: Identical structure but shortened to <=60s for Instagram Reels.
@@ -27,6 +29,8 @@ Content & Quality for both:
   * Scene 1 must stay visible until Scene 2 starts: e.g. `tl.to("#scene-1", {opacity: 0, duration: 0.3}, 14.0)`. NEVER fade out a scene before the next scene enters. A frame sampled at any random second must display rich headlines, cards, and text — NEVER a blank or black canvas.
 - Layout & Footer Collision Prevention:
   * NEVER let tickers, status bars, or bottom chips overlap or collide with footer metadata, captions, or cards.
+  * Reserve the bottom 16% of the portrait frame as a clear caption-safe rail on every scene; keep scene copy, tickers, footer metadata, and decorative plates above it.
+  * Do not author static, estimated, or custom caption/subtitle elements. The pipeline installs validated audio-aligned ASR caption clips after generation; existing caption markup causes a fail-closed composition rejection.
   * Give `.meta`, footer elements, and the bottom of `.scene` adequate bottom padding (e.g. `margin-bottom: 90px;` or `padding-bottom: 120px;`) so all text remains completely clear and unclipped.
 - Author deterministic, seek-safe GSAP only: create one master timeline with `gsap.timeline({ paused: true })`, add every animation to that timeline with `tl.to/from/fromTo/set`, and register it synchronously on `window.__timelines['main']`. Do not use standalone `gsap.to/from/fromTo/set`, `repeat: -1`, timers, async work, or unregistered timelines. Keep every timeline finite.
 - Add purposeful, content-led movement only when it improves the story. Do NOT add decorative motion solely to evade the frozen-canvas check; do not promise motion on every frame. Motion must remain on the registered paused timeline and must not obscure or delay narration-aligned scene content.
