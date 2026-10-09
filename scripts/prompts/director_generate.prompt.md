@@ -28,8 +28,11 @@ Content & Quality for both:
 - Layout & Footer Collision Prevention:
   * NEVER let tickers, status bars, or bottom chips overlap or collide with footer metadata, captions, or cards.
   * Give `.meta`, footer elements, and the bottom of `.scene` adequate bottom padding (e.g. `margin-bottom: 90px;` or `padding-bottom: 120px;`) so all text remains completely clear and unclipped.
-- Add a slow, continuous background/layer movement spanning the entire duration of every scene to prevent failure of the frozen-canvas check (max 50% static frames). Do NOT use <video> elements or CSS @keyframes for this; use only GSAP.
+- Author deterministic, seek-safe GSAP only: create one master timeline with `gsap.timeline({ paused: true })`, add every animation to that timeline with `tl.to/from/fromTo/set`, and register it synchronously on `window.__timelines['main']`. Do not use standalone `gsap.to/from/fromTo/set`, `repeat: -1`, timers, async work, or unregistered timelines. Keep every timeline finite.
+- Add purposeful, content-led movement only when it improves the story. Do NOT add decorative motion solely to evade the frozen-canvas check; do not promise motion on every frame. Motion must remain on the registered paused timeline and must not obscure or delay narration-aligned scene content.
+- Do not read or set `tl.duration()` until all child animations have been added; preferably use the authored composition/scene duration as the source of truth. Do not derive scene timing from an incomplete timeline.
 - Render contract:
   * The composition root element MUST carry `data-composition-id="main"`.
-  * Register the GSAP master timeline on `window.__timelines['main']` (e.g. `window.__timelines = window.__timelines || {}; window.__timelines['main'] = tl;`) so the runtime can drive playback and the frozen-canvas check.
+  * Register the fully constructed GSAP master timeline on `window.__timelines['main']` (e.g. `window.__timelines = window.__timelines || {}; window.__timelines['main'] = tl;`) so the runtime can drive playback.
+  * Scene visibility and opacity transitions must be children of that same registered timeline. Preserve each script section's exact start time; use explicit timeline positions for scene entrances and exits. Never leave a scene hidden before the next scene is visible.
 

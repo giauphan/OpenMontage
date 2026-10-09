@@ -129,19 +129,18 @@ def test_conflicting_later_root_css_rule_fails(tmp_path):
     assert any("conflicting canvas dimensions" in error for error in errors)
 
 
-def test_timeline_repair_scales_small_narration_mismatches(tmp_path):
+def test_repair_preserves_authored_timing_when_narration_duration_differs(tmp_path):
     index = write_composition(tmp_path, composition_html(1080, 1920))
     repair.patch_html(index, narration_duration=5.5)
     patched = index.read_text(encoding="utf-8")
-    assert 'data-duration="5.500"' in patched
-    assert 'data-duration="5.500" data-track-index="1"' in patched
+    assert '<section data-start="0" data-duration="5" data-track-index="1">' in patched
 
 
-def test_repair_adds_narration_duration_when_ffprobe_is_unavailable(tmp_path):
-    index = write_composition(tmp_path, composition_html(1080, 1920))
+def test_repair_preserves_authored_root_duration(tmp_path):
+    html = composition_html(1080, 1920).replace('data-duration="5"', 'data-duration="5"', 1)
+    index = write_composition(tmp_path, html)
     repair.patch_html(index)
-    patched = index.read_text(encoding="utf-8")
-    assert 'data-duration="60.000"' in patched
+    assert 'data-duration="5"' in index.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("composition", ["hyperframes", "hyperframes_reels"])
@@ -199,7 +198,7 @@ def test_main_repairs_only_selected_composition(tmp_path, monkeypatch):
     )
     assert repair.main() == 0
     assert 'data-duration="5"' in (project / "hyperframes" / "index.html").read_text()
-    assert 'data-duration="45.000"' in (
+    assert 'data-duration="5"' in (
         project / "hyperframes_reels" / "index.html"
     ).read_text()
 
@@ -239,7 +238,7 @@ def test_removes_unmaterialized_individual_narration_tags(tmp_path):
     assert 'id="narration_2"' not in patched_html, "Missing asset narration_2 must be removed"
     assert 'src="assets/music-bg.mp3"' not in patched_html, "Missing background asset must be removed"
 
-def test_repair_calculates_data_duration_from_scenes(tmp_path):
+def test_repair_uses_scene_end_only_when_root_duration_is_missing(tmp_path):
     project = tmp_path / "cand_test"
     project.mkdir()
     
@@ -266,19 +265,9 @@ def test_repair_calculates_data_duration_from_scenes(tmp_path):
     
     patched_html = comp.read_text()
     
-    # Root should first receive data-duration="25.500" because calculated max_end=25.5, 
-    # then align_timeline computes scale = 45.0 / 25.500 = 1.764
-    # Scene 1 start remains 0, dur = 15.5 * 1.7647 = 27.353
-    # Scene 2 start = 15.5 * 1.7647 = 27.353, dur = 10 * 1.7647 = 17.647
-    # So max end becomes exactly 45.0
-    
-    # We just explicitly assert the root has duration 45.000 (after scaling),
-    # but more importantly that the scene durations were multiplied!
-    assert 'data-duration="45.000"' in patched_html, "Root duration is scaled to narration"
-    
-    import re
-    scene1_dur_match = re.search(r'id="scene-0" class="scene" data-start="0.000" data-duration="(27\.35[0-9])"', patched_html)
-    assert scene1_dur_match is not None, "Scene 1 duration scaled up"
+    assert 'data-duration="25.500"' in patched_html
+    assert 'id="scene-0" class="scene" data-start="0.000" data-duration="15.5"' in patched_html
+    assert 'id="scene-1" class="scene" data-start="15.500" data-duration="10.0"' in patched_html
 
 
 def test_repair_uses_scene_end_when_root_duration_is_stale(tmp_path):
@@ -304,8 +293,8 @@ def test_repair_uses_scene_end_when_root_duration_is_stale(tmp_path):
     repair.patch_html(comp, 56.5)
 
     patched_html = comp.read_text()
-    assert 'data-duration="56.500"' in patched_html
-    assert 'id="scene-1" class="scene" data-start="32.286" data-duration="24.214"' in patched_html
+    assert 'data-duration="56.5"' in patched_html
+    assert 'id="scene-1" class="scene" data-start="20.000" data-duration="15.0"' in patched_html
 
 
 def test_repair_ignores_directory_asset_targets(tmp_path):
@@ -324,7 +313,7 @@ def test_repair_ignores_directory_asset_targets(tmp_path):
     assert 'src="assets"' in repaired
 
 
-def test_removes_clip_visibility_hidden_rule(tmp_path):
+def test_repair_preserves_authored_clip_visibility_rule(tmp_path):
     import re
     html = composition_html(1080, 1920)
     html = html.replace(
@@ -334,20 +323,20 @@ def test_removes_clip_visibility_hidden_rule(tmp_path):
     comp = write_composition(tmp_path, html)
     repair.patch_html(comp, 10.0)
     patched = comp.read_text()
-    assert re.search(r"\.clip[^{}]*\{[^{}]*visibility:\s*hidden", patched) is None
+    assert re.search(r"\.clip[^{}]*\{[^{}]*visibility:\s*hidden", patched) is not None
 
 
-def test_repair_injects_valid_background_motion_and_preserves_registered_timeline(tmp_path):
+def test_css_class_name_does_not_suppress_missing_dom_elements_or_inject_motion(tmp_path):
     html = """<!DOCTYPE html>
 <html>
 <head>
     <meta name="viewport" content="width=1080, height=1920">
-    <style>#root { width: 1080px; height: 1920px; }</style>
+    <style>#root { width: 1080px; height: 1920px; } .hf-grid-overlay { position: absolute; }</style>
 </head>
 <body>
     <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-start="0" data-duration="10.0"></div>
     <script>
-        const tl = gsap.timeline();
+        const tl = gsap.timeline({ paused: true });
         window.__timelines = window.__timelines || {};
         window.__timelines['main'] = tl;
     </script>
@@ -357,14 +346,14 @@ def test_repair_injects_valid_background_motion_and_preserves_registered_timelin
     repair.patch_html(comp, 10.0, strict=True)
     patched = comp.read_text()
 
-    # Must inject background motion with valid JS syntax (no whole-canvas breathing zoom)
-    assert "// __repair_scale_injected" in patched
-    assert "_r_tl.fromTo('.hf-motion-beam'" in patched
-    assert "_r_tl.fromTo('.hf-grid-overlay'" in patched
-    assert "scale: 1.12" not in patched
-    assert "yoyo: true" not in patched
-    # Timeline should not be marked data-no-timeline if it registered timelines
+    dom = repair._CompositionDOM(patched)
+    assert not any("hf-grid-overlay" in (attrs.get("class") or "").split() for _, attrs, _ in dom.nodes)
+    assert not any("hf-motion-beam" in (attrs.get("class") or "").split() for _, attrs, _ in dom.nodes)
+    assert ".hf-grid-overlay" in patched
+    assert "hf-motion-beam" not in patched
     assert "data-no-timeline" not in patched
+    repair.patch_html(comp, 10.0, strict=True)
+    assert comp.read_text() == patched
 
 
 def test_repair_promotes_stage_div_to_composition_root(tmp_path):
@@ -399,7 +388,7 @@ def test_strict_repair_preserves_css_semicolons_and_js_object_commas(tmp_path):
 <body>
     <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-start="0" data-duration="10.0"></div>
     <script>
-        const tl = gsap.timeline();
+        const tl = gsap.timeline({ paused: true });
         tl.set('#root', { opacity: 0, visibility: 'hidden' });
         window.__timelines = window.__timelines || {};
         window.__timelines['main'] = tl;
@@ -410,10 +399,64 @@ def test_strict_repair_preserves_css_semicolons_and_js_object_commas(tmp_path):
     repair.patch_html(comp, 10.0, strict=True)
     patched = comp.read_text()
 
-    assert ".scene { opacity: 1; visibility: visible; }" in patched
-    assert "{ opacity: 1, visibility: 'hidden' }" in patched
+    assert ".scene { opacity: 0; visibility: hidden; }" in patched
+    assert "{ opacity: 0, visibility: 'hidden' }" in patched
     assert "opacity: 1;," not in patched
 
 
+def test_future_scene_visibility_and_timing_are_preserved(tmp_path):
+    html = composition_html(1080, 1920).replace(
+        "</style>", ".scene.future { opacity: 0; visibility: hidden; }\n    </style>"
+    ).replace(
+        '<section data-start="0" data-duration="5" data-track-index="1">',
+        '<section class="scene future" data-start="4" data-duration="1" data-track-index="1">',
+    )
+    index = write_composition(tmp_path, html)
+    repair.patch_html(index, narration_duration=9.0, strict=True)
+    patched = index.read_text(encoding="utf-8")
+    assert ".scene.future { opacity: 0; visibility: hidden; }" in patched
+    assert 'data-start="4" data-duration="1"' in patched
 
 
+def test_infinite_repeat_fails_with_actionable_error(tmp_path):
+    html = composition_html(1080, 1920).replace(
+        "</body>", "<script>tl.to('.pulse', { opacity: 0.5, repeat: -1 });</script></body>"
+    )
+    index = write_composition(tmp_path, html)
+    with pytest.raises(ValueError, match="infinite GSAP repeat.*finite registered timeline"):
+        repair.patch_html(index)
+
+
+def test_javascript_comments_and_string_literals_do_not_trigger_unsafe_pattern_checks(tmp_path):
+    html = composition_html(1080, 1920).replace(
+        "</body>", "<script>// gsap.to('.x', { repeat: -1 });\nconst note = 'repeat: -1 gsap.to('; </script></body>"
+    )
+    index = write_composition(tmp_path, html)
+    repair.patch_html(index)
+
+
+def test_data_no_timeline_root_is_allowed_without_gsap_registration(tmp_path):
+    html = composition_html(1080, 1920).replace(
+        'data-composition-id="main"', 'data-composition-id="main" data-no-timeline'
+    )
+    index = write_composition(tmp_path, html)
+    repair.patch_html(index, strict=True)
+    assert 'data-no-timeline' in index.read_text(encoding="utf-8")
+
+
+def test_unpaused_gsap_timeline_fails_with_actionable_error(tmp_path):
+    html = composition_html(1080, 1920).replace(
+        "</body>", "<script>const tl = gsap.timeline();</script></body>"
+    )
+    index = write_composition(tmp_path, html)
+    with pytest.raises(ValueError, match="timelines must be created with paused: true"):
+        repair.patch_html(index)
+
+
+def test_standalone_gsap_tween_fails_with_actionable_error(tmp_path):
+    html = composition_html(1080, 1920).replace(
+        "</body>", "<script>gsap.to('.scene', { opacity: 1, duration: 1 });</script></body>"
+    )
+    index = write_composition(tmp_path, html)
+    with pytest.raises(ValueError, match="standalone gsap animation.*registered to the paused HyperFrames timeline"):
+        repair.patch_html(index)

@@ -20,20 +20,24 @@ def test_news_research_bridge_angle_type_normalization():
     agent_draft = {
         "research_draft": {
             "landscape": {
-                "existing_content": [],
+                "existing_content": [
+                    {"title": f"Existing {number}", "source": "news", "angle": "report", "what_it_covers": "Supplied coverage"}
+                    for number in range(1, 4)
+                ],
                 "saturated_angles": ["Angle 1"],
                 "underserved_gaps": ["Gap 1"],
             },
             "data_points": [
                 {
-                    "claim": "Test claim for news article",
-                    "source_url": "https://example.com/source1",
+                    "claim": f"Test claim {number} for news article",
+                    "source_url": f"https://example.com/source{number}",
                     "credibility": "primary_source",
                     "source_name": "Test Source",
                 }
+                for number in range(1, 4)
             ],
             "audience_insights": {
-                "common_questions": ["Question 1?"],
+                "common_questions": ["Question 1?", "Question 2?", "Question 3?"],
                 "misconceptions": [{"myth": "Myth 1", "reality": "Reality 1"}],
                 "knowledge_level": "intermediate",
             },
@@ -50,14 +54,21 @@ def test_news_research_bridge_angle_type_normalization():
                     "type": "trending",
                     "why_now": "Trending topic today",
                 },
+                {
+                    "name": "Third Angle",
+                    "hook": "Third supplied hook",
+                    "type": "evergreen",
+                    "why_now": "Third supplied basis",
+                },
             ],
             "sources": [
                 {
-                    "url": "https://example.com/source1",
-                    "title": "Test Source",
+                    "url": f"https://example.com/source{number}",
+                    "title": f"Test Source {number}",
                     "used_for": "Testing",
                     "reliability": "primary",
                 }
+                for number in range(1, 6)
             ],
         }
     }

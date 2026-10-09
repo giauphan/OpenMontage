@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from tools.tool_registry import ToolRegistry
+from lib.multishot_continuity import initial_continuity
+from lib.multishot_media import probe_clip
 from tools.video.multishot import Multishot
 from lib.multishot_references import (
     new_reference_store,
@@ -59,6 +60,26 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
     shots = data["shot_plan"]["shots"][:n_shots]
     data["shot_plan"]["shots"] = shots
     data["shot_plan"]["target_duration_sec"] = duration
+    data["request"]["target_duration_sec"] = duration
+    # Small, silent media keeps this an offline contract test, not a quality demo.
+    profile = {
+        "name": "multishot-e2e",
+        "width": 180,
+        "height": 320,
+        "aspect_ratio": "9:16",
+        "fps": 24,
+        "codec": "libx264",
+        "audio_codec": "aac",
+        "crf": 28,
+        "pixel_format": "yuv420p",
+    }
+    data["request"]["resolution"] = {"width": profile["width"], "height": profile["height"]}
+    data["request"]["fps"] = profile["fps"]
+    data["request"]["audio"] = {
+        "narration": False, "music": False, "sfx": False, "subtitles": False,
+    }
+    assert [shot["order"] for shot in shots] == list(range(1, n_shots + 1))
+    assert sum(shot["duration_sec"] for shot in shots) == duration
 
     planning = {
         "request": data["request"],
@@ -99,7 +120,7 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
         ("story", {"story": data["story"]}),
         ("identity", {"character_bible": data["character_bible"], "style_bible": data["style_bible"]}),
         ("shot_plan", {"shot_plan": data["shot_plan"]}),
-        ("planning", {"continuity_state": {"version": 1, "accepted_through_shot": None, "character_state": {}, "environment_state": {"kitchen": "clean"}, "object_state": {}}}),
+        ("planning", {"continuity_state": initial_continuity()}),
     ]
 
     for stage, artifacts in stages_data:
@@ -127,6 +148,8 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
 
     review = {"approved": True, "reviewer": "tester", "notes": "ok"}
 
+    assets = []
+    cost_path = project_dir / "reports" / "cost_log.json"
     for i, shot in enumerate(shots):
         shot_id = shot["id"]
         gen_res = tool.execute({
@@ -150,8 +173,44 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
         assert gen_res.data["status"] == "completed"
         assert gen_res.data["shot"]["status"] == "GENERATED"
 
+        generated = gen_res.data["shot"]
+        continuity_in = generated["bound_input"]["continuity_in"]
+        if i == 0:
+            assert continuity_in == initial_continuity()
+        else:
+            predecessor = shots[i - 1]
+            assert continuity_in["accepted_through_shot"] == predecessor["id"]
+            assert continuity_in["accepted_order"] == predecessor["order"]
+            assert continuity_in["accepted_end_state"] == predecessor["end_state"]
+            assert continuity_in["accepted_end_state_fingerprint"] == json.dumps(
+                predecessor["end_state"], sort_keys=True
+            )
+
+        media = generated["media_result"]
+        clip_path = Path(media["file_path"])
+        assert clip_path.is_file()
+        probe = probe_clip(clip_path)
+        assert probe["decode_ok"] and probe["has_video"], probe["errors"]
+        assert probe["duration_sec"] == pytest.approx(shot["duration_sec"], abs=0.1)
+        assert media["validation"]["content_hash"] == media["content_hash"]
+        assets.append({
+            "id": shot_id,
+            "type": "video",
+            "path": str(clip_path.relative_to(project_dir)),
+            "source_tool": "multishot",
+            "scene_id": shot["scene_id"],
+            "duration_seconds": probe["duration_sec"],
+            "resolution": f"{probe['width']}x{probe['height']}",
+            "format": clip_path.suffix.lstrip("."),
+        })
+
         sub_count_before = provider.submissions
-        gen_again = tool.execute({
+        ledger_before = json.loads(cost_path.read_text())
+        assert len(ledger_before["entries"]) == i + 1
+        # Resume with a fresh tool/provider while GENERATED, before acceptance.
+        resume_provider = OfflineProvider()
+        resume_tool = Multishot(provider_factory=lambda: resume_provider)
+        gen_again = resume_tool.execute({
             "operation": "generate",
             "project_id": project_id,
             "root_dir": str(root_dir),
@@ -168,8 +227,13 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
             "max_polls": 2,
             "poll_interval": 0.0,
         })
-        assert gen_again.success
-        assert provider.submissions == sub_count_before
+        assert gen_again.success, gen_again.error
+        assert gen_again.data["shot"]["status"] == "GENERATED"
+        assert gen_again.data["shot"]["bound_input"] == generated["bound_input"]
+        assert gen_again.data["shot"]["media_result"] == media
+        assert provider.submissions == sub_count_before == i + 1
+        assert resume_provider.submissions == 0
+        assert json.loads(cost_path.read_text()) == ledger_before
 
         rev_res = tool.execute({
             "operation": "review",
@@ -183,11 +247,15 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
             "notes": "continuity verified",
         })
         assert rev_res.success, rev_res.error
+        accepted = rev_res.data["shot"]
+        assert accepted["status"] == "ACCEPTED"
+        assert accepted["review"]["end_state"] == shot["end_state"]
+        assert accepted["continuity_before"] == continuity_in
+        assert accepted["continuity_after"]["accepted_end_state"] == shot["end_state"]
+        assert accepted["continuity_after"]["accepted_through_shot"] == shot_id
+        assert accepted["continuity_after"]["accepted_order"] == shot["order"]
 
-    asset_manifest = {
-        "version": "1.0",
-        "assets": [{"shot_id": s["id"], "path": str(project_dir / f"{s['id']}.mp4"), "status": "accepted"} for s in shots],
-    }
+    asset_manifest = {"version": "1.0", "assets": assets}
     cp_assets = tool.execute({
         "operation": "checkpoint",
         "project_id": project_id,
@@ -200,7 +268,15 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
 
     edit_decisions = {
         "version": "1.0",
-        "cuts": [{"shot_id": s["id"], "action": "keep"} for s in shots],
+        "cuts": [
+            {
+                "id": asset["id"],
+                "source": asset["path"],
+                "in_seconds": 0.0,
+                "out_seconds": asset["duration_seconds"],
+            }
+            for asset in assets
+        ],
         "render_runtime": "ffmpeg",
     }
     cp_edit = tool.execute({
@@ -217,8 +293,25 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
         "operation": "finalize",
         "project_id": project_id,
         "root_dir": str(root_dir),
+        "profile": profile,
     })
     assert fin_res.success, fin_res.error
+    assert fin_res.data["shot_order"] == [shot["id"] for shot in shots]
+    evidence = fin_res.data["shot_evidence"]
+    assert [item["id"] for item in evidence] == [shot["id"] for shot in shots]
+    assert [item["planned_duration_sec"] for item in evidence] == [
+        shot["duration_sec"] for shot in shots
+    ]
+    assert [item["file_path"] for item in evidence] == [
+        str(project_dir / asset["path"]) for asset in assets
+    ]
+    assert fin_res.data["validation"]["valid"] is True
+    final_path = Path(fin_res.data["final_path"])
+    final_probe = probe_clip(final_path)
+    assert final_probe["decode_ok"] and final_probe["has_video"], final_probe["errors"]
+    assert final_probe["duration_sec"] == pytest.approx(duration, abs=0.1)
+    assert (final_probe["width"], final_probe["height"]) == (profile["width"], profile["height"])
+    assert final_probe["fps"] == pytest.approx(profile["fps"])
 
     val_res = tool.execute({
         "operation": "validate_completion",
@@ -228,12 +321,14 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
     assert val_res.success, val_res.error
     assert val_res.data["valid"] is True
 
-    render_report = {
-        "version": "1.0",
-        "output_path": str(project_dir / "renders" / "final.mp4"),
-        "duration_sec": float(duration),
-        "status": "success",
-    }
+    report_path = project_dir / "reports" / "render_report.json"
+    assert report_path.is_file()
+    render_report = json.loads(report_path.read_text())
+    assert render_report["version"] == "1.0"
+    assert len(render_report["outputs"]) == 1
+    rendered_output = render_report["outputs"][0]
+    assert rendered_output["path"] == str(final_path.relative_to(project_dir))
+    assert rendered_output["duration_seconds"] == pytest.approx(duration, abs=0.1)
     cp_compose = tool.execute({
         "operation": "checkpoint",
         "project_id": project_id,

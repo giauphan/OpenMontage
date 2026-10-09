@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html as html_lib
 import json
+from html.parser import HTMLParser
 import re
 import shutil
 import subprocess
@@ -175,8 +176,6 @@ def probe_duration(path: Path) -> float:
 
 def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False) -> None:
     html = path.read_text(encoding="utf-8")
-    if narration_duration <= 0:
-        narration_duration = 60.0
 
     # Calculate original duration of scenes to avoid incorrectly skipping timeline alignment
     # when data-duration is missing or stale on the root element
@@ -210,8 +209,6 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             stage_open = (
                 f'<div id="stage" class="composition" data-composition-id="main" '
                 f'data-start="0" data-duration="{initial_dur:.3f}" data-width="1080" data-height="1920">\n'
-                f'    <div class="hf-grid-overlay"></div>\n'
-                f'    <div class="hf-motion-beam"></div>\n'
             )
             stage_close = "\n</div>\n"
             inner_scenes = html[start_pos:end_pos]
@@ -235,13 +232,6 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         if "data-duration" not in new_tag:
             initial_dur = max_end if max_end > 0 else narration_duration
             new_tag = new_tag.replace("<div", f'<div data-duration="{initial_dur:.3f}"', 1)
-        elif max_end > 0:
-            new_tag = re.sub(
-                r'\bdata-duration=["\'][0-9.]+["\']',
-                f'data-duration="{max_end:.3f}"',
-                new_tag,
-                count=1,
-            )
         if "data-start" not in new_tag:
             new_tag = new_tag.replace("<div", '<div data-start="0"', 1)
         if new_tag != tag:
@@ -375,37 +365,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
 
     html = re.sub(r"<audio\b[^>]*>", add_data_start, html)
 
-    if strict:
-        composition_tags = list(
-            re.finditer(
-                r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=([\"'])([^\"']+)\1[^>]*>",
-                html,
-            )
-        )
-        if composition_tags:
-            root_tag = composition_tags[0]
-            registered_ids = {
-                match.group(2)
-                for match in re.finditer(
-                    r"window\.__timelines\s*\[\s*([\"'])([^\"']+)\1\s*\]",
-                    html,
-                )
-            }
-            replacements = []
-            for tag in composition_tags[1:]:
-                composition_id = tag.group(2)
-                if composition_id not in registered_ids:
-                    cleaned = re.sub(
-                        r"\s+data-composition-id=([\"'])[^\"']+\1",
-                        "",
-                        tag.group(0),
-                        count=1,
-                    )
-                    replacements.append((tag.start(), tag.end(), cleaned))
-            for start, end, cleaned in reversed(replacements):
-                html = html[:start] + cleaned + html[end:]
-
-    html = align_timeline(path, html, narration_duration)
+    _validate_seek_safety(path, html)
     html = repair_missing_composition_assets(path, html)
 
     # Ensure GSAP CDN script is always present in HTML
@@ -418,352 +378,135 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         else:
             html = f"{gsap_tag}\n" + html
 
-    # Fix malformed GSAP object syntax without changing CSS declarations.
-    # Normalize GSAP src to CDN — absolute /hyperframes/... is 404 on HyperFrames file_server (cwd=workspace)
-    html = re.sub(r'<script\s+[^>]*\bsrc=["\']\/hyperframes(?:_reels)?\/gsap\.min\.js["\'][^>]*>\s*</script>', '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>', html)
-    html = re.sub(r'<script\s+[^>]*\bsrc=["\']gsap\.min\.js["\'][^>]*>\s*</script>', '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>', html)
-    # Fallback if closing tag already consumed differently (e.g. no space before />)
-    html = re.sub(r'["\']\/hyperframes(?:_reels)?\/gsap\.min\.js["\']', '"https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"', html)
-    html = re.sub(r"(\bopacity\s*:\s*[^,{};]+)\s*;\s*,", r"\1,", html)
-    html = re.sub(r"(\.clip\b[^{}]*\{[^{}]*)\bvisibility\s*:\s*hidden\s*;?", r"\1", html)
-    # Add subtle continuous background animation and high-contrast frame styling
-    style_match = re.search(r"<style[^>]*>", html)
-    if style_match:
-        html = re.sub(r"@keyframes\s+hf-live-pulse\s*\{[^\n]*\}\s*", "", html)
-        html = re.sub(
-            r"#root\s*,\s*body\s*\{\s*animation:\s*hf-live-pulse[^}]*\}\s*",
-            "",
-            html,
-        )
-        pulse_css = (
-            "\n        #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background-color: #0f172a; }\n"
-            "        .hf-grid-overlay {\n"
-            "            position: absolute; top: 0; left: 0; width: 100%; height: 100%;\n"
-            "            background-image: linear-gradient(rgba(0, 229, 255, 0.08) 1px, transparent 1px),\n"
-            "                              linear-gradient(90deg, rgba(0, 229, 255, 0.08) 1px, transparent 1px);\n"
-            "            background-size: 60px 60px; pointer-events: none; z-index: 1;\n"
-            "        }\n"
-            "        .hf-motion-beam {\n"
-            "            position: absolute; top: 0; left: 0; width: 100%; height: 380px;\n"
-            "            background: linear-gradient(180deg, transparent 0%, rgba(0, 229, 255, 0.15) 50%, transparent 100%);\n"
-            "            pointer-events: none; z-index: 3;\n"
-            "        }\n"
-            "        .scene {\n"
-            "            position: absolute; width: 100%; height: 100%; display: flex; flex-direction: column;\n"
-            "            justify-content: center; align-items: center;\n"
-            "            background: radial-gradient(circle at 50% 30%, rgba(30, 27, 75, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%) !important;\n"
-            "            padding: 60px 40px; box-sizing: border-box;\n"
-            "            color: #f8fafc !important;\n"
-            "            font-family: 'BeVietnamPro', Arial, sans-serif;\n"
-            "        }\n"
-            "        .scene h1, .scene h2, .scene h3, .scene h4, .scene .title, .scene [class*='title'], .scene [class*='headline'], .scene [class*='header'] {\n"
-            "            color: #ffffff !important;\n"
-            "            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important;\n"
-            "        }\n"
-            "        .scene p, .scene .caption, .scene [class*='caption'], .scene [class*='desc'], .scene [class*='text'], .scene [class*='summary'], .scene span, .scene li {\n"
-            "            color: #f1f5f9 !important;\n"
-            "            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;\n"
-            "        }\n"
-            "        .scene .card, .scene [class*='card'], .scene .panel, .scene [class*='panel'], .scene .box, .scene [class*='box'] {\n"
-            "            color: #f8fafc !important;\n"
-            "            background: rgba(15, 23, 42, 0.82) !important;\n"
-            "            border: 2px solid rgba(56, 189, 248, 0.45) !important;\n"
-            "            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;\n"
-            "            border-radius: 20px !important;\n"
-            "        }\n"
-            "        .scene::before {\n"
-            "            content: ''; position: absolute; top: 36px; left: 36px; right: 36px; bottom: 36px;\n"
-            "            border: 2px solid rgba(0, 229, 255, 0.45); border-radius: 28px;\n"
-            "            pointer-events: none; z-index: 5; box-shadow: inset 0 0 24px rgba(0, 229, 255, 0.15);\n"
-            "        }\n"
-            "        .scene::after {\n"
-            "            content: ''; position: absolute; top: 26px; left: 50%; transform: translateX(-50%);\n"
-            "            width: 160px; height: 6px; background: #00E5FF; border-radius: 3px;\n"
-            "            box-shadow: 0 0 16px #00E5FF; pointer-events: none; z-index: 5;\n"
-            "        }\n"
-            "        .ticker, [class*='ticker'] {\n"
-            "            bottom: 24px !important; z-index: 10 !important;\n"
-            "            border-top: 1px solid rgba(56, 189, 248, 0.35) !important;\n"
-            "            border-bottom: 1px solid rgba(56, 189, 248, 0.35) !important;\n"
-            "        }\n"
-            "        .meta, [class*='meta'], footer, [class*='footer'], .caption, [class*='takeaway'], [class*='checklist'] {\n"
-            "            margin-bottom: 80px !important;\n"
-            "        }\n"
-            "        .scene {\n"
-            "            padding-bottom: 120px !important;\n"
-            "        }\n"
-        )
-        html = html[:style_match.end()] + pulse_css + html[style_match.end():]
-
-    if "hf-grid-overlay" not in html:
-        stage_match = re.search(r'(<div\b[^>]*id=["\']stage["\'][^>]*>)', html)
-        if stage_match:
-            bg_tags = '\n    <div class="hf-grid-overlay"></div>\n    <div class="hf-motion-beam"></div>'
-            html = html[:stage_match.end()] + bg_tags + html[stage_match.end():]
-        else:
-            body_match = re.search(r'(<body\b[^>]*>)', html, flags=re.IGNORECASE)
-            if body_match:
-                bg_tags = '\n    <div class="hf-grid-overlay"></div>\n    <div class="hf-motion-beam"></div>'
-                html = html[:body_match.end()] + bg_tags + html[body_match.end():]
-    if strict:
-        root = re.search(r"<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
-        if not root:
-            raise ValueError(f"{path}: missing composition root for strict timeline repair")
-        if "data-no-timeline" not in root.group(0) and "window.__timelines[" not in html:
-            html = html[:root.end() - 1] + " data-no-timeline>" + html[root.end():]
-        def _repair_style_visibility(m):
-            css = m.group(0)
-            css = re.sub(r"(#(?:root|stage|composition)\s*\{[^}]*)\bopacity\s*:\s*0", r"\g<1>opacity: 1", css)
-            css = re.sub(r"(#(?:root|stage|composition)\s*\{[^}]*)\bvisibility\s*:\s*hidden", r"\g<1>visibility: visible", css)
-            css = re.sub(r"(\.scene\s*\{[^}]*)\bopacity\s*:\s*0", r"\g<1>opacity: 1", css)
-            css = re.sub(r"(\.scene\s*\{[^}]*)\bvisibility\s*:\s*hidden", r"\g<1>visibility: visible", css)
-            return css
-        html = re.sub(r"<style\b[^>]*>.*?</style>", _repair_style_visibility, html, flags=re.DOTALL)
-        html = re.sub(r"(\bset\s*\(\s*[\x27\x22]#root[\x27\x22]\s*,\s*\{[^}]*\bopacity\s*:\s*)0", r"\g<1>1", html)
-        # Enforce exact 1080x1920 portrait
-        html = re.sub(r"#root\s*\{\s*width:\s*\d+px;\s*height:\s*\d+px;", "#root { width: 1080px; height: 1920px;", html)
-        html = re.sub(r"meta\s+name=\"viewport\"[^>]*", 'meta name="viewport" content="width=1080, height=1920"', html)
+    # Authored visibility, scene styling and JavaScript are never rewritten.
 
     path.write_text(html, encoding="utf-8")
 
 
-def align_timeline(path: Path, html: str, narration_duration: float) -> str:
-    """Scale composition timings and GSAP animations so visual timeline matches narration length."""
-    root_open = re.search(r"<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
-    if not root_open:
-        raise ValueError(f"{path}: missing composition root for timeline alignment")
-    root_duration_match = re.search(r"\bdata-duration=[\"']([0-9.]+)[\"']", root_open.group(0))
-    if not root_duration_match:
-        raise ValueError(f"{path}: composition root has no data-duration")
-    root_duration = float(root_duration_match.group(1))
-    target = round(narration_duration, 3)
-    if root_duration <= 0:
-        raise ValueError(f"{path}: composition root has a non-positive data-duration")
+class _CompositionDOM(HTMLParser):
+    """Inspect actual elements, never CSS, comments or script strings as DOM."""
 
-    scale = target / root_duration if root_duration > 0 else 1.0
+    _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 
-    def scale_attr(match: re.Match[str]) -> str:
-        value = float(match.group(2))
-        return f'{match.group(1)}="{value * scale:.3f}"'
+    def __init__(self, source: str):
+        super().__init__(convert_charrefs=True)
+        self.nodes: list[tuple[str, dict, tuple[int, ...]]] = []
+        self.stack: list[int] = []
+        self.scripts: list[tuple[dict, str]] = []
+        self.feed(source)
+        self.close()
 
-    head = html[:root_open.start()]
-    body = html[root_open.start():]
-    if abs(root_duration - target) >= 0.01:
-        body = re.sub(r"\b(data-start|data-duration)=[\"']([0-9.]+)[\"']", scale_attr, body)
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        self.nodes.append((tag, attributes, tuple(self.stack)))
+        index = len(self.nodes) - 1
+        if tag == "script":
+            self.scripts.append((attributes, ""))
+        if tag not in self._VOID:
+            self.stack.append(index)
 
-    body = re.sub(
-        r'(<[a-zA-Z0-9]+\b[^>]*\bdata-composition-id=[\'"][^\'"]+[\'"][^>]*\bdata-duration=)[\'"][0-9.]+[\'"]',
-        rf'\1"{target:.3f}"',
-        body,
-        count=1,
-    )
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
 
-    body = re.sub(r"\bconst\s+", r"let ", body)
-    # Unwrap DOMContentLoaded / load event listeners so GSAP timeline is defined immediately
-    if re.search(r"(?:document|window)\.addEventListener\s*\(\s*[\x27\x22](?:DOMContentLoaded|load)[\x27\x22]", body):
-        body = re.sub(r"(?:document|window)\.addEventListener\s*\(\s*[\x27\x22](?:DOMContentLoaded|load)[\x27\x22]\s*,\s*(?:\(\s*\)\s*=>|function\s*\(\s*\))\s*\{", r"(function() {", body)
-        body = re.sub(r"\}\s*\)\s*;\s*(</script>)", r"})();\n    \1", body)
-    body = re.sub(r"\b(?:const|let|var)\s+tl\s*=\s*gsap\.timeline\s*\((.*?)\);?", r"window.__timelines = window.__timelines || {}; var tl = window.__timelines['main'] = gsap.timeline(\1);", body)
-    body = re.sub(r"\b(?:const|let|var)\s+tl\s*=\s*gsap\.timeline\s*\((.*?)\);?", r"window.__timelines = window.__timelines || {}; var tl = window.__timelines['main'] = gsap.timeline(\1);", body)
-    body = re.sub(
-        r"((?:let|var|const)\s+total(?:Dur(?:ation)?)?\s*=\s*)[0-9.]+",
-        lambda m: f"{m.group(1)}{target:.3f}",
-        body,
-    )
+    def handle_endtag(self, tag):
+        for position in range(len(self.stack) - 1, -1, -1):
+            if self.nodes[self.stack[position]][0] == tag:
+                del self.stack[position:]
+                break
 
-    # Scale JS array of SCENE_DURATIONS or sceneStarts if it exists
-    def scale_array(match: re.Match[str]) -> str:
-        arr_str = match.group(2)
-        try:
-            import ast
-            arr = ast.literal_eval(arr_str)
-            if isinstance(arr, list) and len(arr) > 0:
-                arr_sum = sum(arr)
-                if arr_sum > 0:
-                    arr_scale = target / arr_sum
-                    new_arr = [round(x * arr_scale, 3) for x in arr]
-                    return f"{match.group(1)}[{', '.join(map(str, new_arr))}]{match.group(3)}"
-        except Exception:
-            pass
-        return match.group(0)
-
-    body = re.sub(r'((?:let|var|const)\s+SCENE_DURATIONS\s*=\s*)(\[[0-9.,\s]+\])(\s*;)', scale_array, body)
-
-    # Scale JS array of scenes = [{start: 0, duration: 4}, ...]
-    scenes_match = re.search(r"(?:let|var|const)\s+(?:scenes|sections)\s*=\s*(\[\s*\{[^\[\]]+?\}\s*\])\s*;", body, re.DOTALL)
-    if scenes_match:
-        import json
-        json_str = scenes_match.group(1)
-        json_str = re.sub(r'([\{,]\s*)([a-zA-Z0-9_]+)\s*:', r'\1"\2":', json_str)
-        json_str = json_str.replace("'", '"')
-        try:
-            scenes_data = json.loads(json_str)
-            if isinstance(scenes_data, list) and len(scenes_data) > 0:
-                max_end = max((float(s.get("start", 0)) + float(s.get("duration", s.get("end", 0) - s.get("start", 0)))) for s in scenes_data)
-                if max_end > 0:
-                    s_scale = target / max_end
-                    if abs(s_scale - 1.0) >= 0.01:
-                        for s in scenes_data:
-                            if "start" in s: s["start"] = round(float(s["start"]) * s_scale, 3)
-                            if "duration" in s: s["duration"] = round(float(s["duration"]) * s_scale, 3)
-                            if "end" in s: s["end"] = round(float(s["end"]) * s_scale, 3)
-                        new_scenes = json.dumps(scenes_data, ensure_ascii=False)
-                        new_scenes = re.sub(r'"([a-zA-Z0-9_]+)":', r'\1:', new_scenes)
-                        body = body[:scenes_match.start(1)] + new_scenes + body[scenes_match.end(1):]
-        except Exception:
-            pass
-
-    indexed_scene_schedule = re.search(
-        r"sceneMotion\(\s*scene\s*,\s*index\s*\*\s*([0-9.]+)\s*\)",
-        body,
-    )
-    timeline_end = re.search(
-        r"tl\.to\(\s*\{\}\s*,\s*\{\s*duration\s*:\s*[0-9.]+\s*\}\s*,\s*([0-9.]+)\s*\)\s*;?",
-        body,
-    )
-    if indexed_scene_schedule and timeline_end:
-        authored_end = float(timeline_end.group(1))
-        if authored_end > 0 and abs(authored_end - target) >= 0.01:
-            authored_step = float(indexed_scene_schedule.group(1))
-            step = authored_step * target / authored_end
-            body = body[:indexed_scene_schedule.start(1)] + f"{step:.3f}" + body[indexed_scene_schedule.end(1):]
-            body = re.sub(
-                r"(tl\.to\(\s*\{\}\s*,\s*\{\s*duration\s*:\s*[0-9.]+\s*\}\s*,\s*)[0-9.]+(\s*\)\s*;?)",
-                rf"\g<1>{target:.3f}\2",
-                body,
-                count=1,
-            )
-
-    if "tl.duration(" in body:
-        body = re.sub(r"tl\.duration\(\s*[0-9.]+\s*\);?", f"tl.duration({target:.3f});", body)
-    else:
-        tl_decl = re.search(r"(?:const|let|var)\s+tl\s*=\s*[^;]+;", body)
-        if tl_decl:
-            idx = tl_decl.end()
-            body = body[:idx] + f"\n  tl.duration({target:.3f});\n" + body[idx:]
-
-    # Synchronize scene entrance calls (enter("#scene-N", at)) with actual scaled data-start attributes
-    scene_starts = {}
-    for m in re.finditer(r'<[a-zA-Z0-9]+\b[^>]*\bid=[\x27\x22](scene-[0-9]+)[\x27\x22][^>]*\bdata-start=[\x27\x22]([0-9.]+)[\x27\x22]', body):
-        scene_starts[m.group(1)] = float(m.group(2))
-    for m in re.finditer(r'<[a-zA-Z0-9]+\b[^>]*\bdata-start=[\x27\x22]([0-9.]+)[\x27\x22][^>]*\bid=[\x27\x22](scene-[0-9]+)[\x27\x22]', body):
-        scene_starts[m.group(2)] = float(m.group(1))
-
-    if scene_starts:
-        sorted_scenes = sorted(scene_starts.items(), key=lambda x: x[1])
-        for i, (sid, s_start) in enumerate(sorted_scenes):
-            # 1. Align enter("#scene-N", at)
-            body = re.sub(
-                rf'(enter\(\s*[\x27\x22]#{sid}[\x27\x22]\s*,\s*)[0-9.]+(\s*\))',
-                rf'\g<1>{s_start:.2f}\2',
-                body,
-            )
-            # 2. Align previous scene fade-out to s_start
-            if i > 0:
-                prev_sid = sorted_scenes[i - 1][0]
-                body = re.sub(
-                    rf'(tl\.to\(\s*[\x27\x22]#{prev_sid}[\x27\x22]\s*,\s*\{{[^}}]*\bopacity\s*:\s*0[^}}]*\}}\s*,\s*)[0-9.]+(\s*\))',
-                    rf'\g<1>{s_start:.2f}\2',
-                    body,
-                )
-
-    beam_repeats = max(2, int(round(target / 3.2)) + 2)
-    grid_repeats = max(2, int(round(target / 4.0)) + 2)
-
-    # Remove stale scale injection so it gets regenerated with current target duration
-    if "__repair_scale_injected" in body:
-        body = re.sub(r"<script>\s*//\s*__repair_scale_injected.*?</script>\s*", "", body, flags=re.DOTALL)
-
-    scale_code = (
-        f"\n<script>\n"
-        f"// __repair_scale_injected\n"
-        f"(function() {{\n"
-        f"  window.__timelines = window.__timelines || {{}};\n"
-        f"  var _r_tl = (typeof tl !== 'undefined') ? tl : (window['__timelines']['main'] || window['__timelines']['full'] || Object.values(window['__timelines'])[0]);\n"
-        f"  if (!_r_tl && typeof gsap !== 'undefined') {{\n"
-        f"      _r_tl = gsap.timeline();\n"
-        f"      var cidMatch = document.querySelector('[data-composition-id]');\n"
-        f"      var compId = cidMatch ? cidMatch.getAttribute('data-composition-id') : 'main';\n"
-        f"      window['__timelines'][compId] = _r_tl;\n"
-        f"  }}\n"
-        f"  if (_r_tl) {{\n"
-        f"    try {{\n"
-        f"      var rawD = _r_tl.duration();\n"
-        f"      if (rawD > 0 && Math.abs(rawD - {target:.3f}) > 0.5) {{\n"
-        f"        _r_tl.timeScale(rawD / {target:.3f});\n"
-        f"      }}\n"
-        f"    }} catch (e) {{}}\n"
-        f"    try {{\n"
-        f"      _r_tl.fromTo('.hf-motion-beam', {{y: -380}}, {{y: 1920, force3D: true, duration: 3.2, repeat: {beam_repeats}, ease: 'linear'}}, 0);\n"
-        f"    }} catch (e) {{}}\n"
-        f"    try {{\n"
-        f"      _r_tl.fromTo('.hf-grid-overlay', {{backgroundPosition: '0px 0px'}}, {{backgroundPosition: '0px 240px', force3D: true, duration: 4.0, repeat: {grid_repeats}, ease: 'linear'}}, 0);\n"
-        f"    }} catch (e) {{}}\n"
-        f"  }}\n"
-        f"}})();\n"
-        f"</script>\n"
-    )
-    if "</body>" in body:
-        body = body.replace("</body>", scale_code + "\n</body>", 1)
-    elif "</html>" in body:
-        body = body.replace("</html>", scale_code + "\n</html>", 1)
-    elif "</script>" in body:
-        idx = body.rfind("</script>")
-        body = body[:idx+9] + scale_code + body[idx+9:]
-    else:
-        body = body + f"\n{scale_code}\n"
-
-    cues_match = re.search(r"var\s+cues\s*=\s*(\[[^;]+\]);", body)
-    if cues_match:
-        try:
-            cues = json.loads(cues_match.group(1))
-            if cues and isinstance(cues, list):
-                max_end = max(float(c.get("end", 0.0)) for c in cues)
-                if max_end > 0:
-                    c_scale = target / max_end
-                    for c in cues:
-                        if "start" in c:
-                            c["start"] = round(float(c["start"]) * c_scale, 3)
-                        if "end" in c:
-                            c["end"] = round(float(c["end"]) * c_scale, 3)
-                    body = body[:cues_match.start()] + f"var cues = {json.dumps(cues, ensure_ascii=False)};" + body[cues_match.end():]
-        except Exception:
-            pass
-
-    return head + body
+    def handle_data(self, data):
+        if self.stack and self.nodes[self.stack[-1]][0] == "script":
+            attrs, text = self.scripts[-1]
+            self.scripts[-1] = attrs, text + data
 
 
 def declared_dimensions(html: str) -> dict[str, tuple[int, int]]:
-    """Collect every explicit canvas size declaration, keyed by its source."""
+    """Collect explicit canvas dimensions from the root, viewport and CSS."""
     found: dict[str, tuple[int, int]] = {}
-
-    root_open = re.search(r"<[a-zA-Z]+\b[^>]*\bdata-composition-id=[\"'][^\"']+[\"'][^>]*>", html)
-    if root_open:
-        tag = root_open.group(0)
-        width = re.search(r"\bdata-width=[\"'](\d+)[\"']", tag)
-        height = re.search(r"\bdata-height=[\"'](\d+)[\"']", tag)
-        if width and height:
-            found["root data-width/data-height"] = (int(width.group(1)), int(height.group(1)))
-
-    viewport = re.search(
-        r"<meta\b[^>]*\bname=[\"']viewport[\"'][^>]*\bcontent=[\"']([^\"']+)[\"']",
-        html,
-    )
+    dom = _CompositionDOM(html)
+    roots = [(tag, attrs) for tag, attrs, _ in dom.nodes if "data-composition-id" in attrs]
+    if roots:
+        attrs = roots[0][1]
+        try:
+            found["root data-width/data-height"] = (int(attrs["data-width"]), int(attrs["data-height"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    viewport = re.search(r"<meta\b[^>]*\bname=[\"']viewport[\"'][^>]*\bcontent=[\"']([^\"']+)[\"']", html, re.I)
     if viewport:
-        content = viewport.group(1)
-        width = re.search(r"\bwidth\s*=\s*(\d+)", content)
-        height = re.search(r"\bheight\s*=\s*(\d+)", content)
-        if width and height:
-            found["meta viewport"] = (int(width.group(1)), int(height.group(1)))
-
-    for index, rule in enumerate(re.finditer(r"(?:#root|body|html)\b[^{]*\{([^{}]*)\}", html), start=1):
-        body = rule.group(1)
-        width = re.search(r"(?<![-\w])width\s*:\s*(\d+)px", body)
-        height = re.search(r"(?<![-\w])height\s*:\s*(\d+)px", body)
-        if width and height:
-            found[f"CSS rule {index}"] = (int(width.group(1)), int(height.group(1)))
-
+        w = re.search(r"\bwidth\s*=\s*(\d+)", viewport.group(1))
+        h = re.search(r"\bheight\s*=\s*(\d+)", viewport.group(1))
+        if w and h:
+            found["meta viewport"] = (int(w.group(1)), int(h.group(1)))
+    for i, rule in enumerate(re.finditer(r"(?:#root|#stage|body|html)\b[^{}]*\{([^{}]*)\}", html), 1):
+        w = re.search(r"(?<![-\w])width\s*:\s*(\d+)px", rule.group(1))
+        h = re.search(r"(?<![-\w])height\s*:\s*(\d+)px", rule.group(1))
+        if w and h:
+            found[f"CSS rule {i}"] = (int(w.group(1)), int(h.group(1)))
     return found
+
+
+def _mask_javascript_noncode(source: str) -> str:
+    """Blank comments and quoted literals while retaining source offsets."""
+    chars = list(source)
+    index = 0
+    while index < len(source):
+        if source.startswith("//", index):
+            end = source.find("\n", index)
+            end = len(source) if end < 0 else end
+        elif source.startswith("/*", index):
+            close = source.find("*/", index + 2)
+            end = len(source) if close < 0 else close + 2
+        elif source[index] in "'\"`":
+            quote = source[index]
+            end = index + 1
+            while end < len(source):
+                if source[end] == "\\":
+                    end += 2
+                elif source[end] == quote:
+                    end += 1
+                    break
+                else:
+                    end += 1
+        else:
+            index += 1
+            continue
+        for pos in range(index, min(end, len(chars))):
+            if chars[pos] not in "\r\n":
+                chars[pos] = " "
+        index = max(end, index + 1)
+    return "".join(chars)
+
+
+def _validate_seek_safety(path: Path, html: str) -> None:
+    """Reject a few identifiable unsafe GSAP patterns; this is not a JS parser."""
+    dom = _CompositionDOM(html)
+    scripts = [body for attrs, body in dom.scripts if not attrs.get("src")]
+    inline = "\n".join(scripts)
+    code = _mask_javascript_noncode(inline)
+    if re.search(r"\brepeat\s*:\s*-\s*1\b", code):
+        raise ValueError(f"{path}: infinite GSAP repeat is not seek-safe; regenerate with finite registered timeline animations")
+    if re.search(r"\bgsap\s*\.\s*(?:to|from|fromTo|set)\s*\(", code):
+        raise ValueError(f"{path}: standalone gsap animation is not registered to the paused HyperFrames timeline; regenerate using the registered timeline")
+
+    timelines = list(re.finditer(r"\bgsap\s*\.\s*timeline\s*\(([^)]*)\)", code))
+    for match in timelines:
+        if re.search(r"\bpaused\s*:\s*true\b", match.group(1)) is None:
+            raise ValueError(f"{path}: GSAP timelines must be created with paused: true for deterministic seeking")
+
+    for _, attrs, _ in dom.nodes:
+        composition_id = attrs.get("data-composition-id")
+        if not isinstance(composition_id, str) or "data-no-timeline" in attrs:
+            continue
+        registration = re.compile(
+            r"window\s*\.\s*__timelines\s*\[\s*(['\"])" + re.escape(composition_id) + r"\1\s*\]"
+        )
+        registered = any(
+            code[match.start():match.start() + len("window")].strip().startswith("window")
+            for match in registration.finditer(inline)
+        )
+        if timelines and not registered:
+            raise ValueError(f"{path}: GSAP timeline is not registered for composition {composition_id!r}; regenerate with window.__timelines registration")
 
 
 def validate_dimensions(path: Path, html: str) -> list[str]:
@@ -841,7 +584,7 @@ def main() -> int:
         choices=("hyperframes", "hyperframes_reels"),
         help="Repair only one composition instead of both",
     )
-    parser.add_argument("--strict", action="store_true", help="Apply strict timeline compatibility repairs")
+    parser.add_argument("--strict", action="store_true", help="Compatibility flag; seek-safety checks always apply")
     args = parser.parse_args()
 
     project_dir = args.project_dir

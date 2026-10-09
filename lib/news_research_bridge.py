@@ -44,51 +44,39 @@ class NewsResearchBridge:
         angles = draft.get("angles_discovered")
         raw_sources = draft.get("sources")
 
-        candidate_url = candidate.get("canonical_url") or "https://techcrunch.com"
-        publisher = candidate.get("publisher") or "News Outlet"
-
         if not isinstance(existing_content, list):
             existing_content = []
-        while len(existing_content) < 3:
-            idx = len(existing_content) + 1
-            existing_content.append({
-                "title": f"{candidate.get('title', 'Tech News')} Coverage Part {idx}",
-                "url": candidate_url,
-                "source": "news",
-                "angle": "standard news coverage",
-                "what_it_covers": "Summary of main announcement"
-            })
+        if len(existing_content) < 3:
+            raise ValueError(
+                "BLOCKED: research incomplete; fewer than three supplied existing_content records"
+            )
 
         if not isinstance(data_points, list):
             data_points = []
-        while len(data_points) < 3:
-            idx = len(data_points) + 1
-            data_points.append({
-                "claim": f"Key release update feature point {idx}",
-                "source_url": candidate_url,
-                "source_name": publisher,
-                "credibility": "primary_source"
-            })
+        if len(data_points) < 3:
+            raise ValueError(
+                "BLOCKED: research incomplete; fewer than three supplied source-backed data_points"
+            )
 
         if not isinstance(common_questions, list):
             common_questions = []
-        defaults_q = ["What are the key capabilities?", "How does this impact developers?", "What are the technical specs?"]
-        while len(common_questions) < 3:
-            common_questions.append(defaults_q[len(common_questions) % 3])
+        if len(common_questions) < 3:
+            raise ValueError(
+                "BLOCKED: research incomplete; fewer than three supplied common_questions"
+            )
 
         if not isinstance(angles, list):
             angles = []
-        defaults_a = [
-            {"name": "Main Launch", "hook": "OpenAI announces next-gen agent framework", "type": "trending", "why_now": "Breaking launch"},
-            {"name": "Developer Impact", "hook": "How tool-calling changes AI workflows", "type": "data_driven", "why_now": "High demand"},
-            {"name": "Future Outlook", "hook": "Autonomous agents move to production", "type": "evergreen", "why_now": "Industry trend"}
-        ]
-        while len(angles) < 3:
-            angles.append(defaults_a[len(angles) % 3])
+        if len(angles) < 3:
+            raise ValueError(
+                "BLOCKED: research incomplete; fewer than three supplied angles_discovered"
+            )
         if not isinstance(raw_sources, list):
             raise ValueError("research sources must be an array")
         if not isinstance(saturated_angles, list) or not isinstance(underserved_gaps, list):
             raise ValueError("landscape angle fields must be arrays")
+        if not underserved_gaps:
+            raise ValueError("BLOCKED: research incomplete; no supplied underserved_gaps")
         if not isinstance(misconceptions, list) or not isinstance(knowledge_level, str):
             raise ValueError("audience_insights fields are incomplete")
 
@@ -114,53 +102,28 @@ class NewsResearchBridge:
                 )
             sources.append(normalized_source)
 
-        base_url = candidate.get("canonical_url") or (sources[0]["url"] if sources else "https://news.ycombinator.com")
-        base_title = candidate.get("title") or (sources[0]["title"] if sources else "News Source")
-        pad_purposes = [
-            ("Primary announcement", "#overview"),
-            ("Technical specification", "#specification"),
-            ("API documentation", "#documentation"),
-            ("Developer discussion", "#discussion"),
-            ("Benchmark and analysis", "#analysis"),
-        ]
-        while len(sources) < 5:
-            idx = len(sources)
-            purpose, anchor = pad_purposes[idx % len(pad_purposes)]
-            url = base_url if "#" in base_url else f"{base_url}{anchor}"
-            sources.append({
-                "url": url,
-                "title": f"{base_title} - {purpose}",
-                "used_for": purpose,
-                "reliability": "secondary"
-            })
+        if len(sources) < 5:
+            raise ValueError(
+                "BLOCKED: research incomplete; fewer than five supplied source records"
+            )
 
         normalized_existing_content = []
         for item in existing_content:
             if not isinstance(item, dict):
                 raise ValueError("each existing_content entry must be an object")
-            title = item.get("title") or candidate.get("title") or "Tech News Coverage"
-            source = item.get("source") or publisher or "News Outlet"
-            angle = item.get("angle") or item.get("what_it_covers") or "standard tech coverage"
-            what_it_covers = item.get("what_it_covers") or item.get("angle") or title
             normalized_item = {
-                "title": self._require_string(title, "existing_content title"),
-                "source": self._require_string(source, "existing_content source"),
-                "angle": self._require_string(angle, "existing_content angle"),
-                "what_it_covers": self._require_string(what_it_covers, "existing_content what_it_covers"),
+                "title": self._require_string(item.get("title"), "existing_content title"),
+                "source": self._require_string(item.get("source"), "existing_content source"),
+                "angle": self._require_string(item.get("angle"), "existing_content angle"),
+                "what_it_covers": self._require_string(
+                    item.get("what_it_covers"), "existing_content what_it_covers"
+                ),
             }
             for field in ("url", "what_it_misses", "engagement_signal"):
                 if field in item:
                     normalized_item[field] = self._require_string(
                         item[field], f"existing_content {field}"
                     )
-            if "url" in normalized_item and normalized_item["url"] not in seen_urls:
-                seen_urls.add(normalized_item["url"])
-                sources.append({
-                    "url": normalized_item["url"],
-                    "title": normalized_item["title"],
-                    "used_for": "Existing content reference",
-                    "reliability": "secondary",
-                })
             normalized_existing_content.append(normalized_item)
 
         normalized_data_points = []
@@ -168,14 +131,6 @@ class NewsResearchBridge:
             if not isinstance(item, dict):
                 raise ValueError("each data_point must be an object")
             source_url = self._require_string(item.get("source_url"), "data_point source_url")
-            if source_url not in seen_urls:
-                seen_urls.add(source_url)
-                sources.append({
-                    "url": source_url,
-                    "title": self._require_string(item.get("source_name") or "Data source", "data_point source_name"),
-                    "used_for": "Data point evidence",
-                    "reliability": "secondary",
-                })
             normalized_item = {
                 "claim": self._require_string(item.get("claim"), "data_point claim"),
                 "source_url": source_url,
@@ -195,8 +150,8 @@ class NewsResearchBridge:
             if not isinstance(item, dict):
                 raise ValueError("each misconception must be an object")
             normalized_item = {
-                "myth": item.get("myth") or "A common myth about this topic",
-                "reality": item.get("reality") or "The reality based on recent updates",
+                "myth": self._require_string(item.get("myth"), "misconception myth"),
+                "reality": self._require_string(item.get("reality"), "misconception reality"),
             }
             if "source" in item:
                 normalized_item["source"] = self._require_string(

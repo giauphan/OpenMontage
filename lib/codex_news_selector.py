@@ -71,109 +71,45 @@ class CodexNewsSelector:
         best = sorted_cands[0]
         cid = best.get("id") or best.get("candidate_id") or "cand_0"
         title = best.get("title", "AI Technology News")
-        summary = best.get("summary") or best.get("description") or best.get("content") or title
-        url = best.get("canonical_url") or best.get("url") or "https://news.example.com"
-        source = best.get("source") or best.get("source_name") or "Tech News"
+        summary = next((
+            value.strip() for value in (
+                best.get("summary"), best.get("description"), best.get("content")
+            ) if isinstance(value, str) and value.strip()
+        ), "")
+        source_url = best.get("canonical_url") or best.get("url")
+        sources = [{
+            "url": source_url,
+            "title": title,
+            "used_for": "Candidate source; not independently researched",
+        }] if source_url else []
 
-        existing_content = []
-        for c in sorted_cands[:3]:
-            c_title = c.get("title", title)
-            c_url = c.get("canonical_url") or c.get("url") or url
-            existing_content.append({
-                "title": c_title,
-                "url": c_url,
-                "source": "news",
-                "angle": "Latest AI breakthrough and product developments",
-                "what_it_covers": c_title[:100],
-            })
-        while len(existing_content) < 3:
-            existing_content.append({
-                "title": title,
-                "url": url,
-                "source": "news",
-                "angle": "General technology coverage",
-                "what_it_covers": summary[:100],
+        # The fallback has only the candidate title/summary. Never manufacture
+        # additional claims, endorsements, misconceptions, or source URLs.
+        data_points = []
+        if summary and source_url:
+            data_points.append({
+                "claim": summary,
+                "source_url": source_url,
+                "credibility": "anecdotal",
             })
 
-        sources = [
-            {
-                "url": url,
-                "title": f"{title} Announcement",
-                "used_for": "Primary announcement",
-                "reliability": "primary",
-            },
-            {
-                "url": f"{url}#analysis",
-                "title": "Technical Analysis",
-                "used_for": "Benchmark and analysis",
-                "reliability": "primary",
-            },
-            {
-                "url": f"{url}#spec",
-                "title": "System Specification",
-                "used_for": "Technical specification",
-                "reliability": "primary",
-            },
-        ]
-
-        data_points = [
-            {
-                "claim": f"{title}: {summary[:120]}",
-                "source_url": url,
-                "source_name": source,
-                "credibility": "primary_source",
-            },
-            {
-                "claim": "Công nghệ AI mới tối ưu hóa hiệu suất và mang lại giá trị ứng dụng thực tế.",
-                "source_url": url,
-                "source_name": source,
-                "credibility": "secondary_source",
-            },
-            {
-                "claim": "Các chuyên gia công nghệ nhận định đây là bước tiến quan trọng trong ngành.",
-                "source_url": url,
-                "source_name": source,
-                "credibility": "secondary_source",
-            },
-        ]
 
         return {
             "selected_candidate_id": cid,
+            "research_status": "incomplete",
             "research_draft": {
                 "landscape": {
-                    "existing_content": existing_content,
-                    "saturated_angles": ["Tin tức sự kiện cơ bản", "Thông số kỹ thuật sơ bộ"],
-                    "underserved_gaps": ["Phân tích tác động thực tiễn", "Đánh giá chi tiết từ góc nhìn người dùng"],
+                    "existing_content": [],
+                    "saturated_angles": [],
+                    "underserved_gaps": [],
                 },
                 "data_points": data_points,
                 "audience_insights": {
-                    "common_questions": [
-                        "Công nghệ mới này hoạt động như thế nào?",
-                        "Nó mang lại lợi ích gì cho người dùng?",
-                        "Khi nào tính năng này được triển khai rộng rãi?",
-                    ],
-                    "misconceptions": [
-                        {
-                            "myth": "Công nghệ này chỉ dành cho chuyên gia.",
-                            "reality": "Hệ thống được thiết kế thân thiện và dễ tiếp cận cho mọi người dùng.",
-                        }
-                    ],
-                    "knowledge_level": "intermediate",
+                    "common_questions": [],
+                    "misconceptions": [],
+                    "knowledge_level": "",
                 },
-                "angles_discovered": [
-                    {
-                        "name": "Đột phá công nghệ mới",
-                        "hook": f"Khám phá bước tiến công nghệ đột phá: {title[:80]}",
-                        "type": "trending",
-                        "why_now": "Sự kiện công nghệ mới nhất vừa được công bố",
-                    },
-                    {
-                        "name": "Góc nhìn chuyên sâu",
-                        "hook": f"Tại sao bước tiến này lại quan trọng: {title[:80]}",
-                        "type": "data_driven",
-                        "why_now": "Tác động lâu dài tới hệ sinh thái công nghệ",
-                    },
-                ],
+                "angles_discovered": [],
                 "sources": sources,
             },
         }

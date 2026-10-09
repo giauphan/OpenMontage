@@ -147,15 +147,13 @@ def test_bridge_emits_canonical_schema_without_duplicate_urls():
     assert len({source["url"] for source in brief["sources"]}) == 5
 
 
-def test_bridge_pads_sources_to_schema_minimum():
+def test_bridge_blocks_when_supplied_sources_do_not_meet_schema_minimum():
     bridge = NewsResearchBridge()
     incomplete = research_draft()
     incomplete["research_draft"]["sources"] = incomplete["research_draft"]["sources"][:4]
 
-    brief = bridge.build_brief(candidate(1), incomplete)
-
-    assert len(brief["sources"]) == 5
-    assert len({source["url"] for source in brief["sources"]}) == 5
+    with pytest.raises(ValueError, match="BLOCKED: research incomplete; fewer than five supplied source records"):
+        bridge.build_brief(candidate(1), incomplete)
 
 
 def _newsnow_payload(source: str, count: int) -> dict:

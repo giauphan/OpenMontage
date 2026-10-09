@@ -310,6 +310,22 @@ MAX_DIRECTOR_RETRIES="${MAX_DIRECTOR_RETRIES:-3}"
 DIRECTOR_ATTEMPT=1
 
 # Templated mode materializes in the block above; no generative retry loop.
+validate_current_director_artifacts() {
+  local output status
+  output=$("$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" \
+    --min-mtime-ns "${START_TS}000000000" --require-compositions 2>&1)
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    DIRECTOR_VALIDATION_ERRORS=""
+  else
+    DIRECTOR_VALIDATION_ERRORS="$output"
+  fi
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output" >> "$DIRECTORS_LOG"
+  fi
+  return "$status"
+}
+
 if [ "$TEMPLATE_MODE" -eq 1 ]; then
   if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
     DIRECTOR_EXIT=0
@@ -317,7 +333,10 @@ if [ "$TEMPLATE_MODE" -eq 1 ]; then
     DIRECTOR_EXIT=6
   fi
 else
-while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; do
+while true; do
+  if [ "$DIRECTOR_EXIT" -eq 0 ] && validate_current_director_artifacts; then
+    break
+  fi
   if [ "$DIRECTOR_ATTEMPT" -ge "$MAX_DIRECTOR_RETRIES" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: director artifacts incomplete or failed after $MAX_DIRECTOR_RETRIES attempts" >> "$DIRECTORS_LOG"
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
@@ -330,11 +349,17 @@ while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_dire
   echo "[$(date -u +%FT%TZ)] WARN: director artifacts incomplete/error (attempt $DIRECTOR_ATTEMPT/$MAX_DIRECTOR_RETRIES); retrying" >> "$DIRECTORS_LOG"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "directors" --project-id "$PROJECT_ID" \
     --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
+  # Capture diagnostics even when the director process itself failed, then
+  # pass actionable seek-safety errors into the existing bounded repair turn.
+  validate_current_director_artifacts || true
   RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
     echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
     DIRECTOR_EXIT=6
     break
   }
+  if [ -n "$DIRECTOR_VALIDATION_ERRORS" ]; then
+    RETRY_PROMPT="$(printf '%s\n\nValidation errors to fix in the composition HTML:\n%s' "$RETRY_PROMPT" "$DIRECTOR_VALIDATION_ERRORS")"
+  fi
   RETRY_EXIT=0
   run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG" || RETRY_EXIT=$?
   if [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
@@ -345,7 +370,7 @@ while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_dire
       mkdir -p "$PROJECT_DIR/hyperframes"
       cp "$PROJECT_DIR/hyperframes_reels/index.html" "$PROJECT_DIR/hyperframes/index.html" || true
   fi
-  if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
+  if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && validate_current_director_artifacts; then
     mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
     DIRECTOR_EXIT=0
   else
