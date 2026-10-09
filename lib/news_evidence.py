@@ -7,7 +7,7 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 MAX_SOURCE_AGE_HOURS = 24 * 30
 EVIDENCE_RELATIVE_PATH = Path("artifacts/news_evidence.json")
@@ -29,6 +29,28 @@ def _aware_datetime(value: Any, label: str, errors: list[str]) -> datetime | Non
         return parsed.astimezone(timezone.utc)
     except (OverflowError, ValueError):
         errors.append(f"{label}: timestamp is outside the supported datetime range")
+        return None
+
+
+def _normalized_source_url(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = urlsplit(value)
+        scheme = parsed.scheme.lower()
+        hostname = parsed.hostname
+        if scheme not in {"http", "https"} or not hostname:
+            return None
+        port = parsed.port
+        if port is not None and not 1 <= port <= 65535:
+            return None
+        host = hostname.lower()
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if port is not None and not (scheme == "http" and port == 80) and not (scheme == "https" and port == 443):
+            host = f"{host}:{port}"
+        return urlunsplit((scheme, host, parsed.path or "/", parsed.query, ""))
+    except ValueError:
         return None
 
 
@@ -98,8 +120,8 @@ def validate_news_evidence(
         if not isinstance(script_sections, list) or not script_sections:
             errors.append("script_vi.json must contain a non-empty sections array")
             script_sections = []
-    if not isinstance(evidence, dict) or evidence.get("version") != "1.0":
-        return {"ok": False, "status": "failed", "errors": errors + ["news_evidence.json must be a version 1.0 object"]}
+    if not isinstance(evidence, dict) or evidence.get("version") != "2.0":
+        return {"ok": False, "status": "failed", "errors": errors + ["news_evidence.json must be a version 2.0 object"]}
     if evidence.get("script_sha256") != hashlib.sha256(script_bytes).hexdigest():
         errors.append("script binding mismatch: script_sha256 must hash the complete current script_vi.json bytes")
     claims = evidence.get("claims")
@@ -214,6 +236,14 @@ def validate_news_evidence(
             errors.append(f"{label}: section_id does not exist in script")
         if not isinstance(claim.get("claim"), str) or not claim["claim"].strip():
             errors.append(f"{label}.claim must be non-empty text")
+        classification = claim.get("classification")
+        if not isinstance(classification, str) or classification not in {"reported_fact", "attribution", "inference", "opinion"}:
+            errors.append(f"{label}.classification must be reported_fact, attribution, inference, or opinion")
+        consequential = claim.get("consequential")
+        if not isinstance(consequential, bool):
+            errors.append(f"{label}.consequential must be a boolean")
+        elif consequential and claim.get("authority_attested") is not True:
+            errors.append(f"{label}.authority_attested must be true for consequential claims")
         if claim.get("review_status") != "approved":
             errors.append(f"{label}.review_status must be 'approved'; pending, rejected, or missing review fails closed")
         reviewer = claim.get("reviewer")
@@ -227,11 +257,24 @@ def validate_news_evidence(
             errors.append(f"{label}.source_ids must be a non-empty array")
         else:
             referenced_sources = []
+            if any(refs[index] in refs[:index] for index in range(len(refs))):
+                errors.append(f"{label}.source_ids must not contain duplicate source references")
             for sid in refs:
                 if not isinstance(sid, str) or sid not in source_by_id:
                     errors.append(f"{label}: source_ids contain missing/invalid source reference {sid!r}")
                 else:
                     referenced_sources.append(source_by_id[sid])
+            publishers = {source.get("publisher_id") for source in referenced_sources if isinstance(source.get("publisher_id"), str) and source.get("publisher_id").strip()}
+            distinct_source_ids = {sid for sid in refs if isinstance(sid, str) and sid in source_by_id}
+            normalized_urls = {_normalized_source_url(source.get("url")) for source in referenced_sources}
+            content_hashes = {source.get("content_sha256") for source in referenced_sources if isinstance(source.get("content_sha256"), str)}
+            if consequential is True:
+                if len(distinct_source_ids) < 2 or len(publishers) < 2:
+                    errors.append(f"{label}: consequential claims require corroboration from at least two distinct attributable publishers")
+                if None in normalized_urls or len(normalized_urls) < 2:
+                    errors.append(f"{label}: consequential corroboration requires distinct normalized source URLs")
+                if len(content_hashes) < 2:
+                    errors.append(f"{label}: consequential corroboration requires distinct frozen source content")
             if reviewed_at and referenced_sources:
                 snapshots = [_aware_datetime(source.get("retrieved_at"), f"{label} referenced source retrieved_at", errors) for source in referenced_sources]
                 valid_snapshots = [snapshot for snapshot in snapshots if snapshot is not None]

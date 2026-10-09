@@ -108,6 +108,8 @@ def write_reviewed_news_evidence(project_dir: Path) -> None:
         claim_records.append({
             "section_id": section_id,
             "claim": f"TEST ONLY: provenance fixture for script section {section_id}; no factual assertion.",
+            "classification": "reported_fact",
+            "consequential": False,
             "source_ids": [source_id],
             "reviewer": "TEST-ONLY offline fixture attestation",
             "reviewed_at": timestamp,
@@ -118,7 +120,7 @@ def write_reviewed_news_evidence(project_dir: Path) -> None:
     update_time = now - timedelta(minutes=2)
     retrieval_time = now - timedelta(minutes=1)
     evidence = {
-        "version": "1.0",
+        "version": "2.0",
         "script_sha256": hashlib.sha256(script_bytes).hexdigest(),
         "claims": claim_records,
         "sources": [{

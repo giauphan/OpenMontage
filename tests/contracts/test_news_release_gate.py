@@ -27,9 +27,9 @@ def make_news_project(root: Path) -> Path:
     now = datetime.now(timezone.utc)
     # Test-only human/editorial attestations. Never use these as production evidence.
     evidence = {
-        "version": "1.0",
+        "version": "2.0",
         "script_sha256": hashlib.sha256(script_bytes).hexdigest(),
-        "claims": [{"section_id": "1", "claim": "TEST ONLY: fictional provenance record", "source_ids": ["test"],
+        "claims": [{"section_id": "1", "claim": "TEST ONLY: fictional provenance record", "classification": "reported_fact", "consequential": False, "source_ids": ["test"],
                     "reviewer": "TEST-ONLY editor", "reviewed_at": iso_utc(now - timedelta(seconds=30)),
                     "review_status": "approved"}],
         "sources": [{"id": "test", "url": "https://fixture.invalid/test", "status": "available",
@@ -161,6 +161,27 @@ def test_unrelated_video_pipelines_remain_unclassified(tmp_path):
         assert not is_news_project(unrelated)
         assert require_news_evidence(unrelated) is None
     assert is_news_project(tmp_path / "cand_generated")
+
+
+def test_offline_rehearsal_marker_blocks_release_even_for_unclassified_project(tmp_path, monkeypatch):
+    from scripts import publish_manual_video
+
+    project = tmp_path / "ordinary-video-project"
+    (project / "artifacts").mkdir(parents=True)
+    (project / "project.json").write_text(json.dumps({"pipeline_type": "cinematic"}), encoding="utf-8")
+    (project / "OFFLINE_REHEARSAL_TEST_ONLY.json").write_text(
+        '{"test_only":true}', encoding="utf-8"
+    )
+    monkeypatch.delenv("NEWS_MAX_SOURCE_AGE_HOURS", raising=False)
+
+    with pytest.raises(ValueError, match="offline rehearsal test-only marker"):
+        require_news_evidence(project)
+
+    with pytest.raises(ValueError, match="offline rehearsal test-only marker"):
+        publish_manual_video.publish_batch(
+            {"id": "ordinary", "title": "Test", "description": "Test", "yt_shorts": "x"},
+            project, None, force=True, enforce_preflight=False,
+        )
 
 
 def test_publish_batch_force_and_preflight_bypass_cannot_skip_news_gate(tmp_path, monkeypatch):

@@ -9,7 +9,7 @@ import re
 import shlex
 import shutil
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,17 @@ def resolve_codex_bin() -> str:
 class CodexNewsSelector:
     """Executes Codex CLI to perform semantic selection and research extraction."""
 
-    def __init__(self, cli_path: str = "codex"):
+    def __init__(
+        self,
+        cli_path: str = "codex",
+        *,
+        transport: Optional[Callable[..., subprocess.CompletedProcess[str]]] = None,
+    ):
         resolved = resolve_codex_bin()
         self.cli_path = resolved if resolved else cli_path
+        # Explicit Python dependency injection for isolated rehearsals/tests;
+        # normal production construction continues to use subprocess.run.
+        self._transport = transport
 
     def select_and_research(self, top_candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Select best candidate and get raw research brief JSON."""
@@ -145,7 +153,8 @@ class CodexNewsSelector:
             ]
 
         try:
-            proc = subprocess.run(
+            run_transport = self._transport or subprocess.run
+            proc = run_transport(
                 codex_cmd,
                 capture_output=True,
                 text=True,

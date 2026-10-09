@@ -38,11 +38,13 @@ def valid_project(project_dir: Path) -> None:
     retrieved = datetime.now(timezone.utc) - timedelta(minutes=2)
     source_time = retrieved - timedelta(minutes=1)
     evidence = {
-        "version": "1.0",
+        "version": "2.0",
         "script_sha256": hashlib.sha256(script_bytes).hexdigest(),
         "claims": [{
             "section_id": "s1",
             "claim": "TEST ONLY: fictional provenance record.",
+            "classification": "reported_fact",
+            "consequential": False,
             "source_ids": ["source-1"],
             "reviewer": "TEST-ONLY fixture-editor",
             "reviewed_at": retrieved.isoformat(),

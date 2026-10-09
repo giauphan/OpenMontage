@@ -33,6 +33,14 @@ A supervisor inspected the contact sheet: the first caption cue appears at 0.7 a
 
 The completed final remote broad regression reported 1249 passed, 7 skipped, and 19 subtests in 142.01 seconds. JUnit results: `projects/render-freeze-rehearsal/qa/evidence-caption-final-results.xml`. An initial shell syntax regression and a fixture-root missing start were caught and fixed.
 
+## 2026-10-09 replay follow-up
+
+- Evidence 2.0 declares corroboration classifications and guards distinct source IDs, publishers, normalized URLs, and content hashes. `authority_attested` is a declared classification, not authentication or proof of truth. The public selector/reviewer is injected; a test-only marker is rejected for release.
+- Replay exercised an executable component, not the full shell entrypoint. It did not generate or render media. QA copied a historical MP4 and ran actual technical checks and frame extraction on that copy.
+- Remote broad regression: 1,284 passed, 7 skipped, 19 subtests in 140.15s, **before** the final helper metadata fix. After that fix, targeted tests: 25 passed in 0.74s. Provenance note: one agent initially ran evidence tests locally (51 passed); the supervisor reran the revised code remotely. Do not conflate the local initial result with the remote revised-code evidence.
+- Real Docker replay used `--network none`, read-only `/app`, and external output `/home/ubuntu/OpenMontage-daily-news-replay-qa/probe-20261009-02`. The valid component passed; malformed missing `audio_sync` failed, preserving the first report with SHA-256 `2a8be06bb383545db1d66f638f21fbe5f5336ce1d5743c99dade1f4391da4975`.
+- QA metadata is now always synthetic; source metadata is not copied.
+
 ## Remaining release gates
 
 - **N2:** editorial taxonomy, topic selection, and corroboration; consequential claims and corrections need editorial treatment.

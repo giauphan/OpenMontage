@@ -29,7 +29,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 import unicodedata as _ud
 
 logger = logging.getLogger(__name__)
@@ -673,10 +673,19 @@ class ValidationResult:
 class CodexAgentValidator:
     """Performs strict quality validation using Codex AI agent with fallback quality engine."""
 
-    def __init__(self, project_dir: Path, strict_mode: bool = True, retry_count: int = 2):
+    def __init__(
+        self,
+        project_dir: Path,
+        strict_mode: bool = True,
+        retry_count: int = 2,
+        *,
+        review_transport: Optional[Callable[..., subprocess.CompletedProcess[str]]] = None,
+    ):
         self.project_dir = Path(project_dir).resolve()
         self.strict_mode = strict_mode
         self.retry_count = retry_count
+        # Test/rehearsal-only injection. None preserves the production CLI path.
+        self._review_transport = review_transport
         self.results: List[ValidationResult] = []
 
     def validate_technical_contract(self, video_path: Path) -> List[ValidationResult]:
@@ -1279,7 +1288,11 @@ Return a valid JSON object matching this schema:
             ]
 
         claude_mod = sys.modules.get("scripts.claude_agent_validation")
-        run_fn = getattr(claude_mod.subprocess, "run", subprocess.run) if (claude_mod and hasattr(claude_mod, "subprocess")) else subprocess.run
+        run_fn = self._review_transport or (
+            getattr(claude_mod.subprocess, "run", subprocess.run)
+            if (claude_mod and hasattr(claude_mod, "subprocess"))
+            else subprocess.run
+        )
         proc = run_fn(
             cmd,
             input=prompt,
@@ -1300,7 +1313,7 @@ Return a valid JSON object matching this schema:
 
         artifact_hash = compute_sha256(abs_video_path)
         ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        reviewer_name = Path(agent_bin).name
+        reviewer_name = "offline_test_transport" if self._review_transport else Path(agent_bin).name
 
         results = []
         checks = {
@@ -1327,7 +1340,8 @@ Return a valid JSON object matching this schema:
                         "score": score,
                         "notes": notes,
                         "reviewer": reviewer_name,
-                        "review_mode": "codex_cli",
+                        "review_mode": "offline_transport" if self._review_transport else "codex_cli",
+                        "test_only_transport": bool(self._review_transport),
                         "inspected_artifact_hash": artifact_hash,
                         "timestamp": ts,
                     },
@@ -1342,7 +1356,8 @@ Return a valid JSON object matching this schema:
                     message=str(response_data.get("summary") or "Strict review rejected asset"),
                     details={
                         "reviewer": reviewer_name,
-                        "review_mode": "codex_cli",
+                        "review_mode": "offline_transport" if self._review_transport else "codex_cli",
+                        "test_only_transport": bool(self._review_transport),
                         "inspected_artifact_hash": artifact_hash,
                         "timestamp": ts,
                     },
@@ -1367,22 +1382,34 @@ Return a valid JSON object matching this schema:
         is_mock_env = os.environ.get("CODEX_AGENT_VALIDATION_MOCK") == "1" or os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1"
         is_production = os.environ.get("PRODUCTION_RELEASE") == "1" or os.environ.get("STRICT_PRODUCTION") == "1"
 
-        if is_mock_env:
+        if is_mock_env or self._review_transport is not None:
             if is_production:
+                injected_transport = self._review_transport is not None
                 return [
                     ValidationResult(
                         check_name="Codex Agent Review Gate",
                         passed=False,
-                        message="Mock review strictly forbidden in production mode",
-                        details={"error": "mock_forbidden_in_production", "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
+                        message=(
+                            "Offline test review transport strictly forbidden in production mode"
+                            if injected_transport
+                            else "Mock review strictly forbidden in production mode"
+                        ),
+                        details={
+                            "error": "test_transport_forbidden_in_production" if injected_transport else "mock_forbidden_in_production",
+                            "review_mode": "offline_transport" if injected_transport else "mock",
+                            "test_only_transport": injected_transport,
+                            "timestamp": ts,
+                            "inspected_artifact_hash": artifact_hash,
+                        },
                     )
                 ]
-            return [
-                ValidationResult(check_name="Visual Quality", passed=True, message="Visual Quality: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                ValidationResult(check_name="Audio Sync", passed=True, message="Audio Sync: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                ValidationResult(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                ValidationResult(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-            ]
+            if is_mock_env:
+                return [
+                    ValidationResult(check_name="Visual Quality", passed=True, message="Visual Quality: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+                    ValidationResult(check_name="Audio Sync", passed=True, message="Audio Sync: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+                    ValidationResult(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+                    ValidationResult(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+                ]
 
         # R6/R7: Hoist missing-HTML and frame-extraction pre-checks before the
         # CLI gate so strict-mode failures are reported even when no CLI binary
@@ -1416,6 +1443,36 @@ Return a valid JSON object matching this schema:
                         passed=False,
                         message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
                         details={"error": "Frame extraction failed"},
+                    )
+                ]
+
+        # An explicitly injected offline transport is authoritative for this
+        # instance. Route it before CLI discovery so rehearsal/tests cannot
+        # accidentally touch a live agent binary or fall back to heuristics.
+        if self._review_transport is not None:
+            try:
+                return self._execute_cli_review(
+                    "offline_test_transport",
+                    video_path,
+                    metadata_path,
+                    prior_results,
+                )
+            except Exception as exc:
+                logger.error("Injected strict review transport failed: %s", exc)
+                return [
+                    ValidationResult(
+                        check_name="Codex Agent Review Gate",
+                        passed=False,
+                        message=f"Injected strict review transport failed: {exc}",
+                        details={
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                            "review_mode": "offline_transport",
+                            "test_only_transport": True,
+                            "reviewer": "offline_test_transport",
+                            "timestamp": ts,
+                            "inspected_artifact_hash": artifact_hash,
+                        },
                     )
                 ]
 

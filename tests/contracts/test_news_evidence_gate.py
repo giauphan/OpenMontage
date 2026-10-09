@@ -27,11 +27,11 @@ def frozen_project(tmp_path: Path) -> Path:
     script_bytes = json.dumps(script, ensure_ascii=False, separators=(",", ":")).encode()
     (artifacts / "script_vi.json").write_bytes(script_bytes)
     evidence = {
-        "version": "1.0",
+        "version": "2.0",
         "script_sha256": hashlib.sha256(script_bytes).hexdigest(),
         "claims": [
-            {"section_id": "1", "claim": "TEST ONLY: fictional provenance record for section one", "source_ids": ["s1"], "reviewer": "TEST-ONLY editor-1", "reviewed_at": "2026-10-09T11:30:00Z", "review_status": "approved"},
-            {"section_id": 2, "claim": "TEST ONLY: fictional provenance record for section two", "source_ids": ["s1"], "reviewer": "TEST-ONLY editor-1", "reviewed_at": "2026-10-09T11:30:00Z", "review_status": "approved"},
+            {"section_id": "1", "claim": "TEST ONLY: fictional provenance record for section one", "classification": "reported_fact", "consequential": False, "source_ids": ["s1"], "reviewer": "TEST-ONLY editor-1", "reviewed_at": "2026-10-09T11:30:00Z", "review_status": "approved"},
+            {"section_id": 2, "claim": "TEST ONLY: fictional provenance record for section two", "classification": "inference", "consequential": False, "source_ids": ["s1"], "reviewer": "TEST-ONLY editor-1", "reviewed_at": "2026-10-09T11:30:00Z", "review_status": "approved"},
         ],
         "sources": [{
             "id": "s1", "url": "https://publisher.example/report", "status": "available",
@@ -218,6 +218,93 @@ def test_rejects_invalid_utf8_frozen_content_without_raising(tmp_path):
     result = validate(project)
     assert not result["ok"]
     assert result["errors"]
+
+
+@pytest.mark.parametrize("field,value", [("classification", None), ("classification", "guess"), ("consequential", None), ("consequential", "no")])
+def test_rejects_absent_or_invalid_claim_taxonomy(tmp_path, field, value):
+    project = frozen_project(tmp_path)
+    item = evidence(project)
+    item["claims"][0][field] = value
+    save(project, item)
+    assert not validate(project)["ok"]
+
+
+def test_accepts_reviewed_inference_as_editorial_classification(tmp_path):
+    project = frozen_project(tmp_path)
+    item = evidence(project)
+    item["claims"][1]["classification"] = "inference"
+    save(project, item)
+    assert validate(project)["ok"]
+
+
+def test_consequential_claim_requires_distinct_publishers_and_authority_attestation(tmp_path):
+    project = frozen_project(tmp_path)
+    item = evidence(project)
+    claim = item["claims"][0]
+    claim.update(consequential=True, authority_attested=True, source_ids=["s1", "s2"])
+    second_content = b"TEST ONLY: a separate fictional frozen source for corroboration.\n"
+    second_path = project / "artifacts/source-s2.txt"
+    second_path.write_bytes(second_content)
+    source = dict(
+        item["sources"][0], id="s2", publisher_id="publisher-b",
+        url="https://other-publisher.example/report",
+        content_path="artifacts/source-s2.txt",
+        content_sha256=hashlib.sha256(second_content).hexdigest(),
+        excerpt="TEST ONLY: a separate fictional frozen source",
+    )
+    item["sources"][0]["publisher_id"] = "publisher-a"
+    item["sources"].append(source)
+    save(project, item)
+    assert validate(project)["ok"]
+
+
+@pytest.mark.parametrize("duplicate", ["url", "content"])
+def test_rejects_consequential_sources_with_duplicate_url_or_content(tmp_path, duplicate):
+    project = frozen_project(tmp_path)
+    item = evidence(project)
+    claim = item["claims"][0]
+    claim.update(consequential=True, authority_attested=True, source_ids=["s1", "s2"])
+    first_content = (project / "artifacts/source-s1.txt").read_bytes()
+    second_content = first_content if duplicate == "content" else b"TEST ONLY: separate fictional source content.\n"
+    second_path = project / "artifacts/source-s2.txt"
+    second_path.write_bytes(second_content)
+    source = dict(
+        item["sources"][0], id="s2", publisher_id="publisher-b",
+        url="https://publisher.example/report" if duplicate == "url" else "https://other-publisher.example/report",
+        content_path="artifacts/source-s2.txt",
+        content_sha256=hashlib.sha256(second_content).hexdigest(),
+        excerpt=("TEST ONLY: fictional frozen source content" if duplicate == "content" else "TEST ONLY: separate fictional source content"),
+    )
+    item["sources"][0]["publisher_id"] = "publisher-a"
+    item["sources"].append(source)
+    save(project, item)
+    result = validate(project)
+    assert not result["ok"]
+    expected = "normalized source URLs" if duplicate == "url" else "distinct frozen source content"
+    assert any(expected in error for error in result["errors"])
+
+
+def test_rejects_two_sources_declared_under_same_publisher(tmp_path):
+    project = frozen_project(tmp_path)
+    item = evidence(project)
+    item["claims"][0].update(consequential=True, authority_attested=True, source_ids=["s1", "s2"])
+    source = dict(item["sources"][0], id="s2", publisher_id="same-publisher")
+    item["sources"][0]["publisher_id"] = "same-publisher"
+    item["sources"].append(source)
+    save(project, item)
+    result = validate(project)
+    assert not result["ok"]
+    assert any("distinct attributable publishers" in error for error in result["errors"])
+
+
+def test_rejects_consequential_claim_without_attestation_or_distinct_corroboration(tmp_path):
+    project = frozen_project(tmp_path)
+    item = evidence(project)
+    item["claims"][0].update(consequential=True, source_ids=["s1", "s1"])
+    save(project, item)
+    result = validate(project)
+    assert not result["ok"]
+    assert any("consequential" in error or "duplicate" in error for error in result["errors"])
 
 
 def test_cli_emits_json_failure_for_missing_or_malformed_arguments(tmp_path):

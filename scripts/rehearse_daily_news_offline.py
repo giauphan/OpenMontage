@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Safely stage and preflight frozen daily-news inputs; never launch providers.
+"""Stage frozen inputs or run a bounded offline public-component replay.
 
-This is deliberately a staging preflight, not an end-to-end rehearsal. The
-daily shell has no deterministic director/provider transport boundary. It now
-contains a project news-evidence gate, but this preflight has no generated
-project/evidence bundle to evaluate and will not launch providers.
+The replay uses explicit fixture transports at selector/reviewer subprocess
+boundaries and keeps real media extraction and validation. It does not execute
+the daily shell or claim an end-to-end/N5 rehearsal.
 """
 from __future__ import annotations
 
@@ -183,14 +182,25 @@ def stage_rehearsal(stage_dir: str, feed_path: Path, max_age_hours: float) -> di
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage-dir", required=True, help="fresh destination outside the source checkout")
-    parser.add_argument("--feed", required=True, type=Path, help="user-supplied frozen NewsNow JSON array")
+    parser.add_argument("--feed", type=Path, help="user-supplied frozen NewsNow JSON array (stage-only mode)")
+    parser.add_argument("--manifest", type=Path, help="strict local fixture bundle manifest (execute mode)")
+    parser.add_argument("--execute", action="store_true", help="run offline public selector/reviewer replay; never runs the shell")
     parser.add_argument("--max-source-age-hours", required=True, type=float,
                         help="explicit freshness limit; there is no default")
     args = parser.parse_args(argv)
     try:
+        if args.execute:
+            if args.manifest is None or args.feed is not None:
+                parser.error("--execute requires --manifest and does not accept --feed")
+            from lib.daily_news_replay import execute_replay
+            report = execute_replay(args.manifest, args.stage_dir, args.max_source_age_hours)
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 0 if report["status"] == "component_replay_passed" else 2
+        if args.manifest is not None or args.feed is None:
+            parser.error("stage-only mode requires --feed and does not accept --manifest")
         report = stage_rehearsal(args.stage_dir, args.feed, args.max_source_age_hours)
-    except (OSError, ValueError) as exc:
-        print(json.dumps({"status": "preflight_failed", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+    except Exception as exc:
+        print(json.dumps({"status": "preflight_failed", "error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False), file=sys.stderr)
         return 2
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 2

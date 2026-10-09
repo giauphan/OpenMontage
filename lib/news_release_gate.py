@@ -9,6 +9,7 @@ from typing import Any
 from lib.news_evidence import validate_news_evidence
 
 NEWS_MAX_SOURCE_AGE_HOURS_ENV = "NEWS_MAX_SOURCE_AGE_HOURS"
+OFFLINE_REHEARSAL_TEST_ONLY_MARKER = "OFFLINE_REHEARSAL_TEST_ONLY.json"
 NEWS_MARKERS = {"news", "newsnow", "daily_news", "daily-news", "news_video", "news-video"}
 IDENTITY_FIELDS = {
     "pipeline", "pipeline_type", "project_type", "content_type", "source", "source_name",
@@ -93,7 +94,13 @@ def require_news_evidence(project_dir: str | Path, env_max_age_hours: str | None
     The age limit is always supplied via NEWS_MAX_SOURCE_AGE_HOURS (or the
     explicit env_max_age_hours argument used by policy-focused callers).
     """
-    if not is_news_project(project_dir, metadata):
+    project_root = Path(project_dir)
+    test_only_marker = project_root / OFFLINE_REHEARSAL_TEST_ONLY_MARKER
+    if test_only_marker.exists() or test_only_marker.is_symlink():
+        raise ValueError(
+            f"Release blocked: offline rehearsal test-only marker present in {project_root.name}"
+        )
+    if not is_news_project(project_root, metadata):
         return None
     configured = env_max_age_hours if env_max_age_hours is not None else os.environ.get(NEWS_MAX_SOURCE_AGE_HOURS_ENV)
     if configured is None or not str(configured).strip():
