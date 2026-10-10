@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,8 @@ newsnow_preflight() { printf 'NEWSNOW_STUB\n'; }
             "PATH": str(binaries),
             "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
             "CODEX_HOME": str(codex_home),
+            "PY": sys.executable,
+            "NEWS_MAX_SOURCE_AGE_HOURS": "24",
         },
         capture_output=True,
         text=True,

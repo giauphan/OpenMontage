@@ -23,6 +23,10 @@ def create_fixture(tmp_path: Path, validation_script: str) -> tuple[Path, Path, 
         directory.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
     (config / "publish_schedule.json").write_text(
         json.dumps({
             "slots": {"publish_slots_vn": ["01:00", "02:00", "03:00"]},
@@ -52,6 +56,7 @@ for pid in cand_fail cand_pass; do
   printf '{"id":"%s","title":"T","description":"D","yt_shorts":"renders/final_reels_vi_9x16.mp4","ig_reels":"renders/final_reels_vi_9x16.mp4","fb_video":"renders/final_full_vi_9x16.mp4"}' "$pid" > "$ROOT/projects/$pid/publish_metadata.json"
   printf video > "$ROOT/projects/$pid/renders/final_full_vi_9x16.mp4"
   printf video > "$ROOT/projects/$pid/renders/final_reels_vi_9x16.mp4"
+  PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c 'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))' "$ROOT/projects/$pid"
   echo "PROJECT_ID=$pid"
 done
 """,
@@ -106,6 +111,7 @@ def run_pipeline(tmp_path: Path, scripts: Path, binaries: Path) -> subprocess.Co
             "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
             "DAILY_GENERATION_RETRIES": "2",
             "CLAUDE_VALIDATION_RETRIES": "3",
+            "NEWS_MAX_SOURCE_AGE_HOURS": "24",
         },
         capture_output=True,
         text=True,
@@ -182,7 +188,7 @@ def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
             "instagram",
         ],
         cwd=tmp_path,
-        env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}"},
+        env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "NEWS_MAX_SOURCE_AGE_HOURS": "24"},
         capture_output=True,
         text=True,
     )

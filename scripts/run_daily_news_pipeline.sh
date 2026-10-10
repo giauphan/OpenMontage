@@ -2,12 +2,65 @@
 # Daily AI news video generation pipeline.
 # Selects trending topic, runs directors pipeline, generates Vietnamese video (120s + 60s Reels), updates publish_schedule.json.
 set -euo pipefail
+REHEARSAL_MANIFEST=""
+if [ "${1:-}" = "--rehearsal-bundle" ]; then
+  [ "$#" -eq 2 ] && [ -n "$2" ] || {
+    echo "Usage: $0 [--rehearsal-bundle NONEMPTY_MANIFEST]" >&2
+    exit 2
+  }
+  REHEARSAL_MANIFEST="$2"
+elif [ "$#" -ne 0 ]; then
+  echo "Usage: $0 [--rehearsal-bundle MANIFEST]" >&2
+  exit 2
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+REHEARSAL_TERMINAL_STAGE="preflight"
+REHEARSAL_SUCCESSFUL_IDS=()
+REHEARSAL_IDS_FILE=""
+write_rehearsal_report_on_exit() {
+  local original_status=$?
+  trap - EXIT
+  if [ -n "${REHEARSAL_IDS_FILE:-}" ]; then rm -f "$REHEARSAL_IDS_FILE"; fi
+  if [ -n "$REHEARSAL_MANIFEST" ]; then
+    python3 "$ROOT/scripts/write_daily_news_rehearsal_report.py" \
+      --root "$ROOT" --manifest "$REHEARSAL_MANIFEST" \
+      --exit-status "$original_status" --terminal-stage "$REHEARSAL_TERMINAL_STAGE" \
+      --successful-ids "$(IFS=,; printf '%s' "${REHEARSAL_SUCCESSFUL_IDS[*]:-}")" || true
+  fi
+  exit "$original_status"
+}
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  trap write_rehearsal_report_on_exit EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
+
+# This gate runs before .env, logs, network clients, credentials, or tools.
+# The staging checkout must carry an explicit durable test-only marker.
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  [ -z "${PRODUCTION_RELEASE:-}" ] && [ -z "${STRICT_PRODUCTION:-}" ] || {
+    echo "ERROR: rehearsal mode is forbidden in production environments" >&2; exit 2;
+  }
+  [ -n "${NEWS_MAX_SOURCE_AGE_HOURS:-}" ] || {
+    echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be explicitly set for rehearsal" >&2; exit 2;
+  }
+  python3 -c 'import math,sys; v=float(sys.argv[1]); sys.exit(0 if math.isfinite(v) and 0 < v <= 720 else 1)' \
+    "$NEWS_MAX_SOURCE_AGE_HOURS" 2>/dev/null || {
+      echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be finite and in (0, 720]" >&2; exit 2;
+    }
+  REHEARSAL_IDS_FILE="$(mktemp)"
+  python3 "$ROOT/scripts/prepare_daily_news_rehearsal.py" \
+    --manifest "$REHEARSAL_MANIFEST" --root "$ROOT" \
+    --max-source-age-hours "$NEWS_MAX_SOURCE_AGE_HOURS" > "$REHEARSAL_IDS_FILE" || exit $?
+  mapfile -t REHEARSAL_PROJECT_IDS < "$REHEARSAL_IDS_FILE"
+  REHEARSAL_TERMINAL_STAGE="frozen_inputs_staged"
+fi
+
 mkdir -p "$ROOT/logs"
 
-if [ -f .env ]; then
+if [ -z "$REHEARSAL_MANIFEST" ] && [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
@@ -47,12 +100,51 @@ elif [ -x "$ROOT/venv/bin/python3" ]; then
 else
   PY="$(command -v python3)"
 fi
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  NEWS_TEMPLATE_MODE=0
+fi
+
+# NEWS_EVIDENCE_GATE_FUNCTIONS_BEGIN
+validate_news_generation_config() {
+  if [ -z "${NEWS_MAX_SOURCE_AGE_HOURS:-}" ]; then
+    echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be explicitly configured in (0, 720] hours" >&2
+    return 1
+  fi
+  "$PY" -c 'import math,sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and 0 < value <= 720 else 1)' \
+    "$NEWS_MAX_SOURCE_AGE_HOURS" || {
+      echo "ERROR: NEWS_MAX_SOURCE_AGE_HOURS must be finite and in (0, 720]" >&2
+      return 1
+    }
+}
+
+validate_project_news_evidence() {
+  local project_dir="$1" validation_log="$2"
+  if "$PY" "$ROOT/scripts/validate_news_evidence.py" "$project_dir" \
+      --max-source-age-hours "$NEWS_MAX_SOURCE_AGE_HOURS" >"$validation_log" 2>&1; then
+    return 0
+  fi
+  echo "ERROR: news evidence validation failed for $project_dir; see $validation_log" >&2
+  return 1
+}
+# NEWS_EVIDENCE_GATE_FUNCTIONS_END
+
+if ! validate_news_generation_config; then
+  exit 1
+fi
 
 "$PY" -c 'from scripts.publish_config import load_config; load_config()' || {
   echo "ERROR: invalid publish timezone configuration" >&2
   exit 1
 }
 
+# Rehearsal inputs are frozen, copied, and marked test-only by the preflight helper.
+# Never execute acquisition/production selectors in this branch.
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  REHEARSAL_TERMINAL_STAGE="directors_and_validation"
+  FEED_STALE=0
+  PROJECT_IDS=("${REHEARSAL_PROJECT_IDS[@]}")
+  export OPENMONTAGE_REHEARSAL=1
+else
 # Step 0: Fetch current NewsNow sources with stale fallback.
 FEED_STALE=0
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
@@ -87,23 +179,27 @@ fi
 # Step 1: Select and initialize distinct current topics.
 PRODUCE_LOG="$ROOT/logs/news_produce_$(date -u +%Y%m%dT%H%M%SZ).log"
 "$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG" || true
-mapfile -t PROJECT_IDS < <(grep '^PROJECT_ID=' "$PRODUCE_LOG" | cut -d= -f2)
+mapfile -t PROJECT_IDS < <(grep -E '^PROJECT_ID=[A-Za-z0-9_-]{1,128}$' "$PRODUCE_LOG" | cut -d= -f2 | awk '!seen[$0]++ && $0 != "_failed_generation_recovered" && index($0, "_failed_generation_recovered_") != 1')
 if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
   exit 1
+fi
 fi
 
 SUCCESSFUL_COUNT=0
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
+  REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
   cd "$ROOT"
-  chmod 777 "$ROOT" 2>/dev/null || true
+  if [ -z "$REHEARSAL_MANIFEST" ]; then
+    chmod 777 "$ROOT" 2>/dev/null || true
+  fi
   PROJECT_DIR="$ROOT/projects/$PROJECT_ID"
-  if [ -d "$PROJECT_DIR" ]; then
+  if [ -d "$PROJECT_DIR" ] && [ -z "$REHEARSAL_MANIFEST" ]; then
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
   mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
-  chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true
+  if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
 
 # Step 2.5: Run Directors pipeline via Codex CLI (unattended, logged) (P2)
@@ -131,14 +227,19 @@ render_director_prompt() {
   fi
   printf '%s\n' "$result"
 }
-PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
-  echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
-  exit 1
-}
-DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
-  echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
-  exit 1
-}
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  PROMPT_STR=""
+  DIRECTOR_SYSTEM_NOTE=""
+else
+  PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
+    echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
+    exit 1
+  }
+  DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
+    echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
+    exit 1
+  }
+fi
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
 DIRECTOR_ARTIFACTS_READY=0
@@ -146,6 +247,10 @@ DIRECTOR_ARTIFACTS_READY=0
 # A director timeout must fail closed rather than publishing stale content.
 
 run_directors() {
+  if [ -n "$REHEARSAL_MANIFEST" ]; then
+    echo "ERROR: director invocation is disabled in rehearsal mode" >&2
+    return 125
+  fi
   local prompt="${1:-$PROMPT_STR}"
   local session_id="${2:-}"
   local resume_flag=""
@@ -204,14 +309,19 @@ run_directors() {
   fi
 }
 
-if ! command -v timeout >/dev/null 2>&1; then
-  echo "[$(date -u +%FT%TZ)] ERROR: timeout command is required for directors" >> "$DIRECTORS_LOG"
-  exit 1
-fi
-
-run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
-DIRECTOR_EXIT=$?
 DIRECTOR_ARTIFACT_FALLBACK=0
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  cp "$PROJECT_DIR/artifacts/director_reply.json" "$DIRECTORS_JSON"
+  DIRECTOR_EXIT=0
+  DIRECTOR_ARTIFACT_FALLBACK=1
+else
+  if ! command -v timeout >/dev/null 2>&1; then
+    echo "[$(date -u +%FT%TZ)] ERROR: timeout command is required for directors" >> "$DIRECTORS_LOG"
+    exit 1
+  fi
+  run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
+  DIRECTOR_EXIT=$?
+fi
 if [ "$DIRECTOR_EXIT" -eq 124 ] && [ "$DIRECTOR_ARTIFACTS_READY" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: directors timed out; refusing stale artifacts" >> "$DIRECTORS_LOG"
 fi
@@ -310,14 +420,33 @@ MAX_DIRECTOR_RETRIES="${MAX_DIRECTOR_RETRIES:-3}"
 DIRECTOR_ATTEMPT=1
 
 # Templated mode materializes in the block above; no generative retry loop.
-if [ "$TEMPLATE_MODE" -eq 1 ]; then
+validate_current_director_artifacts() {
+  local output status
+  output=$("$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" \
+    --min-mtime-ns "${START_TS}000000000" --require-compositions 2>&1)
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    DIRECTOR_VALIDATION_ERRORS=""
+  else
+    DIRECTOR_VALIDATION_ERRORS="$output"
+  fi
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output" >> "$DIRECTORS_LOG"
+  fi
+  return "$status"
+}
+
+if [ -n "$REHEARSAL_MANIFEST" ] || [ "$TEMPLATE_MODE" -eq 1 ]; then
   if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
     DIRECTOR_EXIT=0
   else
     DIRECTOR_EXIT=6
   fi
 else
-while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; do
+while true; do
+  if [ "$DIRECTOR_EXIT" -eq 0 ] && validate_current_director_artifacts; then
+    break
+  fi
   if [ "$DIRECTOR_ATTEMPT" -ge "$MAX_DIRECTOR_RETRIES" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: director artifacts incomplete or failed after $MAX_DIRECTOR_RETRIES attempts" >> "$DIRECTORS_LOG"
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
@@ -330,11 +459,17 @@ while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_dire
   echo "[$(date -u +%FT%TZ)] WARN: director artifacts incomplete/error (attempt $DIRECTOR_ATTEMPT/$MAX_DIRECTOR_RETRIES); retrying" >> "$DIRECTORS_LOG"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "directors" --project-id "$PROJECT_ID" \
     --reason "Director incomplete/failed, retrying foreground turn" --attempt "$DIRECTOR_ATTEMPT" --max-attempts "$MAX_DIRECTOR_RETRIES" || true
+  # Capture diagnostics even when the director process itself failed, then
+  # pass actionable seek-safety errors into the existing bounded repair turn.
+  validate_current_director_artifacts || true
   RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
     echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
     DIRECTOR_EXIT=6
     break
   }
+  if [ -n "$DIRECTOR_VALIDATION_ERRORS" ]; then
+    RETRY_PROMPT="$(printf '%s\n\nValidation errors to fix in the composition HTML:\n%s' "$RETRY_PROMPT" "$DIRECTOR_VALIDATION_ERRORS")"
+  fi
   RETRY_EXIT=0
   run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG" || RETRY_EXIT=$?
   if [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
@@ -345,7 +480,7 @@ while [ "$DIRECTOR_EXIT" -ne 0 ] || ! "$PY" "$ROOT/scripts/validate_newsnow_dire
       mkdir -p "$PROJECT_DIR/hyperframes"
       cp "$PROJECT_DIR/hyperframes_reels/index.html" "$PROJECT_DIR/hyperframes/index.html" || true
   fi
-  if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --min-mtime-ns "${START_TS}000000000" --require-compositions; then
+  if [ "$RETRY_EXIT" -eq 0 ] && jq empty "$DIRECTORS_JSON.retry" 2>/dev/null && [ "$(jq -r '.is_error // false' "$DIRECTORS_JSON.retry")" != "true" ] && validate_current_director_artifacts; then
     mv "$DIRECTORS_JSON.retry" "$DIRECTORS_JSON"
     DIRECTOR_EXIT=0
   else
@@ -363,7 +498,15 @@ if [ $DIRECTOR_EXIT -ne 0 ] && [ "$TEMPLATE_MODE" -ne 1 ]; then
   fi
 fi
 
-if [ $DIRECTOR_EXIT -eq 0 ]; then
+if [ "$DIRECTOR_EXIT" -eq 0 ]; then
+  NEWS_EVIDENCE_LOG="$(mktemp "$ROOT/logs/news_evidence_${PROJECT_ID}_XXXXXX.json")"
+  if ! validate_project_news_evidence "$PROJECT_DIR" "$NEWS_EVIDENCE_LOG"; then
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \
+      --error-type "NEWS_EVIDENCE_INVALID" --message "Frozen source evidence failed validation" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "news evidence missing or invalid; see $NEWS_EVIDENCE_LOG" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
+  fi
   echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID exit=0 elapsed=${ELAPSED}s" \
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
@@ -386,6 +529,12 @@ if [ $DIRECTOR_EXIT -eq 0 ]; then
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
         --error-type "MISSING_REELS_COMPOSITION" --message "Reels composition index.html missing or empty" || true
     fi
+    COMPOSITION_FAILURE_REASON="missing required HyperFrames composition:"
+    [ -s "$HYPER_FULL" ] || COMPOSITION_FAILURE_REASON="$COMPOSITION_FAILURE_REASON full"
+    [ -s "$HYPER_REELS" ] || COMPOSITION_FAILURE_REASON="$COMPOSITION_FAILURE_REASON reels"
+    COMPOSITION_FAILURE_REASON="$COMPOSITION_FAILURE_REASON; see $ROOT/logs/directors_${PROJECT_ID}.log"
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "$COMPOSITION_FAILURE_REASON" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
     continue
   fi
 else
@@ -394,10 +543,14 @@ else
   echo "  see full transcript: $DIRECTORS_LOG" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
     --error-type "DIRECTOR_FAILURE" --message "Director run failed with exit code $DIRECTOR_EXIT" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "Director run failed with exit code $DIRECTOR_EXIT after $DIRECTOR_ATTEMPT attempt(s); see $DIRECTORS_LOG" \
+    || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
 # Step 3: Render video (120s + 60s Reels) + sanity check (P4)
+REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:render_and_quality"
 cd "$ROOT/projects/$PROJECT_ID"
 chmod -R 777 . 2>/dev/null || true
 mkdir -p renders
@@ -447,42 +600,14 @@ materialize_hyperframes_assets() {
   if [ ! -s "$narration" ] || { [ -s "$narration_text" ] && [ "$narration_text" -nt "$narration" ]; }; then
     narration_stale=1
   fi
-  if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
+  if [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
     "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
     edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
 
-  # Generate Vietnamese subtitles with word timestamps for caption synchronization
-if [ -s "$narration" ] && command -v "$PY" >/dev/null 2>&1; then
-  local subtitle_text="$narration_text.prepared"
-  [ -s "$subtitle_text" ] || subtitle_text="$narration_text"
-  
-  echo "[$(date -u +%FT%TZ)] Generating Vietnamese subtitles..."
-  mkdir -p "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
-  
-  if [ -s "$subtitle_text" ]; then
-    "$PY" "$ROOT/scripts/generate_vn_subtitles.py" \
-      "$subtitle_text" \
-      "$narration" \
-      "$project_root/hyperframes/assets/subtitles.srt" \
-      "$project_root/hyperframes/assets/word_timestamps.json" \
-      3 || { echo "[$(date -u +%FT%TZ)] ERROR: Subtitle generation failed" >&2; return 1; }
-    echo "[$(date -u +%FT%TZ)] Vietnamese subtitles generated"
-
-    # Generate reels subtitles if audio exists.
-    if [ -s "$reels_narration" ]; then
-      "$PY" "$ROOT/scripts/generate_vn_subtitles.py" \
-        "$subtitle_text" \
-        "$reels_narration" \
-        "$project_root/hyperframes_reels/assets/subtitles.srt" \
-        "$project_root/hyperframes_reels/assets/word_timestamps.json" \
-        3 || { echo "[$(date -u +%FT%TZ)] ERROR: Reels subtitle generation failed"; return 1; }
-    fi
-  else
-    echo "[$(date -u +%FT%TZ)] WARNING: No subtitle text available" >&2
-  fi
-fi
+  # Captions are generated after the Reels narration has its final audio bytes,
+  # and each rendition is transcribed independently in strict cached-only mode.
   if [ ! -s "$narration" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
     return 1
@@ -493,12 +618,20 @@ fi
     return 1
   fi
   if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
+    if [ -n "$REHEARSAL_MANIFEST" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: frozen rehearsal background music is missing for $PROJECT_ID" >&2
+      return 1
+    fi
     echo "[$(date -u +%FT%TZ)] WARN: background music asset missing for $PROJECT_ID, using fallback"
     cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
   fi
   local music_duration
   music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
   if ! awk -v d="$music_duration" 'BEGIN{exit !(d > 5)}'; then
+    if [ -n "$REHEARSAL_MANIFEST" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: frozen rehearsal background music duration ${music_duration}s <=5s for $PROJECT_ID" >&2
+      return 1
+    fi
     echo "[$(date -u +%FT%TZ)] WARN: background music duration ${music_duration}s <=5s for $PROJECT_ID, using fallback"
     cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
     music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
@@ -516,6 +649,8 @@ fi
   else
     cp "$narration" "$reels_narration"
   fi
+  "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" || return 1
+  "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" || return 1
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
     if [ "$composition" = "hyperframes_reels" ]; then
@@ -534,13 +669,22 @@ fi
   if [ "${TEMPLATE_MODE:-0}" -eq 1 ]; then
     echo "skip repair_hyperframes_quality (templated compositions are deterministic)"
   else
-    "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict
+    "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict || return 1
   fi
+  for composition in hyperframes hyperframes_reels; do
+    local target="$project_root/$composition/assets"
+    "$PY" "$ROOT/scripts/install_news_captions.py" \
+      "$project_root/$composition/index.html" \
+      "$target/narration.mp3" \
+      "$target/word_timestamps.json" || return 1
+  done
 }
 if ! materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"; then
   echo "[$(date -u +%FT%TZ)] ERROR: HyperFrames asset materialization/repair failed for $PROJECT_ID" >&2
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "asset_materialization" --project-id "$PROJECT_ID" \
     --error-type "HYPERFRAMES_ASSET_REPAIR_FAILED" --message "HyperFrames asset materialization or repair failed" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "HyperFrames asset materialization or repair failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -560,7 +704,8 @@ fi
 
 if [ -z "$FULL_COMP" ] || [ -z "$REELS_COMP" ] || [ ! -f "$FULL_COMP/index.html" ] || [ ! -f "$REELS_COMP/index.html" ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID; skipping candidate" >&2
-  rm -rf "$ROOT/projects/$PROJECT_ID"
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "missing full/reels HyperFrames composition index" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -590,6 +735,8 @@ if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Base render validation failed for $PROJECT_ID" >&2
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "render_validation" --project-id "$PROJECT_ID" \
     --error-type "RENDER_VALIDATION_FAILED" --message "Base render validation failed" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "Base render quality validation failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -602,6 +749,8 @@ for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
   fi
 done
 if [ $RENDER_MISSING -ne 0 ]; then
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "one or more expected renders are missing or empty" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -644,6 +793,8 @@ if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/r
   }' > "$PROJECT_DIR/publish_metadata.json"
 else
   echo "[$(date -u +%FT%TZ)] ERROR: Missing video files for $PROJECT_ID" >&2
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "publish metadata not created because one or more video files are missing" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -659,11 +810,16 @@ VAL_SCRIPT="$ROOT/scripts/codex_agent_validation.py"
 for ((retry=1; retry<=$MAX_RETRIES; retry++)); do
   echo "[$(date -u +%FT%TZ)] Codex Validation Attempt $retry/$MAX_RETRIES"
 
+  REVIEW_ARGS=()
+  if [ -n "$REHEARSAL_MANIFEST" ]; then
+    REVIEW_ARGS=(--test-review-reply "$PROJECT_DIR/artifacts/reviewer_reply.json")
+  fi
   if "$PY" "$ROOT/scripts/codex_agent_validation.py" "$ROOT/projects/$PROJECT_ID" \
       --strict \
       --retry "$MAX_RETRIES" \
       --ffprobe "$FFPROBE_BIN" \
-      --ffmpeg "$FFMPEG_BIN"; then
+      --ffmpeg "$FFMPEG_BIN" \
+      "${REVIEW_ARGS[@]}"; then
     VALIDATION_EXIT=0
   else
     VALIDATION_EXIT=$?
@@ -696,8 +852,9 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
     --error-type "VALIDATION_FAILED" --message "Codex agent validation failed after $MAX_RETRIES attempts" \
     --attempt "$MAX_RETRIES" --max-attempts "$MAX_RETRIES" || true
 
-  echo "[$(date -u +%FT%TZ)] Removing failed project directory and continuing to next candidate." >&2
-  rm -rf "$ROOT/projects/$PROJECT_ID"
+  echo "[$(date -u +%FT%TZ)] Preserving failed project in quarantine and continuing to next candidate." >&2
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "Codex validation failed after $MAX_RETRIES attempts" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
 
@@ -783,6 +940,10 @@ if [ -f "renders/final_reels_vi_9x16.mp4" ]; then
 fi
 
 SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))
+if [ -n "$REHEARSAL_MANIFEST" ]; then
+  REHEARSAL_SUCCESSFUL_IDS+=("$PROJECT_ID")
+fi
+REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:completed"
 if [ $SUCCESSFUL_COUNT -ge 3 ]; then
   echo "[$(date -u +%FT%TZ)] Successfully generated and validated 3 projects. Breaking loop early."
   break
@@ -793,10 +954,16 @@ done
 # Step 5: (Removed atomic activation; now handled strictly by run_strict_docker_publish.sh's queue-next-day stage)
 cd "$ROOT"
 
+if [ -n "$REHEARSAL_MANIFEST" ] && [ "$SUCCESSFUL_COUNT" -ne 3 ]; then
+  REHEARSAL_TERMINAL_STAGE="incomplete_rehearsal"
+  echo "[$(date -u +%FT%TZ)] ERROR: rehearsal requires all three requested projects to pass; got $SUCCESSFUL_COUNT" >&2
+  exit 1
+fi
 if [ "$SUCCESSFUL_COUNT" -eq 0 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: no candidate passed strict generation and validation" >&2
   exit 1
 fi
 
+REHEARSAL_TERMINAL_STAGE="completed"
 echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE, Successful: $SUCCESSFUL_COUNT)"
 # Next-day scheduling and publishing is now fully managed by the strict orchestrator.

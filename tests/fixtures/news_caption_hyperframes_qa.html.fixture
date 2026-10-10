@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1080, height=1920">
+  <title>Caption Adapter QA Fixture</title>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    html, body { margin: 0; width: 1080px; height: 1920px; background: #101820; color: #fff; font-family: Arial, sans-serif; }
+    #main { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #101820; }
+    #qa-panel { position: absolute; inset: 12% 8% 22%; display: grid; place-content: center; gap: 28px; padding: 56px; box-sizing: border-box; border: 3px solid #5b7385; background: #1d2b36; text-align: center; }
+    #qa-panel strong { font-size: 68px; letter-spacing: 0.04em; }
+    #qa-panel span { font-size: 34px; color: #d8e4ec; }
+  </style>
+</head>
+<body>
+  <div id="main" data-composition-id="main" data-width="1080" data-height="1920" data-duration="10" data-start="0">
+    <section id="qa-panel" class="clip" data-start="0" data-duration="10" data-track-index="0">
+      <strong>CAPTION ADAPTER QA</strong>
+      <span>Synthetic QA fixture only; no editorial or factual claim.</span>
+    </section>
+  </div>
+  <script>
+    let tl = gsap.timeline({ paused: true });
+    tl.to({}, { duration: 10 }, 0);
+    window.__timelines = window.__timelines || {};
+    window.__timelines['main'] = tl;
+  </script>
+</body>
+</html>

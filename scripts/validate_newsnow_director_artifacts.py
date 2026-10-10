@@ -9,7 +9,9 @@ to the flat canonical artifact path projects/<id>/artifacts/script_vi.json.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -22,6 +24,13 @@ if str(ROOT) not in sys.path:
 from schemas.artifacts import validate_artifact
 from tools.narration_text import check_vietnamese_prose
 from tools.news import template_provenance
+from scripts.repair_hyperframes_quality import (
+    _CompositionDOM,
+    _mask_javascript_noncode,
+    _validate_seek_safety,
+)
+
+LAST_VALIDATION_ERRORS: list[str] = []
 
 
 def _detect_templated(project_dir: Path) -> bool:
@@ -163,6 +172,40 @@ def _is_valid_script_payload(payload: Any) -> bool:
     return _normalize_script_payload(payload) is not None
 
 
+def _validate_bound_script_bytes(script_path: Path, evidence_path: Path) -> bool:
+    """Validate a script bound by evidence without changing its original bytes."""
+    try:
+        script_bytes = script_path.read_bytes()
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        payload = json.loads(script_bytes)
+        if not isinstance(evidence, dict) or evidence.get("version") != "2.0":
+            LAST_VALIDATION_ERRORS.append("news evidence must be a version 2.0 object")
+            return False
+        if evidence.get("script_sha256") != hashlib.sha256(script_bytes).hexdigest():
+            LAST_VALIDATION_ERRORS.append("script binding mismatch: evidence does not match canonical script bytes")
+            return False
+        if not isinstance(payload, dict):
+            LAST_VALIDATION_ERRORS.append("bound canonical script must be a JSON object")
+            return False
+        validate_artifact("script", payload)
+        sections = payload.get("sections")
+        if not isinstance(sections, list) or not sections:
+            LAST_VALIDATION_ERRORS.append("bound canonical script must contain non-empty sections")
+            return False
+        if not any(
+            isinstance(section, dict)
+            and isinstance(section.get("text"), str)
+            and section["text"].strip()
+            for section in sections
+        ):
+            LAST_VALIDATION_ERRORS.append("bound canonical script must contain non-empty section text")
+            return False
+        return True
+    except Exception as exc:
+        LAST_VALIDATION_ERRORS.append(f"cannot validate bound canonical script: {exc}")
+        return False
+
+
 def _load_nested_checkpoint_script(project_dir: Path, min_mtime_ns: int = 0) -> Optional[Dict[str, Any]]:
     # Look for nested checkpoint produced under projects/<id>/<id>/
     candidates = sorted(project_dir.glob("*/checkpoint_script.json"))
@@ -197,6 +240,44 @@ def _has_required_compositions(project_dir: Path) -> bool:
     has_reels = any((project_dir / p / "index.html").is_file() and (project_dir / p / "index.html").stat().st_size > 0 for p in ("hyperframes_reels", "Hyperframes_reels"))
     return has_full and has_reels
 
+
+def validate_composition_seek_safety(project_dir: Path) -> list[str]:
+    """Reject known unsafe GSAP patterns before render; this is not a JS parser."""
+    errors: list[str] = []
+    compositions = (
+        ("hyperframes", "Hyperframes"),
+        ("hyperframes_reels", "Hyperframes_reels"),
+    )
+    for names in compositions:
+        index = next((project_dir / name / "index.html" for name in names
+                      if (project_dir / name / "index.html").is_file()), None)
+        if index is None:
+            continue
+        html = index.read_text(encoding="utf-8")
+        try:
+            _validate_seek_safety(index, html)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+
+        # Bounded source check for the reported ordering bug, not arbitrary JS
+        # evaluation: flag a timeline duration read before its first child call.
+        dom_scripts = [body for attrs, body in _CompositionDOM(html).scripts if not attrs.get("src")]
+        code = _mask_javascript_noncode("\n".join(dom_scripts))
+        timeline_vars = re.findall(
+            r"\b(?:const|let|var)\s+(\w+)\s*=\s*(?:window\s*\.\s*__timelines\s*\[[^]]*\]\s*=\s*)?gsap\s*\.\s*timeline\s*\(",
+            code,
+        )
+        for timeline_var in timeline_vars:
+            child = re.search(rf"\b{re.escape(timeline_var)}\s*\.\s*(?:to|from|fromTo|set)\s*\(", code)
+            duration = re.search(rf"\b{re.escape(timeline_var)}\s*\.\s*duration\s*\(", code)
+            if duration and (child is None or duration.start() < child.start()):
+                errors.append(
+                    f"{index}: timeline duration is read or set before child animations are added; "
+                    "add all children before reading or setting tl.duration()"
+                )
+                break
+    return errors
 
 
 def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
@@ -419,8 +500,7 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
         window.__timelines = window.__timelines || {{}};
         const tl = gsap.timeline({{paused: true}});
         window.__timelines['main'] = tl;
-
-        gsap.set(".scene:not(#intro)", {{ opacity: 0 }});
+        tl.set(".scene:not(#intro)", {{ opacity: 0 }});
         const dur = {duration};
         const sDur = dur / 4;
 
@@ -451,6 +531,11 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
 </html>"""
         html_file.write_text(html_content, encoding="utf-8")
 
+    seek_errors = validate_composition_seek_safety(project_dir)
+    if seek_errors:
+        global LAST_VALIDATION_ERRORS
+        LAST_VALIDATION_ERRORS = seek_errors
+        return False
     return True
 
 
@@ -461,9 +546,27 @@ def validate_and_promote_director_artifacts(
     template_package: str | None = None,
     template_version: str | None = None,
 ) -> bool:
+    global LAST_VALIDATION_ERRORS
+    LAST_VALIDATION_ERRORS = []
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     canonical_script = artifacts_dir / "script_vi.json"
+    evidence_path = artifacts_dir / "news_evidence.json"
+    evidence_present = evidence_path.exists()
+    if evidence_present:
+        # Evidence binding is byte provenance only; it is not human approval.
+        # Once evidence exists, missing or mismatched canonical bytes must not
+        # be replaced from a draft/checkpoint fallback.
+        if not canonical_script.is_file():
+            LAST_VALIDATION_ERRORS.append("bound canonical script is missing; refusing draft fallback")
+            return False
+        if not _validate_bound_script_bytes(canonical_script, evidence_path):
+            return False
+
+    if require_compositions and _has_required_compositions(project_dir):
+        LAST_VALIDATION_ERRORS = validate_composition_seek_safety(project_dir)
+        if LAST_VALIDATION_ERRORS:
+            return False
 
     # Fail closed if research brief is explicitly invalid / non-Vietnamese
     brief_path = artifacts_dir / "research_brief.json"
@@ -472,7 +575,7 @@ def validate_and_promote_director_artifacts(
             brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
             brief_title = brief_data.get("title") or brief_data.get("topic") or ""
             if brief_title and check_vietnamese_prose(brief_title):
-                if canonical_script.is_file():
+                if canonical_script.is_file() and not evidence_present:
                     canonical_script.unlink(missing_ok=True)
                 return False
         except Exception:
@@ -495,6 +598,8 @@ def validate_and_promote_director_artifacts(
         return validate_templated_compositions(project_dir, require_compositions=True)
 
     if canonical_script.is_file():
+        if evidence_present:
+            return not require_compositions or _has_required_compositions(project_dir)
         try:
             normalized = _normalize_script_payload(json.loads(canonical_script.read_text(encoding="utf-8")))
             if normalized is not None:
@@ -554,6 +659,8 @@ def main() -> int:
         template_version=args.template_version,
     )
     if not ok:
+        for error in LAST_VALIDATION_ERRORS:
+            print(f"ERROR: {error}", file=sys.stderr)
         required = "script artifact and both compositions" if args.require_compositions else "canonical script artifact"
         if args.template_package is not None:
             required = "templated compositions with valid provenance and verified captions"

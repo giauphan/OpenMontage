@@ -7,6 +7,7 @@ are not available.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -64,6 +65,11 @@ class Transcriber(BaseTool):
             "language": {"type": "string", "description": "ISO 639-1 language code, or null for auto-detect"},
             "diarize": {"type": "boolean", "default": False},
             "output_dir": {"type": "string", "description": "Directory for output files"},
+            "local_files_only": {
+                "type": "boolean",
+                "default": False,
+                "description": "Use only a locally cached model; never download model files",
+            },
         },
     }
 
@@ -119,9 +125,15 @@ class Transcriber(BaseTool):
         language = inputs.get("language")
         diarize = inputs.get("diarize", False)
         output_dir = Path(inputs.get("output_dir", input_path.parent))
+        local_files_only = bool(inputs.get("local_files_only", False))
 
         if not input_path.exists():
             return ToolResult(success=False, error=f"Input file not found: {input_path}")
+
+        try:
+            audio_sha256 = hashlib.sha256(input_path.read_bytes()).hexdigest()
+        except OSError as exc:
+            return ToolResult(success=False, error=f"Could not read input file: {exc}")
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -154,11 +166,13 @@ class Transcriber(BaseTool):
             pass
 
         def _transcribe_on(selected_device: str, selected_compute_type: str):
-            model = WhisperModel(
-                model_size,
-                device=selected_device,
-                compute_type=selected_compute_type,
-            )
+            model_options = {
+                "device": selected_device,
+                "compute_type": selected_compute_type,
+            }
+            if local_files_only:
+                model_options["local_files_only"] = True
+            model = WhisperModel(model_size, **model_options)
             segments_iter, transcription_info = model.transcribe(
                 str(input_path),
                 language=language,
@@ -219,6 +233,8 @@ class Transcriber(BaseTool):
 
         result_data = {
             "segments": segments,
+            "audio_sha256": audio_sha256,
+            "timing_source": "asr",
             "word_timestamps": word_timestamps,
             "language": detected_language,
             "duration_seconds": round(duration, 3),
@@ -227,6 +243,13 @@ class Transcriber(BaseTool):
             "compute_type": compute_type,
             "gpu_fallback_reason": gpu_fallback_reason,
         }
+
+        try:
+            current_audio_sha256 = hashlib.sha256(input_path.read_bytes()).hexdigest()
+        except OSError as exc:
+            return ToolResult(success=False, error=f"Could not verify input file after transcription: {exc}")
+        if current_audio_sha256 != audio_sha256:
+            return ToolResult(success=False, error="Input audio changed during transcription; transcript was not written")
 
         # Write transcript JSON
         output_path = output_dir / f"{input_path.stem}_transcript.json"

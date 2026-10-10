@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 import sys
-import re
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -12,7 +12,7 @@ _spec = importlib.util.spec_from_file_location(
 repair = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(repair)
 
-def test_strict_repair_normalizes_unregistered_subcompositions(tmp_path):
+def test_strict_repair_fails_closed_for_unregistered_subcompositions(tmp_path):
     html = """<!DOCTYPE html>
 <html>
 <head>
@@ -25,21 +25,22 @@ def test_strict_repair_normalizes_unregistered_subcompositions(tmp_path):
         <div data-composition-id="legit-sub"></div>
     </div>
     <script>
-        const tl = gsap.timeline();
+        const tl = gsap.timeline({ paused: true });
         window.__timelines = window.__timelines || {};
         window.__timelines['main'] = tl;
-        window.__timelines['legit-sub'] = gsap.timeline();
+        window.__timelines['legit-sub'] = gsap.timeline({ paused: true });
     </script>
 </body>
 </html>"""
     comp = tmp_path / "index.html"
     comp.write_text(html, encoding="utf-8")
-    repair.patch_html(comp, 10.0, strict=True)
+    with pytest.raises(ValueError, match="not registered for composition 'antspace-discovery'"):
+        repair.patch_html(comp, 10.0, strict=True)
     patched = comp.read_text()
 
     assert 'data-composition-id="main"' in patched
     assert 'data-composition-id="legit-sub"' in patched
-    assert 'data-composition-id="antspace-discovery"' not in patched
+    assert 'data-composition-id="antspace-discovery"' in patched
     assert 'class="test"' in patched
 
 def test_repair_binds_narration_to_fallback_root_when_composition_id_missing(tmp_path):
@@ -55,7 +56,7 @@ def test_repair_binds_narration_to_fallback_root_when_composition_id_missing(tmp
         <h1>Content</h1>
     </div>
     <script>
-        const tl = gsap.timeline();
+        const tl = gsap.timeline({ paused: true });
         window.__timelines = window.__timelines || {};
         window.__timelines['main'] = tl;
     </script>

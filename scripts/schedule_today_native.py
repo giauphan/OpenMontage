@@ -115,6 +115,13 @@ def main():
             failed = True
             continue
         topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        try:
+            from lib.news_release_gate import require_news_evidence
+            require_news_evidence(project_dir, metadata=topic_meta)
+        except Exception as err:
+            print(f"failed {proj}: news evidence gate failed ({err})")
+            failed = True
+            continue
         meta_status = topic_meta.get("status","")
         if meta_status in ("published", "scheduled"):
             print(f"failed {proj}: status '{meta_status}'")

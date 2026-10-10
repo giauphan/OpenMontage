@@ -54,6 +54,10 @@ def _run_fixture(tmp_path: Path, projects: list[str], slots: list[str],
         directory.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts_dir / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
     (config_dir / "publish_schedule.json").write_text(
         json.dumps({
             "slots": {"publish_slots_vn": slots},
@@ -76,6 +80,7 @@ def _run_fixture(tmp_path: Path, projects: list[str], slots: list[str],
             f'printf \'{{"id":"{pid}","title":"T","description":"D","yt_shorts":"renders/final_reels_vi_9x16.mp4","ig_reels":"renders/final_reels_vi_9x16.mp4","fb_video":"renders/final_full_vi_9x16.mp4"}}\' > "$ROOT/projects/{pid}/publish_metadata.json"',
             f'echo "dummy mp4 data" > "$ROOT/projects/{pid}/renders/final_full_vi_9x16.mp4"',
             f'echo "dummy mp4 data" > "$ROOT/projects/{pid}/renders/final_reels_vi_9x16.mp4"',
+            f'PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c \'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))\' "$ROOT/projects/{pid}"',
             f'echo "PROJECT_ID={pid}"',
         ]
     (scripts_dir / "run_daily_news_pipeline.sh").write_text("\n".join(pipeline) + "\n", encoding="utf-8")
@@ -91,7 +96,7 @@ def _run_fixture(tmp_path: Path, projects: list[str], slots: list[str],
     (scripts_dir / "clear_stale_projects.sh").chmod(0o755)
     (scripts_dir / "publish_manual_video.py").write_text("exit 0\n", encoding="utf-8")
 
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "PUBLISH_TZ": tzname, "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1"}
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "PUBLISH_TZ": tzname, "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1", "NEWS_MAX_SOURCE_AGE_HOURS": "24"}
     return subprocess.run(
         ["bash", str(scripts_dir / "run_strict_docker_publish.sh")],
         cwd=tmp_path,
@@ -110,6 +115,10 @@ def test_strict_run_fails_when_native_platform_schedule_fails(tmp_path: Path):
         directory.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts_dir / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
     (config_dir / "publish_schedule.json").write_text(
         json.dumps({
             "slots": {"publish_slots_vn": ["01:00", "02:00", "03:00"]},
@@ -134,6 +143,7 @@ for pid in cand_one cand_two cand_three; do
   printf '{"id":"%s","title":"T","description":"D","yt_shorts":"renders/final_reels_vi_9x16.mp4","ig_reels":"renders/final_reels_vi_9x16.mp4","fb_video":"renders/final_full_vi_9x16.mp4"}' "$pid" > "$ROOT/projects/$pid/publish_metadata.json"
   echo "dummy mp4 data" > "$ROOT/projects/$pid/renders/final_full_vi_9x16.mp4"
   echo "dummy mp4 data" > "$ROOT/projects/$pid/renders/final_reels_vi_9x16.mp4"
+  PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c 'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))' "$ROOT/projects/$pid"
   echo "PROJECT_ID=$pid"
 done
 """,
@@ -164,6 +174,7 @@ done
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "PUBLISH_TZ": "UTC",
             "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+            "NEWS_MAX_SOURCE_AGE_HOURS": "24",
         },
         capture_output=True,
         text=True,

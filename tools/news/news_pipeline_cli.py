@@ -11,6 +11,7 @@ from lib.checkpoint import init_project, write_checkpoint
 from lib.codex_news_selector import CodexNewsSelector as NewsSelector
 from lib.news_research_bridge import NewsResearchBridge
 from lib.news_scoring import NewsCandidateScorer
+from lib.news_source_capture import CaptureError, CapturePersistenceError, capture_source
 from tools.news.newsnow_adapter import NewsNowAdapter
 from tools.news.newsnow_feed import write_feed
 
@@ -165,7 +166,35 @@ def run_produce(args: argparse.Namespace) -> None:
 
 
 
-def main() -> None:
+def run_capture_source(args: argparse.Namespace) -> int:
+    """Capture one source for review without advancing the production pipeline."""
+    project_dir = Path(args.project_dir)
+    if project_dir.is_symlink() or not project_dir.is_dir():
+        print("capture-source: --project-dir must be an existing directory", file=sys.stderr)
+        return 1
+
+    try:
+        provenance = capture_source(project_dir, args.url, args.allowed_host)
+    except CapturePersistenceError as exc:
+        print(
+            json.dumps({
+                "status": "capture_persistence_failed",
+                "error": str(exc),
+                "partial_artifacts": exc.partial_artifacts,
+            }, ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 1
+    except CaptureError as exc:
+        # Do not echo the input URL: it may contain sensitive query parameters.
+        print(f"capture-source failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(provenance, ensure_ascii=False, indent=2))
+    return 0
+
+
+def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="NewsNow to OpenMontage CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -184,7 +213,18 @@ def main() -> None:
     fetch_parser.add_argument("--output", required=True, help="Path to write the raw feed JSON")
     fetch_parser.add_argument("--min-items", type=int, default=3, help="Minimum valid items required")
 
-    args = parser.parse_args()
+    capture_parser = subparsers.add_parser(
+        "capture-source",
+        help="Capture an allowlisted article as pending editorial-review provenance",
+    )
+    capture_parser.add_argument("--project-dir", required=True, help="Existing project directory")
+    capture_parser.add_argument("--url", required=True, help="HTTPS source URL to capture")
+    capture_parser.add_argument(
+        "--allowed-host", action="append", required=True,
+        help="Explicit allowed hostname (repeat for redirect/source hosts)",
+    )
+
+    args = parser.parse_args(argv)
 
     if args.command == "ingest":
         run_ingest(args)
@@ -192,7 +232,10 @@ def main() -> None:
         run_produce(args)
     elif args.command == "fetch":
         run_fetch(args)
+    elif args.command == "capture-source":
+        return run_capture_source(args)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

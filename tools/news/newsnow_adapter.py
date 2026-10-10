@@ -194,6 +194,8 @@ class NewsNowAdapter:
             reference_time = datetime.datetime.now(datetime.timezone.utc)
         elif reference_time.tzinfo is None:
             reference_time = reference_time.replace(tzinfo=datetime.timezone.utc)
+        else:
+            reference_time = reference_time.astimezone(datetime.timezone.utc)
 
         cutoff = reference_time - datetime.timedelta(hours=self.freshness_window_hours)
 
@@ -203,6 +205,23 @@ class NewsNowAdapter:
         diagnostics = []
 
         for item in raw_items:
+            if not isinstance(item, dict):
+                diagnostics.append({
+                    "raw_item_id": "missing_id",
+                    "reason": "invalid_format",
+                    "error": "Raw item must be an object",
+                })
+                continue
+
+            raw_published_at = item.get("published_at")
+            if not isinstance(raw_published_at, str) or not raw_published_at.strip():
+                diagnostics.append({
+                    "raw_item_id": item.get("id", "missing_id"),
+                    "reason": "unknown_published_at",
+                    "field": "published_at",
+                    "raw_value": item.get("published_at", "missing"),
+                })
+                continue
             try:
                 candidate = self.normalize_item(item)
             except Exception as e:
@@ -223,6 +242,16 @@ class NewsNowAdapter:
                 diagnostics.append(diagnostic)
                 continue
 
+            item_dt = datetime.datetime.fromisoformat(candidate["published_at_utc"])
+            if item_dt > reference_time:
+                diagnostics.append({
+                    "raw_item_id": item.get("id", "missing_id"),
+                    "reason": "future_published_at",
+                    "field": "published_at",
+                    "raw_value": raw_published_at,
+                })
+                continue
+
             # Deduplication check
             c_hash = candidate["content_hash"]
             t_hash = candidate["title_hash"]
@@ -230,7 +259,6 @@ class NewsNowAdapter:
                 continue
 
             # Freshness check
-            item_dt = datetime.datetime.fromisoformat(candidate["published_at_utc"])
             if item_dt < cutoff:
                 continue
 

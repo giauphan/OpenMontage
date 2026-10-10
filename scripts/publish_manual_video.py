@@ -119,6 +119,11 @@ def enforce_batch_gap(last_publish_time: str | None) -> None:
 
 
 def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, strict: bool = False) -> None:
+    rehearsal_marker = project_dir / "OFFLINE_REHEARSAL_TEST_ONLY.json"
+    if rehearsal_marker.exists() or rehearsal_marker.is_symlink():
+        raise ValueError(
+            f"Release blocked: offline rehearsal test-only marker present in {project_dir.name}"
+        )
     ffprobe = shutil.which("ffprobe") or ""
     ffmpeg = shutil.which("ffmpeg") or ""
     if not ffprobe:
@@ -262,6 +267,11 @@ def publish_batch(
     """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
     root = Path(__file__).resolve().parents[1]
+
+    # News evidence is an unconditional release gate, independent of quality
+    # preflight toggles and force/retry modes. It must precede claims and uploads.
+    from lib.news_release_gate import require_news_evidence
+    require_news_evidence(project_dir, metadata=metadata)
 
     # Metadata contract: the shared route table owns platform -> field/kind mapping.
     # DEFAULT BEHAVIOR: Single-platform publishing to prevent duplicates
@@ -1009,6 +1019,8 @@ def main():
         sys.exit(1)
 
     try:
+        from lib.news_release_gate import require_news_evidence
+        require_news_evidence(project_path, metadata=metadata)
         enforce_release_preflight(project_path, metadata, strict=True, force=args.force)
     except Exception as exc:
         print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")

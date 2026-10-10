@@ -9,9 +9,11 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+from tests.fixtures.news_evidence import write_reviewed_news_evidence
+
 ROOT = Path(__file__).resolve().parents[1]
 
-def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tmp_path: Path):
+def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tmp_path: Path, monkeypatch):
     from scripts.schedule_today_native import main
 
     projects_dir = tmp_path / "projects"
@@ -32,6 +34,8 @@ def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tm
     
     cand_dir = projects_dir / "cand_A"
     cand_dir.mkdir()
+    write_reviewed_news_evidence(cand_dir)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
     (cand_dir / "publish_metadata.json").write_text(json.dumps({
         "id": "cand_A",
         "title": "Tin tức công nghệ #tintuc #congnghe #ai",

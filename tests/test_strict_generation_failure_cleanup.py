@@ -21,6 +21,10 @@ def test_stage3_failure_quarantines_unscheduled_generated_folders(tmp_path: Path
 
     # Copy actual strict orchestrator under test
     shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts_dir / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
 
     # Schedule with one active project
     (config_dir / "publish_schedule.json").write_text(
@@ -41,6 +45,9 @@ def test_stage3_failure_quarantines_unscheduled_generated_folders(tmp_path: Path
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/projects/cand_failed_one" "$ROOT/projects/cand_failed_two" "$ROOT/projects/cand_keep"
+for pid in cand_failed_one cand_failed_two cand_keep; do
+  PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c 'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))' "$ROOT/projects/$pid"
+done
 echo "PROJECT_ID=cand_failed_one"
 echo "PROJECT_ID=cand_failed_two"
 echo "PROJECT_ID=cand_keep"
@@ -59,6 +66,7 @@ exit 5
         "TMP_ROOT": str(tmp_path / "tmp_root"),
         "MIN_DISK_MB": "0",
         "MIN_TMP_DISK_MB": "0",
+        "NEWS_MAX_SOURCE_AGE_HOURS": "24",
     }
     (tmp_path / "tmp_root").mkdir(exist_ok=True)
 
@@ -91,6 +99,10 @@ def test_disk_threshold_blocks_preflight_when_space_insufficient(tmp_path: Path)
         d.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts_dir / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
     (config_dir / "publish_schedule.json").write_text(
         json.dumps({"active_projects": []}),
         encoding="utf-8",
@@ -115,6 +127,7 @@ def test_disk_threshold_blocks_preflight_when_space_insufficient(tmp_path: Path)
         # Set minimums absurdly high so the real (ample) disk reports below them.
         "MIN_DISK_MB": "99999999",
         "MIN_TMP_DISK_MB": "99999999",
+        "NEWS_MAX_SOURCE_AGE_HOURS": "24",
     }
     (tmp_path / "tmp_root").mkdir(exist_ok=True)
 
