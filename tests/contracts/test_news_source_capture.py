@@ -86,6 +86,17 @@ def test_plain_text_keeps_literal_angle_brackets(tmp_path):
     assert result["updated_at"] is None
 
 
+@pytest.mark.parametrize("body,content_type", [
+    (b"invalid utf8: \xff", "text/plain"),
+    (b"valid bytes", "text/plain; charset=x-unknown-capture-charset"),
+])
+def test_decode_failure_rejects_capture_without_final_artifacts(tmp_path, body, content_type):
+    with pytest.raises(CaptureError, match="cannot be decoded"):
+        capture_source(tmp_path, URL, {HOST}, _transport=transport_for(response(body, content_type=content_type)))
+    assert not (tmp_path / "artifacts/news_source_capture").exists()
+    assert not (tmp_path / "artifacts/news_evidence.json").exists()
+
+
 def test_extracted_text_over_limit_is_rejected_without_truncation(tmp_path):
     with pytest.raises(CaptureError, match="without truncation"):
         capture_source(tmp_path, URL, {HOST}, _transport=transport_for(response(b"x" * 500_001, content_type="text/plain")))

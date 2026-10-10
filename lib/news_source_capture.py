@@ -312,9 +312,9 @@ def _extract(body: bytes, content_type: str) -> dict[str, Any]:
     charset_match = re.search(r"charset\s*=\s*[\"']?([A-Za-z0-9._-]+)", content_type, re.IGNORECASE)
     charset = charset_match.group(1) if charset_match else "utf-8"
     try:
-        decoded = body.decode(charset, errors="replace")
-    except LookupError:
-        decoded = body.decode("utf-8", errors="replace")
+        decoded = body.decode(charset, errors="strict")
+    except (LookupError, UnicodeDecodeError) as exc:
+        raise CaptureError("source content cannot be decoded using its declared or default charset") from exc
     if content_type.split(";", 1)[0].strip().lower() == "text/plain":
         title = None
         text = decoded
