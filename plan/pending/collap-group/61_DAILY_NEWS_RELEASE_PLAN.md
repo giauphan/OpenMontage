@@ -7,6 +7,10 @@ The existing multishot plan remains an unfinished workstream; it is not the enti
 
 Status as reviewed at `edd7826`: plan writing is complete; implementation and production acceptance are NOT complete. Native Luna is the approved coding route. Evidence 2.0 classification/corroboration checks, captions, quarantine, frozen-entrypoint mode, and the bounded acceptance controller are implemented. Source capture/editorial review integration, immutable approved scripts, an independently edited Reels rendition, positive complete rehearsals, human sample approval, and authorized deployment/cron observation remain open. This document does not authorize spending, publication, deployment, or cron activation.
 
+## Detailed implementation handoff
+
+See [daily-news completion contract](../../../docs/daily-news-completion-plan.md) for the 2026-10-10 deep audit at `4ab66ff`, prioritized source/editorial/media/operations findings, W0–W9 work packages, negative-test matrix, local Luna assignment template, migration safeguards and authoritative research references. It expands C1–C5 and N1–N7 below without declaring implementation complete. In particular, source-date integrity, caption/script comparison, template provenance, whole-run locking, durable monitoring, spend enforcement and unknown-upload reconciliation need explicit qualification; missing rehearsal bundles are not the only remaining work.
+
 ## Current evidence and closure sequence
 
 Repository investigation, not new runtime validation: the latest recorded broad regression is 1,329 passed, 7 skipped, 19 subtests. The separate strict controller ran 240 tests with zero failures/errors/skips, then correctly stopped at `blocked_missing_rehearsal_inputs`; resume reused the verified result without another attempt. See [acceptance-loop usage and evidence](../../../docs/daily-news-acceptance-loop.md). This establishes tested safeguards, not successful current-news production.
