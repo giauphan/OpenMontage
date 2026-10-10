@@ -12,17 +12,15 @@ from urllib.request import Request, urlopen
 DEFAULT_SOURCES = ("hackernews", "github", "producthunt")
 
 
-def _published_at(raw_item: dict[str, Any], payload: dict[str, Any]) -> str:
+def _published_at(raw_item: dict[str, Any], payload: dict[str, Any]) -> str | None:
     """Return an item publication time without mistaking feed refresh time for it."""
     for field in ("published_at", "publishedAt", "pubDate", "date"):
         value = raw_item.get(field)
         if isinstance(value, str) and value.strip():
             return value.strip()
 
-    # NewsNow's ``updatedTime`` describes when the source feed was refreshed,
-    # not when each article was published. Treating it as article metadata can
-    # make every current item stale when a source has not refreshed recently.
-    return datetime.now(timezone.utc).isoformat()
+    # NewsNow's ``updatedTime`` describes feed refresh, not article publication.
+    return None
 
 
 def _host(url: str) -> str:
@@ -30,7 +28,7 @@ def _host(url: str) -> str:
 
 
 def fetch_feed(base_url: str, sources: tuple[str, ...] = DEFAULT_SOURCES) -> list[dict[str, Any]]:
-    """Fetch configured NewsNow source payloads and return schema-compatible items."""
+    """Fetch NewsNow items, preserving unknown publication times as absent."""
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for source in sources:
@@ -53,23 +51,24 @@ def fetch_feed(base_url: str, sources: tuple[str, ...] = DEFAULT_SOURCES) -> lis
                 continue
             seen.add(key)
             extra = raw.get("extra") if isinstance(raw.get("extra"), dict) else {}
+            extra = {**extra, "retrieved_at": datetime.now(timezone.utc).isoformat()}
             info = str(extra.get("info") or "").strip()
             item_id = str(raw.get("id") or key)
-            items.append(
-                {
-                    "id": f"newsnow_{source}_{item_id}",
-                    "url": url,
-                    "title": title,
-                    "publisher": _host(url),
-                    "published_at": published_at,
-                    "description": info,
-                    "body": info,
-                    "tags": [source],
-                    "language": "en",
-                    "source_feed": f"newsnow:{source}",
-                    "extra": extra,
-                }
-            )
+            item = {
+                "id": f"newsnow_{source}_{item_id}",
+                "url": url,
+                "title": title,
+                "publisher": _host(url),
+                "description": info,
+                "body": info,
+                "tags": [source],
+                "language": "en",
+                "source_feed": f"newsnow:{source}",
+                "extra": extra,
+            }
+            if published_at is not None:
+                item["published_at"] = published_at
+            items.append(item)
     return items
 
 

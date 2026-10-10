@@ -9,6 +9,7 @@ to the flat canonical artifact path projects/<id>/artifacts/script_vi.json.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -169,6 +170,40 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
 
 def _is_valid_script_payload(payload: Any) -> bool:
     return _normalize_script_payload(payload) is not None
+
+
+def _validate_bound_script_bytes(script_path: Path, evidence_path: Path) -> bool:
+    """Validate a script bound by evidence without changing its original bytes."""
+    try:
+        script_bytes = script_path.read_bytes()
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        payload = json.loads(script_bytes)
+        if not isinstance(evidence, dict) or evidence.get("version") != "2.0":
+            LAST_VALIDATION_ERRORS.append("news evidence must be a version 2.0 object")
+            return False
+        if evidence.get("script_sha256") != hashlib.sha256(script_bytes).hexdigest():
+            LAST_VALIDATION_ERRORS.append("script binding mismatch: evidence does not match canonical script bytes")
+            return False
+        if not isinstance(payload, dict):
+            LAST_VALIDATION_ERRORS.append("bound canonical script must be a JSON object")
+            return False
+        validate_artifact("script", payload)
+        sections = payload.get("sections")
+        if not isinstance(sections, list) or not sections:
+            LAST_VALIDATION_ERRORS.append("bound canonical script must contain non-empty sections")
+            return False
+        if not any(
+            isinstance(section, dict)
+            and isinstance(section.get("text"), str)
+            and section["text"].strip()
+            for section in sections
+        ):
+            LAST_VALIDATION_ERRORS.append("bound canonical script must contain non-empty section text")
+            return False
+        return True
+    except Exception as exc:
+        LAST_VALIDATION_ERRORS.append(f"cannot validate bound canonical script: {exc}")
+        return False
 
 
 def _load_nested_checkpoint_script(project_dir: Path, min_mtime_ns: int = 0) -> Optional[Dict[str, Any]]:
@@ -516,6 +551,17 @@ def validate_and_promote_director_artifacts(
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     canonical_script = artifacts_dir / "script_vi.json"
+    evidence_path = artifacts_dir / "news_evidence.json"
+    evidence_present = evidence_path.exists()
+    if evidence_present:
+        # Evidence binding is byte provenance only; it is not human approval.
+        # Once evidence exists, missing or mismatched canonical bytes must not
+        # be replaced from a draft/checkpoint fallback.
+        if not canonical_script.is_file():
+            LAST_VALIDATION_ERRORS.append("bound canonical script is missing; refusing draft fallback")
+            return False
+        if not _validate_bound_script_bytes(canonical_script, evidence_path):
+            return False
 
     if require_compositions and _has_required_compositions(project_dir):
         LAST_VALIDATION_ERRORS = validate_composition_seek_safety(project_dir)
@@ -529,7 +575,7 @@ def validate_and_promote_director_artifacts(
             brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
             brief_title = brief_data.get("title") or brief_data.get("topic") or ""
             if brief_title and check_vietnamese_prose(brief_title):
-                if canonical_script.is_file():
+                if canonical_script.is_file() and not evidence_present:
                     canonical_script.unlink(missing_ok=True)
                 return False
         except Exception:
@@ -552,6 +598,8 @@ def validate_and_promote_director_artifacts(
         return validate_templated_compositions(project_dir, require_compositions=True)
 
     if canonical_script.is_file():
+        if evidence_present:
+            return not require_compositions or _has_required_compositions(project_dir)
         try:
             normalized = _normalize_script_payload(json.loads(canonical_script.read_text(encoding="utf-8")))
             if normalized is not None:

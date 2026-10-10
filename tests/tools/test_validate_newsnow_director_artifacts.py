@@ -1,5 +1,6 @@
 """Detailed tests for validate_newsnow_director_artifacts boundary helper."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -130,6 +131,162 @@ def test_validator_promotes_nested_checkpoint(tmp_path):
         "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0.0, "end_seconds": 10.0}]
     }
     assert json.loads(promoted.read_text(encoding="utf-8")) == expected_payload
+
+
+def _write_bound_news_evidence(artifacts: Path, script_bytes: bytes) -> None:
+    (artifacts / "news_evidence.json").write_text(json.dumps({
+        "version": "2.0",
+        "script_sha256": hashlib.sha256(script_bytes).hexdigest(),
+    }), encoding="utf-8")
+
+
+def test_unbound_draft_is_normalized_and_promoted(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    draft = artifacts / "script.json"
+    draft.write_text(json.dumps({
+        "title_vi": "Tin tức công nghệ",
+        "total_duration_secs": 10,
+        "sections": [{"id": 1, "narration": "Nội dung mới đây", "duration_seconds": 10}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is True
+    promoted = json.loads((artifacts / "script_vi.json").read_text(encoding="utf-8"))
+    assert promoted["version"] == "1.0"
+    assert promoted["title"] == "Tin tức công nghệ"
+    assert promoted["sections"][0]["text"] == "Nội dung mới đây"
+    assert not (artifacts / "news_evidence.json").exists()
+
+
+def test_bound_canonical_script_is_validated_without_rewrite(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script_vi.json"
+    raw = (
+        '{"version":"1.0","title":"Tin tức công nghệ",'
+        '"total_duration_seconds":10,"sections":[{"id":"1",'
+        '"text":"Nội dung mới đây","start_seconds":0,"end_seconds":10}]}  \n'
+    ).encode("utf-8")
+    script.write_bytes(raw)
+    _write_bound_news_evidence(artifacts, raw)
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is True
+    assert script.read_bytes() == raw
+
+
+@pytest.mark.parametrize("evidence_bytes", [b"{not-json", b'{"version":"1.0","script_sha256":"unused"}'])
+def test_malformed_or_wrong_version_evidence_preserves_canonical_and_draft(tmp_path, evidence_bytes):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script_vi.json"
+    canonical_bytes = json.dumps({
+        "version": "1.0",
+        "title": "Tin tức công nghệ",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}],
+    }, ensure_ascii=False).encode("utf-8")
+    draft = artifacts / "script.json"
+    draft_bytes = json.dumps({
+        "title_vi": "Bản nháp",
+        "total_duration_secs": 12,
+        "sections": [{"id": 1, "narration": "Nội dung dự thảo", "duration_seconds": 12}],
+    }, ensure_ascii=False).encode("utf-8")
+    script.write_bytes(canonical_bytes)
+    draft.write_bytes(draft_bytes)
+    (artifacts / "news_evidence.json").write_bytes(evidence_bytes)
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    assert script.read_bytes() == canonical_bytes
+    assert draft.read_bytes() == draft_bytes
+
+
+def test_bound_schema_invalid_canonical_script_fails_without_rewrite(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script_vi.json"
+    # Missing the required version/title fields must not be repaired as a draft.
+    raw = json.dumps({
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}],
+    }, ensure_ascii=False).encode("utf-8")
+    script.write_bytes(raw)
+    _write_bound_news_evidence(artifacts, raw)
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    assert script.read_bytes() == raw
+    assert helper.LAST_VALIDATION_ERRORS
+
+
+def test_bound_invalid_research_brief_preserves_canonical_script(tmp_path, monkeypatch):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script_vi.json"
+    raw = json.dumps({
+        "version": "1.0",
+        "title": "Tin tức công nghệ",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}],
+    }, ensure_ascii=False).encode("utf-8")
+    script.write_bytes(raw)
+    _write_bound_news_evidence(artifacts, raw)
+    (artifacts / "research_brief.json").write_text(json.dumps({"title": "invalid"}), encoding="utf-8")
+    monkeypatch.setattr(helper, "check_vietnamese_prose", lambda text: text == "invalid")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    assert script.read_bytes() == raw
+
+
+def test_bound_canonical_script_hash_mismatch_fails_without_mutation(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script_vi.json"
+    raw = json.dumps({
+        "version": "1.0",
+        "title": "Tin tức công nghệ",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}],
+    }, ensure_ascii=False).encode("utf-8")
+    script.write_bytes(raw)
+    _write_bound_news_evidence(artifacts, raw + b" ")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    assert script.read_bytes() == raw
+    assert any("binding mismatch" in error for error in helper.LAST_VALIDATION_ERRORS)
+
+
+def test_bound_invalid_canonical_script_does_not_fall_back_to_draft(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    script = artifacts / "script_vi.json"
+    raw = json.dumps({"title": "Tin tức công nghệ", "scenes": []}, ensure_ascii=False).encode("utf-8")
+    script.write_bytes(raw)
+    _write_bound_news_evidence(artifacts, raw)
+    (artifacts / "script.json").write_text(json.dumps({
+        "version": "1.0",
+        "title": "Bản nháp",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    assert script.read_bytes() == raw
+
+
+def test_bound_evidence_with_missing_canonical_script_blocks_draft_fallback(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    draft = artifacts / "script.json"
+    draft.write_text(json.dumps({
+        "version": "1.0",
+        "title": "Bản nháp",
+        "total_duration_seconds": 10,
+        "sections": [{"id": "1", "text": "Nội dung mới đây", "start_seconds": 0, "end_seconds": 10}],
+    }, ensure_ascii=False), encoding="utf-8")
+    (artifacts / "news_evidence.json").write_text(json.dumps({"version": "2.0", "script_sha256": "0" * 64}), encoding="utf-8")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    assert not (artifacts / "script_vi.json").exists()
+    assert draft.is_file()
 
 
 def test_cli_integration(tmp_path):

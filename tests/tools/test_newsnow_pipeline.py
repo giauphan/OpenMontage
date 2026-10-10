@@ -83,6 +83,72 @@ def test_adapter_invalid_timestamp_structured_diagnostics():
     }]
 
 
+@pytest.mark.parametrize(
+    "include_published_at,published_at,expected_raw_value",
+    [(False, None, "missing"), (True, None, None), (True, "", ""), (True, "   ", "   ")],
+)
+def test_adapter_rejects_unknown_publication_time(include_published_at, published_at, expected_raw_value):
+    item = {"id": "undated", "title": "Title", "url": URLS[0], "publisher": "Example"}
+    if include_published_at:
+        item["published_at"] = published_at
+
+    candidates, diagnostics = NewsNowAdapter().ingest_and_normalize(
+        [item], reference_time=datetime.datetime(2026, 8, 10, tzinfo=datetime.timezone.utc)
+    )
+
+    assert candidates == []
+    assert diagnostics == [{
+        "raw_item_id": "undated",
+        "reason": "unknown_published_at",
+        "field": "published_at",
+        "raw_value": expected_raw_value,
+    }]
+
+
+def test_adapter_reports_non_object_items_and_processes_valid_items():
+    valid_item = {
+        "id": "valid",
+        "title": "Valid story",
+        "url": URLS[0],
+        "publisher": "Example",
+        "published_at": "2026-08-10T10:00:00Z",
+    }
+
+    candidates, diagnostics = NewsNowAdapter().ingest_and_normalize(
+        [None, "not-an-object", valid_item],
+        reference_time=datetime.datetime(2026, 8, 10, 12, tzinfo=datetime.timezone.utc),
+    )
+
+    assert [candidate["title"] for candidate in candidates] == ["Valid story"]
+    assert diagnostics == [
+        {
+            "raw_item_id": "missing_id",
+            "reason": "invalid_format",
+            "error": "Raw item must be an object",
+        },
+        {
+            "raw_item_id": "missing_id",
+            "reason": "invalid_format",
+            "error": "Raw item must be an object",
+        },
+    ]
+
+
+def test_adapter_rejects_future_publication_time():
+    candidates, diagnostics = NewsNowAdapter().ingest_and_normalize(
+        [{"id": "future", "title": "Title", "url": URLS[0], "publisher": "Example", "published_at": "2026-08-11T00:00:00Z"}],
+        reference_time=datetime.datetime(2026, 8, 10, tzinfo=datetime.timezone.utc),
+    )
+
+    assert candidates == []
+    assert diagnostics == [{
+        "raw_item_id": "future",
+        "reason": "future_published_at",
+        "field": "published_at",
+        "raw_value": "2026-08-11T00:00:00Z",
+    }]
+
+
 def test_scoring_axis_keys_and_stable_tie_break():
     scorer = NewsCandidateScorer(reference_time=datetime.datetime(2026, 8, 10, 12, tzinfo=datetime.timezone.utc))
     first = candidate(1)
@@ -176,6 +242,7 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
     }
     # Inject a cross-source duplicate URL to verify dedupe.
     payloads["github"]["items"][0]["url"] = payloads["hackernews"]["items"][0]["url"]
+    payloads["hackernews"]["items"][0]["publishedAt"] = "2026-08-10T10:00:00Z"
 
     def fake_urlopen(request, timeout=0):
         source = request.full_url.split("id=")[1]
@@ -197,12 +264,16 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
 
     urls = [item["url"] for item in items]
     assert len(urls) == len(set(urls))
-    for item in items:
-        assert item["id"] and item["url"] and item["title"] and item["published_at"]
-        assert item["published_at"].endswith("+00:00")
-    candidates, diagnostics = NewsNowAdapter().ingest_and_normalize(items)
-    assert diagnostics == []
-    assert len(candidates) == len(items)
+    dated = next(item for item in items if "published_at" in item)
+    undated = next(item for item in items if "published_at" not in item)
+    assert dated["published_at"] == "2026-08-10T10:00:00Z"
+    assert "retrieved_at" in dated["extra"]
+    assert "retrieved_at" in undated["extra"]
+    candidates, diagnostics = NewsNowAdapter().ingest_and_normalize(
+        items, reference_time=datetime.datetime(2026, 8, 10, 12, tzinfo=datetime.timezone.utc)
+    )
+    assert len(candidates) == 1
+    assert sum(diagnostic["reason"] == "unknown_published_at" for diagnostic in diagnostics) == len(items) - 1
 
 
 def test_feed_write_requires_minimum(monkeypatch, tmp_path):
