@@ -7,7 +7,7 @@ This is a detailed implementation plan, not a declaration of completion or autho
 
 Investigation combined repository inspection, three read-only Luna reviews (editorial, media, operations), and the authoritative references in section 10. Findings below are source-level observations or identified risks, **not newly reproduced runtime failures**. Recheck symbols at the implementation revision; line numbers can move. This is a targeted audit, not proof that all project defects have been discovered.
 
-Latest recorded validation, not rerun for this document:
+Historical validation at the planning baseline (superseded for changed slices by the implementation checkpoint below):
 
 - Broad regression: **1,329 passed, 7 skipped, 19 subtests**. Skipped coverage is not acceptance evidence.
 - Separate strict acceptance-controller suite: **240 passed, zero failures/errors/skips**.
@@ -15,6 +15,29 @@ Latest recorded validation, not rerun for this document:
 - Historical full/Reels renders passed technical checks but contain unsupported archived content: **not publishable**. Synthetic caption renders and component replay prove narrower behavior only.
 - Evidence v2, quarantine, caption installation, frozen daily-shell entrypoint and bounded verification controller exist. The controller consumes rehearsal reports; it does not run coding agents or execute complete rehearsals itself. No background completion loop is established by these results.
 - Installed cron, running image, current server health and actual publication outcomes have not been freshly inspected for this plan.
+
+### Implementation checkpoint — 2026-10-10, source `b0a8e52`
+
+The user authorized implementation after the planning baseline. Local Luna agents implemented bounded slices; the supervisor reviewed, corrected failures and validated remotely. These are **partial package closures**, not whole-plan completion:
+
+| Slice | Verified behavior | Still open |
+|---|---|---|
+| W1 / F01 | Feed no longer invents publication time; retrieval time stays in provenance. Missing/null/blank dates and future dates produce explicit rejection diagnostics. Malformed batch entries do not abort valid neighbors. | Underlying article capture, source-date recovery, review packaging, live source qualification; timezone-naive source policy needs explicit qualification |
+| W2 / F03 | Existing evidence requires a matching canonical script hash; validator checks raw script without rewriting it. Malformed/wrong-version evidence, invalid schema or missing canonical script block fallback and preserve bytes. Unbound drafts still normalize. | Authenticated editorial review, compose-only/retry handoff, mutation prevention outside this validator and full dependency invalidation |
+| W5 / F10 | Monitoring append is a locked read-modify-write; unique temporary file, file flush/fsync, atomic replace and directory fsync. Corrupt/invalid history raises instead of silently clearing it. Concurrent-process and pre-replace failure tests pass. | Whole-run generation locks, stage-state format/recovery, cleanup ownership, operational alert verification and crash/power-loss qualification |
+
+**Behavior changes:** undated feeds may now yield no eligible candidates; this is an intentional hold, not permission to restore invented dates. Capture actual source dates next. Evidence-bound scripts needing normalization must return to draft/review rather than be repaired in place. Corrupt monitoring history now surfaces an error and requires investigated recovery; do not delete it to resume. Monitoring uses POSIX `flock` on the Linux runtime; shared-filesystem semantics still need operational qualification. Its existing 500-event retention remains unchanged, and the text log and JSON report are not one cross-file transaction.
+
+**Commits:** `21b4994` (dates/bound scripts), `1c72b11` (null diagnostic), `b5a0c89` (monitoring), `b0a8e52` (fixture reaches intended full evidence gate). An initial focused test caught null-vs-missing diagnostics; the strict integration run caught a fake fixture hash now rejected earlier. Both were corrected locally without weakening production gates. The fixture retains empty claims/sources and still must fail full evidence validation/quarantine.
+
+**Remote verification:** new isolated snapshot `/home/ubuntu/OpenMontage-daily-news-verify-21b4994`, populated by `git archive 21b4994` plus exact subsequent committed files. The previous remote test checkout had substantial dirty state and was left untouched. Tests ran in a disposable `openmontage:latest` container, image `sha256:899dd409a10ce38b32d769d00a263ab3357bddd08f293ba544d898cdf7b6ed50`, with `--network none`, only this snapshot mounted at `/app`, and no host production state/credentials mounted. All seven implementation/test file hashes checked equal after synchronization; the subsequent rehearsal-fixture correction was copied from its committed local revision.
+
+- Focused date, director-validator and monitoring suites: **43 passed**, zero skips (`verification-focused-final.xml`).
+- Existing fixed `lib.daily_news_acceptance_loop.SUITE` plus `tests/test_codex_agent_validation.py`, `tests/test_pipeline_monitoring.py` and the two focused news suites: **316 passed, 10 subtests passed**, zero skips/failures/errors, 21.83s (`verification-strict-final.xml`). Executed through `python3`/`pytest.main`; this was a suite invocation, not a new acceptance-controller completion run.
+- Earlier broad `tests/contracts` plus the two news suites at `1c72b11`: **1,248 passed, 7 skipped, 19 subtests**, 235.93s (`verification-contracts.xml`). SSH hit its 240s timeout during teardown, so a clean command exit was not observed. Follow-up parsed saved JUnit: zero failures/errors, seven skips; the test container had exited. This broad result predates monitoring changes and is not a substitute for strict release acceptance.
+- Reports are in the remote snapshot root. The strict final test invocation used `-q --tb=short -p no:cacheprovider --junitxml=/app/verification-strict-final.xml`; no quality thresholds were lowered. No paid generation, publication, stable deployment or cron edits occurred.
+
+**Next dependency-critical implementation:** complete W1 capture/review packaging and W2 draft→human-review→compose routing before W3 independent rendition work. Reviewer identity/workflow, permitted source policy and numeric freshness require explicit production decisions; fixture-based engineering may proceed. W4–W9 and the remainder of W5/W6 remain open. No autonomous agent is left running by this checkpoint.
 
 ### Completion has four separate gates
 
@@ -29,7 +52,7 @@ None of these gates implies the others. Mark the overall plan complete only when
 
 ## 2. Findings and priorities
 
-P0 blocks trustworthy production or risks duplicate/unknown external effects. P1 blocks quality, recovery or release qualification. These priorities do not authorize live actions.
+The table records findings at the original audit baseline; the implementation checkpoint above supersedes resolved portions of F01/F03/F10. P0 blocks trustworthy production or risks duplicate/unknown external effects. P1 blocks quality, recovery or release qualification. These priorities do not authorize live actions.
 
 | ID | Priority / evidence location | Observed gap and consequence | Package |
 |---|---|---|---|
@@ -303,5 +326,7 @@ Authoritative documentation consulted during the planning investigation:
 3. [util-linux flock(1)](https://man7.org/linux/man-pages/man1/flock.1.html): bounded/nonblocking acquisition, descriptor lifetime, lock ordering and filesystem caveats. It does not detect deadlocks or guarantee locking on every network filesystem.
 4. [SQLite Atomic Commit](https://www.sqlite.org/atomiccommit.html): possible durable local ledger solution with filesystem/fsync assumptions and crash testing. It cannot transact an external paid API or solve unknown uploads by itself.
 5. [YouTube resumable upload protocol](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol): persist session Location securely; status probe, 308/Range resume, completed response and bounded backoff/Retry-After. Expired session identity cannot prove absence of a prior upload. Never put session URLs, auth headers or credential-bearing debug logs in public evidence.
+
+6. [Python `os.fsync` and `os.replace`](https://docs.python.org/3/library/os.html#os.fsync): consulted during the monitoring implementation for flush-before-fsync and same-filesystem atomic replacement. These mechanisms are not proof of power-loss recovery on the actual deployment filesystem.
 
 These references guide investigation; they do not establish that a particular patch works. Only implementation review, isolated verification, authentic editorial approval and authorized observed operation can close the plan.
