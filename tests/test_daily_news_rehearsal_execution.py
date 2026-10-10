@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -67,7 +68,9 @@ def _frozen_project(bundle_root: Path, index: int) -> dict[str, str]:
     }), encoding="utf-8")
     (artifacts / "news_evidence.json").write_text(json.dumps({
         "version": "2.0",
-        "script_sha256": "0" * 64,
+        # Keep the byte binding valid so this exercises the full evidence
+                # gate's rejection of unsupported claims, not the earlier binding guard.
+                "script_sha256": hashlib.sha256((artifacts / "script_vi.json").read_bytes()).hexdigest(),
         "claims": [],
         "sources": [],
         "contradictions": [],
