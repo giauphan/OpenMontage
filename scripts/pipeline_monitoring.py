@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import fcntl
 import json
 import os
 import sys
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 LOGS_DIR = ROOT / "logs"
@@ -28,26 +31,76 @@ def _ensure_logs_dir() -> None:
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _load_json_report() -> List[Dict[str, Any]]:
+class MonitoringReportError(RuntimeError):
+    """The monitoring history cannot safely be read or persisted."""
+
+
+@contextmanager
+def _report_lock() -> Iterator[None]:
+    """Serialize report operations across processes sharing this filesystem."""
     _ensure_logs_dir()
-    if not JSON_REPORT_PATH.is_file():
-        return []
+    lock_path = JSON_REPORT_PATH.with_suffix(JSON_REPORT_PATH.suffix + ".lock")
+    with open(lock_path, "a", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _read_json_report_unlocked() -> List[Dict[str, Any]]:
     try:
+        report_exists = os.path.lexists(JSON_REPORT_PATH)
+        if not report_exists:
+            return []
+        if not JSON_REPORT_PATH.is_file():
+            raise MonitoringReportError(
+                f"Monitoring history at {JSON_REPORT_PATH} is not a regular file; "
+                "the original path was preserved"
+            )
         data = json.loads(JSON_REPORT_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, list):
-            return data
-    except Exception:
-        pass
-    return []
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise MonitoringReportError(
+            f"Cannot read monitoring history at {JSON_REPORT_PATH}; "
+            "the original file was preserved"
+        ) from exc
+    if not isinstance(data, list) or any(not isinstance(record, dict) for record in data):
+        raise MonitoringReportError(
+            f"Monitoring history at {JSON_REPORT_PATH} has an invalid structure; "
+            "the original file was preserved"
+        )
+    return data
+
+
+def _load_json_report() -> List[Dict[str, Any]]:
+    with _report_lock():
+        return _read_json_report_unlocked()
 
 
 def _save_json_report(records: List[Dict[str, Any]]) -> None:
     _ensure_logs_dir()
-    # Keep last 500 events to prevent unbounded growth
+    # Keep last 500 events to prevent unbounded growth.
     truncated = records[-500:] if len(records) > 500 else records
-    tmp_path = JSON_REPORT_PATH.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(truncated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp_path.replace(JSON_REPORT_PATH)
+    payload = json.dumps(truncated, ensure_ascii=False, indent=2) + "\n"
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{JSON_REPORT_PATH.name}.", suffix=".tmp", dir=LOGS_DIR)
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(payload)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        tmp_path.replace(JSON_REPORT_PATH)
+        dir_fd = os.open(LOGS_DIR, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except BaseException:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def append_monitoring_event(
@@ -78,9 +131,10 @@ def append_monitoring_event(
         "details": details or {},
     }
 
-    records = _load_json_report()
-    records.append(event)
-    _save_json_report(records)
+    with _report_lock():
+        records = _read_json_report_unlocked()
+        records.append(event)
+        _save_json_report(records)
 
     # Append to human-readable log
     icon = "🔴" if status in ("ERROR", "FAIL", "CRASH") else ("🟡" if status in ("RETRY", "WARN") else "🟢")
