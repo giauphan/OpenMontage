@@ -219,7 +219,7 @@ class NewsNowAdapter:
                     "raw_item_id": item.get("id", "missing_id"),
                     "reason": "unknown_published_at",
                     "field": "published_at",
-                    "raw_value": raw_published_at if raw_published_at is not None else "missing",
+                    "raw_value": item.get("published_at", "missing"),
                 })
                 continue
             try:
