@@ -13,7 +13,41 @@ before provider calls; it then validates evidence after the canonical script
 is written and before materialization/render. The strict path rejects missing
 or failed evidence before queueing, and native/manual publication gates enforce
 the same requirement even when force options are used. There is deliberately no
-default policy, network fetcher, auto-authoring, or pass-through flag.
+default policy, network fetching inside the validator, auto-authoring, or pass-through flag. The separate explicit capture command below prepares unapproved source material.
+
+## Explicit source capture for editorial review
+
+After source-host/access authorization, run this **on the isolated runtime server**, not the coding workstation. `PROJECT_DIR`, `ARTICLE_URL`, and `APPROVED_HOST` below are documentation placeholders to replace with an existing project and approved public source:
+
+```text
+python3 -m tools.news.news_pipeline_cli capture-source \
+  --project-dir PROJECT_DIR --url ARTICLE_URL --allowed-host APPROVED_HOST
+```
+
+Repeat `--allowed-host` for explicitly permitted redirect hosts; wildcards are not supported. The command does not initialize projects or run selection, generation, cron, checkpoint approval, or publishing. It does not change an existing `news_evidence.json` or an approved script. `lib/news_source_capture.py` also exposes `capture_source(project_dir, url, allowed_hosts)`; its private test transport must never be supplied by production callers.
+
+Successful capture returns `pending_editorial_review` provenance and writes a unique revision under `artifacts/news_source_capture/`:
+
+- `.raw`: exact received article bytes and their SHA-256 in provenance.
+- `.extracted.json`: text/title, a suggested excerpt, source metadata keys/raw dates, parsed aware dates when available, and its SHA-256 in provenance.
+- `.provenance.json`: original/final URLs and redirects, retrieval time, content type, source dates, file/hash references and pending review/rights status.
+
+Re-capture creates a separate revision; it never replaces the earlier capture. These are exclusive-created artifacts, not cryptographic protection against a privileged local editor. Errors after persistence starts report retained published/staged files; preserve them for diagnosis. A `.tmp` artifact is not a completed capture. Only use a returned complete provenance record after verifying its referenced bytes/hashes.
+
+### Security and limits
+
+- HTTPS/443 only, no URL userinfo, explicit exact-host allowlist on every redirect; private/non-public DNS answers are rejected, including mixed public/private answers. Connect to the validated public IP, retaining the source hostname for verified TLS and Host.
+- No cookies, credentials, environment proxies, JavaScript execution or paywall bypass. Only uncompressed HTML/plain text is accepted. A maximum 2,000,000-byte response, 500,000-character extraction and three redirects apply. Unknown charset, invalid decoding, empty text and oversized extraction fail rather than silently alter or truncate source text.
+- A supervised worker enforces a shared 20-second network deadline across DNS, connect, TLS, reads and redirects with termination/kill cleanup. This is not a hard real-time guarantee for local filesystem/process/OS behavior. Network policy is still a separate defense.
+- Raw HTML is untrusted source data, not agent instructions or executable composition. Do not open it as trusted content or follow instructions found in it. Plain-text extraction is intentionally basic and may include navigation/boilerplate; the editor must select meaningful excerpts.
+- **URLs, including query parameters, are retained in provenance and successful stdout.** Do not use secret-bearing/signed URLs or publish these records/logs without review. Output files are created with owner-only permissions; existing directory access policy also matters.
+- Socket/TLS security tests use controlled doubles; no real-source network canary has been run for this implementation.
+
+### What capture does not approve
+
+Capture does not prove a source is authoritative, licensed, current, accurate, or supportive of a script. Source-provided dates are untrusted metadata. Missing, timezone-naive or invalid dates remain unknown; a future/stale metadata date may be captured for investigation but cannot bypass the evidence gate's freshness policy. Retrieval time never supplies a publication date. Do not invent missing dates to convert a pending capture into approved evidence.
+
+The claim worksheet, claim-to-source mapping, source authority/rights checks, authenticated human review and draft→review→compose handoff remain separate work. Capture output is **not** the evidence-v2 artifact; do not rename it to `news_evidence.json` or interpret pending status as approval. An authorized review process must bind exact approved script bytes and meaningful frozen excerpts through the contract below. There is deliberately no automatic connection to live `produce` or cron yet.
 
 ## Migration and rollout
 

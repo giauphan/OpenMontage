@@ -16,7 +16,21 @@ Historical validation at the planning baseline (superseded for changed slices by
 - Evidence v2, quarantine, caption installation, frozen daily-shell entrypoint and bounded verification controller exist. The controller consumes rehearsal reports; it does not run coding agents or execute complete rehearsals itself. No background completion loop is established by these results.
 - Installed cron, running image, current server health and actual publication outcomes have not been freshly inspected for this plan.
 
-### Implementation checkpoint — 2026-10-10, source `b0a8e52`
+### Source-capture checkpoint — 2026-10-10, source `874ccb0`
+
+W1 now has a usable **explicit capture primitive and existing-CLI entrypoint**, implemented by local Luna agents and reviewed independently. `lib/news_source_capture.py` and `news_pipeline_cli capture-source` capture allowlisted public HTTPS articles into unique raw/extracted/provenance revisions marked pending editorial review. They preserve raw/parsed date metadata, reject lossy decoding and silent text truncation, bound response size and redirects, pin validated public addresses with verified hostname TLS, and supervise network work under a shared deadline. Failure reports retain partial artifacts; no script/evidence/checkpoint approval is written. See [capture usage, limits and approval boundary](news-evidence.md#explicit-source-capture-for-editorial-review).
+
+Commits: `bfeb8b6` (capture module, CLI and contracts), `874ccb0` (strict source decoding). Supervisor review corrected plain-text date extraction and incomplete persistence reporting before validation. Independent re-review found no remaining blocker in this slice; the worker deadline was checked with a real spawned sleeping-worker timeout/cleanup test. TLS/network tests use controlled doubles; no real article fetch or live-source canary was performed.
+
+Remote isolated snapshot: `/home/ubuntu/OpenMontage-daily-news-verify-bfeb8b6`, archived from `bfeb8b6` plus the two committed `874ccb0` files; four changed-file hashes matched local files. Disposable Docker runtime used pinned image `sha256:899dd409a10ce38b32d769d00a263ab3357bddd08f293ba544d898cdf7b6ed50`, `--network none`, with no production state mounted.
+
+- Initial capture/CLI/feed tests: **48 passed**, zero failures/skips, 2.92s (`capture-focused.xml`).
+- Final fixed acceptance suite plus capture, CLI, feed, director-validator, monitoring and Codex-reviewer regressions: **352 passed, 10 subtests passed**, zero failures/errors/skips, 25.98s (`capture-strict-final.xml`). This is test-suite verification, not a positive source-to-video rehearsal or acceptance-controller completion.
+- Full broad contracts were not rerun in this checkpoint. Stable server checkout, previous dirty test checkout, cron, publishing and paid generation were unchanged. No background coding process remains running.
+
+**W1 remains partial:** capture records are not approved evidence. Next implement a hash-verified, review-pending claim worksheet bound to the canonical draft and selected capture revisions, followed by W2's authenticated draft→review→compose handoff. Do not automatically promote date metadata, feed summaries or agent reviewer strings to truth/approval. Source-access policy, freshness, rights and reviewer workflow must be decided before real production qualification. W3–W9 remain open as described below.
+
+### Earlier implementation checkpoint — 2026-10-10, source `b0a8e52`
 
 The user authorized implementation after the planning baseline. Local Luna agents implemented bounded slices; the supervisor reviewed, corrected failures and validated remotely. These are **partial package closures**, not whole-plan completion:
 
