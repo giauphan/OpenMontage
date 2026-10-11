@@ -54,6 +54,7 @@ def test_algorithmic_fallback_does_not_make_up_claims_endorsements_or_sources():
         "candidate_id": "cand_1",
         "title": "A source title",
         "summary": "Supplied source summary",
+        "canonical_url": "",
         "url": "https://example.test/story",
         "source": "Example",
     }])
@@ -100,6 +101,24 @@ def test_empty_claims_are_blocked_not_padded():
     draft["data_points"] = []
     with pytest.raises(ValueError, match=r"BLOCKED: research incomplete.*three supplied source-backed data_points"):
         NewsResearchBridge().build_brief(_candidate(), {"research_draft": draft})
+
+
+def test_source_minimum_counts_supplied_fact_and_existing_content_urls():
+    draft = _schema_valid_draft()
+    draft["sources"] = draft["sources"][:1]
+    draft["landscape"]["existing_content"][0]["url"] = "https://example.test/extra-1"
+    draft["landscape"]["existing_content"][1]["url"] = "https://example.test/extra-2"
+
+    brief = NewsResearchBridge().build_brief(_candidate(), {"research_draft": draft})
+
+    assert len(brief["sources"]) == 5
+    assert {source["url"] for source in brief["sources"]} >= {
+        "https://example.test/source-1",
+        "https://example.test/source-2",
+        "https://example.test/source-3",
+        "https://example.test/extra-1",
+        "https://example.test/extra-2",
+    }
 
 
 def test_missing_misconception_reality_is_rejected_not_replaced():
