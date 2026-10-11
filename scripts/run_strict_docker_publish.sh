@@ -20,6 +20,38 @@ if ! flock -n 199; then
   exit 75
 fi
 
+# Heartbeats are only owned after the exclusive run lock is held. Replacing
+# via a same-directory temporary file keeps readers from seeing partial JSON.
+# STRICT_HEARTBEAT_TRAPS_BEGIN
+RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+HEARTBEAT_TERMINAL=0
+write_heartbeat() {
+  local status="$1"
+  local hb="$ROOT/logs/heartbeat/daily_orchestrator.json"
+  local tmp
+  mkdir -p "$(dirname "$hb")" || return 1
+  tmp="$(mktemp "${hb}.tmp.XXXXXX")" || return 1
+  if jq -n --arg ts "$(date -u +%FT%TZ)" --arg run "$RUN_TS" --arg status "$status" \
+       '{ts:$ts, run_id:$run, status:$status}' > "$tmp" 2>/dev/null && mv -f "$tmp" "$hb"; then
+    case "$status" in completed|failed) HEARTBEAT_TERMINAL=1 ;; esac
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+strict_run_exit() {
+  local exit_status=$?
+  trap - EXIT
+  if [ "$HEARTBEAT_TERMINAL" -eq 0 ]; then
+    write_heartbeat "failed" || true
+  fi
+  exit "$exit_status"
+}
+trap strict_run_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# STRICT_HEARTBEAT_TRAPS_END
+
 export FACEBOOK_PUBLISH_ENABLED=0
 
 # Codex pipeline profile: resolved and validated by scripts/codex_agent_validation.py.
@@ -57,7 +89,6 @@ unset _api_key
 
 LOG_DIR="$ROOT/logs/strict_docker_publish"
 mkdir -p "$LOG_DIR"
-RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_LOG="$LOG_DIR/run_${RUN_TS}.log"
 STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
@@ -91,23 +122,52 @@ stage() {
   log "===== STAGE $1: $2 ====="
 }
 
-# Heartbeat for independent missed-run detection (checked by
-# scripts/check_missed_runs.py outside the scheduler, so scheduler downtime
-# is still observable).
-write_heartbeat() {
-  local status="$1"
-  local hb="$ROOT/logs/heartbeat/daily_orchestrator.json"
-  mkdir -p "$(dirname "$hb")"
-  jq -n --arg ts "$(date -u +%FT%TZ)" --arg run "$RUN_TS" --arg status "$status" \
-       '{ts:$ts, run_id:$run, status:$status}' > "$hb" 2>/dev/null || true
-}
-
 write_state() {
   local stage_name="$1" status="$2" extra="${3:-}"
   jq -n --arg ts "$(date -u +%FT%TZ)" --arg stage "$stage_name" --arg status "$status" \
        --arg extra "$extra" \
        '{stage:$stage, status:$status, ts:$ts, extra:$extra}' >> "$STATE_FILE"
 }
+
+# STRICT_FRESHNESS_CONFIG_BEGIN
+load_news_max_source_age_from_dotenv() {
+  # Cron may not pass arbitrary daemon environment through to jobs. Preserve
+  # every explicit environment value (including empty/invalid safety overrides)
+  # and read only this non-secret setting from .env when it is truly unset.
+  if [ "${NEWS_MAX_SOURCE_AGE_HOURS+x}" = x ] || [ ! -f "$ROOT/.env" ]; then
+    return 0
+  fi
+
+  local configured_age
+  if configured_age="$("$PY" - "$ROOT/.env" 2>/dev/null <<'PY'
+import sys
+from dotenv import dotenv_values
+
+try:
+    values = dotenv_values(sys.argv[1], interpolate=False)
+except Exception:
+    raise SystemExit(2)
+key = "NEWS_MAX_SOURCE_AGE_HOURS"
+if key not in values:
+    raise SystemExit(1)
+value = values[key]
+sys.stdout.write("" if value is None else value)
+PY
+)"; then
+    export NEWS_MAX_SOURCE_AGE_HOURS="$configured_age"
+  fi
+}
+
+validate_news_max_source_age() {
+  "$PY" -c 'import math, os, sys; value=os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS"); valid=False
+try:
+    age=float(value) if value is not None and value.strip() else float("nan")
+    valid=math.isfinite(age) and 0 < age <= 720
+except (TypeError, ValueError, OverflowError):
+    pass
+sys.exit(0 if valid else 1)'
+}
+# STRICT_FRESHNESS_CONFIG_END
 
 cleanup_system_disk_space() {
   log "running pre-flight disk cleanup to prevent low-disk failures..."
@@ -203,13 +263,8 @@ command -v ffprobe  >/dev/null  || fail "ffprobe missing"
 command -v codex    >/dev/null  || fail "codex CLI missing"
 # Strict pipeline candidates are news by definition. Require explicit freshness
 # policy before any generation or paid provider stage can begin.
-if ! "$PY" -c 'import math, os, sys; value=os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS"); valid=False
-try:
-    age=float(value) if value is not None and value.strip() else float("nan")
-    valid=math.isfinite(age) and 0 < age <= 720
-except (TypeError, ValueError, OverflowError):
-    pass
-sys.exit(0 if valid else 1)'; then
+load_news_max_source_age_from_dotenv
+if ! validate_news_max_source_age; then
   fail "NEWS_MAX_SOURCE_AGE_HOURS is required and must be a finite number in (0, 720]"
 fi
 if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
