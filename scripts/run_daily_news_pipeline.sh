@@ -176,10 +176,27 @@ if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output d
   fi
 fi
 
-# Step 1: Select and initialize distinct current topics.
+# Step 1: Select and initialize distinct current topics. Preserve the producer's
+# exit status across tee so partial output cannot make a failed acquisition look
+# like a successful generation attempt.
+# PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$ROOT/logs/news_produce_$(date -u +%Y%m%dT%H%M%SZ).log"
-"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG" || true
+set +e
+"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG"
+PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
+set -e
+PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
+TEE_STATUS="${PRODUCER_PIPE_STATUS[1]}"
+if [ "$PRODUCE_STATUS" -ne 0 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: topic production failed (exit=$PRODUCE_STATUS); refusing partial candidate output." >&2
+  exit "$PRODUCE_STATUS"
+fi
+if [ "$TEE_STATUS" -ne 0 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: could not persist topic production log (exit=$TEE_STATUS)." >&2
+  exit "$TEE_STATUS"
+fi
 mapfile -t PROJECT_IDS < <(grep -E '^PROJECT_ID=[A-Za-z0-9_-]{1,128}$' "$PRODUCE_LOG" | cut -d= -f2 | awk '!seen[$0]++ && $0 != "_failed_generation_recovered" && index($0, "_failed_generation_recovered_") != 1')
+# PRODUCER_EXECUTION_END
 if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
   exit 1
