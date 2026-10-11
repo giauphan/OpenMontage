@@ -9,6 +9,17 @@ export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:/app/node_modules/.bin:$HOME/
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+# Serialize the complete strict run, including preflight and generation. Keep
+# this stable lock file on the shared ROOT filesystem and never unlink it:
+# flock releases the descriptor automatically when this process tree exits.
+STRICT_RUN_LOCK="$ROOT/.strict_docker_publish.lock"
+exec 199>>"$STRICT_RUN_LOCK"
+if ! flock -n 199; then
+  printf '%s\n' "ERROR: another strict publish run is active for $ROOT; retry after it finishes" >&2
+  exit 75
+fi
+
 export FACEBOOK_PUBLISH_ENABLED=0
 
 # Codex pipeline profile: resolved and validated by scripts/codex_agent_validation.py.

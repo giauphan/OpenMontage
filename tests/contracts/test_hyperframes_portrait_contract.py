@@ -50,6 +50,13 @@ def composition_html(width: int, height: int, *, viewport: tuple[int, int] | Non
 def write_composition(tmp_path: Path, html: str) -> Path:
     index = tmp_path / "index.html"
     index.write_text(html, encoding="utf-8")
+    # FONT_CSS names explicit local assets. These source-only repair tests do not
+    # render fonts, but must model a valid materialized composition rather than
+    # relying on repair code to create unrelated fallback media.
+    assets = tmp_path / "assets"
+    assets.mkdir(exist_ok=True)
+    for font_name in repair.REQUIRED_FONTS:
+        (assets / font_name).write_bytes(b"test-font")
     return index
 
 

@@ -556,6 +556,42 @@ chmod -R 777 . 2>/dev/null || true
 mkdir -p renders
 
 # Autonomous directors may record generated assets in the manifest without materializing files.
+validate_project_background_music() {
+  local project_root="$1"
+  local project_id="$2"
+  local music="$project_root/assets/music-bg.mp3"
+  local narration="$project_root/assets/narration.mp3"
+  local probe_output
+  if [ ! -s "$music" ]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: background music asset missing for $project_id" >&2
+    return 1
+  fi
+  if ! probe_output=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$music" 2>/dev/null; probe_status=$?; printf '\034'; exit "$probe_status"); then
+    echo "[$(date -u +%FT%TZ)] ERROR: could not probe background music duration for $project_id" >&2
+    return 1
+  fi
+  probe_output=${probe_output%$'\034'}
+  if [[ "$probe_output" == *$'\n' ]]; then probe_output=${probe_output%$'\n'}; fi
+  if [[ "$probe_output" == *$'\r' ]]; then probe_output=${probe_output%$'\r'}; fi
+  if [[ "$probe_output" == *$'\n'* || "$probe_output" == *$'\r'* ]] || ! python3 -c 'import math, re, sys
+value = sys.argv[1]
+if not re.fullmatch(r"[+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", value):
+    raise SystemExit(1)
+try:
+    duration = float(value)
+except (OverflowError, ValueError):
+    raise SystemExit(1)
+raise SystemExit(0 if math.isfinite(duration) and duration > 5 else 1)' "$probe_output"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: background music duration must be a single finite numeric value greater than 5s (got ${probe_output:-empty}) for $project_id" >&2
+    return 1
+  fi
+
+  if cmp -s "$narration" "$music"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $project_id" >&2
+    return 1
+  fi
+}
+
 materialize_hyperframes_assets() {
   local project_root="$1"
   local narration="$project_root/assets/narration.mp3"
@@ -617,29 +653,7 @@ materialize_hyperframes_assets() {
     echo "[$(date -u +%FT%TZ)] ERROR: narration duration ${narration_duration}s <=5s for $PROJECT_ID"
     return 1
   fi
-  if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
-    if [ -n "$REHEARSAL_MANIFEST" ]; then
-      echo "[$(date -u +%FT%TZ)] ERROR: frozen rehearsal background music is missing for $PROJECT_ID" >&2
-      return 1
-    fi
-    echo "[$(date -u +%FT%TZ)] WARN: background music asset missing for $PROJECT_ID, using fallback"
-    cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
-  fi
-  local music_duration
-  music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
-  if ! awk -v d="$music_duration" 'BEGIN{exit !(d > 5)}'; then
-    if [ -n "$REHEARSAL_MANIFEST" ]; then
-      echo "[$(date -u +%FT%TZ)] ERROR: frozen rehearsal background music duration ${music_duration}s <=5s for $PROJECT_ID" >&2
-      return 1
-    fi
-    echo "[$(date -u +%FT%TZ)] WARN: background music duration ${music_duration}s <=5s for $PROJECT_ID, using fallback"
-    cp "$ROOT/tests/qa/output/music_calm.mp3" "$project_root/assets/music-bg.mp3" || true
-    music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
-  fi
-  if cmp -s "$narration" "$project_root/assets/music-bg.mp3"; then
-    echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID"
-    return 1
-  fi
+  validate_project_background_music "$project_root" "$PROJECT_ID" || return 1
   # Reels/Shorts must stay under the 60s platform limit. Derive a capped
   # narration for the reels composition so its aligned timeline is <=60s.
   local reels_cap=58

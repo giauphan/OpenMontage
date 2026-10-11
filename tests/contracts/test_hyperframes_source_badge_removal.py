@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 
-from scripts.repair_hyperframes_quality import patch_html
+from scripts.repair_hyperframes_quality import REQUIRED_FONTS, patch_html
 
 def test_source_badge_removal(tmp_path: Path):
     project_dir = tmp_path / "cand_test"
@@ -25,6 +25,12 @@ body { background: white; }
 """
     index = project_dir / "index.html"
     index.write_text(html, encoding="utf-8")
+
+    # Model a materialized composition; repair must not manufacture unrelated assets.
+    assets = project_dir / "assets"
+    assets.mkdir()
+    for font_name in REQUIRED_FONTS:
+        (assets / font_name).write_bytes(b"test-font")
 
     # Needs to match 10.0 duration
     patch_html(index, 10.0)
