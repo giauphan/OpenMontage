@@ -101,7 +101,6 @@ class CodexNewsSelector:
                 "credibility": "anecdotal",
             })
 
-
         return {
             "selected_candidate_id": cid,
             "research_status": "incomplete",

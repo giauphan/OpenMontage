@@ -11,6 +11,11 @@ from lib.checkpoint import init_project, write_checkpoint
 from lib.codex_news_selector import CodexNewsSelector as NewsSelector
 from lib.news_research_bridge import NewsResearchBridge
 from lib.news_scoring import NewsCandidateScorer
+from lib.news_claim_review import (
+    ReviewWorksheetError,
+    ReviewWorksheetPersistenceError,
+    prepare_claim_review,
+)
 from lib.news_source_capture import CaptureError, CapturePersistenceError, capture_source
 from tools.news.newsnow_adapter import NewsNowAdapter
 from tools.news.newsnow_feed import write_feed
@@ -194,6 +199,34 @@ def run_capture_source(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_prepare_review(args: argparse.Namespace) -> int:
+    """Build a hash-bound, review-pending worksheet from explicit revisions."""
+    selected = []
+    for item in args.capture:
+        if "=" not in item:
+            print("prepare-review: each --capture must be PROVENANCE_PATH=SHA256", file=sys.stderr)
+            return 1
+        path, digest = item.rsplit("=", 1)
+        selected.append((path, digest))
+    try:
+        result = prepare_claim_review(args.project_dir, selected)
+    except ReviewWorksheetPersistenceError as exc:
+        print(
+            json.dumps({
+                "status": "worksheet_persistence_failed",
+                "error": str(exc),
+                "partial_artifacts": exc.partial_artifacts,
+            }, ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 1
+    except ReviewWorksheetError as exc:
+        print(f"prepare-review failed: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="NewsNow to OpenMontage CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -224,6 +257,15 @@ def main(argv: List[str] | None = None) -> int:
         help="Explicit allowed hostname (repeat for redirect/source hosts)",
     )
 
+    review_parser = subparsers.add_parser(
+        "prepare-review", help="Create a hash-bound pending claim-review worksheet"
+    )
+    review_parser.add_argument("--project-dir", required=True, help="Existing project directory")
+    review_parser.add_argument(
+        "--capture", action="append", required=True,
+        help="Explicit provenance path=expected SHA-256 (repeat per capture revision)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -234,6 +276,8 @@ def main(argv: List[str] | None = None) -> int:
         run_fetch(args)
     elif args.command == "capture-source":
         return run_capture_source(args)
+    elif args.command == "prepare-review":
+        return run_prepare_review(args)
     return 0
 
 

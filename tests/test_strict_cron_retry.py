@@ -100,6 +100,19 @@ if not (project / 'renders' / 'final_reels_vi_9x16.mp4').is_file():
     return scripts, config, binaries
 
 
+def occupy_today_slots(config: Path) -> list[dict[str, str]]:
+    today = datetime.now(timezone.utc).strftime("%F")
+    occupied = [
+        {"project_id": f"already_queued_{slot.replace(':', '')}", "publish_date": today, "publish_time": slot}
+        for slot in ("01:00", "02:00", "03:00")
+    ]
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    schedule["active_projects"] = occupied
+    schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+    return occupied
+
+
 def run_pipeline(tmp_path: Path, scripts: Path, binaries: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(scripts / "run_strict_docker_publish.sh")],
@@ -133,6 +146,7 @@ if project == 'cand_fail' or count < 3:
 """,
     )
 
+    occupied_today = occupy_today_slots(config)
     result = run_pipeline(tmp_path, scripts, binaries)
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -142,7 +156,7 @@ if project == 'cand_fail' or count < 3:
 
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
     schedule = json.loads((config / "publish_schedule.json").read_text(encoding="utf-8"))
-    assert schedule["active_projects"] == [{
+    assert schedule["active_projects"] == occupied_today + [{
         "project_id": "cand_pass",
         "publish_date": tomorrow,
         "publish_time": "01:00",
@@ -165,16 +179,23 @@ def test_all_validation_failures_leave_schedule_unchanged(tmp_path: Path):
 def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
     scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(1)\n")
     (scripts / "codex_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    occupied_today = occupy_today_slots(config)
 
     result = run_pipeline(tmp_path, scripts, binaries)
 
     assert result.returncode == 0, result.stdout + result.stderr
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
     schedule = json.loads((config / "publish_schedule.json").read_text(encoding="utf-8"))
-    project_id = schedule["active_projects"][0]["project_id"]
-    assert schedule["active_projects"][0]["publish_date"] == tomorrow
-    assert (tmp_path / "projects" / project_id / "publish_metadata.json").is_file()
-    assert (tmp_path / "projects" / project_id / "renders" / "final_reels_vi_9x16.mp4").is_file()
+    queued = [entry for entry in schedule["active_projects"] if entry["publish_date"] == tomorrow]
+    assert {entry["project_id"]: entry["publish_time"] for entry in queued} == {
+        "cand_fail": "01:00",
+        "cand_pass": "02:00",
+    }
+    assert schedule["active_projects"][:3] == occupied_today
+    for entry in queued:
+        project_id = entry["project_id"]
+        assert (tmp_path / "projects" / project_id / "publish_metadata.json").is_file()
+        assert (tmp_path / "projects" / project_id / "renders" / "final_reels_vi_9x16.mp4").is_file()
 
     slot_result = subprocess.run(
         [
@@ -194,4 +215,4 @@ def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
     )
 
     assert slot_result.returncode == 0, slot_result.stdout + slot_result.stderr
-    assert tomorrow in (tmp_path / "slot-publisher-call").read_text(encoding="utf-8")
+    assert (tmp_path / "slot-publisher-call").read_text(encoding="utf-8") == f"{tomorrow} 01:00 cand_fail"
