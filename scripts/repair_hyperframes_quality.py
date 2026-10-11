@@ -12,7 +12,8 @@ import shutil
 import subprocess
 import sys
 import unicodedata
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+from urllib.parse import unquote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.narration_text import _FORBIDDEN_PATTERN as _MALFORMED_TEXT_PATTERN
@@ -38,122 +39,64 @@ PORTRAIT_WIDTH = 1080
 PORTRAIT_HEIGHT = 1920
 
 
-def generate_fallback_visual_asset(target_path: Path, label: str = "Editorial Visual") -> None:
-    """Generate high-contrast editorial fallback SVG asset so Chromium never throws 404."""
-    if target_path.is_dir():
-        return
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="50%" stop-color="#1e293b" />
-      <stop offset="100%" stop-color="#0284c7" />
-    </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#38bdf8" />
-      <stop offset="100%" stop-color="#818cf8" />
-    </linearGradient>
-  </defs>
-  <rect width="1080" height="1920" fill="url(#bg)" />
-  <circle cx="540" cy="800" r="280" fill="url(#accent)" opacity="0.15" />
-  <rect x="140" y="700" width="800" height="400" rx="32" fill="#1e293b" opacity="0.85" stroke="#38bdf8" stroke-width="4" />
-  <text x="540" y="880" font-family="'BeVietnamPro', Arial, sans-serif" font-size="48" font-weight="bold" fill="#f8fafc" text-anchor="middle">{label}</text>
-  <text x="540" y="960" font-family="'BeVietnamPro', Arial, sans-serif" font-size="28" fill="#38bdf8" text-anchor="middle">Tin Tức Công Nghệ AI</text>
-</svg>"""
-    target_path.write_text(svg_content, encoding="utf-8")
-
-
 def repair_missing_composition_assets(path: Path, html: str) -> str:
-    """Detect missing local asset references (img src, css url) and materialize fallbacks to prevent 404."""
-    composition_dir = path.parent
-    project_root = composition_dir.parent
-    assets_dir = composition_dir / "assets"
-    assets_dir.mkdir(parents=True, exist_ok=True)
+    """Reject unresolved local media references without mutating project assets."""
+    composition_dir = path.parent.resolve()
 
-    # 1. Match img src
-    def fix_img_src(match: re.Match[str]) -> str:
-        tag = match.group(0)
-        src = match.group(1).strip()
-        if not src or src.startswith("data:"):
-            return tag
+    def validate_local_reference(raw_reference: str, kind: str) -> None:
+        raw_reference = raw_reference.strip()
+        decoded_reference = html_lib.unescape(raw_reference)
+        if kind == "CSS URL" and decoded_reference != raw_reference:
+            raise ValueError(
+                f"{path}: HTML-entity-encoded CSS URL is ambiguous; use a percent-encoded path instead: {raw_reference!r}"
+            )
+        reference = decoded_reference
+        if not reference or reference.startswith("#"):
+            return
+        if reference.lower().startswith("data:") or re.match(r"^(?:https?:)?//", reference, re.IGNORECASE):
+            return
 
-        # Check if local relative path
-        if not src.startswith(("http://", "https://", "//")):
-            clean_src = src.split("?")[0].split("#")[0]
-            if not clean_src or clean_src in (".", "./", "/"):
-                return tag
-            try:
-                target = (composition_dir / clean_src).resolve()
-            except Exception:
-                return tag
-            if target.is_dir() or target == composition_dir:
-                return tag
-            if not target.is_file() or target.stat().st_size == 0:
-                # Look for matching filename in project assets
-                filename = Path(clean_src).name
-                if not filename or filename.startswith("."):
-                    return tag
-                candidates = [c for c in project_root.glob(f"**/{filename}") if c.is_file()]
-                found = False
-                for cand in candidates:
-                    if cand.stat().st_size > 0 and cand != target:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(cand, target)
-                        found = True
-                        break
-                if not found:
-                    # Materialize fallback SVG
-                    fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
-                    if fallback_file.is_dir() or fallback_file == composition_dir:
-                        return tag
-                    label = Path(clean_src).stem.replace("_", " ").replace("-", " ").title()
-                    generate_fallback_visual_asset(fallback_file, label=label or "Visual Asset")
-                    if fallback_file != target:
-                        return tag.replace(src, str(fallback_file.relative_to(composition_dir)))
-        return tag
+        clean_reference = unquote(reference.split("?", 1)[0].split("#", 1)[0])
+        if not clean_reference or clean_reference in (".", "./", "/"):
+            return
+        candidate_path = Path(clean_reference)
+        windows_path = PureWindowsPath(clean_reference)
+        if candidate_path.is_absolute() or windows_path.is_absolute() or windows_path.drive:
+            raise ValueError(f"{path}: {kind} asset reference must be relative to the composition: {reference!r}")
+        scheme_match = re.match(r"^([a-z][a-z0-9+.-]*):", clean_reference, re.IGNORECASE)
+        if scheme_match:
+            raise ValueError(
+                f"{path}: unsupported {kind} asset URL scheme {scheme_match.group(1)!r}: {reference!r}"
+            )
 
-    html = re.sub(r'<img\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*>', fix_img_src, html, flags=re.IGNORECASE)
+        unresolved = composition_dir / candidate_path
+        current = composition_dir
+        for part in candidate_path.parts:
+            if part in ("", "."):
+                continue
+            current = current / part
+            if current.is_symlink():
+                raise ValueError(f"{path}: {kind} asset reference traverses a symbolic link: {reference!r}")
 
-    # 2. Match background url(...)
-    def fix_css_url(match: re.Match[str]) -> str:
-        full_match = match.group(0)
-        url_target = match.group(2).strip()
-        if not url_target or url_target.startswith("data:"):
-            return full_match
-        if not url_target.startswith(("http://", "https://", "//")):
-            clean_url = url_target.split("?")[0].split("#")[0]
-            if not clean_url or clean_url in (".", "./", "/"):
-                return full_match
-            try:
-                target = (composition_dir / clean_url).resolve()
-            except Exception:
-                return full_match
-            if target.is_dir() or target == composition_dir:
-                return full_match
-            if not target.is_file() or target.stat().st_size == 0:
-                filename = Path(clean_url).name
-                if not filename or filename.startswith("."):
-                    return full_match
-                candidates = [c for c in project_root.glob(f"**/{filename}") if c.is_file()]
-                found = False
-                for cand in candidates:
-                    if cand.stat().st_size > 0 and cand != target:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(cand, target)
-                        found = True
-                        break
-                if not found:
-                    fallback_file = target.with_suffix(".svg") if target.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else target
-                    if fallback_file.is_dir() or fallback_file == composition_dir:
-                        return full_match
-                    generate_fallback_visual_asset(fallback_file, label="Background Visual")
-                    if fallback_file != target:
-                        rel_path = str(fallback_file.relative_to(composition_dir))
-                        return full_match.replace(url_target, rel_path)
-        return full_match
+        target = unresolved.resolve()
+        try:
+            target.relative_to(composition_dir)
+        except ValueError as exc:
+            raise ValueError(f"{path}: {kind} asset reference escapes the composition directory: {reference!r}") from exc
+        if target == composition_dir or target.is_dir():
+            return
+        if not target.is_file() or target.stat().st_size == 0:
+            raise ValueError(
+                f"{path}: missing or empty local {kind} asset {reference!r}; "
+                "provide the intended file within this composition's directory"
+            )
 
-    html = re.sub(r'url\((["\']?)([^"\'\)]+)\1\)', fix_css_url, html, flags=re.IGNORECASE)
+    for match in re.finditer(r'<img\b[^>]*\bsrc=["\']([^"\']*)["\'][^>]*>', html, flags=re.IGNORECASE):
+        validate_local_reference(match.group(1), "image")
+
+    for match in re.finditer(r'url\((["\']?)([^"\'\)]+)\1\)', html, flags=re.IGNORECASE):
+        validate_local_reference(match.group(2), "CSS URL")
+
     return html
 
 

@@ -102,11 +102,6 @@ class NewsResearchBridge:
                 )
             sources.append(normalized_source)
 
-        if len(sources) < 5:
-            raise ValueError(
-                "BLOCKED: research incomplete; fewer than five supplied source records"
-            )
-
         normalized_existing_content = []
         for item in existing_content:
             if not isinstance(item, dict):
@@ -125,6 +120,14 @@ class NewsResearchBridge:
                         item[field], f"existing_content {field}"
                     )
             normalized_existing_content.append(normalized_item)
+            source_url = normalized_item.get("url")
+            if source_url and source_url not in seen_urls:
+                seen_urls.add(source_url)
+                sources.append({
+                    "url": source_url,
+                    "title": normalized_item["title"],
+                    "used_for": "Supplied existing-content reference",
+                })
 
         normalized_data_points = []
         for item in data_points:
@@ -140,6 +143,18 @@ class NewsResearchBridge:
                 if field in item:
                     normalized_item[field] = self._require_string(item[field], f"data_point {field}")
             normalized_data_points.append(normalized_item)
+            if source_url not in seen_urls:
+                seen_urls.add(source_url)
+                sources.append({
+                    "url": source_url,
+                    "title": self._require_string(item.get("source_name") or source_url, "data_point source title"),
+                    "used_for": "Supplied data-point reference",
+                })
+
+        if len(sources) < 5:
+            raise ValueError(
+                "BLOCKED: research incomplete; fewer than five supplied source records (unique URLs)"
+            )
 
         normalized_questions = [
             self._require_string(question, "audience common_question")

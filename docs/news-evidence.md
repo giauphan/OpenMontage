@@ -49,6 +49,20 @@ Capture does not prove a source is authoritative, licensed, current, accurate, o
 
 The claim worksheet, claim-to-source mapping, source authority/rights checks, authenticated human review and draft→review→compose handoff remain separate work. Capture output is **not** the evidence-v2 artifact; do not rename it to `news_evidence.json` or interpret pending status as approval. An authorized review process must bind exact approved script bytes and meaningful frozen excerpts through the contract below. There is deliberately no automatic connection to live `produce` or cron yet.
 
+### Explicit pending review worksheet (local scaffold only)
+
+For an existing project with the canonical full script at `artifacts/script_vi.json`, an editor may prepare a scaffold from explicitly selected, complete capture revisions. Compute each provenance digest from the exact `.provenance.json` bytes and supply it with that path:
+
+```text
+python3 -m tools.news.news_pipeline_cli prepare-review \
+  --project-dir PROJECT_DIR \
+  --capture artifacts/news_source_capture/CAPTURE_ID.provenance.json=PROVENANCE_SHA256
+```
+
+Repeat `--capture` to select additional capture revisions. The expected provenance digest is an external integrity pin for those exact provenance bytes; it does **not** authenticate who supplied the digest or provenance. The command additionally checks the pinned record's raw/extracted hashes, exact capture-revision filenames and pairing, and the canonical script hash; the trusted provenance pin is the basis for associating those hashes with the selected capture. It cannot independently re-derive the extraction from raw bytes because capture provenance does not preserve all decoding inputs (including charset). It makes no claim that the excerpt supports any script wording. The bounded local command does no network access or provider work, caps individual and aggregate input/output sizes, and fails closed if Linux descriptor-relative no-follow filesystem operations are unavailable. It rejects unsafe/non-regular/symlinked/escaping files, malformed/duplicate-key/non-finite JSON, incomplete metadata, missing revisions, digest mismatches, and non-pending captures. Output is staged, fsynced, and atomically published without replacement as a unique pending revision under `artifacts/news_claim_review/`; persistence errors report retained staging/final paths. Existing scripts, captures, worksheets, `news_evidence.json`, and checkpoints are not edited.
+
+This is **full rendition only** (`script_vi.json`); it does not prepare a Reels script. It copies each section's original wording as a review scaffold, but does not extract claims, link candidates to sources, or assert source support. Candidate mappings and conflicts begin unresolved; rights and authority begin unresolved. Missing or invalid publication/update dates remain `null`/unknown; retrieval time is recorded separately and never substituted. Capture bytes are untrusted source data, never instructions. The worksheet has no reviewer, review time, approval, or evidence-v2 effect. A human editor must independently identify claims, choose meaningful excerpts, assess dates/authority/rights/conflicts, and conduct authorized review. This command is not a human approval mechanism or production/cron integration.
+
 ## Migration and rollout
 
 This gate is intentionally fail-closed. Before deploying or enabling the
