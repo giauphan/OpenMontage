@@ -49,15 +49,16 @@ services:
       - /app/node_modules
       - ~/.codex:/etc/codex_source:ro
       - ~/.openmontage:/root/.openmontage
-    command: >
-      bash -c "
-        bash /app/scripts/init_codex_profile.sh /etc/codex_source /root/.codex_pipeline root &&
-        bash /app/scripts/init_codex_profile.sh /etc/codex_source /home/node/.codex_pipeline node &&
-        mkdir -p /app/logs &&
-        (command -v cron >/dev/null 2>&1 || apt-get update && apt-get install -y cron jq) &&
-        crontab deploy/openmontage.cron &&
-        cron -f
-      "
+    command: |
+      bash -ec '
+        bash /app/scripts/init_codex_profile.sh /etc/codex_source /root/.codex_pipeline root
+        bash /app/scripts/init_codex_profile.sh /etc/codex_source /home/node/.codex_pipeline node
+        mkdir -p /app/logs
+        command -v cron >/dev/null 2>&1 || { echo "ERROR: cron is not installed in the scheduler image" >&2; exit 1; }
+        command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is not installed in the scheduler image" >&2; exit 1; }
+        crontab /app/deploy/openmontage.cron
+        exec cron -f
+      '
     healthcheck:
       test: ["CMD", "pgrep", "cron"]
       interval: 30s
