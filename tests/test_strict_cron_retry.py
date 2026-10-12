@@ -1,7 +1,10 @@
+import fcntl
 import json
 import os
 import shutil
+import signal
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -216,3 +219,138 @@ def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
 
     assert slot_result.returncode == 0, slot_result.stdout + slot_result.stderr
     assert (tmp_path / "slot-publisher-call").read_text(encoding="utf-8") == f"{tomorrow} 01:00 cand_fail"
+
+
+def heartbeat_trap_block() -> str:
+    source = (ROOT / "scripts" / "run_strict_docker_publish.sh").read_text(encoding="utf-8")
+    return source.split("# STRICT_HEARTBEAT_TRAPS_BEGIN\n", 1)[1].split(
+        "\n# STRICT_HEARTBEAT_TRAPS_END", 1
+    )[0]
+
+
+def test_unexpected_exit_writes_atomic_failed_heartbeat_and_preserves_status(tmp_path: Path):
+    script = (
+        'set -euo pipefail\nROOT="$TEST_ROOT"\n'
+        + heartbeat_trap_block()
+        + '\nwrite_heartbeat "started"\nexit 8\n'
+    )
+    result = subprocess.run(
+        ["/bin/bash", "-c", script],
+        env={**os.environ, "TEST_ROOT": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    assert result.returncode == 8
+    data = json.loads(heartbeat.read_text(encoding="utf-8"))
+    assert data["status"] == "failed"
+    assert data["run_id"]
+    assert not list(heartbeat.parent.glob("daily_orchestrator.json.tmp.*"))
+
+
+def test_successful_exit_writes_completed_heartbeat(tmp_path: Path):
+    script = (
+        'set -euo pipefail\nROOT="$TEST_ROOT"\n'
+        + heartbeat_trap_block()
+        + '\nwrite_heartbeat "started"\nwrite_heartbeat "completed"\nexit 0\n'
+    )
+    result = subprocess.run(
+        ["/bin/bash", "-c", script],
+        env={**os.environ, "TEST_ROOT": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    assert result.returncode == 0, result.stderr
+    assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "completed"
+
+
+def _signal_heartbeat_runner(tmp_path: Path, signum: int) -> subprocess.CompletedProcess[str]:
+    script = (
+        'set -euo pipefail\nROOT="$TEST_ROOT"\n'
+        + heartbeat_trap_block()
+        + '\nwrite_heartbeat "started"\nwhile :; do sleep 1; done\n'
+    )
+    process = subprocess.Popen(
+        ["/bin/bash", "-c", script],
+        env={**os.environ, "TEST_ROOT": str(tmp_path)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    try:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and process.poll() is None:
+            if heartbeat.is_file() and json.loads(heartbeat.read_text(encoding="utf-8")).get("status") == "started":
+                break
+            time.sleep(0.01)
+        assert heartbeat.is_file(), "heartbeat did not reach started state"
+        assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "started"
+        os.killpg(process.pid, signum)
+        stdout, stderr = process.communicate(timeout=3)
+        return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate(timeout=3)
+
+
+def test_int_signal_writes_failed_heartbeat_with_130_status(tmp_path: Path):
+    result = _signal_heartbeat_runner(tmp_path, signal.SIGINT)
+
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    assert result.returncode == 130
+    assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_term_signal_writes_failed_heartbeat_with_143_status(tmp_path: Path):
+    result = _signal_heartbeat_runner(tmp_path, signal.SIGTERM)
+
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    assert result.returncode == 143
+    assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_failed_heartbeat_write_preserves_prior_valid_file(tmp_path: Path):
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    heartbeat.parent.mkdir(parents=True)
+    prior = {"ts": "2026-10-11T00:00:00Z", "run_id": "prior", "status": "completed"}
+    heartbeat.write_text(json.dumps(prior), encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_executable(bin_dir / "jq", "#!/bin/sh\nexit 1\n")
+    script = (
+        'set -euo pipefail\nROOT="$TEST_ROOT"\n'
+        + heartbeat_trap_block()
+        + '\nwrite_heartbeat "started"\n'
+    )
+    result = subprocess.run(
+        ["/bin/bash", "-c", script],
+        env={**os.environ, "TEST_ROOT": str(tmp_path), "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert json.loads(heartbeat.read_text(encoding="utf-8")) == prior
+    assert not list(heartbeat.parent.glob("daily_orchestrator.json.tmp.*"))
+
+
+def test_lock_contender_does_not_overwrite_active_heartbeat(tmp_path: Path):
+    scripts, _, binaries = create_fixture(tmp_path, "raise SystemExit(1)\n")
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    heartbeat.parent.mkdir(parents=True, exist_ok=True)
+    active = {"ts": "2026-10-11T00:00:00Z", "run_id": "active-run", "status": "started"}
+    heartbeat.write_text(json.dumps(active), encoding="utf-8")
+    lock_path = tmp_path / ".strict_docker_publish.lock"
+
+    with lock_path.open("a", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = run_pipeline(tmp_path, scripts, binaries)
+
+    assert result.returncode == 75
+    assert json.loads(heartbeat.read_text(encoding="utf-8")) == active
