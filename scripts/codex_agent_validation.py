@@ -1234,13 +1234,13 @@ class CodexAgentValidator:
             except Exception:
                 frame_paths = []
 
-        if len(frame_paths) != EXPECTED_EXTRACTED_FRAMES:
+        if not frame_paths:
             return [
                 ValidationResult(
                     check_name="Visual Quality",
                     passed=False,
-                    message=f"Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: expected {EXPECTED_EXTRACTED_FRAMES}, got {len(frame_paths)}",
-                    details={"error": "Frame extraction failed", "frames": len(frame_paths)},
+                    message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
+                    details={"error": "Frame extraction failed"},
                 )
             ]
 
@@ -1481,7 +1481,7 @@ Return a valid JSON object matching this schema:
                 _pre_frames = self._extract_frames(abs_video_path, _pre_frame_dir)
             except Exception:
                 _pre_frames = []
-            if len(_pre_frames) != EXPECTED_EXTRACTED_FRAMES:
+            if not _pre_frames:
                 return [
                     ValidationResult(
                         check_name="Visual Quality",

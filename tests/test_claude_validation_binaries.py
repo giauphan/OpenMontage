@@ -83,7 +83,13 @@ def test_strict_review_uses_canonical_codex_result(monkeypatch, tmp_path):
     )
 
     validator = validation.CLAUDEAgentValidator(tmp_path, strict_mode=True)
-    monkeypatch.setattr(validator, "_extract_frames", lambda *_args: [tmp_path / "frame.png"])
+    # Mock _extract_frames to return exactly 3 extracted frames so strict
+    # visual pre-check passes in CI hermetic mode.
+    monkeypatch.setattr(
+        validator,
+        "_extract_frames",
+        lambda *_args: [tmp_path / f"frame-{i}.png" for i in range(3)],
+    )
     results = validator.claude_agent_strict_review(tmp_path / "video.mp4", tmp_path / "publish_metadata.json")
 
     assert [result.passed for result in results] == [True, True, True, True]
