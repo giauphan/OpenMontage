@@ -491,7 +491,7 @@ class TestCodexFailClosedStrictReview:
         meta_path = test_dir / "meta.json"
         meta_path.write_text("{}", encoding="utf-8")
 
-        monkeypatch.setattr(validator, "_extract_frames", lambda *a, **k: [test_dir / "frame.png"])
+        monkeypatch.setattr(validator, "_extract_frames", lambda *a, **k: [test_dir / f"f{i}.png" for i in range(3)])
         monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: None)
         results = validator.codex_agent_strict_review(video_path, meta_path)
         assert len(results) == 1
@@ -512,7 +512,7 @@ class TestCodexFailClosedStrictReview:
         meta_path.write_text("{}", encoding="utf-8")
 
         monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: "/usr/bin/codex")
-        monkeypatch.setattr(validator, "_extract_frames", lambda *a, **k: [test_dir / "frame.png"])
+        monkeypatch.setattr(validator, "_extract_frames", lambda *a, **k: [test_dir / f"f{i}.png" for i in range(3)])
         def _mock_exec(*args, **kwargs):
             raise subprocess.TimeoutExpired(cmd=["codex"], timeout=30)
         monkeypatch.setattr(validator, "_execute_cli_review", _mock_exec)

@@ -73,6 +73,8 @@ MAX_BLACK_RATIO = 0.30  # max 30% black frames
 MIN_EDGE_DENSITY = 0.005  # minimum visual complexity
 MAX_STATIC_RATIO = 0.50  # max 50% static frames
 SILENCE_THRESHOLD_DB = -50.0  # dBFS
+EXPECTED_EXTRACTED_FRAMES = 3
+MIN_FRAME_BYTES = 100
 
 
 def is_network_available() -> bool:
@@ -694,9 +696,14 @@ class CodexAgentValidator:
         self._review_transport = review_transport
         self.results: List[ValidationResult] = []
 
-    def validate_technical_contract(self, video_path: Path) -> List[ValidationResult]:
+    def validate_technical_contract(self, video_path: Path, ffprobe_bin: Optional[str] = None) -> List[ValidationResult]:
         """Validate technical video contract (exists, duration, codecs, dimensions)."""
-        passed, message, details = verify_video_integrity(video_path, min_duration=MIN_DURATION)
+        ffprobe_use = ffprobe_bin or resolve_ffprobe_ffmpeg()[0]
+        passed, message, details = verify_video_integrity(
+            video_path,
+            min_duration=MIN_DURATION,
+            ffprobe_bin=ffprobe_use,
+        )
         if not passed:
             return [
                 ValidationResult(
@@ -724,8 +731,7 @@ class CodexAgentValidator:
         ]
 
     def validate_metadata(self, metadata_path: Path) -> List[ValidationResult]:
-        """Validate metadata (hashtags, placeholders, shell syntax)."""
-        results = []
+        """Validate metadata quality."""
         if not metadata_path.exists():
             return [
                 ValidationResult(
@@ -737,64 +743,73 @@ class CodexAgentValidator:
 
         root_dir = Path(__file__).resolve().parent.parent
         validate_script = root_dir / "scripts" / "validate_publish_metadata.py"
-
-        if validate_script.is_file():
+        if validate_script.exists():
             cmd = [sys.executable, str(validate_script), str(self.project_dir)]
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir))
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir), timeout=30)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return [
+                    ValidationResult(
+                        check_name="Metadata Validation",
+                        passed=False,
+                        message=f"Metadata validator failed to run: {exc}",
+                        details={"error": type(exc).__name__},
+                    )
+                ]
             if result.returncode == 0:
-                results.append(
+                return [
                     ValidationResult(
                         check_name="Metadata Validation",
                         passed=True,
                         message="Metadata validation passed ✓",
-                        details={"output": result.stdout},
+                        details={"stdout": result.stdout, "stderr": result.stderr},
                     )
+                ]
+            messages = [line for line in (result.stderr or result.stdout).splitlines() if line.strip()]
+            if not messages:
+                messages = [f"Metadata validator exited with {result.returncode} without diagnostics"]
+            return [
+                ValidationResult(
+                    check_name="Metadata Validation",
+                    passed=False,
+                    message=message,
+                    details={"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
                 )
-            else:
-                output = (result.stderr or result.stdout or "").strip()
-                error_lines = [l.strip() for l in output.splitlines() if l.strip()]
-                for err in error_lines[:5]:
-                    results.append(
-                        ValidationResult(
-                            check_name="Metadata Validation",
-                            passed=False,
-                            message=f"Metadata validation failed: {err}",
-                            details={"output": output},
-                        )
-                    )
-        else:
-            try:
-                data = json.loads(metadata_path.read_text(encoding="utf-8"))
-                title = data.get("title", "")
-                if "#tintuc" in title and "#congnghe" in title and "#ai" in title:
-                    results.append(
-                        ValidationResult(
-                            check_name="Metadata Validation",
-                            passed=True,
-                            message="Metadata validation passed ✓",
-                        )
-                    )
-                else:
-                    results.append(
-                        ValidationResult(
-                            check_name="Metadata Validation",
-                            passed=False,
-                            message="Missing required hashtags in metadata title",
-                        )
-                    )
-            except Exception as e:
-                results.append(
+                for message in messages
+            ]
+
+        try:
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+            title = data.get("title", "")
+            if "#tintuc" in title and "#congnghe" in title and "#ai" in title:
+                return [
                     ValidationResult(
                         check_name="Metadata Validation",
-                        passed=False,
-                        message=f"Invalid metadata JSON: {e}",
+                        passed=True,
+                        message="Metadata validation passed ✓",
                     )
+                ]
+            return [
+                ValidationResult(
+                    check_name="Metadata Validation",
+                    passed=False,
+                    message="Missing required hashtags in metadata title",
                 )
-
-        return results
+            ]
+        except Exception as e:
+            return [
+                ValidationResult(
+                    check_name="Metadata Validation",
+                    passed=False,
+                    message=f"Invalid metadata JSON: {e}",
+                )
+            ]
 
     def _extract_frames(self, video_path: Path, out_dir: Path) -> List[Path]:
         """Extract representative frames for visual quality review."""
+        if not video_path.exists() or video_path.stat().st_size == 0:
+            return []
+
         out_dir.mkdir(parents=True, exist_ok=True)
         ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
         dur_cmd = [
@@ -807,14 +822,18 @@ class CodexAgentValidator:
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
         ]
+
         dur_proc = subprocess.run(dur_cmd, capture_output=True, text=True)
         if dur_proc.returncode != 0:
             return []
+
 
         try:
             duration = float(dur_proc.stdout.strip())
         except (ValueError, TypeError):
             return []
+
+
 
         if duration <= 0.25:
             return []
@@ -844,6 +863,7 @@ class CodexAgentValidator:
                 "2",
                 str(out_file),
             ]
+
             proc = subprocess.run(cmd, capture_output=True)
             if proc.returncode != 0:
                 continue
@@ -851,7 +871,8 @@ class CodexAgentValidator:
             if ok:
                 frame_paths.append(out_file)
 
-        return frame_paths
+
+        return frame_paths if len(frame_paths) == EXPECTED_EXTRACTED_FRAMES else []
 
     def _autonomous_quality_review(
         self,
@@ -1165,7 +1186,6 @@ Return a valid JSON object matching this schema:
             cmd = [
                 agent_bin,
                 "exec",
-                "--dangerously-bypass-approvals-and-sandbox",
                 "--json",
                 "-",
             ]
@@ -1175,8 +1195,6 @@ Return a valid JSON object matching this schema:
             cmd = [
                 agent_bin,
                 "-p",
-                "--permission-mode",
-                "bypassPermissions",
                 "--output-format",
                 "json",
                 "-",

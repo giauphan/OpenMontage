@@ -139,12 +139,31 @@ def run_produce(args: argparse.Namespace) -> None:
             )
             continue
 
-        selected_id = selection["selected_candidate_id"]
+        if not isinstance(selection, dict):
+            logger.warning(
+                "Codex returned a non-object selection; retrying selection "
+                f"(attempt {attempts}/{max_attempts})."
+            )
+            continue
+
+        selected_id = selection.get("selected_candidate_id")
+        if not isinstance(selected_id, str) or not selected_id:
+            logger.warning(
+                "Codex selection omitted selected_candidate_id; retrying selection "
+                f"(attempt {attempts}/{max_attempts})."
+            )
+            continue
         if selected_id in used_ids:
             logger.warning(f"Codex selected duplicate candidate {selected_id}; retrying selection.")
             continue
 
-        candidate = next(c for c in pool if c["candidate_id"] == selected_id)
+        candidate = next((c for c in pool if c["candidate_id"] == selected_id), None)
+        if candidate is None:
+            logger.warning(
+                "Codex selected candidate outside the current pool; retrying selection "
+                f"(attempt {attempts}/{max_attempts})."
+            )
+            continue
         used_ids.add(selected_id)
 
         logger.info(f"Selected candidate: {selected_id} ({candidate['title']})")
