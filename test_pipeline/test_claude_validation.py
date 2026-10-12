@@ -200,7 +200,7 @@ class TestCLAUDEAgentValidation:
         })
         
         with patch('subprocess.run') as mock_run, \
-             patch.object(validator, '_extract_frames', return_value=[Path("frame.png")]), \
+             patch.object(validator, '_extract_frames', return_value=[Path("frame-1.png"), Path("frame-2.png"), Path("frame-3.png")]), \
              patch('scripts.codex_agent_validation.resolve_agent_cli', return_value='/usr/bin/claude'):
             mock_result = MagicMock()
             mock_result.returncode = 0
@@ -226,7 +226,7 @@ class TestCLAUDEAgentValidation:
         })
 
         with patch('subprocess.run') as mock_run, \
-             patch.object(validator, '_extract_frames', return_value=[Path("frame.png")]), \
+             patch.object(validator, '_extract_frames', return_value=[Path("frame-1.png"), Path("frame-2.png"), Path("frame-3.png")]), \
              patch('scripts.codex_agent_validation.resolve_agent_cli', return_value='/usr/bin/claude'):
             mock_result = MagicMock()
             mock_result.returncode = 0
@@ -251,7 +251,7 @@ class TestCLAUDEAgentValidation:
 
         # Mock all subprocess calls
         with patch('subprocess.run') as mock_run, \
-             patch.object(validator, '_extract_frames', return_value=[Path("frame.png")]), \
+             patch.object(validator, '_extract_frames', return_value=[Path("frame-1.png"), Path("frame-2.png"), Path("frame-3.png")]), \
              patch('scripts.codex_agent_validation.resolve_agent_cli', return_value='/usr/bin/claude'):
             # Mock successful responses for all validation steps
             def mock_run_func(cmd, *args, **kwargs):

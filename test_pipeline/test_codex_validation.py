@@ -95,7 +95,7 @@ class TestCodexAgentValidationPipeline:
             "summary": "Passed all gates",
         })
         with patch.object(validator, "_execute_cli_review") as mock_exec, \
-             patch.object(validator, "_extract_frames", return_value=[Path("frame.png")]), \
+             patch.object(validator, "_extract_frames", return_value=[Path("frame-1.png"), Path("frame-2.png"), Path("frame-3.png")]), \
              patch("scripts.codex_agent_validation.resolve_agent_cli", return_value="/usr/bin/codex"):
             mock_exec.return_value = [
                 ValidationResult(check_name="Visual Quality", passed=True, message="ok"),
