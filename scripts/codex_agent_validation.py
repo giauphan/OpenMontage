@@ -698,11 +698,13 @@ class CodexAgentValidator:
 
     def validate_technical_contract(self, video_path: Path, ffprobe_bin: Optional[str] = None) -> List[ValidationResult]:
         """Validate technical video contract (exists, duration, codecs, dimensions)."""
-        ffprobe_use = ffprobe_bin or resolve_ffprobe_ffmpeg()[0]
+        resolved_ffprobe, resolved_ffmpeg = resolve_ffprobe_ffmpeg()
+        ffprobe_use = ffprobe_bin or resolved_ffprobe
         passed, message, details = verify_video_integrity(
             video_path,
             min_duration=MIN_DURATION,
             ffprobe_bin=ffprobe_use,
+            ffmpeg_bin=resolved_ffmpeg,
         )
         if not passed:
             return [

@@ -45,6 +45,8 @@ def verify_video_integrity(
     path: str | Path,
     min_duration: float = 0.5,
     expected_dimensions: tuple[int, int] | None = None,
+    ffprobe_bin: str | None = None,
+    ffmpeg_bin: str | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     """Verify video container, streams, duration, and decode integrity using ffprobe/ffmpeg.
 
@@ -61,7 +63,7 @@ def verify_video_integrity(
     if size < 1024:
         return False, f"Video file empty or too small ({size} bytes): {p}", details
 
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = ffprobe_bin or shutil.which("ffprobe")
     if not ffprobe:
         return False, "ffprobe not available on PATH", details
 
@@ -125,7 +127,7 @@ def verify_video_integrity(
         return False, f"Dimensions {width}x{height} do not match expected {expected_dimensions[0]}x{expected_dimensions[1]}", details
 
     # 2. Decode verification via ffmpeg null muxer (bounded to first 5 seconds)
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = ffmpeg_bin or shutil.which("ffmpeg")
     if ffmpeg:
         decode_cmd = [
             ffmpeg,
