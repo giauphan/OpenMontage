@@ -67,6 +67,8 @@ MAX_BLACK_RATIO = 0.30  # max 30% black frames
 MIN_EDGE_DENSITY = 0.005  # minimum visual complexity
 MAX_STATIC_RATIO = 0.50  # max 50% static frames
 SILENCE_THRESHOLD_DB = -50.0  # dBFS
+EXPECTED_EXTRACTED_FRAMES = 3
+MIN_FRAME_BYTES = 100
 
 
 def is_network_available() -> bool:
@@ -688,7 +690,7 @@ class CodexAgentValidator:
         self._review_transport = review_transport
         self.results: List[ValidationResult] = []
 
-    def validate_technical_contract(self, video_path: Path) -> List[ValidationResult]:
+    def validate_technical_contract(self, video_path: Path, ffprobe_bin: Optional[str] = None) -> List[ValidationResult]:
         """Validate technical video contract (exists, duration, codecs, dimensions)."""
         results = []
         if not video_path.exists():
@@ -710,9 +712,10 @@ class CodexAgentValidator:
                 )
             ]
 
-        ffprobe_bin, _ = resolve_ffprobe_ffmpeg()
+        resolved_ffprobe, _ = resolve_ffprobe_ffmpeg()
+        ffprobe_use = ffprobe_bin or resolved_ffprobe
         ffprobe_cmd = [
-            ffprobe_bin,
+            ffprobe_use,
             "-v",
             "error",
             "-show_entries",
@@ -721,7 +724,17 @@ class CodexAgentValidator:
             "csv=p=0",
             str(video_path),
         ]
-        duration_result = subprocess.run(ffprobe_cmd, capture_output=True, text=True)
+        try:
+            duration_result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return [
+                ValidationResult(
+                    check_name="FFprobe Execution",
+                    passed=False,
+                    message=f"ffprobe command failed: {exc}",
+                    details={"error": type(exc).__name__},
+                )
+            ]
         if duration_result.returncode != 0:
             err = duration_result.stderr.strip() or duration_result.stdout.strip() or "no error details"
             results.append(
@@ -734,36 +747,45 @@ class CodexAgentValidator:
             )
             return results
 
+        output = duration_result.stdout.strip()
+        if not output:
+            return [
+                ValidationResult(
+                    check_name="Duration Check",
+                    passed=False,
+                    message="ffprobe returned empty duration output",
+                    details={"stdout": duration_result.stdout, "stderr": duration_result.stderr},
+                )
+            ]
 
-        if duration_result.stdout.strip():
-            try:
-                duration = float(duration_result.stdout.strip())
-                if duration >= MIN_DURATION:
-                    results.append(
-                        ValidationResult(
-                            check_name="Duration Check",
-                            passed=True,
-                            message=f"Duration: {duration:.1f}s ≥ {MIN_DURATION}s ✓",
-                            details={"duration": duration, "min_duration": MIN_DURATION},
-                        )
+        try:
+            duration = float(output)
+            if duration >= MIN_DURATION:
+                results.append(
+                    ValidationResult(
+                        check_name="Duration Check",
+                        passed=True,
+                        message=f"Duration: {duration:.1f}s ≥ {MIN_DURATION}s ✓",
+                        details={"duration": duration, "min_duration": MIN_DURATION},
                     )
-                else:
-                    results.append(
-                        ValidationResult(
-                            check_name="Duration Check",
-                            passed=False,
-                            message=f"Duration: {duration:.1f}s < {MIN_DURATION}s minimum",
-                            details={"duration": duration, "min_duration": MIN_DURATION},
-                        )
-                    )
-            except ValueError:
+                )
+            else:
                 results.append(
                     ValidationResult(
                         check_name="Duration Check",
                         passed=False,
-                        message=f"Could not parse duration: {duration_result.stdout.strip()}",
+                        message=f"Duration: {duration:.1f}s < {MIN_DURATION}s minimum",
+                        details={"duration": duration, "min_duration": MIN_DURATION},
                     )
                 )
+        except ValueError:
+            results.append(
+                ValidationResult(
+                    check_name="Duration Check",
+                    passed=False,
+                    message=f"Could not parse duration: {output}",
+                )
+            )
 
         return results
 
@@ -774,7 +796,6 @@ class CodexAgentValidator:
         ffmpeg_bin: Optional[str] = None,
     ) -> List[ValidationResult]:
         """Validate content quality (not silent, black frames, static frames, edge density)."""
-        results = []
         if not video_path.exists():
             return [
                 ValidationResult(
@@ -786,62 +807,70 @@ class CodexAgentValidator:
 
         root_dir = Path(__file__).resolve().parent.parent
         validate_script = root_dir / "scripts" / "validate_render_quality.py"
-
-        if validate_script.is_file():
-            ffprobe, ffmpeg = resolve_ffprobe_ffmpeg()
-            ffprobe_use = ffprobe_bin or ffprobe
-            ffmpeg_use = ffmpeg_bin or ffmpeg
-
-            render_arg = "reels" if "reels" in video_path.name else "full"
-            cmd = [
-                sys.executable,
-                str(validate_script),
-                str(self.project_dir),
-                "--render",
-                render_arg,
-                "--ffprobe",
-                ffprobe_use,
-                "--ffmpeg",
-                ffmpeg_use,
-                "--min-duration",
-                str(MIN_DURATION),
-                "--strict",
+        if not validate_script.is_file():
+            return [
+                ValidationResult(
+                    check_name="Content Quality",
+                    passed=False,
+                    message=f"Required content quality validator missing: {validate_script}",
+                    details={"error": "VALIDATOR_MISSING"},
+                )
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir))
-            if result.returncode == 0:
-                results.append(
-                    ValidationResult(
-                        check_name="Content Quality",
-                        passed=True,
-                        message="Content quality validation passed ✓",
-                        details={"stdout": result.stdout, "stderr": result.stderr},
-                    )
+
+        ffprobe, ffmpeg = resolve_ffprobe_ffmpeg()
+        ffprobe_use = ffprobe_bin or ffprobe
+        ffmpeg_use = ffmpeg_bin or ffmpeg
+        render_arg = "reels" if "reels" in video_path.name else "full"
+        cmd = [
+            sys.executable,
+            str(validate_script),
+            str(self.project_dir),
+            "--render",
+            render_arg,
+            "--ffprobe",
+            ffprobe_use,
+            "--ffmpeg",
+            ffmpeg_use,
+            "--min-duration",
+            str(MIN_DURATION),
+            "--strict",
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir), timeout=90)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return [
+                ValidationResult(
+                    check_name="Content Quality",
+                    passed=False,
+                    message=f"Content quality validator failed to run: {exc}",
+                    details={"error": type(exc).__name__},
                 )
-            else:
-                err_lines = [l for l in (result.stderr or result.stdout or "").splitlines() if l.strip()]
-                msg = err_lines[0] if err_lines else "Content quality check failed"
-                results.append(
-                    ValidationResult(
-                        check_name="Content Quality",
-                        passed=False,
-                        message=f"Content validation failed: {msg}",
-                        details={"stdout": result.stdout, "stderr": result.stderr},
-                    )
-                )
-        else:
-            results.append(
+            ]
+        if result.returncode == 0:
+            return [
                 ValidationResult(
                     check_name="Content Quality",
                     passed=True,
-                    message="Content quality validator skipped (script not present)",
+                    message="Content quality validation passed ✓",
+                    details={"stdout": result.stdout, "stderr": result.stderr},
                 )
-            )
+            ]
 
-        return results
+        err_lines = [line for line in (result.stderr or result.stdout).splitlines() if line.strip()]
+        if not err_lines:
+            err_lines = [f"Render quality validator exited with {result.returncode} without diagnostics"]
+        return [
+            ValidationResult(
+                check_name="Content Quality",
+                passed=False,
+                message=line,
+                details={"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
+            )
+            for line in err_lines
+        ]
 
     def validate_metadata(self, metadata_path: Path) -> List[ValidationResult]:
-        """Validate metadata (hashtags, placeholders, shell syntax)."""
-        results = []
+        """Validate metadata quality."""
         if not metadata_path.exists():
             return [
                 ValidationResult(
@@ -853,67 +882,75 @@ class CodexAgentValidator:
 
         root_dir = Path(__file__).resolve().parent.parent
         validate_script = root_dir / "scripts" / "validate_publish_metadata.py"
-
-        if validate_script.is_file():
+        if validate_script.exists():
             cmd = [sys.executable, str(validate_script), str(self.project_dir)]
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir))
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir), timeout=30)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return [
+                    ValidationResult(
+                        check_name="Metadata Validation",
+                        passed=False,
+                        message=f"Metadata validator failed to run: {exc}",
+                        details={"error": type(exc).__name__},
+                    )
+                ]
             if result.returncode == 0:
-                results.append(
+                return [
                     ValidationResult(
                         check_name="Metadata Validation",
                         passed=True,
                         message="Metadata validation passed ✓",
-                        details={"output": result.stdout},
+                        details={"stdout": result.stdout, "stderr": result.stderr},
                     )
+                ]
+            messages = [line for line in (result.stderr or result.stdout).splitlines() if line.strip()]
+            if not messages:
+                messages = [f"Metadata validator exited with {result.returncode} without diagnostics"]
+            return [
+                ValidationResult(
+                    check_name="Metadata Validation",
+                    passed=False,
+                    message=message,
+                    details={"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
                 )
-            else:
-                output = (result.stderr or result.stdout or "").strip()
-                error_lines = [l.strip() for l in output.splitlines() if l.strip()]
-                for err in error_lines[:5]:
-                    results.append(
-                        ValidationResult(
-                            check_name="Metadata Validation",
-                            passed=False,
-                            message=f"Metadata validation failed: {err}",
-                            details={"output": output},
-                        )
-                    )
-        else:
-            try:
-                data = json.loads(metadata_path.read_text(encoding="utf-8"))
-                title = data.get("title", "")
-                if "#tintuc" in title and "#congnghe" in title and "#ai" in title:
-                    results.append(
-                        ValidationResult(
-                            check_name="Metadata Validation",
-                            passed=True,
-                            message="Metadata validation passed ✓",
-                        )
-                    )
-                else:
-                    results.append(
-                        ValidationResult(
-                            check_name="Metadata Validation",
-                            passed=False,
-                            message="Missing required hashtags in metadata title",
-                        )
-                    )
-            except Exception as e:
-                results.append(
+                for message in messages
+            ]
+
+        try:
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+            title = data.get("title", "")
+            if "#tintuc" in title and "#congnghe" in title and "#ai" in title:
+                return [
                     ValidationResult(
                         check_name="Metadata Validation",
-                        passed=False,
-                        message=f"Invalid metadata JSON: {e}",
+                        passed=True,
+                        message="Metadata validation passed ✓",
                     )
+                ]
+            return [
+                ValidationResult(
+                    check_name="Metadata Validation",
+                    passed=False,
+                    message="Missing required hashtags in metadata title",
                 )
-
-        return results
+            ]
+        except Exception as e:
+            return [
+                ValidationResult(
+                    check_name="Metadata Validation",
+                    passed=False,
+                    message=f"Invalid metadata JSON: {e}",
+                )
+            ]
 
     def _extract_frames(self, video_path: Path, out_dir: Path) -> List[Path]:
         """Extract representative frames for visual quality review."""
+        if not video_path.exists() or video_path.stat().st_size == 0:
+            return []
+
         out_dir.mkdir(parents=True, exist_ok=True)
         ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
-
         dur_cmd = [
             ffprobe_bin,
             "-v",
@@ -924,11 +961,18 @@ class CodexAgentValidator:
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
         ]
-        dur_proc = subprocess.run(dur_cmd, capture_output=True, text=True)
+        try:
+            dur_proc = subprocess.run(dur_cmd, capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if dur_proc.returncode != 0:
+            return []
         try:
             duration = float(dur_proc.stdout.strip())
         except (ValueError, TypeError):
-            duration = 10.0
+            return []
+        if duration <= 1.0:
+            return []
 
         timestamps = [
             max(0.5, duration * 0.2),
@@ -952,11 +996,15 @@ class CodexAgentValidator:
                 "2",
                 str(out_file),
             ]
-            subprocess.run(cmd, capture_output=True)
-            if out_file.exists() and out_file.stat().st_size > 0:
-                frame_paths.append(out_file)
+            try:
+                proc = subprocess.run(cmd, capture_output=True, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                return []
+            if proc.returncode != 0 or not out_file.exists() or out_file.stat().st_size <= MIN_FRAME_BYTES:
+                return []
+            frame_paths.append(out_file)
 
-        return frame_paths
+        return frame_paths if len(frame_paths) == EXPECTED_EXTRACTED_FRAMES else []
 
     def _autonomous_quality_review(
         self,
@@ -1270,7 +1318,6 @@ Return a valid JSON object matching this schema:
             cmd = [
                 agent_bin,
                 "exec",
-                "--dangerously-bypass-approvals-and-sandbox",
                 "--json",
                 "-",
             ]
@@ -1280,8 +1327,6 @@ Return a valid JSON object matching this schema:
             cmd = [
                 agent_bin,
                 "-p",
-                "--permission-mode",
-                "bypassPermissions",
                 "--output-format",
                 "json",
                 "-",

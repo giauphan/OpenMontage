@@ -176,10 +176,37 @@ if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output d
   fi
 fi
 
-# Step 1: Select and initialize distinct current topics.
-PRODUCE_LOG="$ROOT/logs/news_produce_$(date -u +%Y%m%dT%H%M%SZ).log"
-"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG" || true
-mapfile -t PROJECT_IDS < <(grep -E '^PROJECT_ID=[A-Za-z0-9_-]{1,128}$' "$PRODUCE_LOG" | cut -d= -f2 | awk '!seen[$0]++ && $0 != "_failed_generation_recovered" && index($0, "_failed_generation_recovered_") != 1')
+# Step 1: Select and initialize distinct current topics. Preserve the producer's
+# exit status across tee so partial output cannot make a failed acquisition look
+# like a successful generation attempt.
+# PRODUCER_EXECUTION_BEGIN
+PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
+set +e
+"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG"
+PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
+set -e
+PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
+TEE_STATUS="${PRODUCER_PIPE_STATUS[1]}"
+if [ "$PRODUCE_STATUS" -ne 0 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: topic production failed (exit=$PRODUCE_STATUS); refusing partial candidate output." >&2
+  exit "$PRODUCE_STATUS"
+fi
+if [ "$TEE_STATUS" -ne 0 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: could not persist topic production log (exit=$TEE_STATUS)." >&2
+  exit "$TEE_STATUS"
+fi
+if ! PROJECT_ID_OUTPUT="$(awk '/^PROJECT_ID=[A-Za-z0-9_-]+$/ {
+  id = substr($0, 12)
+  if (length(id) <= 128 && !seen[id]++ && id != "_failed_generation_recovered" && index(id, "_failed_generation_recovered_") != 1) print id
+}' "$PRODUCE_LOG")"; then
+  echo "ERROR: could not parse topic production log: $PRODUCE_LOG" >&2
+  exit 1
+fi
+PROJECT_IDS=()
+if [ -n "$PROJECT_ID_OUTPUT" ]; then
+  mapfile -t PROJECT_IDS <<< "$PROJECT_ID_OUTPUT"
+fi
+# PRODUCER_EXECUTION_END
 if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
   exit 1
@@ -319,6 +346,7 @@ else
     echo "[$(date -u +%FT%TZ)] ERROR: timeout command is required for directors" >> "$DIRECTORS_LOG"
     exit 1
   fi
+  DIRECTOR_ATTEMPT_START_NS="$("$PY" -c 'import time; print(time.time_ns())')" || exit 1
   run_directors > "$DIRECTORS_JSON" 2>> "$DIRECTORS_LOG"
   DIRECTOR_EXIT=$?
 fi
@@ -356,6 +384,7 @@ TEMPLATE_MODE=0
 TEMPLATE_PACKAGE=""
 TEMPLATE_VERSION=""
 CONTENT_INSTANCE=""
+MATERIALIZE_EXIT=0
 if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
   sel="$PROJECT_DIR/artifacts/template_selection.json"
   cnt="$PROJECT_DIR/artifacts/template_content.json"
@@ -370,12 +399,15 @@ if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
     fi
     echo "[$(date -u +%FT%TZ)] TEMPLATE_MODE project=$PROJECT_ID package=$TEMPLATE_PACKAGE version=$TEMPLATE_VERSION" \
       >> "$ROOT/logs/directors_${PROJECT_ID}.log"
-    if "$PY" "$ROOT/scripts/materialize_news_template.py" \
+    if [ "$DIRECTOR_EXIT" -ne 0 ]; then
+      echo "[$(date -u +%FT%TZ)] WARN: director failed with exit=$DIRECTOR_EXIT; rejecting candidate despite template selection" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+      MATERIALIZE_EXIT="$DIRECTOR_EXIT"
+    elif "$PY" "$ROOT/scripts/materialize_news_template.py" \
         --package "$TEMPLATE_PACKAGE" \
         --content "$CONTENT_INSTANCE" \
         --project-dir "$ROOT/projects/$PROJECT_ID" \
         --variant both > "$ROOT/logs/materializer_${PROJECT_ID}.json" 2>> "$ROOT/logs/directors_${PROJECT_ID}.log"; then
-      DIRECTOR_EXIT=0
+      MATERIALIZE_EXIT=0
       echo "[$(date -u +%FT%TZ)] templated materialization OK project=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
         --message "Templated compositions materialized deterministically" || true
@@ -384,6 +416,7 @@ if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
       echo "[$(date -u +%FT%TZ)] FATAL type=templated_materialize_failed project=$PROJECT_ID exit=$MAT_EXIT" >&2
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
         --error-type "TEMPLATE_MATERIALIZATION_FAILED" --message "Materializer exited $MAT_EXIT" || true
+      MATERIALIZE_EXIT=6
       DIRECTOR_EXIT=6
     fi
   else
@@ -423,9 +456,18 @@ DIRECTOR_ATTEMPT=1
 validate_current_director_artifacts() {
   local output status
   output=$("$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" \
-    --min-mtime-ns "${START_TS}000000000" --require-compositions 2>&1)
+    --min-mtime-ns "$DIRECTOR_ATTEMPT_START_NS" --require-compositions 2>&1)
   status=$?
   if [ "$status" -eq 0 ]; then
+    if ! "$PY" -c 'import pathlib,sys
+root = pathlib.Path(sys.argv[1]); cutoff = int(sys.argv[2])
+paths = [root / name / "index.html" for name in ("hyperframes", "hyperframes_reels")]
+raise SystemExit(0 if all(p.is_file() and p.stat().st_mtime_ns >= cutoff for p in paths) else 1)' \
+        "$PROJECT_DIR" "$DIRECTOR_ATTEMPT_START_NS"; then
+      DIRECTOR_VALIDATION_ERRORS="Both compositions must be written by the current director attempt"
+      printf '%s\n' "$DIRECTOR_VALIDATION_ERRORS" >> "$DIRECTORS_LOG"
+      return 1
+    fi
     DIRECTOR_VALIDATION_ERRORS=""
   else
     DIRECTOR_VALIDATION_ERRORS="$output"
@@ -436,8 +478,14 @@ validate_current_director_artifacts() {
   return "$status"
 }
 
-if [ -n "$REHEARSAL_MANIFEST" ] || [ "$TEMPLATE_MODE" -eq 1 ]; then
+if [ -n "$REHEARSAL_MANIFEST" ]; then
   if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
+    DIRECTOR_EXIT=0
+  else
+    DIRECTOR_EXIT=6
+  fi
+elif [ "$TEMPLATE_MODE" -eq 1 ]; then
+  if [ "$DIRECTOR_EXIT" -eq 0 ] && [ "${MATERIALIZE_EXIT:-0}" -eq 0 ] && validate_current_director_artifacts; then
     DIRECTOR_EXIT=0
   else
     DIRECTOR_EXIT=6
@@ -470,6 +518,7 @@ while true; do
   if [ -n "$DIRECTOR_VALIDATION_ERRORS" ]; then
     RETRY_PROMPT="$(printf '%s\n\nValidation errors to fix in the composition HTML:\n%s' "$RETRY_PROMPT" "$DIRECTOR_VALIDATION_ERRORS")"
   fi
+  DIRECTOR_ATTEMPT_START_NS="$("$PY" -c 'import time; print(time.time_ns())')" || exit 1
   RETRY_EXIT=0
   run_directors "$RETRY_PROMPT" > "$DIRECTORS_JSON.retry" 2>> "$DIRECTORS_LOG" || RETRY_EXIT=$?
   if [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ ! -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
@@ -490,13 +539,8 @@ done
 fi
 
 set -e
-# Autonomous synthesis is a free-form fallback; blocked on the templated path.
-if [ $DIRECTOR_EXIT -ne 0 ] && [ "$TEMPLATE_MODE" -ne 1 ]; then
-  if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
-    echo "[$(date -u +%FT%TZ)] directors recovered via autonomous synthesis project=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
-    DIRECTOR_EXIT=0
-  fi
-fi
+# A failed process/result remains failed even if old artifacts validate.
+# Recovery must pass the current-attempt gates in the bounded retry loop.
 
 if [ "$DIRECTOR_EXIT" -eq 0 ]; then
   NEWS_EVIDENCE_LOG="$(mktemp "$ROOT/logs/news_evidence_${PROJECT_ID}_XXXXXX.json")"
@@ -732,8 +776,21 @@ else
 fi
 
 rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+set +e
 "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
+RENDER_FULL_EXIT=$?
 "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
+RENDER_REELS_EXIT=$?
+set -e
+if [ "$RENDER_FULL_EXIT" -ne 0 ] || [ "$RENDER_REELS_EXIT" -ne 0 ]; then
+  RENDER_FAILURE_REASON="HyperFrames render command failed: full_exit=$RENDER_FULL_EXIT reels_exit=$RENDER_REELS_EXIT"
+  echo "[$(date -u +%FT%TZ)] ERROR: $RENDER_FAILURE_REASON for $PROJECT_ID" >&2
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "render" --project-id "$PROJECT_ID" \
+    --error-type "RENDER_COMMAND_FAILED" --message "$RENDER_FAILURE_REASON" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "$RENDER_FAILURE_REASON" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+  continue
+fi
 
 # ===== CODEX AGENT STRICT QUALITY VALIDATION =====
 echo "[$(date -u +%FT%TZ)] Codex Agent Strict Quality Validation Started"

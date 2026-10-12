@@ -57,6 +57,22 @@ class DailyNewsFailurePreservationTests(unittest.TestCase):
     def test_preserves_missing_render_failure(self) -> None:
         self.assert_quarantined(self.project(), "one or more expected renders are missing or empty")
 
+    def test_preserves_renderer_command_failure_quarantine(self) -> None:
+        """Renderer command nonzero should quarantine candidate (new regression)."""
+        source = self.project()
+        (source / "failure_reason.txt").write_text("HyperFrames render command failed", encoding="utf-8")
+        target = quarantine(self.projects, source.name, "HyperFrames render command failed")
+        self.assertFalse(source.exists())
+        self.assertEqual((target / "failure_reason.txt").read_text(encoding="utf-8"), "HyperFrames render command failed\n")
+
+    def test_preserves_template_mode_stale_recovery(self) -> None:
+        """Template mode stale recovery should preserve failure reason in quarantine."""
+        source = self.project()
+        reason = "Template materialization failed: stale compositions rejected"
+        target = quarantine(self.projects, source.name, reason)
+        self.assertFalse(source.exists())
+        self.assertEqual((target / "failure_reason.txt").read_text(encoding="utf-8"), reason + "\n")
+
     def test_preserves_missing_video_metadata_failure(self) -> None:
         self.assert_quarantined(self.project(), "publish metadata not created because one or more video files are missing")
 

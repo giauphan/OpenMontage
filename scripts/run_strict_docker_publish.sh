@@ -7,8 +7,9 @@ set -euo pipefail
 
 export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:/app/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+	ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+	cd "$ROOT"
+	mkdir -p "$ROOT/logs/heartbeat" "$ROOT/logs/strict_docker_publish"
 
 # Serialize the complete strict run, including preflight and generation. Keep
 # this stable lock file on the shared ROOT filesystem and never unlink it:
