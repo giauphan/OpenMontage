@@ -48,6 +48,8 @@ fail() { printf 'ERROR: %s\n' "$*"; exit 1; }
 write_state() { printf 'STATE %s %s\n' "$1" "$2"; }
 write_heartbeat() { printf 'HEARTBEAT %s\n' "$1"; }
 newsnow_preflight() { printf 'NEWSNOW_STUB\n'; }
+load_news_max_source_age_from_dotenv() { :; }
+validate_news_max_source_age() { return 0; }
 """ + preflight + "\nprintf 'PRODUCTION_REACHED\\n'\n"
 
     # Setup valid CODEX_HOME for tests
