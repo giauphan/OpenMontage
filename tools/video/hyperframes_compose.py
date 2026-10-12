@@ -811,15 +811,26 @@ class HyperFramesCompose(BaseTool):
                 data={"steps": steps},
             )
 
-        if not output_path.exists():
+        if not output_path.is_file() or output_path.stat().st_size == 0:
             return ToolResult(
                 success=False,
                 error=(
-                    f"hyperframes render exited 0 but output file missing: "
+                    f"hyperframes render exited 0 but output file missing or empty (0 bytes): "
                     f"{output_path}. Check stdout_tail for the real path."
                 ),
                 data={"steps": steps},
             )
+
+        if shutil.which("ffprobe") and output_path.stat().st_size > 1024:
+            from lib.media_integrity import verify_video_integrity
+            valid, v_err, v_details = verify_video_integrity(output_path, min_duration=0.1)
+            steps["video_integrity"] = v_details
+            if not valid:
+                return ToolResult(
+                    success=False,
+                    error=f"HyperFrames render output failed video integrity verification: {v_err}",
+                    data={"steps": steps},
+                )
 
         if integrity_before is not None:
             integrity_after = {}

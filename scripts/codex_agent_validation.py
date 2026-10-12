@@ -32,6 +32,12 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 import unicodedata as _ud
 
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from lib.media_integrity import verify_image_integrity, verify_video_integrity
+
 logger = logging.getLogger(__name__)
 
 
@@ -690,154 +696,32 @@ class CodexAgentValidator:
 
     def validate_technical_contract(self, video_path: Path) -> List[ValidationResult]:
         """Validate technical video contract (exists, duration, codecs, dimensions)."""
-        results = []
-        if not video_path.exists():
+        passed, message, details = verify_video_integrity(video_path, min_duration=MIN_DURATION)
+        if not passed:
             return [
                 ValidationResult(
                     check_name="Technical Contract",
                     passed=False,
-                    message=f"Video file missing: {video_path}",
-                    details={"error": "FILE_NOT_FOUND"},
-                )
-            ]
-        if video_path.stat().st_size == 0:
-            return [
-                ValidationResult(
-                    check_name="Technical Contract",
-                    passed=False,
-                    message=f"Video file empty (0 bytes): {video_path}",
-                    details={"error": "EMPTY_FILE"},
+                    message=message,
+                    details=details,
                 )
             ]
 
-        ffprobe_bin, _ = resolve_ffprobe_ffmpeg()
-        ffprobe_cmd = [
-            ffprobe_bin,
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-            str(video_path),
+        duration = float(details.get("duration") or 0.0)
+        return [
+            ValidationResult(
+                check_name="Duration Check",
+                passed=True,
+                message=f"Duration: {duration:.1f}s ≥ {MIN_DURATION}s ✓",
+                details={"duration": duration, "min_duration": MIN_DURATION, **details},
+            ),
+            ValidationResult(
+                check_name="Stream Integrity",
+                passed=True,
+                message="Video stream and decode integrity verified ✓",
+                details=details,
+            ),
         ]
-        duration_result = subprocess.run(ffprobe_cmd, capture_output=True, text=True)
-        if duration_result.returncode != 0:
-            err = duration_result.stderr.strip() or duration_result.stdout.strip() or "no error details"
-            results.append(
-                ValidationResult(
-                    check_name="FFprobe Execution",
-                    passed=False,
-                    message=f"ffprobe command failed: {err}",
-                    details={"returncode": duration_result.returncode, "stderr": duration_result.stderr},
-                )
-            )
-            return results
-
-
-        if duration_result.stdout.strip():
-            try:
-                duration = float(duration_result.stdout.strip())
-                if duration >= MIN_DURATION:
-                    results.append(
-                        ValidationResult(
-                            check_name="Duration Check",
-                            passed=True,
-                            message=f"Duration: {duration:.1f}s ≥ {MIN_DURATION}s ✓",
-                            details={"duration": duration, "min_duration": MIN_DURATION},
-                        )
-                    )
-                else:
-                    results.append(
-                        ValidationResult(
-                            check_name="Duration Check",
-                            passed=False,
-                            message=f"Duration: {duration:.1f}s < {MIN_DURATION}s minimum",
-                            details={"duration": duration, "min_duration": MIN_DURATION},
-                        )
-                    )
-            except ValueError:
-                results.append(
-                    ValidationResult(
-                        check_name="Duration Check",
-                        passed=False,
-                        message=f"Could not parse duration: {duration_result.stdout.strip()}",
-                    )
-                )
-
-        return results
-
-    def validate_content_quality(
-        self,
-        video_path: Path,
-        ffprobe_bin: Optional[str] = None,
-        ffmpeg_bin: Optional[str] = None,
-    ) -> List[ValidationResult]:
-        """Validate content quality (not silent, black frames, static frames, edge density)."""
-        results = []
-        if not video_path.exists():
-            return [
-                ValidationResult(
-                    check_name="Content Quality",
-                    passed=False,
-                    message=f"Video file missing: {video_path}",
-                )
-            ]
-
-        root_dir = Path(__file__).resolve().parent.parent
-        validate_script = root_dir / "scripts" / "validate_render_quality.py"
-
-        if validate_script.is_file():
-            ffprobe, ffmpeg = resolve_ffprobe_ffmpeg()
-            ffprobe_use = ffprobe_bin or ffprobe
-            ffmpeg_use = ffmpeg_bin or ffmpeg
-
-            render_arg = "reels" if "reels" in video_path.name else "full"
-            cmd = [
-                sys.executable,
-                str(validate_script),
-                str(self.project_dir),
-                "--render",
-                render_arg,
-                "--ffprobe",
-                ffprobe_use,
-                "--ffmpeg",
-                ffmpeg_use,
-                "--min-duration",
-                str(MIN_DURATION),
-                "--strict",
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir))
-            if result.returncode == 0:
-                results.append(
-                    ValidationResult(
-                        check_name="Content Quality",
-                        passed=True,
-                        message="Content quality validation passed ✓",
-                        details={"stdout": result.stdout, "stderr": result.stderr},
-                    )
-                )
-            else:
-                err_lines = [l for l in (result.stderr or result.stdout or "").splitlines() if l.strip()]
-                msg = err_lines[0] if err_lines else "Content quality check failed"
-                results.append(
-                    ValidationResult(
-                        check_name="Content Quality",
-                        passed=False,
-                        message=f"Content validation failed: {msg}",
-                        details={"stdout": result.stdout, "stderr": result.stderr},
-                    )
-                )
-        else:
-            results.append(
-                ValidationResult(
-                    check_name="Content Quality",
-                    passed=True,
-                    message="Content quality validator skipped (script not present)",
-                )
-            )
-
-        return results
 
     def validate_metadata(self, metadata_path: Path) -> List[ValidationResult]:
         """Validate metadata (hashtags, placeholders, shell syntax)."""
@@ -913,7 +797,6 @@ class CodexAgentValidator:
         """Extract representative frames for visual quality review."""
         out_dir.mkdir(parents=True, exist_ok=True)
         ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
-
         dur_cmd = [
             ffprobe_bin,
             "-v",
@@ -925,16 +808,25 @@ class CodexAgentValidator:
             str(video_path),
         ]
         dur_proc = subprocess.run(dur_cmd, capture_output=True, text=True)
+        if dur_proc.returncode != 0:
+            return []
+
         try:
             duration = float(dur_proc.stdout.strip())
         except (ValueError, TypeError):
-            duration = 10.0
+            return []
 
-        timestamps = [
-            max(0.5, duration * 0.2),
-            duration * 0.5,
-            min(duration - 0.5, duration * 0.8),
-        ]
+        if duration <= 0.25:
+            return []
+
+        if duration < 1.0:
+            timestamps = [max(0.05, duration / 2)]
+        else:
+            timestamps = [
+                max(0.1, duration * 0.2),
+                duration * 0.5,
+                min(duration - 0.1, duration * 0.8),
+            ]
 
         frame_paths = []
         for i, ts in enumerate(timestamps):
@@ -943,7 +835,7 @@ class CodexAgentValidator:
                 ffmpeg_bin,
                 "-y",
                 "-ss",
-                str(ts),
+                f"{ts:.3f}",
                 "-i",
                 str(video_path),
                 "-frames:v",
@@ -952,8 +844,11 @@ class CodexAgentValidator:
                 "2",
                 str(out_file),
             ]
-            subprocess.run(cmd, capture_output=True)
-            if out_file.exists() and out_file.stat().st_size > 0:
+            proc = subprocess.run(cmd, capture_output=True)
+            if proc.returncode != 0:
+                continue
+            ok, _ = verify_image_integrity(out_file)
+            if ok:
                 frame_paths.append(out_file)
 
         return frame_paths

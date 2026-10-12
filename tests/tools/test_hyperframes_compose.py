@@ -1503,3 +1503,62 @@ def test_composition_validator_hyperframes_asset_root(tmp_path: Path):
     assert result.success, result.error
     info_lines = " ".join(result.data.get("info", []))
     assert "hyperframes" in info_lines.lower() or "assets" in info_lines.lower()
+
+
+def test_hyperframes_render_rejects_empty_output(tmp_path, monkeypatch):
+    import subprocess
+    from tools.base_tool import ToolResult
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = HyperFramesCompose()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tool, "_runtime_check", lambda: {"runtime_available": True})
+    monkeypatch.setattr(tool, "_scaffold", lambda inputs: ToolResult(success=True, data={}))
+    monkeypatch.setattr(tool, "_lint", lambda inputs: ToolResult(success=True, data={}))
+    monkeypatch.setattr(tool, "_validate", lambda inputs: ToolResult(success=True, data={}))
+
+    def run_render_empty(args, *, cwd, timeout, check):
+        output = Path(args[args.index("--output") + 1])
+        rendered_output = output if output.is_absolute() else cwd / output
+        rendered_output.parent.mkdir(parents=True, exist_ok=True)
+        rendered_output.touch() # 0 bytes
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(tool, "_run_hf", run_render_empty)
+
+    result = tool._render(
+        {"workspace_path": str(workspace), "output_path": "renders/final.mp4"}
+    )
+    assert not result.success
+    assert "missing or empty" in (result.error or "")
+
+
+def test_hyperframes_render_rejects_corrupted_output(tmp_path, monkeypatch):
+    import subprocess
+    from tools.base_tool import ToolResult
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = HyperFramesCompose()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tool, "_runtime_check", lambda: {"runtime_available": True})
+    monkeypatch.setattr(tool, "_scaffold", lambda inputs: ToolResult(success=True, data={}))
+    monkeypatch.setattr(tool, "_lint", lambda inputs: ToolResult(success=True, data={}))
+    monkeypatch.setattr(tool, "_validate", lambda inputs: ToolResult(success=True, data={}))
+
+    def run_render_corrupt(args, *, cwd, timeout, check):
+        output = Path(args[args.index("--output") + 1])
+        rendered_output = output if output.is_absolute() else cwd / output
+        rendered_output.parent.mkdir(parents=True, exist_ok=True)
+        rendered_output.write_bytes(b"x" * 2000) # > 1024 bytes so ffprobe is triggered
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(tool, "_run_hf", run_render_corrupt)
+    monkeypatch.setattr("lib.media_integrity.verify_video_integrity", lambda *a, **k: (False, "mock decode failed", {}))
+
+    result = tool._render(
+        {"workspace_path": str(workspace), "output_path": "renders/final.mp4"}
+    )
+    assert not result.success
+    assert "failed video integrity verification" in (result.error or "")
