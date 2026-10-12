@@ -76,9 +76,16 @@ class TestCLAUDEAgentValidation:
             "title": "Test Video",
             "description": "Test description"
         }
-        
+
         with open(self.project_dir / "artifacts" / "script_vi.json", "w") as f:
             json.dump(artifacts, f)
+
+        # Create HyperFrames HTML source for strict review pre-check
+        (self.project_dir / "hyperframes").mkdir(exist_ok=True)
+        (self.project_dir / "hyperframes" / "index.html").write_text(
+            '<html><div data-composition-id="main">Test</div><script>window.__timelines={"main":[]}</script></html>',
+            encoding="utf-8"
+        )
     
     def cleanup(self):
         """Clean up test files."""
@@ -192,20 +199,22 @@ class TestCLAUDEAgentValidation:
             "summary": "All checks passed"
         })
         
-        with patch('subprocess.run') as mock_run:
+        with patch('subprocess.run') as mock_run, \
+             patch.object(validator, '_extract_frames', return_value=[Path("frame.png")]), \
+             patch('scripts.codex_agent_validation.resolve_agent_cli', return_value='/usr/bin/claude'):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = claude_response
             mock_result.stderr = ""
             mock_run.return_value = mock_result
-            
+
             video_path = self.project_dir / "renders" / "final_full_vi_9x16.mp4"
             results = validator.claude_agent_strict_review(video_path, self.project_dir / "publish_metadata.json")
 
             assert len(results) == 4  # Should have 4 check results
             assert all(r.passed for r in results)
             print(f"✅ CLAUDE agent pass test: {len(results)} checks all passed")
-        
+
         # Test CLAUDE agent failure
         claude_response_fail = json.dumps({
             "visual_quality": {"passed": False, "score": 45, "notes": "Visual artifacts"},
@@ -215,31 +224,35 @@ class TestCLAUDEAgentValidation:
             "overall_passed": False,
             "summary": "Validation failed"
         })
-        
-        with patch('subprocess.run') as mock_run:
+
+        with patch('subprocess.run') as mock_run, \
+             patch.object(validator, '_extract_frames', return_value=[Path("frame.png")]), \
+             patch('scripts.codex_agent_validation.resolve_agent_cli', return_value='/usr/bin/claude'):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = claude_response_fail
             mock_result.stderr = ""
             mock_run.return_value = mock_result
-            
+
             results = validator.claude_agent_strict_review(video_path, self.project_dir / "publish_metadata.json")
 
             assert len(results) == 4
             failed_results = [r for r in results if not r.passed]
             assert len(failed_results) == 2  # visual_quality and brand_compliance failed
             print(f"✅ CLAUDE agent fail test: {len(failed_results)} failures detected")
-        
+
         print("✅ CLAUDE Agent Review Tests PASSED")
-    
+
     def test_full_validation_pipeline(self):
         """Test the complete validation pipeline with mocked subprocess."""
         print("Testing Full Validation Pipeline...")
-        
+
         validator = CLAUDEAgentValidator(self.project_dir, strict_mode=True)
-        
+
         # Mock all subprocess calls
-        with patch('subprocess.run') as mock_run:
+        with patch('subprocess.run') as mock_run, \
+             patch.object(validator, '_extract_frames', return_value=[Path("frame.png")]), \
+             patch('scripts.codex_agent_validation.resolve_agent_cli', return_value='/usr/bin/claude'):
             # Mock successful responses for all validation steps
             def mock_run_func(cmd, *args, **kwargs):
                 mock_result = MagicMock()

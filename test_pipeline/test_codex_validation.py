@@ -43,12 +43,12 @@ class TestCodexAgentValidationPipeline:
                 f.write(b"\x00" * 1024 * 1024)
 
         metadata = {
-            "title": "Test Video #tintuc #congnghe #ai",
-            "description": "Test description #tintuc #congnghe #ai",
-            "yt_shorts": {"title": "Test #Shorts"},
-            "tiktok": {"title": "Test"},
-            "fb_video": {"title": "Test"},
-            "ig_reels": {"title": "Test"},
+            "title": "Bản tin công nghệ trí tuệ nhân tạo #tintuc #congnghe #ai",
+            "description": "Cập nhật bản tin công nghệ trí tuệ nhân tạo mới nhất #tintuc #congnghe #ai",
+            "yt_shorts": {"title": "Bản tin #Shorts"},
+            "tiktok": {"title": "Bản tin"},
+            "fb_video": {"title": "Bản tin"},
+            "ig_reels": {"title": "Bản tin"},
         }
         with open(self.project_dir / "publish_metadata.json", "w") as f:
             json.dump(metadata, f)
@@ -94,7 +94,9 @@ class TestCodexAgentValidationPipeline:
             "overall_passed": True,
             "summary": "Passed all gates",
         })
-        with patch.object(validator, "_execute_cli_review") as mock_exec:
+        with patch.object(validator, "_execute_cli_review") as mock_exec, \
+             patch.object(validator, "_extract_frames", return_value=[Path("frame.png")]), \
+             patch("scripts.codex_agent_validation.resolve_agent_cli", return_value="/usr/bin/codex"):
             mock_exec.return_value = [
                 ValidationResult(check_name="Visual Quality", passed=True, message="ok"),
                 ValidationResult(check_name="Audio Sync", passed=True, message="ok"),
