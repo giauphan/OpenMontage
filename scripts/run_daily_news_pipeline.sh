@@ -384,6 +384,7 @@ TEMPLATE_MODE=0
 TEMPLATE_PACKAGE=""
 TEMPLATE_VERSION=""
 CONTENT_INSTANCE=""
+MATERIALIZE_EXIT=0
 if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
   sel="$PROJECT_DIR/artifacts/template_selection.json"
   cnt="$PROJECT_DIR/artifacts/template_content.json"
@@ -398,12 +399,15 @@ if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
     fi
     echo "[$(date -u +%FT%TZ)] TEMPLATE_MODE project=$PROJECT_ID package=$TEMPLATE_PACKAGE version=$TEMPLATE_VERSION" \
       >> "$ROOT/logs/directors_${PROJECT_ID}.log"
-    if "$PY" "$ROOT/scripts/materialize_news_template.py" \
+    if [ "$DIRECTOR_EXIT" -ne 0 ]; then
+      echo "[$(date -u +%FT%TZ)] WARN: director failed with exit=$DIRECTOR_EXIT; rejecting candidate despite template selection" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+      MATERIALIZE_EXIT="$DIRECTOR_EXIT"
+    elif "$PY" "$ROOT/scripts/materialize_news_template.py" \
         --package "$TEMPLATE_PACKAGE" \
         --content "$CONTENT_INSTANCE" \
         --project-dir "$ROOT/projects/$PROJECT_ID" \
         --variant both > "$ROOT/logs/materializer_${PROJECT_ID}.json" 2>> "$ROOT/logs/directors_${PROJECT_ID}.log"; then
-      DIRECTOR_EXIT=0
+      MATERIALIZE_EXIT=0
       echo "[$(date -u +%FT%TZ)] templated materialization OK project=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
         --message "Templated compositions materialized deterministically" || true
@@ -412,6 +416,7 @@ if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
       echo "[$(date -u +%FT%TZ)] FATAL type=templated_materialize_failed project=$PROJECT_ID exit=$MAT_EXIT" >&2
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "directors" --project-id "$PROJECT_ID" \
         --error-type "TEMPLATE_MATERIALIZATION_FAILED" --message "Materializer exited $MAT_EXIT" || true
+      MATERIALIZE_EXIT=6
       DIRECTOR_EXIT=6
     fi
   else
@@ -480,7 +485,7 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
     DIRECTOR_EXIT=6
   fi
 elif [ "$TEMPLATE_MODE" -eq 1 ]; then
-  if [ "$DIRECTOR_EXIT" -eq 0 ] && validate_current_director_artifacts; then
+  if [ "$DIRECTOR_EXIT" -eq 0 ] && [ "${MATERIALIZE_EXIT:-0}" -eq 0 ] && validate_current_director_artifacts; then
     DIRECTOR_EXIT=0
   else
     DIRECTOR_EXIT=6
