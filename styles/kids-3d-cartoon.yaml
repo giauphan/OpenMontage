@@ -1,0 +1,113 @@
+identity:
+  name: "Kids 3D Cartoon"
+  category: motion-graphics
+  mood: playful, vibrant, warm, expressive
+  pace: moderate
+  best_for: "Children's animated stories, cute character adventures, whimsical educational explainers"
+
+taste_profile:
+  design_read: "Playful 3D CGI animation: friendly rounded forms, warm saturated lighting, high emotional legibility."
+  visual_variance: 3
+  motion_intensity: 4
+  information_density: 3
+  palette_discipline: "Warm saturated primary and secondary colors with soft subsurface-scattering feel."
+  layout_variation: "Dynamic cinematic framing with clear character focus and uncluttered backgrounds."
+  reference_strategy: "Establish consistent character master references for all primary characters across all shots."
+  anti_patterns:
+    - "dark gritty textures or harsh shadows"
+    - "photorealistic fur or skin that looks uncanny"
+    - "overly complex or cluttered set dressing"
+  quality_gates:
+    - "Character silhouettes must remain distinct and instantly recognizable."
+    - "Lighting must be warm and welcoming with soft shadow edges."
+
+visual_language:
+  color_palette:
+    primary: ["#FF6B6B", "#4ECDC4"]
+    accent: ["#FFE66D", "#FF9F43"]
+    background: "#F7F9FC"
+    text: "#2D3436"
+    muted: "#B2BEC3"
+  composition: centered or rule-of-thirds, clean silhouettes, generous foreground/background separation
+  texture: smooth matte clay / stylized CGI shader look, soft specular highlights
+
+typography:
+  headings:
+    font: "Comic Neue"
+    weight: 700
+    tracking: "0.01em"
+  body:
+    font: "Quicksand"
+    weight: 500
+    line_height: 1.6
+  code:
+    font: "JetBrains Mono"
+    weight: 400
+  stat_card:
+    font: "Comic Neue"
+    weight: 700
+    size_multiplier: 3.5
+  scale_system: "major_third"
+  weight_matrix:
+    title: 700
+    heading: 700
+    body: 500
+    caption: 400
+
+motion:
+  transitions: [bounce, dissolve, slide-up]
+  animation_style: "spring(1, 70, 15), bouncy, expressive, squash and stretch"
+  pacing_rules:
+    min_scene_hold_seconds: 3.0
+    max_scene_hold_seconds: 8.0
+    text_card_hold_seconds: 3.5
+    stat_card_hold_seconds: 3.0
+    transition_duration_seconds: 0.5
+  entrance: "bouncy spring pop-in (scale 0.8 -> 1.1 -> 1.0)"
+  exit: "smooth scale-down-fade"
+
+audio:
+  voice_style: "warm, expressive, friendly storyteller voice with lively inflection"
+  music_mood: "cheerful acoustic guitar, playful marimba, upbeat xylophone"
+  music_volume: 0.12
+  sfx_style: "cartoon pops, bouncy thuds, cheerful chimes"
+  ducking_threshold_db: -4
+
+asset_generation:
+  image_prompt_prefix: "stylized 3D CGI cartoon animation style, friendly rounded character design, vibrant warm lighting, smooth clay texture, Pixar style, "
+  image_negative_prompt: "photorealistic, live action, dark, gritty, scary, sharp spikes, uncanny valley, low poly"
+  diagram_style: "playful rounded nodes, bright colors, friendly icons"
+  consistency_anchors:
+    - "Warm saturated color palette in every scene"
+    - "Soft, friendly rounded shapes for all characters and props"
+    - "Clean separation between character and background"
+    - "No sharp or threatening angles"
+
+overlays:
+  stat_card:
+    bg: "#FFFFFF"
+    border: "#FF6B6B"
+    radius: 16
+    shadow: "0 8px 24px rgba(255,107,107,0.2)"
+  key_term:
+    bg: "#FFF3CD"
+    text: "#856404"
+    radius: 8
+
+quality_rules:
+  - "Minimum contrast ratio 4.5:1 for all text"
+  - "Character expressions must be clearly readable at 720p"
+  - "Warm, friendly lighting in every scene — no dark shadows"
+  - "Smooth squash-and-stretch principles in motion"
+
+chart_palette:
+  - "#FF6B6B"
+  - "#4ECDC4"
+  - "#FFE66D"
+  - "#FF9F43"
+  - "#6C5CE7"
+
+color_rules:
+  harmony_type: "triadic"
+  contrast_validation: true
+  colorblind_safe: true

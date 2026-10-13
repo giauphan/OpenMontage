@@ -83,6 +83,57 @@
         "subtitles": { "type": "boolean", "default": true }
       },
       "additionalProperties": false
+    },
+    "production_profile": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        },
+        "age_target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "render_orientation": {
+          "type": "string",
+          "enum": ["landscape", "portrait", "square"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "kids_editorial_review": {
+      "type": "object",
+      "required": [
+        "originality",
+        "beginning_middle_end",
+        "age_appropriate",
+        "unsafe_imitation_risk",
+        "audio_intelligibility",
+        "rights_licenses",
+        "made_for_kids_decision"
+      ],
+      "properties": {
+        "originality": { "type": "boolean" },
+        "beginning_middle_end": { "type": "boolean" },
+        "age_appropriate": { "type": "boolean" },
+        "unsafe_imitation_risk": { "type": "boolean" },
+        "audio_intelligibility": { "type": "boolean" },
+        "rights_licenses": { "type": "boolean" },
+        "made_for_kids_decision": {
+          "type": "string",
+          "enum": ["creator_declared_made_for_kids", "creator_declared_not_made_for_kids", "creator_must_decide"]
+        },
+        "reviewer": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false
