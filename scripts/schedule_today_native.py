@@ -16,8 +16,31 @@ from scripts.publish_config import load_config, publish_timezone
 from scripts.validate_publish_metadata import validate_metadata
 from tools.news import template_provenance
 from tools.publish_store import PublishStore
-from tools.publishers.platform_routes import youtube_shorts_title
+from tools.publishers.platform_routes import (
+    youtube_shorts_title,
+    compose_release_metadata,
+)
 from tools.publishers.youtube_publisher import YoutubePublisher
+
+
+def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | None = None) -> dict:
+    """Build unified YouTube Shorts upload payload using compose_release_metadata."""
+    # Ensure id/title/desc exist for compose
+    payload_meta = dict(topic_meta)
+    if "id" not in payload_meta:
+        payload_meta["id"] = payload_meta.get("project_id", "news_video")
+    rel = compose_release_metadata(payload_meta)
+    yt = rel.youtube_payload
+    return {
+        "video_path": str(video_path),
+        "title": yt["title"],
+        "description": yt["description"],
+        "tags": yt["tags"],
+        "privacy_status": "private" if publish_at else "unlisted",
+        "publish_at": publish_at,
+        "category_id": "28",
+    }
+
 
 def ytv_publish_at(dt): return dt.astimezone(timezone.utc).isoformat().replace("+00:00","Z")
 
@@ -171,7 +194,8 @@ def main():
             )
         if yt_claimed:
             try:
-                r = YoutubePublisher().execute({"video_path":str(project_dir/yt_rel),"title":youtube_shorts_title(topic_meta["title"]),"description":topic_meta.get("description",""),"privacy_status":"private","publish_at":ytv_publish_at(publish_at),"category_id":"28"})
+                payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
+                r = YoutubePublisher().execute(payload)
                 if r.success:
                     store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
                     print(f"YT scheduled {proj} {scheduled_for}")

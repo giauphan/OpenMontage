@@ -1030,11 +1030,17 @@ if [ -n "$REHEARSAL_MANIFEST" ] && [ "$SUCCESSFUL_COUNT" -ne 3 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: rehearsal requires all three requested projects to pass; got $SUCCESSFUL_COUNT" >&2
   exit 1
 fi
-if [ "$SUCCESSFUL_COUNT" -eq 0 ]; then
+if [ "$SUCCESSFUL_COUNT" -eq 3 ]; then
+  REHEARSAL_TERMINAL_STAGE="completed"
+  echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE, Successful: $SUCCESSFUL_COUNT)"
+  exit 0
+elif [ "$SUCCESSFUL_COUNT" -gt 0 ]; then
+  REHEARSAL_TERMINAL_STAGE="partial_completion"
+  echo "[$(date -u +%FT%TZ)] PARTIAL: Daily pipeline achieved $SUCCESSFUL_COUNT/3 successful validated projects." >&2
+  exit 2
+else
+  REHEARSAL_TERMINAL_STAGE="failed"
   echo "[$(date -u +%FT%TZ)] ERROR: no candidate passed strict generation and validation" >&2
   exit 1
 fi
-
-REHEARSAL_TERMINAL_STAGE="completed"
-echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE, Successful: $SUCCESSFUL_COUNT)"
 # Next-day scheduling and publishing is now fully managed by the strict orchestrator.

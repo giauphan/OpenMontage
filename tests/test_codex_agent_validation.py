@@ -449,6 +449,47 @@ class TestCodexCommandLineIntegration:
         assert "usage:" in result.stdout.lower()
 
 
+class TestCodexContentQualityValidation:
+    def test_execute_validation_runs_content_gate_and_strict_review(self, tmp_path, monkeypatch):
+        validator = CodexAgentValidator(tmp_path, strict_mode=True)
+        video_path = tmp_path / "video.mp4"
+        video_path.write_bytes(b"fixture video" * 200)
+        metadata_path = tmp_path / "publish_metadata.json"
+        metadata_path.write_text("{}", encoding="utf-8")
+
+        monkeypatch.setattr(
+            validator,
+            "validate_technical_contract",
+            lambda *_args, **_kwargs: [ValidationResult("Technical Contract", True, "valid")],
+        )
+        monkeypatch.setattr(
+            validator,
+            "validate_metadata",
+            lambda *_args: [ValidationResult("Metadata Validation", True, "valid")],
+        )
+        monkeypatch.setattr(
+            validator,
+            "codex_agent_strict_review",
+            lambda *_args, **_kwargs: [ValidationResult("Agent Review", True, "valid")],
+        )
+        monkeypatch.setattr("scripts.validate_render_quality.probe", lambda *_args: {
+            "format": {"duration": "20"},
+            "streams": [
+                {"codec_type": "video", "width": 1080, "height": 1920},
+                {"codec_type": "audio", "duration": "20"},
+            ],
+        })
+        monkeypatch.setattr("scripts.validate_render_quality.validate_content", lambda *_args, **_kwargs: [])
+        monkeypatch.setattr("scripts.codex_agent_validation.shutil.which", lambda binary: f"/usr/bin/{binary}")
+
+        result = validator.execute_validation(
+            [video_path], metadata_path, ffprobe_bin="custom-ffprobe", ffmpeg_bin="custom-ffmpeg"
+        )
+
+        assert result["overall_status"] == "PASS"
+        assert any(check.check_name == "Content Quality" and check.passed for check in result["results"])
+
+
 class TestCodexFailClosedStrictReview:
     def test_technical_contract_rejects_corrupt_video(self, tmp_path):
         validator = CodexAgentValidator(tmp_path, strict_mode=True)

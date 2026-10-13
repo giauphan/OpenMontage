@@ -695,16 +695,23 @@ class CodexAgentValidator:
         # Test/rehearsal-only injection. None preserves the production CLI path.
         self._review_transport = review_transport
         self.results: List[ValidationResult] = []
+        self._content_cache: Dict[tuple[str, str, str], tuple[ValidationResult, ...]] = {}
 
-    def validate_technical_contract(self, video_path: Path, ffprobe_bin: Optional[str] = None) -> List[ValidationResult]:
+    def validate_technical_contract(
+        self,
+        video_path: Path,
+        ffprobe_bin: Optional[str] = None,
+        ffmpeg_bin: Optional[str] = None,
+    ) -> List[ValidationResult]:
         """Validate technical video contract (exists, duration, codecs, dimensions)."""
         resolved_ffprobe, resolved_ffmpeg = resolve_ffprobe_ffmpeg()
         ffprobe_use = ffprobe_bin or resolved_ffprobe
+        ffmpeg_use = ffmpeg_bin or resolved_ffmpeg
         passed, message, details = verify_video_integrity(
             video_path,
             min_duration=MIN_DURATION,
             ffprobe_bin=ffprobe_use,
-            ffmpeg_bin=resolved_ffmpeg,
+            ffmpeg_bin=ffmpeg_use,
         )
         if not passed:
             return [
@@ -731,6 +738,90 @@ class CodexAgentValidator:
                 details=details,
             ),
         ]
+
+    def validate_content_quality(
+        self,
+        video_path: Path,
+        ffprobe_bin: str,
+        ffmpeg_bin: str,
+    ) -> List[ValidationResult]:
+        """Run deterministic strict content checks before agent review.
+
+        Results are cached by artifact SHA-256 and the explicit media binary paths.
+        Missing tools or failed probes are represented as failures, never passes.
+        """
+        artifact_hash = compute_sha256(video_path)
+        cache_key = (artifact_hash, ffprobe_bin, ffmpeg_bin)
+        if artifact_hash and cache_key in self._content_cache:
+            return list(self._content_cache[cache_key])
+
+        def failed(message: str, **details: object) -> List[ValidationResult]:
+            return [ValidationResult(
+                check_name="Content Quality",
+                passed=False,
+                message=message,
+                details={"inspected_artifact_hash": artifact_hash, **details},
+            )]
+
+        if not ffprobe_bin or shutil.which(ffprobe_bin) is None and not Path(ffprobe_bin).is_file():
+            results = failed("Content quality check failed: ffprobe unavailable", error="ffprobe_unavailable")
+            return results
+        if not ffmpeg_bin or shutil.which(ffmpeg_bin) is None and not Path(ffmpeg_bin).is_file():
+            results = failed("Content quality check failed: ffmpeg unavailable", error="ffmpeg_unavailable")
+            return results
+        if not artifact_hash:
+            return failed("Content quality check failed: video missing or empty", error="video_missing_or_empty")
+
+        try:
+            from scripts.validate_render_quality import probe, validate_content
+
+            media = probe(Path(video_path), ffprobe_bin)
+            streams = media.get("streams", [])
+            has_video = any(stream.get("codec_type") == "video" for stream in streams)
+            has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+            try:
+                duration = float(media.get("format", {}).get("duration") or 0.0)
+            except (TypeError, ValueError):
+                duration = 0.0
+            if not has_video:
+                return failed("Content quality check failed: no video stream", error="video_stream_missing")
+            if not has_audio:
+                return failed("Content quality check failed: expected audio stream is missing", error="audio_stream_missing")
+            if duration <= 0:
+                return failed("Content quality check failed: invalid video duration", error="invalid_duration")
+
+            issues = validate_content(
+                Path(video_path), ffmpeg_bin, duration, has_audio, has_video, strict=True
+            )
+        except Exception as exc:
+            return failed(
+                f"Content quality check failed: {exc}",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
+        if issues:
+            results = failed(
+                "Content quality validation failed",
+                issues=issues,
+                duration=duration,
+            )
+        else:
+            results = [ValidationResult(
+                check_name="Content Quality",
+                passed=True,
+                message="Content quality checks passed (audio, black frames, edge density, motion) ✓",
+                details={
+                    "duration": duration,
+                    "has_audio": has_audio,
+                    "has_video": has_video,
+                    "strict": True,
+                    "inspected_artifact_hash": artifact_hash,
+                },
+            )]
+        if artifact_hash:
+            self._content_cache[cache_key] = tuple(results)
+        return results
 
     def validate_metadata(self, metadata_path: Path) -> List[ValidationResult]:
         """Validate metadata quality."""

@@ -38,6 +38,187 @@ VERTICAL_HEIGHT = 1920
 YOUTUBE_SHORT_MAX_SECONDS = 60.0
 YOUTUBE_TITLE_MAX_CHARS = 100
 YOUTUBE_SHORTS_HASHTAG = "#Shorts"
+DEFAULT_VIETNAMESE_TAGS = ["tintuc", "congnghe", "ai", "vietnam"]
+
+
+class ReleaseMetadata:
+    """Centralized, immutable typed release metadata for all publishing platforms."""
+
+    def __init__(
+        self,
+        project_id: str,
+        title: str,
+        description: str,
+        yt_shorts: str,
+        ig_reels: str,
+        fb_video: str,
+        tiktok: str,
+        tags: list[str] | None = None,
+        source_url: str | None = None,
+        extra: dict | None = None,
+    ):
+        self.project_id = project_id
+        self.title = title
+        self.description = description
+        self.yt_shorts = yt_shorts
+        self.ig_reels = ig_reels
+        self.fb_video = fb_video
+        self.tiktok = tiktok
+        self.tags = tags or list(DEFAULT_VIETNAMESE_TAGS)
+        self.source_url = source_url
+        self.extra = extra or {}
+
+    @property
+    def youtube_payload(self) -> dict:
+        return {
+            "title": youtube_shorts_title(self.title),
+            "description": self.description,
+            "tags": list(self.tags),
+        }
+
+    @property
+    def instagram_payload(self) -> dict:
+        from tools.publishers.social_metadata import meta_caption
+        return {
+            "caption": meta_caption(self.title, self.description),
+        }
+
+    @property
+    def facebook_payload(self) -> dict:
+        from tools.publishers.social_metadata import meta_caption
+        return {
+            "title": self.title,
+            "caption": meta_caption(self.title, self.description),
+        }
+
+    @property
+    def tiktok_payload(self) -> dict:
+        return {
+            "title": self.title,
+            "description": self.description,
+            "tags": list(self.tags),
+        }
+
+    def to_dict(self) -> dict:
+        d = {
+            "id": self.project_id,
+            "title": self.title,
+            "description": self.description,
+            "yt_shorts": self.yt_shorts,
+            "ig_reels": self.ig_reels,
+            "fb_video": self.fb_video,
+            "tiktok": self.tiktok,
+            "tags": self.tags,
+        }
+        if self.source_url:
+            d["source_url"] = self.source_url
+        if self.extra:
+            d.update(self.extra)
+        return d
+
+
+def deduplicate_hashtags_in_text(text: str) -> str:
+    """Deduplicate hashtags case-insensitively while preserving original order and formatting."""
+    seen = set()
+    tokens = text.split()
+    result = []
+    for token in tokens:
+        if token.startswith("#"):
+            normalized = token.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+        result.append(token)
+    return " ".join(result)
+
+
+def validate_release_metadata(meta: dict) -> list[str]:
+    """Validate release metadata fields according to strict platform and quality constraints."""
+    errors = []
+    for required in ("id", "title", "description"):
+        if not meta.get(required):
+            errors.append(f"missing required field: {required}")
+
+    title = str(meta.get("title", ""))
+    desc = str(meta.get("description", ""))
+
+    if title:
+        from tools.narration_text import check_vietnamese_prose
+        # Verify title does not have unclosed shell syntax or invalid language
+        from scripts.validate_publish_metadata import validate_text_field
+        errors.extend(validate_text_field("title", title))
+        lang_errors = check_vietnamese_prose(title)
+        if lang_errors:
+            errors.extend(f"title language error: {err}" for err in lang_errors)
+
+    if desc:
+        from tools.narration_text import check_vietnamese_prose
+        from scripts.validate_publish_metadata import validate_text_field
+        errors.extend(validate_text_field("description", desc))
+        desc_lang = check_vietnamese_prose(desc)
+        if desc_lang:
+            errors.extend(f"description language error: {err}" for err in desc_lang)
+
+    return errors
+
+
+def compose_release_metadata(data: dict) -> ReleaseMetadata:
+    """Build and validate a unified ReleaseMetadata object from raw metadata dict."""
+    errors = validate_release_metadata(data)
+    if errors:
+        raise ValueError(f"Invalid release metadata: {'; '.join(errors)}")
+
+    title = deduplicate_hashtags_in_text(str(data["title"]).strip())
+    desc = deduplicate_hashtags_in_text(str(data["description"]).strip())
+
+    tags = data.get("tags")
+    if tags is None or not isinstance(tags, list):
+        # Derive tags from topic/title words if available, else standard fallback
+        tags = list(DEFAULT_VIETNAMESE_TAGS)
+    else:
+        # Clean and deduplicate tags
+        seen = set()
+        clean_tags = []
+        for t in tags:
+            tag_clean = str(t).strip().lstrip("#").lower()
+            if tag_clean and tag_clean not in seen:
+                seen.add(tag_clean)
+                clean_tags.append(tag_clean)
+        tags = clean_tags or list(DEFAULT_VIETNAMESE_TAGS)
+
+    yt_shorts = data.get("yt_shorts") or CUT_RENDER
+    if isinstance(yt_shorts, dict):
+        yt_shorts = yt_shorts.get("path") or yt_shorts.get("file") or CUT_RENDER
+
+    ig_reels = data.get("ig_reels") or CUT_RENDER
+    if isinstance(ig_reels, dict):
+        ig_reels = ig_reels.get("path") or ig_reels.get("file") or CUT_RENDER
+
+    fb_video = data.get("fb_video") or FULL_RENDER
+    if isinstance(fb_video, dict):
+        fb_video = fb_video.get("path") or fb_video.get("file") or FULL_RENDER
+
+    tiktok = data.get("tiktok") or FULL_RENDER
+    if isinstance(tiktok, dict):
+        tiktok = tiktok.get("path") or tiktok.get("file") or FULL_RENDER
+
+    extra = {k: v for k, v in data.items() if k not in (
+        "id", "title", "description", "yt_shorts", "ig_reels", "fb_video", "tiktok", "tags", "source_url"
+    )}
+
+    return ReleaseMetadata(
+        project_id=str(data["id"]),
+        title=title,
+        description=desc,
+        yt_shorts=str(yt_shorts),
+        ig_reels=str(ig_reels),
+        fb_video=str(fb_video),
+        tiktok=str(tiktok),
+        tags=tags,
+        source_url=data.get("source_url"),
+        extra=extra,
+    )
+
 
 
 def youtube_shorts_title(title: str) -> str:

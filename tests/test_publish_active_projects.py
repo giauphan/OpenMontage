@@ -78,6 +78,15 @@ def test_slot_publish_uses_explicit_date(mock_run, tmp_path, monkeypatch):
     assert mock_run.call_args.args[0][-2:] == ["--date", "2026-09-08"]
 
 
+def test_slot_never_dispatches_overdue_projects():
+    projects = [
+        {"project_id": "old", "publish_date": "2026-10-12", "publish_time": "09:15"},
+        {"project_id": "earlier", "publish_date": "2026-10-13", "publish_time": "09:15"},
+        {"project_id": "current", "publish_date": "2026-10-13", "publish_time": "14:15"},
+    ]
+    assert pap.scheduled_projects_for_slot(projects, "14:15", "2026-10-13") == [projects[2]]
+
+
 @patch("subprocess.run")
 def test_publish_active_projects_filters_out_wrong_date(mock_run, tmp_path, monkeypatch):
     config_file = tmp_path / "publish_schedule.json"

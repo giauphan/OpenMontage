@@ -423,8 +423,13 @@ done
   write_state "claude-validate" "failed"
   fail "claude validation failed for all projects (see $CLAUDE_LOG)"
 }
-log "claude agent strict validation PASSED for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
-write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
+if [ "${#VALIDATED_PIDS[@]}" -lt 3 ]; then
+  write_state "claude-validate" "partial" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
+  log "WARNING: PARTIAL: strict validation achieved only ${#VALIDATED_PIDS[@]}/3 validated projects (see $CLAUDE_LOG)"
+else
+  write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
+fi
+log "claude agent strict validation completed for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
 
 # ===== STAGE 6: QUEUE — current-day recovery plus next-day schedule =====
 stage 6 "queue"
