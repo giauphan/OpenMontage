@@ -217,13 +217,12 @@ def scheduled_projects_for_slot(
     projects: list[object],
     slot: str,
     local_date: str,
-    include_overdue: bool = True,
+    include_overdue: bool = False,
     store=None,
 ) -> list[dict[str, Any]]:
-    """Return valid structured project dicts due for one slot (plus uncompleted overdue entries).
-    
-    Preserves original publication dates, slot times, and retry status.
-    Inspection of overdue projects is strictly read-only.
+    """Return valid structured project dicts due for one exact slot only.
+
+    Overdue entries are excluded by default to prevent burst publishing.
     """
     queued_projects: list[dict[str, Any]] = []
     now_iso = datetime.now(timezone.utc).isoformat()

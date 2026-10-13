@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.publishers.platform_routes import youtube_shorts_title
+from tools.publishers.platform_routes import youtube_shorts_title, validate_release_metadata
 from tools.narration_text import check_vietnamese_prose
 
 

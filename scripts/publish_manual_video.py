@@ -30,10 +30,30 @@ from tools.publishers.platform_routes import (
     probe_dimensions,
     VERTICAL_WIDTH,
     VERTICAL_HEIGHT,
+    compose_release_metadata,
 )
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
 from tools.publishers.social_metadata import meta_caption
+
+
+def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | None = None) -> dict:
+    """Build unified YouTube Shorts upload payload using compose_release_metadata."""
+    payload_meta = dict(topic_meta)
+    if "id" not in payload_meta:
+        payload_meta["id"] = payload_meta.get("project_id", "news_video")
+    rel = compose_release_metadata(payload_meta)
+    yt = rel.youtube_payload
+    return {
+        "video_path": str(video_path),
+        "title": yt["title"],
+        "description": yt["description"],
+        "tags": yt["tags"],
+        "privacy_status": "private" if publish_at else "unlisted",
+        "publish_at": publish_at,
+        "category_id": "28",
+    }
+
 
 _CFG = load_config()
 FB_PAGE_ID = _CFG["meta"]["page_id"]
@@ -520,15 +540,15 @@ def publish_batch(
         result = None
         if platform == "youtube":
             publisher = YoutubePublisher()
-            inputs = {
-                "video_path": str(video_path),
-                "title": title,
-                "description": description,
-                "tags": ["tintuc", "congnghe", "ai", "tuonglai", "vietnam"],
-                "privacy_status": "private" if publish_at else "unlisted",
-                "publish_at": publish_at,
-            }
-            if dry_run:
+            try:
+                inputs = build_youtube_payload(metadata, video_path=str(video_path), publish_at=publish_at)
+            except ValueError as exc:
+                inputs = None
+                result = {"success": False, "error": f"metadata invalid: {exc}"}
+
+            if inputs is None:
+                pass
+            elif dry_run:
                 print(f"[DRY RUN] Would upload YouTube {kind}: {video_path}")
                 result = {"success": True, "video_id": "DRY_RUN_ID", "video_url": "https://example.com/dry-run"}
             else:

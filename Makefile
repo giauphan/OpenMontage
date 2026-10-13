@@ -93,7 +93,10 @@ test: ensure-venv
 	$(RUN_PYTHON) -m pytest tests/ -v --ignore=tests/contracts/
 
 test-contracts: ensure-venv
-	$(RUN_PYTHON) -m pytest tests/contracts/ -v
+	$(RUN_PYTHON) -m pytest tests/contracts/ tests/test_pr06_pr07_remediation.py -v
+
+test-cron: ensure-venv
+	$(RUN_PYTHON) -m pytest tests/test_strict_cron_retry.py tests/test_daily_cron_reliability_hardening.py -v
 
 # ---- Utilities ----
 

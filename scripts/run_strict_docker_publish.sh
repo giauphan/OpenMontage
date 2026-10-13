@@ -419,9 +419,13 @@ for PID in "${VERIFY_OK_PIDS[@]}"; do
   fi
 done
 
-[ "${#VALIDATED_PIDS[@]}" -gt 0 ] || {
+[ "${#VALIDATED_PIDS[@]}" -eq 3 ] || {
   write_state "claude-validate" "failed"
-  fail "claude validation failed for all projects (see $CLAUDE_LOG)"
+  if [ "${#VALIDATED_PIDS[@]}" -gt 0 ]; then
+    fail "PARTIAL: strict validation achieved only ${#VALIDATED_PIDS[@]}/3 validated projects (see $CLAUDE_LOG)"
+  else
+    fail "claude validation failed for all projects (see $CLAUDE_LOG)"
+  fi
 }
 log "claude agent strict validation PASSED for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
 write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
