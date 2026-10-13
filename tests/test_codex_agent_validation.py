@@ -6,6 +6,7 @@ import sys
 import tempfile
 import pytest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 from scripts.codex_agent_validation import (
     CodexAgentValidator,
     CLAUDEAgentValidator,
@@ -449,6 +450,32 @@ class TestCodexCommandLineIntegration:
 
 
 class TestCodexFailClosedStrictReview:
+    def test_technical_contract_rejects_corrupt_video(self, tmp_path):
+        validator = CodexAgentValidator(tmp_path, strict_mode=True)
+        vid = tmp_path / "corrupt.mp4"
+        vid.write_bytes(b"x" * 2000)
+        with patch("scripts.codex_agent_validation.verify_video_integrity", return_value=(False, "decode failed", {})):
+            results = validator.validate_technical_contract(vid)
+            assert len(results) == 1
+            assert results[0].passed is False
+            assert "decode failed" in results[0].message
+
+    def test_extract_frames_rejects_corrupt_frame(self, tmp_path):
+        validator = CodexAgentValidator(tmp_path, strict_mode=True)
+        vid = tmp_path / "video.mp4"
+        vid.write_bytes(b"x" * 2000)
+        out_dir = tmp_path / "frames"
+
+        with patch("scripts.codex_agent_validation.subprocess.run") as mock_subproc,              patch("scripts.codex_agent_validation.verify_image_integrity", return_value=(False, "bad magic")):
+            mock_subproc.side_effect = [
+                MagicMock(returncode=0, stdout="10.0"), # duration probe
+                MagicMock(returncode=0), # ffmpeg frame extract
+                MagicMock(returncode=0), # ffmpeg frame extract
+                MagicMock(returncode=0), # ffmpeg frame extract
+            ]
+            frames = validator._extract_frames(vid, out_dir)
+            assert frames == []
+
     """Test strict fail-closed and audit binding rules."""
 
     def test_strict_review_fails_when_agent_cli_missing(self, monkeypatch):

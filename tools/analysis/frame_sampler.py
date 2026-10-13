@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from lib.media_integrity import verify_image_integrity
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -126,6 +127,14 @@ class FrameSampler(BaseTool):
         except Exception as e:
             return ToolResult(success=False, error=str(e))
 
+        if not frames:
+            return ToolResult(
+                success=False,
+                error=f"No valid frames extracted from {input_path} using strategy '{strategy}'",
+                data={"strategy": strategy, "frame_count": 0, "frames": [], "output_dir": str(output_dir)},
+                duration_seconds=round(time.time() - start, 2),
+            )
+
         elapsed = time.time() - start
 
         return ToolResult(
@@ -175,7 +184,7 @@ class FrameSampler(BaseTool):
         count = inputs.get("count", 10)
         duration = self._get_duration(input_path)
         if duration <= 0:
-            return []
+            raise ValueError(f"Invalid or non-positive video duration: {duration}s")
 
         interval = duration / count
         output_pattern = str(output_dir / f"frame_%04d.{fmt}")
@@ -220,11 +229,13 @@ class FrameSampler(BaseTool):
             self.run_command(cmd)
 
             if output_file.exists():
-                frames.append({
-                    "path": str(output_file),
-                    "timestamp_seconds": ts,
-                    "index": i,
-                })
+                ok, _ = verify_image_integrity(output_file)
+                if ok:
+                    frames.append({
+                        "path": str(output_file),
+                        "timestamp_seconds": ts,
+                        "index": i,
+                    })
 
         return frames
 
@@ -296,9 +307,11 @@ class FrameSampler(BaseTool):
         frames = []
         pattern = f"frame_*.{fmt}"
         for i, path in enumerate(sorted(output_dir.glob(pattern))):
-            frames.append({
-                "path": str(path),
-                "timestamp_seconds": round(i * interval, 3),
-                "index": i,
-            })
+            ok, _ = verify_image_integrity(path)
+            if ok:
+                frames.append({
+                    "path": str(path),
+                    "timestamp_seconds": round(i * interval, 3),
+                    "index": i,
+                })
         return frames
