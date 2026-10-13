@@ -1,3 +1,4 @@
+import json
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
@@ -210,10 +211,13 @@ def test_public_finalize_survives_fresh_tool_and_rejects_mutated_final(
     assert finalized.success, finalized.error
     final_path = Path(finalized.data["final_path"])
     report_path = project_dir / "reports" / "render_report.json"
+    final_review_path = project_dir / "reports" / "final_review.json"
     assert final_path.is_file()
     assert report_path.is_file()
+    assert final_review_path.is_file()
     assert str(final_path) in finalized.artifacts
     assert str(report_path) in finalized.artifacts
+    assert str(final_review_path) in finalized.artifacts
 
     fresh_completion = execute(
         new_tool(),
@@ -223,6 +227,25 @@ def test_public_finalize_survives_fresh_tool_and_rejects_mutated_final(
     )
     assert fresh_completion.success is True
     assert fresh_completion.data == {"valid": True, "reason": "Pass"}
+
+    final_review = json.loads(final_review_path.read_text())
+    final_review["status"] = "fail"
+    final_review["issues_found"] = ["regression sentinel"]
+    final_review_path.write_text(json.dumps(final_review))
+
+    invalid_review_completion = execute(
+        new_tool(),
+        "validate_completion",
+        project_dir.name,
+        project_dir.parent,
+    )
+    assert invalid_review_completion.success is False
+    assert invalid_review_completion.data["valid"] is False
+    assert "Final review failed" in invalid_review_completion.data["reason"]
+
+    final_review["status"] = "pass"
+    final_review["issues_found"] = []
+    final_review_path.write_text(json.dumps(final_review))
 
     final_path.write_bytes(final_path.read_bytes() + b"mutated")
 

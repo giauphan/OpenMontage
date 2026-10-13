@@ -398,7 +398,11 @@ class Multishot(BaseTool):
         return ToolResult(
             success=True,
             data=evidence,
-            artifacts=[evidence["final_path"], str(project_dir / REPORTS_DIR / "render_report.json")],
+            artifacts=[
+                evidence["final_path"],
+                str(project_dir / REPORTS_DIR / "render_report.json"),
+                str(project_dir / REPORTS_DIR / "final_review.json"),
+            ],
         )
 
     def _validate_completion(self, inputs: dict[str, Any]) -> ToolResult:

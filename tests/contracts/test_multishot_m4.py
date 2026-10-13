@@ -34,6 +34,7 @@ def _clean_probe(profile=None):
         "fps": profile.fps,
         "video_codec": "h264",
         "decode_ok": True,
+        "has_audio": True,
         "errors": [],
     }
 
@@ -175,6 +176,23 @@ class TestFinalValidation:
                               present_shot_ids=["shot_001", "shot_002"])
         assert not v.valid
         assert any("decode" in e for e in v.errors)
+
+    def test_expected_audio_present_passes(self):
+        v, _ = self._validate(_clean_probe(), expected_audio=True)
+        assert v.valid, v.errors
+
+    def test_missing_expected_audio_blocks_completion(self):
+        probe = _clean_probe()
+        probe["has_audio"] = False
+        v, _ = self._validate(probe, expected_audio=True)
+        assert not v.valid
+        assert any("expected audio track missing" in e for e in v.errors)
+
+    def test_missing_audio_allowed_when_audio_not_requested(self):
+        probe = _clean_probe()
+        probe["has_audio"] = False
+        v, _ = self._validate(probe)
+        assert v.valid, v.errors
 
     def test_single_shot_blocks(self):
         v, _ = self._validate(_clean_probe(), shot_count=1,

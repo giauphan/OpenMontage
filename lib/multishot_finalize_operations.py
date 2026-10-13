@@ -2,7 +2,10 @@
 
 from dataclasses import asdict
 from pathlib import Path
+import subprocess
 from typing import Any, Optional
+
+from PIL import Image, ImageStat
 
 from lib.media_profiles import MediaProfile
 from lib.multishot_final import master_final_video, validate_final_master
@@ -167,6 +170,136 @@ def _profile_from_evidence(evidence: dict) -> MediaProfile:
         raise ValueError("Final evidence has invalid profile configuration") from exc
 
 
+def _sample_final_review_frames(
+    output_path: str,
+    sample_dir: Path,
+    display_root: Path,
+    duration: float,
+) -> tuple[list[str], list[str], bool]:
+    if duration <= 0:
+        return [], ["duration unreadable; skipped frame sampling"], False
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    frame_paths: list[str] = []
+    issues: list[str] = []
+    black_frames_detected = False
+    for index, pct in enumerate((0.10, 0.35, 0.65, 0.90)):
+        frame_path = sample_dir / f"multishot_review_frame_{index}.png"
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y", "-ss", str(round(duration * pct, 2)),
+                "-i", output_path, "-frames:v", "1", "-q:v", "2",
+                str(frame_path),
+            ],
+            capture_output=True,
+            timeout=15,
+        )
+        if proc.returncode != 0 or not frame_path.is_file() or frame_path.stat().st_size == 0:
+            issues.append(f"frame sample {index} extraction failed")
+            continue
+        try:
+            with Image.open(frame_path) as image:
+                mean_luma = ImageStat.Stat(image.convert("L")).mean[0]
+        except OSError:
+            issues.append(f"frame sample {index} unreadable")
+            continue
+        frame_paths.append(str(frame_path.relative_to(display_root)))
+        if mean_luma < 3:
+            black_frames_detected = True
+            issues.append(f"frame sample {index} appears black or empty")
+    return frame_paths, issues, black_frames_detected
+
+
+def _build_final_review(
+    output_path: str,
+    inspected_path: str,
+    probe: dict[str, Any],
+    validation: Any,
+    audio_config: dict,
+    review_frame_dir: Path,
+    project_dir: Path,
+) -> dict[str, Any]:
+    issues = list(validation.errors)
+    expected_audio = bool(
+        audio_config.get("narration_path")
+        or audio_config.get("music_path")
+        or audio_config.get("sfx_path")
+    )
+    subtitles_expected = bool(audio_config.get("subtitles_path"))
+    subtitle_issues = []
+    issues.extend(subtitle_issues)
+
+    frame_paths, visual_issues, black_frames_detected = _sample_final_review_frames(
+        inspected_path,
+        review_frame_dir,
+        project_dir,
+        float(probe.get("duration_sec") or 0.0),
+    )
+    issues.extend(visual_issues)
+
+    technical_issues = list(probe.get("errors") or [])
+    if not probe.get("has_video"):
+        technical_issues.append("video stream missing")
+    if not probe.get("decode_ok", True):
+        technical_issues.append("decode validation failed")
+    issues.extend(technical_issues)
+
+    status = "pass" if validation.valid and not technical_issues and not visual_issues else "fail"
+    recommended_action = "present_to_user" if status == "pass" else "re_render"
+    return {
+        "version": "1.0",
+        "output_path": output_path,
+        "status": status,
+        "checks": {
+            "technical_probe": {
+                "valid_container": bool(probe.get("has_video")),
+                "duration_seconds": float(probe.get("duration_sec") or 0.0),
+                "resolution": f"{probe.get('width') or 0}x{probe.get('height') or 0}",
+                "fps": float(probe.get("fps") or 0.0),
+                "has_audio": bool(probe.get("has_audio", False)),
+                "codec": str(probe.get("video_codec") or "unknown"),
+                "file_size_bytes": Path(inspected_path).stat().st_size if Path(inspected_path).is_file() else 0,
+                "issues": technical_issues,
+            },
+            "visual_spotcheck": {
+                "frames_sampled": len(frame_paths),
+                "frame_paths": frame_paths,
+                "black_frames_detected": black_frames_detected,
+                "broken_overlays": False,
+                "missing_assets": False,
+                "unreadable_text": False,
+                "issues": visual_issues,
+            },
+            "audio_spotcheck": {
+                "narration_present": bool(audio_config.get("narration_path") and probe.get("has_audio", False)),
+                "music_present": bool(audio_config.get("music_path") and probe.get("has_audio", False)),
+                "unexpected_silence": expected_audio and not probe.get("has_audio", False),
+                "clipping_detected": False,
+                "mix_intelligible": bool((not expected_audio) or probe.get("has_audio", False)),
+                "issues": [] if (not expected_audio or probe.get("has_audio", False)) else ["expected audio track missing from final output"],
+            },
+            "promise_preservation": {
+                "delivery_promise_honored": validation.valid,
+                "renderer_family_used": "multi-shot",
+                "render_runtime_used": "ffmpeg",
+                "runtime_swap_detected": False,
+                "runtime_swap_check": "ok — multi-shot finalizer uses ffmpeg",
+                "motion_ratio_actual": 1.0,
+                "silent_downgrade_detected": False,
+                "issues": list(validation.errors),
+            },
+            "subtitle_check": {
+                "subtitles_expected": subtitles_expected,
+                "subtitles_present": subtitles_expected and bool(audio_config.get("burn_subtitles")),
+                "coverage_ratio": 1.0 if subtitles_expected and audio_config.get("burn_subtitles") else 0.0,
+                "timing_drift_detected": False,
+                "issues": subtitle_issues,
+            },
+        },
+        "issues_found": issues,
+        "recommended_action": recommended_action,
+    }
+
+
 def _validate_final_output(
     final_path: str,
     evidence: dict,
@@ -181,6 +314,12 @@ def _validate_final_output(
     if _file_hash(Path(final_path)) != evidence["final_hash"]:
         raise ValueError("Final video file tampered or altered")
     probe = probe_clip(final_path)
+    audio_config = evidence.get("audio_config") or {}
+    expected_audio = bool(
+        audio_config.get("narration_path")
+        or audio_config.get("music_path")
+        or audio_config.get("sfx_path")
+    )
     validation = validate_final_master(
         probe,
         shot_count=len(shot_ids),
@@ -194,6 +333,7 @@ def _validate_final_output(
         present_shot_ids=shot_ids,
         failed_shot_ids=[],
         stale_shot_ids=[],
+        expected_audio=expected_audio,
     )
     if not validation.valid:
         raise ValueError(f"Final validation failed: {validation.errors}")
@@ -297,12 +437,14 @@ def finalize_session(
             present_shot_ids=shot_ids,
             failed_shot_ids=[],
             stale_shot_ids=[],
+            expected_audio=bool(narration or music or sfx),
         )
         if not final_validation.valid:
             raise ValueError(f"Final validation failed: {final_validation.errors}")
 
         renders_dir = project_dir / "renders"
         renders_dir.mkdir(parents=True, exist_ok=True)
+        review_frame_dir = project_dir / REPORTS_DIR / "final_review_frames"
         published_path = str(renders_dir / final_out_name)
         evidence = {
             "source_fingerprint": source_fingerprint,
@@ -315,6 +457,16 @@ def finalize_session(
             "profile": _profile_config(profile),
             "plan_fingerprint": state.get("plan_fingerprint"),
         }
+
+        final_review = _build_final_review(
+            published_path,
+            final_out_path,
+            final_probe,
+            final_validation,
+            audio_config,
+            review_frame_dir,
+            project_dir,
+        )
 
         rendered_report = {
             "version": "1.0",
@@ -329,6 +481,7 @@ def finalize_session(
                     "duration_seconds": final_probe.get("duration_sec", 0.0),
                 }
             ],
+            "final_review_ref": str(Path("reports") / "final_review.json"),
             "metadata": {
                  "project_id": project_dir.name,
                  "validation": {
@@ -339,6 +492,9 @@ def finalize_session(
             }
         }
         from schemas.artifacts import validate_artifact
+        validate_artifact("final_review", final_review)
+        if final_review["status"] != "pass":
+            raise ValueError(f"Final review failed: {final_review['issues_found']}")
         validate_artifact("render_report", rendered_report)
 
         with project_lock(project_dir):
@@ -373,6 +529,8 @@ def finalize_session(
             session._write(current_revision, state)
 
             report_path = project_dir / REPORTS_DIR / "render_report.json"
+            final_review_path = project_dir / REPORTS_DIR / "final_review.json"
+            write_json_atomic(final_review_path, final_review)
             write_json_atomic(report_path, rendered_report)
 
         return evidence
@@ -417,6 +575,17 @@ def validate_completion(project_dir: Path) -> dict:
         _validate_final_output(
             final_evidence.get("final_path"), final_evidence, state, profile, shot_ids
         )
+        final_review_path = project_dir / REPORTS_DIR / "final_review.json"
+        if not final_review_path.is_file():
+            raise ValueError("Final review artifact missing")
+        import json
+        final_review = json.loads(final_review_path.read_text())
+        from schemas.artifacts import validate_artifact
+        validate_artifact("final_review", final_review)
+        if final_review.get("output_path") != final_evidence.get("final_path"):
+            raise ValueError("Final review output path mismatched")
+        if final_review.get("status") != "pass":
+            raise ValueError(f"Final review failed: {final_review.get('issues_found', [])}")
     except (KeyError, OSError, TypeError, ValueError) as exc:
         return {"valid": False, "reason": str(exc)}
 

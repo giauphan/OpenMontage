@@ -43,7 +43,7 @@ class OfflineProvider:
         subprocess.run(
             [
                 "ffmpeg", "-y", "-f", "lavfi",
-                "-i", "color=c=black:s=160x160:r=24",
+                "-i", "testsrc=size=160x160:rate=24",
                 "-t", "5", "-an", "-pix_fmt", "yuv420p", str(target),
             ],
             check=True,
@@ -322,19 +322,24 @@ def test_multishot_end_to_end_workflow(tmp_path, n_shots, duration):
     assert val_res.data["valid"] is True
 
     report_path = project_dir / "reports" / "render_report.json"
+    final_review_path = project_dir / "reports" / "final_review.json"
     assert report_path.is_file()
+    assert final_review_path.is_file()
     render_report = json.loads(report_path.read_text())
+    final_review = json.loads(final_review_path.read_text())
     assert render_report["version"] == "1.0"
     assert len(render_report["outputs"]) == 1
     rendered_output = render_report["outputs"][0]
     assert rendered_output["path"] == str(final_path.relative_to(project_dir))
     assert rendered_output["duration_seconds"] == pytest.approx(duration, abs=0.1)
+    assert render_report["final_review_ref"] == "reports/final_review.json"
+    assert final_review["status"] == "pass"
     cp_compose = tool.execute({
         "operation": "checkpoint",
         "project_id": project_id,
         "root_dir": str(root_dir),
         "stage": "compose",
-        "artifacts": {"render_report": render_report},
+        "artifacts": {"render_report": render_report, "final_review": final_review},
         "human_approved": True,
     })
     assert cp_compose.success, cp_compose.error
