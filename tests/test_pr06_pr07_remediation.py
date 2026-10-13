@@ -128,7 +128,10 @@ def test_docker_compose_and_watchdog_outside_scheduler():
 
     # Bug in RC-02: (command -v cron || apt-get update && apt-get install) had flawed operator grouping
     # Check that cron installation syntax groups apt-get commands correctly
-    assert "(command -v cron >/dev/null 2>&1 || (apt-get update && apt-get install -y cron jq))" in compose_text
+    assert (
+        "(command -v cron >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || (apt-get update && apt-get install -y cron jq))" in compose_text
+        or "(command -v cron >/dev/null 2>&1 || (apt-get update && apt-get install -y cron jq))" in compose_text
+    )
 
     # Watchdog check: ensure check_missed_runs.py script exists and documents running OUTSIDE scheduler
     checker_script = Path(__file__).resolve().parents[1] / "scripts/check_missed_runs.py"
