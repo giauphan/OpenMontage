@@ -112,7 +112,7 @@ def prepare_generation(
         raise ValueError("settings must be a dict")
 
     session = MultishotSession(project_dir)
-    prep = session.prepare_shot_prompt(shot_id, reference_store, reference_review)
+    prep = session.prepare_shot_prompt(shot_id, reference_store, reference_review, provider=provider)
     prompt: str = prep["prompt"]
     ordered_refs: list[dict] = prep["references"]
     shot_state: dict = prep["shot"]

@@ -180,8 +180,8 @@ class MultishotSession:
             self._write(state["revision"], state)
             return copy.deepcopy(s)
 
-    def prepare_shot_prompt(self, shot_id: str, reference_store: dict, reference_review: dict) -> dict:
-        from lib.multishot_prompt_builder import build_multishot_prompt
+    def prepare_shot_prompt(self, shot_id: str, reference_store: dict, reference_review: dict, *, provider: str = "generic") -> dict:
+        from lib.multishot_prompt_compilers import compile_prompt
         from lib.multishot_references import validate_generation_ready
 
         if not isinstance(reference_review, dict):
@@ -240,15 +240,15 @@ class MultishotSession:
                     "owner": record.get("owner"),
                 })
 
-            prompt = build_multishot_prompt(
-                project_title=self._project_title(),
-                request=artifacts["request"],
-                story=artifacts["story"],
-                character_bible=artifacts["character_bible"],
-                style_bible=artifacts["style_bible"],
-                shot=shot,
-                continuity_in=continuity_in,
-            )
+            prompt = compile_prompt(provider, {
+                "project_title": self._project_title(),
+                "request": artifacts["request"],
+                "story": artifacts["story"],
+                "character_bible": artifacts["character_bible"],
+                "style_bible": artifacts["style_bible"],
+                "shot": shot,
+                "continuity_in": continuity_in,
+            })
             bound_input = {
                 "prompt": prompt,
                 "references": copy.deepcopy(ordered_refs),
@@ -432,7 +432,11 @@ class MultishotSession:
             self._write(state["revision"], state)
             return copy.deepcopy(s)
 
-    def review_shot(self, shot_id: str, revision: int, accepted: bool, end_state: dict, reviewer: str, notes: str) -> dict:
+    def review_shot(self, shot_id: str, revision: int, accepted: bool, end_state: dict, reviewer: str, notes: str, semantic_review: dict | None = None) -> dict:
+        if semantic_review is not None:
+            from lib.multishot_semantic_review import validate_semantic_review
+            semantic_review = validate_semantic_review(semantic_review)
+
         with project_lock(self.project_dir):
             state = self._read()
             s = state["shots"][shot_id]
@@ -464,8 +468,10 @@ class MultishotSession:
                 "accepted": accepted,
                 "end_state": copy.deepcopy(end_state),
                 "reviewer": reviewer,
-                "notes": notes
+                "notes": notes,
             }
+            if semantic_review is not None:
+                review_val["semantic_review"] = copy.deepcopy(semantic_review)
             review_hash = _hash(review_val)
             review_val["review_hash"] = review_hash
 

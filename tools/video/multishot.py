@@ -186,6 +186,7 @@ class Multishot(BaseTool):
         shot_id = inputs.get("shot_id")
         reference_store = inputs.get("reference_store", {})
         reference_review = inputs.get("reference_review")
+        provider = inputs.get("provider", "generic")
 
         if not shot_id:
             return ToolResult(success=False, error="shot_id required")
@@ -197,7 +198,7 @@ class Multishot(BaseTool):
 
         session = MultishotSession(project_dir)
 
-        prepared = session.prepare_shot_prompt(shot_id, reference_store, reference_review)
+        prepared = session.prepare_shot_prompt(shot_id, reference_store, reference_review, provider=provider)
 
         return ToolResult(
             success=True,
@@ -324,7 +325,10 @@ class Multishot(BaseTool):
             return ToolResult(success=False, error="shot_id, revision, accepted, end_state, reviewer, and notes required")
 
         session = MultishotSession(project_dir)
-        reviewed = session.review_shot(shot_id, revision, accepted, end_state, reviewer, notes)
+        reviewed = session.review_shot(
+            shot_id, revision, accepted, end_state, reviewer, notes,
+            inputs.get("semantic_review"),
+        )
 
         return ToolResult(
             success=True,

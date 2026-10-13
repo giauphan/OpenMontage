@@ -33,18 +33,25 @@ _RATIO_MAP = {
 _COST_PER_SECOND = {
     "gen3a_turbo": 0.05,
     "gen4_turbo": 0.05,
+    "gen4.5": 0.12,
     "gen4_aleph": 0.15,
     # Third-party Seedance 2.0 inside Runway (Enterprise/Unlimited, non-US).
-    "seedance_2.0": 0.30,
-    "seedance_2.0_fast": 0.24,
+    "seedance_2.0": 0.36,
+    "seedance_2.0_fast": 0.29,
+    # Official Runway model IDs
+    "seedance2": 0.36,
+    "seedance2_fast": 0.29,
 }
 
 _RUNTIME_SECONDS = {
     "gen3a_turbo": 25.0,
     "gen4_turbo": 30.0,
+    "gen4.5": 35.0,
     "gen4_aleph": 60.0,
     "seedance_2.0": 120.0,
     "seedance_2.0_fast": 60.0,
+    "seedance2": 120.0,
+    "seedance2_fast": 60.0,
 }
 
 # Single source of truth for the default model. Referenced by both the input
@@ -105,12 +112,16 @@ class RunwayVideo(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["seedance_2.0", "seedance_2.0_fast", "gen4_turbo", "gen4_aleph", "gen3a_turbo"],
+                "enum": [
+                    "seedance_2.0", "seedance_2.0_fast", "seedance2", "seedance2_fast",
+                    "gen4.5", "gen4_turbo", "gen4_aleph", "gen3a_turbo"
+                ],
                 "default": _DEFAULT_MODEL,
                 "description": (
-                    "seedance_2.0 = preferred premium default (single-pass synced audio, multi-shot, lip-sync — "
+                    "seedance_2.0 / seedance2 = preferred premium default (single-pass synced audio, multi-shot, lip-sync — "
                     "Runway Unlimited/Enterprise plan, non-US only). "
-                    "seedance_2.0_fast = lower-cost Seedance variant. "
+                    "seedance_2.0_fast / seedance2_fast = lower-cost Seedance variant. "
+                    "gen4.5 = Runway's state-of-the-art native model. "
                     "gen4_aleph = Runway's highest-fidelity native model. "
                     "gen4_turbo = balanced Runway native. "
                     "gen3a_turbo = cheapest Runway native."
@@ -178,6 +189,14 @@ class RunwayVideo(BaseTool):
         ratio_friendly = inputs.get("ratio", "16:9")
         ratio_pixels = _RATIO_MAP.get(ratio_friendly, "1280:720")
 
+        # Normalize legacy aliases to official IDs
+        _ALIAS_MAP = {"seedance_2.0": "seedance2", "seedance_2.0_fast": "seedance2_fast"}
+        model = _ALIAS_MAP.get(model, model)
+        if model == "gen4.5" and operation == "text_to_video" and ratio_friendly == "1:1":
+            return ToolResult(
+                success=False,
+                error="gen4.5 text_to_video does not support ratio 1:1; use 16:9 or 9:16",
+            )
         task_payload: dict[str, Any] = {
             "model": model,
             "promptText": inputs["prompt"],
