@@ -244,6 +244,7 @@ def validate_final_master(
     present_shot_ids: Sequence[str],
     failed_shot_ids: Sequence[str],
     stale_shot_ids: Sequence[str],
+    expected_audio: bool = False,
 ) -> FinalValidation:
     """Fail-closed final validator. COMPLETED requires every check to pass."""
     errors: list[str] = []
@@ -286,6 +287,10 @@ def validate_final_master(
         errors.append(f"final codec {probe.get('video_codec')} != h264")
     if not probe.get("decode_ok", True):
         errors.append("final output failed decode validation")
+    if expected_audio and not probe.get("has_audio", False):
+        errors.append("expected audio track missing from final output")
+    checks["expected_audio"] = expected_audio
+    checks["has_audio"] = bool(probe.get("has_audio", False))
 
     return FinalValidation(valid=not errors, errors=errors, checks=checks)
 

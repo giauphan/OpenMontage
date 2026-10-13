@@ -376,6 +376,14 @@ class KlingOfficialImage(BaseTool):
             suffix = extension_from_url(url, ".png")
             output_path = numbered_output_path(output_path_with_suffix(base_path, suffix), index, suffix)
             client.download(url, output_path)
+            if not output_path.is_file() or output_path.stat().st_size == 0:
+                raise ValueError(f"Kling image download missing or empty: {output_path}")
+            from PIL import Image
+            try:
+                with Image.open(output_path) as image:
+                    image.verify()
+            except (OSError, ValueError) as exc:
+                raise ValueError(f"Kling image download is not a readable image: {output_path}") from exc
             paths.append(output_path)
         return paths
 

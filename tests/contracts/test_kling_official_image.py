@@ -6,6 +6,8 @@ import base64
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -27,6 +29,42 @@ def test_image_schema_and_skill():
     assert "image_url" in props
     assert "api_family" in props
     assert "kling-official" in tool.agent_skills
+
+
+def test_download_images_rejects_corrupt_download(tmp_path):
+    class FakeClient:
+        def download(self, url, output_path):
+            output_path.write_bytes(b"not an image")
+
+    tool = KlingOfficialImage()
+    try:
+        tool._download_images(
+            FakeClient(),
+            [{"url": "https://example.com/frame.png"}],
+            {"output_path": str(tmp_path / "frame.png")},
+        )
+    except ValueError as exc:
+        assert "not a readable image" in str(exc)
+    else:
+        raise AssertionError("Corrupt downloaded images must be rejected")
+
+
+def test_download_images_rejects_empty_download(tmp_path):
+    class FakeClient:
+        def download(self, url, output_path):
+            output_path.write_bytes(b"")
+
+    tool = KlingOfficialImage()
+    try:
+        tool._download_images(
+            FakeClient(),
+            [{"url": "https://example.com/frame.png"}],
+            {"output_path": str(tmp_path / "frame.png")},
+        )
+    except ValueError as exc:
+        assert "missing or empty" in str(exc)
+    else:
+        raise AssertionError("Empty downloaded images must be rejected")
 
 
 def test_generation_payload():
@@ -192,7 +230,7 @@ def test_execute_downloads_all_image_results(monkeypatch, tmp_path):
             ]
 
         def download(self, url, output_path):
-            output_path.write_bytes(url.encode("utf-8"))
+            Image.new("RGB", (1, 1), color="white").save(output_path, format="PNG")
             return output_path
 
     monkeypatch.setenv("KLING_API_KEY", "test-key")
@@ -204,8 +242,8 @@ def test_execute_downloads_all_image_results(monkeypatch, tmp_path):
     assert result.data["task_id"] == "img-task-1"
     assert result.data["remote_outputs"][0]["url"].endswith("a.png")
     assert len(result.artifacts) == 2
-    assert Path(result.artifacts[0]).read_bytes() == b"https://example.com/a.png"
-    assert Path(result.artifacts[1]).read_bytes() == b"https://example.com/b.png"
+    assert Path(result.artifacts[0]).is_file()
+    assert Path(result.artifacts[1]).is_file()
     assert result.cost_usd > 0
 
 
@@ -223,7 +261,7 @@ def test_execute_image_omni_series_records_references_callback_and_artifacts(mon
             ]
 
         def download(self, url, output_path):
-            output_path.write_bytes(url.encode("utf-8"))
+            Image.new("RGB", (1, 1), color="white").save(output_path, format="PNG")
             return output_path
 
     monkeypatch.setenv("KLING_API_KEY", "test-key")

@@ -150,6 +150,7 @@ stages:
       - edit_decisions
     produces:
       - render_report
+      - final_review
     tools_available:
       - multishot
       - video_compose
