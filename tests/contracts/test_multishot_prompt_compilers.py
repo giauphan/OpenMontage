@@ -38,10 +38,18 @@ def test_compile_prompt_distinguishes_providers():
 
 
 def test_prompt_hash_for_provider():
+    from lib.multishot_jobs import canonical_input_hash
     prompt = "A friendly fox walks through a magical forest."
     expected = "sha256:" + hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     assert prompt_hash_for_provider("kling_official", prompt) == expected
-    assert prompt_hash_for_provider("runway", prompt) == expected
+    assert prompt_hash_for_provider("runway", prompt) == canonical_input_hash(
+        provider="runway", model="", settings={}, prompt=prompt, reference_hashes=[]
+    )
+    assert prompt_hash_for_provider(
+        "runway", prompt, model="gen4.5", settings={"ratio": "16:9"}, reference_hashes=["sha256:abc"]
+    ) == canonical_input_hash(
+        provider="runway", model="gen4.5", settings={"ratio": "16:9"}, prompt=prompt, reference_hashes=["sha256:abc"]
+    )
 
 
 def test_prepare_generation_binds_provider_compiled_prompt(tmp_path):

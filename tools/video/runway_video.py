@@ -192,6 +192,11 @@ class RunwayVideo(BaseTool):
         # Normalize legacy aliases to official IDs
         _ALIAS_MAP = {"seedance_2.0": "seedance2", "seedance_2.0_fast": "seedance2_fast"}
         model = _ALIAS_MAP.get(model, model)
+        if model == "gen4.5" and operation == "text_to_video" and ratio_friendly == "1:1":
+            return ToolResult(
+                success=False,
+                error="gen4.5 text_to_video does not support ratio 1:1; use 16:9 or 9:16",
+            )
         task_payload: dict[str, Any] = {
             "model": model,
             "promptText": inputs["prompt"],

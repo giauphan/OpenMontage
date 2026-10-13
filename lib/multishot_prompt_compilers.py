@@ -50,8 +50,22 @@ def compile_prompt(provider: str, context: dict[str, Any]) -> str:
         return build_multishot_prompt(**context)
 
 
-def prompt_hash_for_provider(provider: str, prompt: str) -> str:
+def prompt_hash_for_provider(
+    provider: str,
+    prompt: str,
+    *,
+    model: str = "",
+    settings: dict | None = None,
+    reference_hashes: list[str] | None = None,
+) -> str:
     """Return the exact prompt_hash representation required by the provider."""
     if provider == "kling_official":
         return "sha256:" + hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-    return "sha256:" + hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    from lib.multishot_jobs import canonical_input_hash
+    return canonical_input_hash(
+        provider=provider,
+        model=model,
+        settings=settings if settings is not None else {},
+        prompt=prompt,
+        reference_hashes=reference_hashes if reference_hashes is not None else [],
+    )
