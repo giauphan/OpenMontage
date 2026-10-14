@@ -180,6 +180,7 @@ class JobSpec:
     input_hash: Optional[str] = None
     cost_reservation_id: Optional[str] = None
     eligible: bool = True
+    prompt_compiler_version: str = "generic_multishot_v1"
 
     def fingerprint(self) -> str:
         payload = asdict(self)

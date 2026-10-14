@@ -180,8 +180,8 @@ class MultishotSession:
             self._write(state["revision"], state)
             return copy.deepcopy(s)
 
-    def prepare_shot_prompt(self, shot_id: str, reference_store: dict, reference_review: dict) -> dict:
-        from lib.multishot_prompt_builder import build_multishot_prompt
+    def prepare_shot_prompt(self, shot_id: str, reference_store: dict, reference_review: dict, *, provider: str = "kling_official", model: str = "", settings: dict | None = None) -> dict:
+        from lib.multishot_prompt_compiler import compile_multishot_prompt
         from lib.multishot_references import validate_generation_ready
 
         if not isinstance(reference_review, dict):
@@ -240,17 +240,25 @@ class MultishotSession:
                     "owner": record.get("owner"),
                 })
 
-            prompt = build_multishot_prompt(
-                project_title=self._project_title(),
-                request=artifacts["request"],
-                story=artifacts["story"],
-                character_bible=artifacts["character_bible"],
-                style_bible=artifacts["style_bible"],
-                shot=shot,
-                continuity_in=continuity_in,
+            compilation = compile_multishot_prompt(
+                {
+                    "project_title": self._project_title(),
+                    "request": artifacts["request"],
+                    "story": artifacts["story"],
+                    "character_bible": artifacts["character_bible"],
+                    "style_bible": artifacts["style_bible"],
+                    "shot": shot,
+                    "continuity_in": continuity_in,
+                    "references": ordered_refs,
+                },
+                provider=provider,
+                model=model,
+                settings=settings or {},
             )
+            prompt = compilation.prompt
             bound_input = {
                 "prompt": prompt,
+                "prompt_compiler_version": compilation.compiler_version,
                 "references": copy.deepcopy(ordered_refs),
                 "continuity_in": copy.deepcopy(continuity_in),
                 "reference_store": copy.deepcopy(reference_store),
@@ -263,7 +271,12 @@ class MultishotSession:
                 existing = shot_state["bound_input"]
                 if existing.get("input_hash") != input_hash:
                     raise ValueError("Cannot re-bind a different input without regeneration")
-                return {"prompt": prompt, "references": ordered_refs, "shot": copy.deepcopy(shot_state)}
+                return {
+                    "prompt": prompt,
+                    "prompt_compiler_version": bound_input["prompt_compiler_version"],
+                    "references": ordered_refs,
+                    "shot": copy.deepcopy(shot_state),
+                }
 
             state["final_evidence"] = None
             state["assembly_evidence"] = None
@@ -272,7 +285,12 @@ class MultishotSession:
             shot_state["job_input_hash"] = None
             shot_state["status"] = "BOUND"
             self._write(state["revision"], state)
-            return {"prompt": prompt, "references": ordered_refs, "shot": copy.deepcopy(shot_state)}
+            return {
+                "prompt": prompt,
+                "prompt_compiler_version": bound_input["prompt_compiler_version"],
+                "references": ordered_refs,
+                "shot": copy.deepcopy(shot_state),
+            }
 
     def _project_title(self) -> str:
         from lib.multishot_workspace import read_json_atomic

@@ -22,7 +22,7 @@ from lib.multishot_session import MultishotSession
 from lib.multishot_workspace import project_lock
 from tools.cost_tracker import CostTracker
 
-SUPPORTED_PROVIDERS = frozenset({"gateway", "kling_official"})
+SUPPORTED_PROVIDERS = frozenset({"gateway", "kling_official", "runway"})
 
 
 class _AtomicCostTracker(CostTracker):
@@ -112,7 +112,14 @@ def prepare_generation(
         raise ValueError("settings must be a dict")
 
     session = MultishotSession(project_dir)
-    prep = session.prepare_shot_prompt(shot_id, reference_store, reference_review)
+    prep = session.prepare_shot_prompt(
+        shot_id,
+        reference_store,
+        reference_review,
+        provider=provider,
+        model=model,
+        settings=settings,
+    )
     prompt: str = prep["prompt"]
     ordered_refs: list[dict] = prep["references"]
     shot_state: dict = prep["shot"]
@@ -140,6 +147,7 @@ def prepare_generation(
         settings=copy.deepcopy(settings),
         references=copy.deepcopy(ordered_refs),
         revision=revision,
+        prompt_compiler_version=prep["prompt_compiler_version"],
     )
     spec.validate()
 
