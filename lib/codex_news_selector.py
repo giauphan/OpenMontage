@@ -166,24 +166,64 @@ class CodexNewsSelector:
             if proc.returncode != 0 or not output or "hit your limit" in output.lower():
                 return None
 
-            if "```" in output:
-                match_code = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output, re.DOTALL)
-                if match_code:
-                    output = match_code.group(1)
-
-            idx = output.find("{")
-            last_idx = output.rfind("}")
-            if idx != -1 and last_idx > idx:
-                json_str = output[idx : last_idx + 1]
-                json_str = re.sub(r",\s*([\}\]])", r"\1", json_str)
-                try:
-                    return json.loads(json_str)
-                except Exception:
-                    pass
+            extracted = self._extract_selection_payload(output)
+            if extracted is not None:
+                return extracted
         except Exception as e:
             logger.warning("Codex CLI execution failed (%s)", e)
 
         return None
+
+    def _extract_selection_payload(self, output: str) -> Optional[Dict[str, Any]]:
+        for value in self._json_values(output):
+            found = self._pick_selection_payload(value)
+            if found is not None:
+                return found
+        return None
+
+    def _pick_selection_payload(self, value: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(value, dict):
+            if "selected_candidate_id" in value and "research_draft" in value:
+                return value
+            for key in ("result", "message", "text", "content"):
+                nested = value.get(key)
+                if isinstance(nested, str):
+                    found = self._extract_selection_payload(nested)
+                    if found is not None:
+                        return found
+            for nested in value.values():
+                if isinstance(nested, (dict, list)):
+                    found = self._pick_selection_payload(nested)
+                    if found is not None:
+                        return found
+        elif isinstance(value, list):
+            for item in value:
+                found = self._pick_selection_payload(item)
+                if found is not None:
+                    return found
+        return None
+
+    def _json_values(self, text: str) -> List[Any]:
+        decoder = json.JSONDecoder()
+        values: List[Any] = []
+        idx = 0
+        length = len(text)
+        while idx < length:
+            start = -1
+            for i in range(idx, length):
+                if text[i] in "{[":
+                    start = i
+                    break
+            if start < 0:
+                break
+            try:
+                value, end = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                idx = start + 1
+                continue
+            values.append(value)
+            idx = end
+        return values
 
     def _build_prompt(self, candidates: List[Dict[str, Any]]) -> str:
         prompt = (
