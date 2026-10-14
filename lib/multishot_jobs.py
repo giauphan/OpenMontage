@@ -180,6 +180,7 @@ class JobSpec:
     input_hash: Optional[str] = None
     cost_reservation_id: Optional[str] = None
     eligible: bool = True
+    prompt_compiler_version: str = "generic_multishot_v1"
 
     def fingerprint(self) -> str:
         payload = asdict(self)
@@ -516,6 +517,19 @@ class JobScheduler:
                 results[spec.shot_id] = self._outcome(record or self._new(spec),
                                                     status="blocked", error="INELIGIBLE")
                 continue
+            if record and record["status"] == "SUBMISSION_UNKNOWN":
+                handle = None
+                try:
+                    handle = self.provider.reconcile(spec, record.get("idempotency_key"))
+                except Exception:
+                    handle = None
+                if handle:
+                    self._check_handle(handle)
+                    record["provider_job_id"] = handle
+                    self._transition(record, "SUBMITTED")
+                else:
+                    results[spec.shot_id] = self._outcome(record)
+                    continue
             if record is None:
                 record = self._new(spec)
                 self._records[key] = record

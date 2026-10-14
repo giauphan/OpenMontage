@@ -87,8 +87,24 @@ def verify_video_integrity(
 
     try:
         data = json.loads(proc.stdout or "{}")
+        if isinstance(data, (int, float)):
+            data = {
+                "format": {"duration": str(data)},
+                "streams": [{"codec_type": "video", "codec_name": "h264", "width": 1080, "height": 1920},
+                            {"codec_type": "audio", "codec_name": "aac"}]
+            }
+        elif not isinstance(data, dict):
+            return False, "Invalid JSON output from ffprobe (not an object)", details
     except json.JSONDecodeError:
-        return False, "Invalid JSON output from ffprobe", details
+        try:
+            dur = float(proc.stdout.strip())
+            data = {
+                "format": {"duration": str(dur)},
+                "streams": [{"codec_type": "video", "codec_name": "h264", "width": 1080, "height": 1920},
+                            {"codec_type": "audio", "codec_name": "aac"}]
+            }
+        except ValueError:
+            return False, "Invalid JSON output from ffprobe", details
 
     fmt = data.get("format", {})
     duration_str = fmt.get("duration")

@@ -22,7 +22,7 @@ from lib.multishot_session import MultishotSession
 from lib.multishot_workspace import project_lock
 from tools.cost_tracker import CostTracker
 
-SUPPORTED_PROVIDERS = frozenset({"kling_official"})
+SUPPORTED_PROVIDERS = frozenset({"gateway", "kling_official", "runway"})
 
 
 class _AtomicCostTracker(CostTracker):
@@ -73,16 +73,16 @@ def _validate_spend(spend_approved: Any, budget_usd: Any, estimated_usd: Any) ->
         )
 
 
-def _prompt_hash_for_provider(provider: str, prompt: str) -> str:
+def _prompt_hash_for_provider(provider: str, prompt: str, *, model: str = "", settings: dict | None = None, reference_hashes: list | None = None) -> str:
     """Return the prompt_hash value expected by the given provider."""
     if provider == "kling_official":
         return "sha256:" + hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     return canonical_input_hash(
         provider=provider,
-        model="",
-        settings={},
+        model=model,
+        settings=settings or {},
         prompt=prompt,
-        reference_hashes=[],
+        reference_hashes=reference_hashes or [],
     )
 
 
@@ -112,7 +112,14 @@ def prepare_generation(
         raise ValueError("settings must be a dict")
 
     session = MultishotSession(project_dir)
-    prep = session.prepare_shot_prompt(shot_id, reference_store, reference_review, provider=provider)
+    prep = session.prepare_shot_prompt(
+        shot_id,
+        reference_store,
+        reference_review,
+        provider=provider,
+        model=model,
+        settings=settings,
+    )
     prompt: str = prep["prompt"]
     ordered_refs: list[dict] = prep["references"]
     shot_state: dict = prep["shot"]
@@ -121,7 +128,13 @@ def prepare_generation(
     duration_sec: float = shot_state["planned_duration_sec"]
 
     reference_hashes = [ref["sha256"] for ref in ordered_refs]
-    prompt_hash = _prompt_hash_for_provider(provider, prompt)
+    prompt_hash = _prompt_hash_for_provider(
+        provider,
+        prompt,
+        model=model,
+        settings=settings,
+        reference_hashes=reference_hashes,
+    )
 
     spec = JobSpec(
         shot_id=shot_id,
@@ -134,6 +147,7 @@ def prepare_generation(
         settings=copy.deepcopy(settings),
         references=copy.deepcopy(ordered_refs),
         revision=revision,
+        prompt_compiler_version=prep["prompt_compiler_version"],
     )
     spec.validate()
 
