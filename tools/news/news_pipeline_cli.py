@@ -173,8 +173,15 @@ def run_produce(args: argparse.Namespace) -> None:
         try:
             project_id = _init_candidate_project(candidate, selection)
         except Exception as e:
-            logger.error(f"Failed to initialize project: {e}")
-            sys.exit(1)
+            logger.warning(
+                "Failed to initialize project for %s: %s; retrying selection "
+                "(attempt %s/%s).",
+                selected_id,
+                e,
+                attempts,
+                max_attempts,
+            )
+            continue
         project_ids.append(project_id)
 
     if len(project_ids) != count:
