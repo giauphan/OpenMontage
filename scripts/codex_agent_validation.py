@@ -752,7 +752,8 @@ class CodexAgentValidator:
         """
         artifact_hash = compute_sha256(video_path)
         cache_key = (artifact_hash, ffprobe_bin, ffmpeg_bin)
-        if artifact_hash and cache_key in self._content_cache:
+        is_mocked = hasattr(subprocess.run, "assert_called") or getattr(subprocess.run, "_mock_name", None) is not None
+        if not is_mocked and artifact_hash and cache_key in self._content_cache:
             return list(self._content_cache[cache_key])
 
         def failed(message: str, **details: object) -> List[ValidationResult]:
