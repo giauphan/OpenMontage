@@ -49,6 +49,18 @@ def _candidate(**overrides):
     return candidate
 
 
+def test_selector_prompt_requests_strict_research_evidence_schema():
+    prompt = CodexNewsSelector()._build_prompt([_candidate(summary="Source-backed summary")])
+
+    assert '"existing_content"' in prompt
+    assert '"data_points"' in prompt
+    assert '"audience_insights"' in prompt
+    assert '"angles_discovered"' in prompt
+    assert '"sources"' in prompt
+    assert "at least 3 existing_content entries" in prompt
+    assert "5 distinct sources with URLs" in prompt
+
+
 def test_algorithmic_fallback_does_not_make_up_claims_endorsements_or_sources():
     result = CodexNewsSelector()._fallback_selection([{
         "candidate_id": "cand_1",
