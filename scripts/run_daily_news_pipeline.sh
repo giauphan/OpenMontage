@@ -155,6 +155,7 @@ elif [ -n "$EXISTING_PROJECT_IDS" ]; then
   REHEARSAL_TERMINAL_STAGE="directors_and_validation"
   FEED_STALE=0
   IFS=',' read -r -a PROJECT_IDS <<< "$EXISTING_PROJECT_IDS"
+  EXPECTED_SUCCESS_COUNT="${#PROJECT_IDS[@]}"
   for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     if ! [[ "$PROJECT_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$ ]]; then
       echo "[$(date -u +%FT%TZ)] ERROR: invalid project id: $PROJECT_ID" >&2
@@ -256,6 +257,7 @@ fi
 fi
 
 SUCCESSFUL_COUNT=0
+EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
@@ -1057,8 +1059,8 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
   REHEARSAL_SUCCESSFUL_IDS+=("$PROJECT_ID")
 fi
 REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:completed"
-if [ $SUCCESSFUL_COUNT -ge 3 ]; then
-  echo "[$(date -u +%FT%TZ)] Successfully generated and validated 3 projects. Breaking loop early."
+if [ "$SUCCESSFUL_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]; then
+  echo "[$(date -u +%FT%TZ)] Successfully generated and validated $EXPECTED_SUCCESS_COUNT projects. Breaking loop early."
   break
 fi
 
@@ -1067,18 +1069,18 @@ done
 # Step 5: (Removed atomic activation; now handled strictly by run_strict_docker_publish.sh's queue-next-day stage)
 cd "$ROOT"
 
-if [ -n "$REHEARSAL_MANIFEST" ] && [ "$SUCCESSFUL_COUNT" -ne 3 ]; then
+if [ -n "$REHEARSAL_MANIFEST" ] && [ "$SUCCESSFUL_COUNT" -ne "$EXPECTED_SUCCESS_COUNT" ]; then
   REHEARSAL_TERMINAL_STAGE="incomplete_rehearsal"
-  echo "[$(date -u +%FT%TZ)] ERROR: rehearsal requires all three requested projects to pass; got $SUCCESSFUL_COUNT" >&2
+  echo "[$(date -u +%FT%TZ)] ERROR: rehearsal requires all $EXPECTED_SUCCESS_COUNT requested projects to pass; got $SUCCESSFUL_COUNT" >&2
   exit 1
 fi
-if [ "$SUCCESSFUL_COUNT" -eq 3 ]; then
+if [ "$SUCCESSFUL_COUNT" -eq "$EXPECTED_SUCCESS_COUNT" ]; then
   REHEARSAL_TERMINAL_STAGE="completed"
   echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE, Successful: $SUCCESSFUL_COUNT)"
   exit 0
 elif [ "$SUCCESSFUL_COUNT" -gt 0 ]; then
   REHEARSAL_TERMINAL_STAGE="partial_completion"
-  echo "[$(date -u +%FT%TZ)] PARTIAL: Daily pipeline achieved $SUCCESSFUL_COUNT/3 successful validated projects." >&2
+  echo "[$(date -u +%FT%TZ)] PARTIAL: Daily pipeline achieved $SUCCESSFUL_COUNT/$EXPECTED_SUCCESS_COUNT successful validated projects." >&2
   exit 2
 else
   REHEARSAL_TERMINAL_STAGE="failed"
