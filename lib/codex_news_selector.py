@@ -166,46 +166,109 @@ class CodexNewsSelector:
             if proc.returncode != 0 or not output or "hit your limit" in output.lower():
                 return None
 
-            if "```" in output:
-                match_code = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output, re.DOTALL)
-                if match_code:
-                    output = match_code.group(1)
-
-            idx = output.find("{")
-            last_idx = output.rfind("}")
-            if idx != -1 and last_idx > idx:
-                json_str = output[idx : last_idx + 1]
-                json_str = re.sub(r",\s*([\}\]])", r"\1", json_str)
-                try:
-                    return json.loads(json_str)
-                except Exception:
-                    pass
+            extracted = self._extract_selection_payload(output)
+            if extracted is not None:
+                return extracted
         except Exception as e:
             logger.warning("Codex CLI execution failed (%s)", e)
 
         return None
 
+    def _extract_selection_payload(self, output: str) -> Optional[Dict[str, Any]]:
+        for value in self._json_values(output):
+            found = self._pick_selection_payload(value)
+            if found is not None:
+                return found
+        return None
+
+    def _pick_selection_payload(self, value: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(value, dict):
+            if "selected_candidate_id" in value and "research_draft" in value:
+                return value
+            for key in ("result", "message", "text", "content"):
+                nested = value.get(key)
+                if isinstance(nested, str):
+                    found = self._extract_selection_payload(nested)
+                    if found is not None:
+                        return found
+            for nested in value.values():
+                if isinstance(nested, (dict, list)):
+                    found = self._pick_selection_payload(nested)
+                    if found is not None:
+                        return found
+        elif isinstance(value, list):
+            for item in value:
+                found = self._pick_selection_payload(item)
+                if found is not None:
+                    return found
+        return None
+
+    def _json_values(self, text: str) -> List[Any]:
+        decoder = json.JSONDecoder()
+        values: List[Any] = []
+        idx = 0
+        length = len(text)
+        while idx < length:
+            start = -1
+            for i in range(idx, length):
+                if text[i] in "{[":
+                    start = i
+                    break
+            if start < 0:
+                break
+            try:
+                value, end = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                idx = start + 1
+                continue
+            values.append(value)
+            idx = end
+        return values
+
     def _build_prompt(self, candidates: List[Dict[str, Any]]) -> str:
         prompt = (
             "You are an expert news editor and researcher for an automated short-form video channel. "
-            "Select the single most impactful, engaging, and high-quality tech/AI story from the list below.\n\n"
-            "Return JSON matching:\n"
+            "Select the single most impactful, engaging, and high-quality tech/AI story from the list below. "
+            "Use only information supplied in the candidate list. Do not invent sources, URLs, quotes, products, or claims.\n\n"
+            "Return strict JSON matching:\n"
             "{\n"
             '  "selected_candidate_id": "<id>",\n'
             '  "research_draft": {\n'
-            '    "title": "...",\n'
-            '    "hook": "...",\n'
-            '    "key_points": ["...", "..."],\n'
-            '    "target_duration_secs": 55\n'
+            '    "landscape": {\n'
+            '      "existing_content": [\n'
+            '        {"title": "...", "source": "...", "angle": "...", "what_it_covers": "..."}\n'
+            '      ],\n'
+            '      "saturated_angles": ["..."],\n'
+            '      "underserved_gaps": ["..."]\n'
+            '    },\n'
+            '    "data_points": [\n'
+            '      {"claim": "...", "source_url": "https://...", "credibility": "primary_source|secondary_source|anecdotal"}\n'
+            '    ],\n'
+            '    "audience_insights": {\n'
+            '      "common_questions": ["..."],\n'
+            '      "misconceptions": [{"myth": "...", "reality": "..."}],\n'
+            '      "knowledge_level": "beginner|intermediate|advanced"\n'
+            '    },\n'
+            '    "angles_discovered": [\n'
+            '      {"name": "...", "hook": "...", "type": "trending|educational|comparison|explainer", "why_now": "..."}\n'
+            '    ],\n'
+            '    "sources": [\n'
+            '      {"url": "https://...", "title": "...", "used_for": "..."}\n'
+            '    ]\n'
             "  }\n"
             "}\n\n"
+            "Requirements: provide at least 3 existing_content entries, 3 data_points, 3 common_questions, "
+            "1 misconception with reality, 3 angles_discovered, and 5 distinct sources with URLs. "
+            "If the candidates do not supply enough evidence, return your best selected_candidate_id with empty evidence arrays so the pipeline can fail closed.\n\n"
             "Candidates:\n"
         )
         for i, cand in enumerate(candidates):
             cid = cand.get("id") or cand.get("candidate_id") or f"c_{i}"
             title = cand.get("title", "Untitled")
-            body = (cand.get("summary") or cand.get("content") or "")[:MAX_BODY_CHARS]
-            prompt += f"ID: {cid}\nTitle: {title}\nSummary: {body}\n---\n"
+            body = (cand.get("summary") or cand.get("description") or cand.get("content") or "")[:MAX_BODY_CHARS]
+            url = cand.get("canonical_url") or cand.get("url") or ""
+            publisher = cand.get("publisher") or cand.get("source") or cand.get("source_name") or ""
+            prompt += f"ID: {cid}\nTitle: {title}\nSource: {publisher}\nURL: {url}\nSummary: {body}\n---\n"
         return prompt
 
     def _validate_output(self, data: Dict[str, Any], candidates: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:

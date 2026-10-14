@@ -42,6 +42,20 @@ def test_selector_injected_transport_parses_and_validates_reply():
     assert captured["kwargs"]["stdin"] == subprocess.DEVNULL
 
 
+def test_selector_injected_transport_unwraps_codex_json_event_stream():
+    candidate = {"id": "topic-1", "title": "Fixture topic", "summary": "Fixture summary"}
+    payload = {"selected_candidate_id": "topic-1", "research_draft": {"title": "Fixture research"}}
+    event_stream = "\n".join([
+        json.dumps({"type": "message", "message": {"content": [{"type": "output_text", "text": json.dumps(payload)}]}}),
+        json.dumps({"type": "result", "result": json.dumps(payload)}),
+    ])
+
+    result = CodexNewsSelector(transport=lambda *args, **kwargs: _completed(event_stream)).select_and_research([candidate])
+
+    assert result["selected_candidate_id"] == "topic-1"
+    assert result["research_draft"]["title"] == "Fixture research"
+
+
 def test_selector_injected_nonzero_malformed_and_timeout_fail_closed_to_existing_fallback():
     candidate = {"id": "topic-1", "title": "Fixture topic", "url": "https://example.test/a"}
     for reply in (_completed('{broken'), _completed("", returncode=7)):

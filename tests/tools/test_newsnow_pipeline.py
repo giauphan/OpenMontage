@@ -15,7 +15,7 @@ from lib.claude_news_selector import ClaudeNewsSelector
 from lib.news_research_bridge import NewsResearchBridge
 from lib.news_scoring import NewsCandidateScorer
 from tools.news.newsnow_adapter import NewsNowAdapter
-from tools.news import newsnow_feed
+from tools.news import news_pipeline_cli, newsnow_feed
 
 
 URLS = [f"https://example.com/{number}" for number in range(1, 6)]
@@ -232,6 +232,42 @@ def _newsnow_payload(source: str, count: int) -> dict:
             for number in range(count)
         ],
     }
+
+
+def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    Path("data").mkdir()
+    published_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    feed = [{
+        "id": f"item{number}",
+        "url": URLS[number - 1],
+        "title": f"Article {number}",
+        "publisher": "Example",
+        "published_at": published_at,
+        "description": "Source-backed summary about technology development and artificial intelligence innovation.",
+    } for number in range(1, 6)]
+    Path("data/newsnow_feed.json").write_text(json.dumps(feed), encoding="utf-8")
+
+    adapter = NewsNowAdapter()
+    candidates, _ = adapter.ingest_and_normalize(feed)
+    c1_id = candidates[0]["candidate_id"]
+    c2_id = candidates[1]["candidate_id"]
+
+    selections = [
+        {"selected_candidate_id": c1_id, "research_draft": {"landscape": {"existing_content": []}}},
+        {"selected_candidate_id": c2_id, "selection_rationale": "valid", **research_draft()},
+    ]
+
+    class Selector:
+        def select_and_research(self, _pool):
+            return selections.pop(0)
+
+    monkeypatch.setattr(news_pipeline_cli, "NewsSelector", lambda: Selector())
+    news_pipeline_cli.run_produce(argparse.Namespace(input="data/newsnow_feed.json", count=1, dry_run=False))
+
+    captured = capsys.readouterr().out
+    assert f"PROJECT_ID={c2_id}" in captured
+    assert (tmp_path / f"projects/{c2_id}/artifacts/research_brief.json").exists()
 
 
 def test_feed_converter_normalizes_and_dedupes(monkeypatch):
