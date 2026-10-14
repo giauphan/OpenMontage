@@ -28,20 +28,88 @@ KEY_ENVIRONMENT = "environment"
 KEY_SHOT_KEYFRAME = "keyframe"
 
 
-def content_hash(path: Path) -> str:
-    """Return the sha256 content hash of a readable image file."""
-    if not Path(path).is_file():
-        raise MultishotValidationError(f"Reference file not found: {path}")
+ALLOWED_IMAGE_FORMATS = frozenset({"PNG", "JPEG", "WEBP"})
+ALLOWED_IMAGE_MODES = frozenset({"RGB", "RGBA"})
+
+
+def verify_image_file(
+    path: Path,
+    *,
+    min_dimension: int = 1,
+    max_dimension: int = 4096,
+    disallow_temp: bool = True,
+) -> dict[str, Any]:
+    """Perform technical preflight and full pixel load on a reference image.
+
+    Raises MultishotValidationError on unreadable files, corrupt pixels,
+    unsupported formats/modes, or temporary file paths.
+    """
+    p = Path(path).resolve()
+    if not p.is_file():
+        raise MultishotValidationError(f"Reference file not found: {p}")
+
+    stat = p.stat()
+    if stat.st_size == 0:
+        raise MultishotValidationError(f"Reference image is empty (0 bytes): {p}")
+
+    if disallow_temp:
+        name = p.name.lower()
+        if name.startswith(".tmp") or name.endswith(".tmp") or ".tmp." in name or name.startswith("temp"):
+            raise MultishotValidationError(f"Temporary file cannot be used as finalized reference: {p}")
+
     try:
-        with Image.open(path) as image:
+        # Step 1: verify() checks headers
+        with Image.open(p) as image:
+            fmt = image.format
             image.verify()
+
+        # Step 2: check dimensions before full decode to bound memory
+        with Image.open(p) as image:
+            width, height = image.size
+            mode = image.mode
+            if width < min_dimension or height < min_dimension:
+                raise MultishotValidationError(
+                    f"Image dimensions {width}x{height} below minimum {min_dimension}x{min_dimension}: {p}"
+                )
+            if width > max_dimension or height > max_dimension:
+                raise MultishotValidationError(
+                    f"Image dimensions {width}x{height} exceed maximum {max_dimension}x{max_dimension}: {p}"
+                )
+            image.load()
+
+        if fmt not in ALLOWED_IMAGE_FORMATS:
+            raise MultishotValidationError(
+                f"Unsupported image format {fmt!r} for {p}; must be one of {sorted(ALLOWED_IMAGE_FORMATS)}"
+            )
+
+        if mode not in ALLOWED_IMAGE_MODES:
+            raise MultishotValidationError(
+                f"Unsupported image mode {mode!r} for {p}; must be RGB or RGBA"
+            )
+
     except (OSError, ValueError) as exc:
-        raise MultishotValidationError(f"Reference file is not a readable image: {path}") from exc
+        raise MultishotValidationError(f"Reference file is not a readable image: {p}") from exc
+
     digest = hashlib.sha256()
-    with open(path, "rb") as handle:
+    with open(p, "rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
-    return f"sha256:{digest.hexdigest()}"
+
+    return {
+        "path": str(p),
+        "sha256": f"sha256:{digest.hexdigest()}",
+        "width": width,
+        "height": height,
+        "format": fmt,
+        "mode": mode,
+        "size_bytes": stat.st_size,
+    }
+
+
+def content_hash(path: Path) -> str:
+    """Return the sha256 content hash of a verified reference image file."""
+    info = verify_image_file(path, disallow_temp=False)
+    return info["sha256"]
 
 
 def new_reference_store() -> dict[str, Any]:

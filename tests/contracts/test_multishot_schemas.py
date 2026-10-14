@@ -423,3 +423,43 @@ class TestValidateAllCross:
         plan = _make_shot_plan([_base_shot("shot_001", order=1)])
         with pytest.raises(MultishotValidationError, match="at least 2 shots"):
             validate_all_cross(request=req, shot_plan=plan)
+
+
+def test_request_accepts_kids_profile_and_editorial_review():
+    request = copy.deepcopy(_BASE_REQUEST)
+    request["production_profile"] = {
+        "id": "kids-3d-cartoon",
+        "version": "v1",
+        "age_target": "6-8",
+        "render_orientation": "landscape",
+    }
+    request["kids_editorial_review"] = {
+        "originality": True,
+        "beginning_middle_end": True,
+        "age_appropriate": True,
+        "unsafe_imitation_risk": False,
+        "audio_intelligibility": True,
+        "rights_licenses": True,
+        "made_for_kids_decision": "creator_must_decide",
+        "reviewer": "creator",
+        "notes": "Original stylized characters only.",
+    }
+
+    validate("request", request)
+
+
+def test_request_rejects_extra_kids_editorial_field():
+    request = copy.deepcopy(_BASE_REQUEST)
+    request["kids_editorial_review"] = {
+        "originality": True,
+        "beginning_middle_end": True,
+        "age_appropriate": True,
+        "unsafe_imitation_risk": False,
+        "audio_intelligibility": True,
+        "rights_licenses": True,
+        "made_for_kids_decision": "creator_must_decide",
+        "agent_guessed_coppa_status": False,
+    }
+
+    with pytest.raises(Exception):
+        validate("request", request)
