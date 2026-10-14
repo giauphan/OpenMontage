@@ -3,14 +3,21 @@
 # Selects trending topic, runs directors pipeline, generates Vietnamese video (120s + 60s Reels), updates publish_schedule.json.
 set -euo pipefail
 REHEARSAL_MANIFEST=""
+EXISTING_PROJECT_IDS=""
 if [ "${1:-}" = "--rehearsal-bundle" ]; then
   [ "$#" -eq 2 ] && [ -n "$2" ] || {
-    echo "Usage: $0 [--rehearsal-bundle NONEMPTY_MANIFEST]" >&2
+    echo "Usage: $0 [--rehearsal-bundle NONEMPTY_MANIFEST] [--project-ids PROJECT_ID[,PROJECT_ID...]]" >&2
     exit 2
   }
   REHEARSAL_MANIFEST="$2"
+elif [ "${1:-}" = "--project-ids" ]; then
+  [ "$#" -eq 2 ] && [ -n "$2" ] || {
+    echo "Usage: $0 [--rehearsal-bundle NONEMPTY_MANIFEST] [--project-ids PROJECT_ID[,PROJECT_ID...]]" >&2
+    exit 2
+  }
+  EXISTING_PROJECT_IDS="$2"
 elif [ "$#" -ne 0 ]; then
-  echo "Usage: $0 [--rehearsal-bundle MANIFEST]" >&2
+  echo "Usage: $0 [--rehearsal-bundle MANIFEST] [--project-ids PROJECT_ID[,PROJECT_ID...]]" >&2
   exit 2
 fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -144,6 +151,41 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
   FEED_STALE=0
   PROJECT_IDS=("${REHEARSAL_PROJECT_IDS[@]}")
   export OPENMONTAGE_REHEARSAL=1
+elif [ -n "$EXISTING_PROJECT_IDS" ]; then
+  REHEARSAL_TERMINAL_STAGE="directors_and_validation"
+  FEED_STALE=0
+  IFS=',' read -r -a PROJECT_IDS <<< "$EXISTING_PROJECT_IDS"
+  for PROJECT_ID in "${PROJECT_IDS[@]}"; do
+    if ! [[ "$PROJECT_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$ ]]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: invalid project id: $PROJECT_ID" >&2
+      exit 2
+    fi
+    PROJECT_DIR="$ROOT/projects/$PROJECT_ID"
+    if ! "$PY" -S -c 'import pathlib,sys
+try:
+    root = pathlib.Path(sys.argv[1]).resolve(strict=True)
+    project = pathlib.Path(sys.argv[2])
+    if project.is_symlink() or (project / "artifacts").is_symlink():
+        raise SystemExit(1)
+    resolved = project.resolve(strict=True)
+except OSError:
+    raise SystemExit(1)
+raise SystemExit(0 if resolved.is_dir() and resolved.is_relative_to(root) else 1)' "$ROOT/projects" "$PROJECT_DIR"; then
+      echo "[$(date -u +%FT%TZ)] ERROR: existing project path is invalid or unsafe: $PROJECT_ID" >&2
+      exit 2
+    fi
+    if [ ! -s "$PROJECT_DIR/artifacts/research_brief.json" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: existing project missing research brief: $PROJECT_ID" >&2
+      exit 2
+    fi
+    if [ ! -s "$PROJECT_DIR/artifacts/news_evidence.json" ]; then
+      echo "[$(date -u +%FT%TZ)] ERROR: existing project missing reviewed news evidence: $PROJECT_ID" >&2
+      exit 2
+    fi
+    if ! validate_project_news_evidence "$PROJECT_DIR" "$ROOT/logs/news_evidence_${PROJECT_ID}_resume.log"; then
+      exit 2
+    fi
+  done
 else
 # Step 0: Fetch current NewsNow sources with stale fallback.
 FEED_STALE=0
