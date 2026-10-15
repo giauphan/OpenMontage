@@ -71,10 +71,7 @@ if [ -z "$REHEARSAL_MANIFEST" ] && [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
-export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
-if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
-  export PATH="$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin:$PATH"
-fi
+export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 export PYTHONPATH="$ROOT"
 export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 # Templated news path: when 1, projects must carry a template selection +
@@ -262,9 +259,6 @@ EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
   cd "$ROOT"
-  if [ -z "$REHEARSAL_MANIFEST" ]; then
-    chmod 777 "$ROOT" 2>/dev/null || true
-  fi
   PROJECT_DIR="$ROOT/projects/$PROJECT_ID"
   if [ -d "$PROJECT_DIR" ] && [ -z "$REHEARSAL_MANIFEST" ]; then
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
@@ -338,7 +332,7 @@ run_directors() {
     export PROJECT_DIR="$PROJECT_DIR"
     CODEX_BIN="$(command -v codex || true)"
     if [ -z "$CODEX_BIN" ]; then
-      for c in /home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex /usr/local/bin/codex /usr/bin/codex; do
+      for c in /usr/local/bin/codex /usr/bin/codex "$HOME/.local/bin/codex"; do
         if [ -x "$c" ]; then CODEX_BIN="$c"; break; fi
       done
     fi
@@ -367,7 +361,7 @@ run_directors() {
     cd "$PROJECT_DIR"
     CODEX_BIN="$(command -v codex || true)"
     if [ -z "$CODEX_BIN" ]; then
-      for c in /home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex /usr/local/bin/codex /usr/bin/codex; do
+      for c in /usr/local/bin/codex /usr/bin/codex "$HOME/.local/bin/codex"; do
         if [ -x "$c" ]; then CODEX_BIN="$c"; break; fi
       done
     fi
@@ -642,7 +636,7 @@ fi
 # Step 3: Render video (120s + 60s Reels) + sanity check (P4)
 REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:render_and_quality"
 cd "$ROOT/projects/$PROJECT_ID"
-chmod -R 777 . 2>/dev/null || true
+chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true
 mkdir -p renders
 
 # Autonomous directors may record generated assets in the manifest without materializing files.

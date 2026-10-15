@@ -4,12 +4,13 @@ Filters queued projects by publish_date == --date. Usage: --date YYYY-MM-DD (def
 """
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get("OPENMONTAGE_ROOT") or Path(__file__).resolve().parents[1])
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.publish_config import load_config, publish_timezone
@@ -111,8 +112,7 @@ def main():
             continue
         previous = publish_at
         if publish_at <= now + timedelta(minutes=20):
-            print(f"failed {proj}: slot passed ({publish_at.isoformat()})")
-            failed = True
+            print(f"SKIPPED {proj}: slot cutoff passed ({publish_at.isoformat()}); retaining without failure")
             continue
         project_dir = ROOT / "projects" / proj
         meta_path = project_dir / "publish_metadata.json"

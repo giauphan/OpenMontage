@@ -366,6 +366,8 @@ if [ ! -d "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/auth.json" ] || [ ! -f "$SOURCE
     fi
   else
     echo "[$(date -u +%FT%TZ)] INIT ERROR: Source $SOURCE_DIR lacks auth.json/config.toml and no valid target exists at $TARGET_DIR." >&2
+    echo "[$(date -u +%FT%TZ)] HINT: Provide valid credentials in $SOURCE_DIR (host mount ~/.codex): auth.json with OPENAI_API_KEY and config.toml with model_provider." >&2
+    echo "[$(date -u +%FT%TZ)] HINT: See docs/DOCKER.md for setup instructions." >&2
     exit 1
   fi
 fi

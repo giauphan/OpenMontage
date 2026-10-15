@@ -23,7 +23,6 @@ TIMEOUT_SECONDS = 300
 def resolve_codex_bin() -> str:
     candidates = [
         shutil.which("codex"),
-        "/home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex",
         "/usr/local/bin/codex",
         "/usr/bin/codex",
         "/home/node/.npm-global/bin/codex",

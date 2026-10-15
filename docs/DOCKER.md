@@ -5,7 +5,7 @@
 Docker image chứa đầy đủ môi trường chạy toàn bộ pipeline:
 - **TTS narration**: Edge-TTS / Google TTS
 - **HyperFrames render**: Chromium headless + Node.js 22
-- **NewsNow + Claude AI pipeline**: Ingest NewsNow candidates, dùng Claude CLI để chọn bài & viết kịch bản tự động
+- **NewsNow + Codex AI pipeline**: Ingest NewsNow candidates, dùng OpenAI Codex CLI (`@openai/codex`) để chọn bài & viết kịch bản tự động
 - **Automated publishing**: Cron scheduler cho YouTube Shorts & Meta Reels
 
 ## Yêu cầu host machine
@@ -16,26 +16,38 @@ Docker image chứa đầy đủ môi trường chạy toàn bộ pipeline:
 
 ---
 
-## 1. Setup Claude CLI login trong Docker
+## 1. Setup Codex CLI credentials trong Docker
 
-NewsNow pipeline sử dụng `claude` CLI (`lib/claude_news_selector.py`) để chọn tin tức và tạo kịch bản AI.
+NewsNow pipeline sử dụng `@openai/codex` CLI để chọn tin tức, tạo kịch bản AI và kiểm tra chất lượng video.
 
-### Cách A: Tận dụng session login có sẵn trên host (Tự động)
-`docker-compose.yml` đã mount sẵn `~/.claude.json` và `~/.claude` từ máy host vào container.
-Nếu host đã đăng nhập `claude`, container sẽ **tự nhận login session** mà không cần đăng nhập lại:
+`docker-compose.yml` mount thư mục `~/.codex` từ máy host vào `/etc/codex_source:ro`. Container entrypoint (`/entrypoint.sh`) sẽ tự động khởi tạo runtime profiles (`/root/.codex_pipeline` và `/home/node/.codex_pipeline`) một cách an toàn và nhất quán trước khi chạy bất kỳ tiến trình nào.
 
-```bash
-# Kiểm tra Claude CLI trong container
-docker compose run --rm worker claude --version
+### Cấu hình `~/.codex` trên máy Host
+
+Tạo thư mục `~/.codex` trên máy host và chuẩn bị 2 file:
+
+1. **`~/.codex/auth.json`**:
+```json
+{
+  "OPENAI_API_KEY": "sk-your-openai-api-key"
+}
 ```
 
-### Cách B: Đăng nhập trực tiếp trong container (Nếu máy mới)
-```bash
-# Mở terminal container
-docker compose run --rm worker bash
+2. **`~/.codex/config.toml`**:
+```toml
+model_provider = "openai"
+```
 
-# Đăng nhập Claude CLI
-claude login
+Phân quyền bảo mật cho thư mục trên host:
+```bash
+chmod 700 ~/.codex
+chmod 600 ~/.codex/*
+```
+
+### Kiểm tra Codex CLI trong container
+
+```bash
+docker compose run --rm worker codex --version
 ```
 
 ---
@@ -43,7 +55,7 @@ claude login
 ## 2. Setup NewsNow Video Generation Pipeline
 
 ```bash
-# 1. Ingest tin tức từ NewsNow feed và chạy Claude AI chọn bài + tạo kịch bản
+# 1. Ingest tin tức từ NewsNow feed và chạy Codex AI chọn bài + tạo kịch bản
 docker compose run --rm worker python3 tools/news/news_pipeline_cli.py --input feed.json --output-dir projects/newsnow-latest
 
 # 2. Render video NewsNow
@@ -77,4 +89,5 @@ docker compose run --rm worker pytest tests/ -q
 | `./projects` | Source compositions, audio, renders |
 | `./config` | `publish_schedule.json` |
 | `./credentials` | Google OAuth token, service-account JSON |
-| `~/.claude` | Session login Claude CLI từ host machine |
+| `~/.codex` | Session login & credentials cho Codex CLI (`auth.json`, `config.toml`) |
+
