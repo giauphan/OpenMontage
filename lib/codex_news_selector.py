@@ -136,8 +136,10 @@ class CodexNewsSelector:
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--json",
-                prompt,
             ]
+            model = env.get("CODEX_MODEL", "model-medium-hight")
+            codex_cmd.extend(["--config", f'model="{model}"'])
+            codex_cmd.append(prompt)
         else:
             for var in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "CLAUDE_SESSION_ID", "ANTHROPIC_MODEL"):
                 env.pop(var, None)
@@ -228,10 +230,11 @@ class CodexNewsSelector:
         prompt = (
             "You are an expert news editor and researcher for an automated short-form video channel. "
             "Select the single most impactful, engaging, and high-quality tech/AI story from the list below. "
-            "Use only information supplied in the candidate list. Do not invent sources, URLs, quotes, products, or claims.\n\n"
+            "Based on the selected candidate story and your knowledge of the technology landscape, synthesize an accurate, realistic, and comprehensive research draft for the video.\n\n"
             "Return strict JSON matching:\n"
             "{\n"
             '  "selected_candidate_id": "<id>",\n'
+            '  "selection_rationale": "...",\n'
             '  "research_draft": {\n'
             '    "landscape": {\n'
             '      "existing_content": [\n'
@@ -257,8 +260,7 @@ class CodexNewsSelector:
             "  }\n"
             "}\n\n"
             "Requirements: provide at least 3 existing_content entries, 3 data_points, 3 common_questions, "
-            "1 misconception with reality, 3 angles_discovered, and 5 distinct sources with URLs. "
-            "If the candidates do not supply enough evidence, return your best selected_candidate_id with empty evidence arrays so the pipeline can fail closed.\n\n"
+            "1 misconception with reality, 3 angles_discovered, and 5 distinct sources with URLs.\n\n"
             "Candidates:\n"
         )
         for i, cand in enumerate(candidates):
