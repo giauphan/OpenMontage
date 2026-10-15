@@ -161,6 +161,17 @@ def test_rejects_root_without_main_id(tmp_path):
     assert composition.read_text(encoding="utf-8") == before
 
 
+def test_accepts_root_with_stage_id(tmp_path):
+    composition, audio, timings = _inputs(tmp_path)
+    source = composition.read_text(encoding="utf-8").replace('id="main"', 'id="stage"', 1)
+    composition.write_text(source, encoding="utf-8")
+
+    assert installer.install_captions(composition, audio, timings) == 2
+    updated = composition.read_text(encoding="utf-8")
+    assert "#stage { position: relative; }" in updated
+    assert 'class="clip om-asr-caption"' in updated
+
+
 def test_rejects_existing_caption_markup_instead_of_stacking_captions(tmp_path):
     composition, audio, timings = _inputs(tmp_path)
     source = composition.read_text(encoding="utf-8").replace(

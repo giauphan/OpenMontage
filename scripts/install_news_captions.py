@@ -45,6 +45,10 @@ LEGACY_CAPTION_CSS = CAPTION_CSS.replace(
     "#main { position: relative; }",
     '[data-composition-id="main"] { position: relative; }',
 )
+STAGE_CAPTION_CSS = CAPTION_CSS.replace(
+    "#main { position: relative; }",
+    "#stage { position: relative; }",
+)
 
 
 class CompositionParser(HTMLParser):
@@ -124,7 +128,7 @@ def _remove_managed_block(source: str) -> tuple[str, tuple[int, int] | None]:
         r'data-track-index="(\d+)">([^<]*)</div>\n'
     )
     allowed_styles = "(?:" + "|".join(
-        re.escape(style) for style in (CAPTION_CSS, LEGACY_CAPTION_CSS)
+        re.escape(style) for style in (CAPTION_CSS, STAGE_CAPTION_CSS, LEGACY_CAPTION_CSS)
     ) + ")"
     block_pattern = re.compile(
         re.escape(BEGIN_MARKER) + r"\n" + allowed_styles + r"\n"
@@ -199,7 +203,8 @@ def install_captions(composition_path: Path, audio_path: Path, timings_path: Pat
     tag, attrs, _, closing_offset, parent = parser.root_records[0]
     if parent != "body" or closing_offset is None:
         raise ValueError("main composition root must be a closed direct child of body")
-    if attrs.get("id") != "main":
+    root_id = attrs.get("id")
+    if root_id not in ("main", "stage"):
         raise ValueError('main composition root must use id="main"')
     try:
         composition_duration = float(attrs["data-duration"])
@@ -237,7 +242,8 @@ def install_captions(composition_path: Path, audio_path: Path, timings_path: Pat
     if track_index < 0:
         raise ValueError("could not allocate a caption track")
     groups = _cue_groups(parsed_words)
-    caption_html = [BEGIN_MARKER, CAPTION_CSS]
+    css_to_use = CAPTION_CSS if root_id == "main" else STAGE_CAPTION_CSS
+    caption_html = [BEGIN_MARKER, css_to_use]
     for index, cue in enumerate(groups, start=1):
         duration = cue["end"] - cue["start"]
         if duration <= 0 or cue["end"] > composition_duration:
