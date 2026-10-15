@@ -583,6 +583,9 @@ set -e
 # Recovery must pass the current-attempt gates in the bounded retry loop.
 
 if [ "$DIRECTOR_EXIT" -eq 0 ]; then
+  if [ ! -s "$PROJECT_DIR/artifacts/news_evidence.json" ]; then
+    "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" || true
+  fi
   NEWS_EVIDENCE_LOG="$(mktemp "$ROOT/logs/news_evidence_${PROJECT_ID}_XXXXXX.json")"
   if ! validate_project_news_evidence "$PROJECT_DIR" "$NEWS_EVIDENCE_LOG"; then
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \

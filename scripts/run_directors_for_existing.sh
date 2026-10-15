@@ -112,6 +112,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   fi
 
   if [ $CODEX_EXIT -eq 0 ]; then
+    "$PY" "$ROOT/scripts/bind_news_evidence.py" "$ROOT/projects/$PROJECT_ID" || true
     echo "[$(date -u +%FT%TZ)] directors OK project=$PROJECT_ID elapsed=${ELAPSED}s" | tee -a "$DIRECTORS_LOG"
   else
     echo "[$(date -u +%FT%TZ)] directors FAIL project=$PROJECT_ID exit=$CODEX_EXIT elapsed=${ELAPSED}s" | tee -a "$DIRECTORS_LOG"
