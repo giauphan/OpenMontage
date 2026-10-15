@@ -26,7 +26,7 @@ WORKDIR /app
 
 # Python deps (layer-cached before source copy)
 COPY requirements.txt requirements-publish.txt requirements-dev.txt ./
-RUN pip3 install -r requirements.txt -r requirements-publish.txt -r requirements-dev.txt edge-tts>=7.2
+RUN pip3 install -r requirements.txt -r requirements-publish.txt -r requirements-dev.txt
 
 # Node deps (HyperFrames CLI)
 COPY package.json package-lock.json* ./

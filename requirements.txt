@@ -12,6 +12,10 @@ google-genai>=1.0.0    # Gemini Developer API clients for Lyria, Veo, and Gemini
 openai>=2.44.0         # Videos API support for Sora 2
 coreweave>=0.1.0b0     # CoreWeave Forge AgentLens tracing (optional, requires WANDB_API_KEY)
 
+# Audio, TTS & Transcription
+edge-tts>=7.3.1
+faster-whisper>=1.0.0
+
 # Backlot - the living storyboard (local board server)
 fastapi>=0.110
 uvicorn>=0.29

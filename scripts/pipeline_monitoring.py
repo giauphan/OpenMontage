@@ -36,16 +36,37 @@ class MonitoringReportError(RuntimeError):
 
 
 @contextmanager
-def _report_lock() -> Iterator[None]:
+def _report_lock(for_write: bool = True) -> Iterator[None]:
     """Serialize report operations across processes sharing this filesystem."""
     _ensure_logs_dir()
     lock_path = JSON_REPORT_PATH.with_suffix(JSON_REPORT_PATH.suffix + ".lock")
-    with open(lock_path, "a", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    lock_file = None
+    try:
         try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            mode = "a" if for_write else "r"
+            lock_file = open(lock_path, mode, encoding="utf-8")
+        except (FileNotFoundError, PermissionError):
+            if not for_write:
+                try:
+                    lock_file = open(lock_path, "r", encoding="utf-8")
+                except (OSError, PermissionError):
+                    lock_file = None
+            else:
+                try:
+                    lock_file = open(lock_path, "a", encoding="utf-8")
+                except PermissionError:
+                    raise
+        if lock_file is not None:
+            flock_op = fcntl.LOCK_EX if for_write else fcntl.LOCK_SH
+            fcntl.flock(lock_file.fileno(), flock_op)
+        yield
+    finally:
+        if lock_file is not None:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            lock_file.close()
 
 
 def _read_json_report_unlocked() -> List[Dict[str, Any]]:
@@ -73,7 +94,10 @@ def _read_json_report_unlocked() -> List[Dict[str, Any]]:
 
 
 def _load_json_report() -> List[Dict[str, Any]]:
-    with _report_lock():
+    try:
+        with _report_lock(for_write=False):
+            return _read_json_report_unlocked()
+    except (PermissionError, OSError):
         return _read_json_report_unlocked()
 
 
