@@ -94,9 +94,6 @@ RUN_LOG="$LOG_DIR/run_${RUN_TS}.log"
 STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
-# Cron supplies this; keep a safe explicit default for manual strict runs.
-NEWS_MAX_SOURCE_AGE_HOURS="${NEWS_MAX_SOURCE_AGE_HOURS:-24}"
-export NEWS_MAX_SOURCE_AGE_HOURS
 # Use Gateway's documented model catalog instead of stale local profile aliases.
 CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"
 export CODEX_MODEL

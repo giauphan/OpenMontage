@@ -74,10 +74,10 @@ validate_news_max_source_age() { return 0; }
     )
 
 
-def test_strict_runner_sets_safe_freshness_and_gateway_model_defaults():
+def test_strict_runner_sets_gateway_model_default_without_defaulting_freshness():
     wrapper = (ROOT / "scripts" / "run_strict_docker_publish.sh").read_text(encoding="utf-8")
-    assert 'NEWS_MAX_SOURCE_AGE_HOURS="${NEWS_MAX_SOURCE_AGE_HOURS:-24}"' in wrapper
     assert 'CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"' in wrapper
+    assert 'NEWS_MAX_SOURCE_AGE_HOURS="${NEWS_MAX_SOURCE_AGE_HOURS:-24}"' not in wrapper
 
 
 def test_cron_declares_required_freshness_and_gateway_model():
