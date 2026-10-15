@@ -74,6 +74,18 @@ validate_news_max_source_age() { return 0; }
     )
 
 
+def test_strict_runner_sets_safe_freshness_and_gateway_model_defaults():
+    wrapper = (ROOT / "scripts" / "run_strict_docker_publish.sh").read_text(encoding="utf-8")
+    assert 'NEWS_MAX_SOURCE_AGE_HOURS="${NEWS_MAX_SOURCE_AGE_HOURS:-24}"' in wrapper
+    assert 'CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"' in wrapper
+
+
+def test_cron_declares_required_freshness_and_gateway_model():
+    cron = (ROOT / "deploy" / "openmontage.cron").read_text(encoding="utf-8")
+    assert "NEWS_MAX_SOURCE_AGE_HOURS=24" in cron
+    assert "CODEX_MODEL=gpt-5.6-sol" in cron
+
+
 def test_preflight_source_does_not_require_claude(tmp_path: Path):
     wrapper = (ROOT / "scripts" / "run_strict_docker_publish.sh").read_text(encoding="utf-8")
     start = wrapper.index('stage 0 "preflight"')

@@ -13,6 +13,10 @@
 PATH=/usr/local/bin:/usr/bin:/bin
 PATH_TO_OPENMONTAGE=/app
 CODEX_HOME=/root/.codex_pipeline
+# Explicit freshness policy required by the news evidence gate.
+NEWS_MAX_SOURCE_AGE_HOURS=24
+# Use Gateway's documented model catalog; stale profiles may otherwise use an invalid ID.
+CODEX_MODEL=gpt-5.6-sol
 
 # Key rotation procedure:
 # When updating OPENAI_API_KEY or other credentials:

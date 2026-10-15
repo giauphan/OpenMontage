@@ -56,6 +56,14 @@ def test_directors_existing_uses_codex_pipeline_profile():
     assert old_path_lines == [], f"Found stale /home/node/.codex references: {old_path_lines}"
 
 
+def test_director_invocations_pin_documented_gateway_model():
+    script = (ROOT / "scripts" / "run_daily_news_pipeline.sh").read_text(encoding="utf-8")
+    launches = [line for line in script.splitlines() if "CODEX_BIN" in line and "exec" in line]
+    assert launches
+    assert all('--config "model=\\\"$CODEX_MODEL\\\""' in line for line in launches)
+    assert 'CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"' in script
+
+
 def test_node_user_reads_api_key_from_pipeline_profile():
     """Verify node user shell reads OPENAI_API_KEY from the pipeline profile auth.json."""
     for script_name in ("run_daily_news_pipeline.sh", "run_directors_for_existing.sh"):
