@@ -298,17 +298,21 @@ write_state "prepare" "ok" "today=$TODAY next=$NEXT_DATE due=$(IFS=,; echo "${TO
 
 # ===== STAGE 2: TODAY BATCH — verify native scheduling =====
 stage 2 "today-batch"
+TODAY_BATCH_FAILED=0
 if [ "${#TODAY_PROJECT_IDS[@]}" -gt 0 ]; then
   log "verifying native scheduling for ${#TODAY_PROJECT_IDS[@]} due-today projects"
   if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$TODAY" >> "$RUN_LOG" 2>&1; then
-    write_state "today-batch" "failed"
-    fail "today native scheduling failed for existing queue entries"
+    TODAY_BATCH_FAILED=1
+    write_state "today-batch" "warning" "today_native_scheduling_failed"
+    log "WARNING: today native scheduling failed for existing queue entries; continuing workflow to generate and schedule next-day videos"
+  else
+    log "retained due-today projects for slot cron"
+    write_state "today-batch" "ok" "verified=$(IFS=,; echo "${TODAY_PROJECT_IDS[*]}")"
   fi
-  log "retained due-today projects for slot cron"
 else
   log "no due projects for today"
+  write_state "today-batch" "ok" "none"
 fi
-write_state "today-batch" "ok" "verified=$(IFS=,; echo "${TODAY_PROJECT_IDS[*]}")"
 
 # ===== STAGE 3: GENERATE — produce next-day video and assets =====
 stage 3 "generate"
@@ -488,17 +492,47 @@ AVAILABLE_SLOT_COUNT=$((${#TODAY_SLOTS[@]} + ${#NEXT_SLOTS[@]}))
 TMP_QUEUE=$(mktemp)
 cp "$SCHEDULE" "$TMP_QUEUE"
 
+# Determine target allocation between today (recovery) and next day (primary).
+# Next day is the primary target for daily generation.
+# If today already has scheduled projects, all new projects go to NEXT_DATE (unless next day is full).
+# If today has NO projects and has open future slots, allocate at most 1 slot to today, and the rest to NEXT_DATE,
+# guaranteeing that both today and next day have scheduled videos on the platform.
+
+MAX_TODAY_ALLOCATION=0
+if [ "${TODAY_BATCH_FAILED:-0}" -eq 0 ] && [ "${#TODAY_PROJECT_IDS[@]}" -eq 0 ] && [ "${#TODAY_SLOTS[@]}" -gt 0 ]; then
+  if [ "${#VALIDATED_PIDS[@]}" -gt 1 ]; then
+    MAX_TODAY_ALLOCATION=1
+  elif [ "${#NEXT_SLOTS[@]}" -eq 0 ]; then
+    MAX_TODAY_ALLOCATION=1
+  fi
+fi
+
 TODAY_IDX=0
 NEXT_IDX=0
 for PID in "${VALIDATED_PIDS[@]}"; do
-  if [ "$TODAY_IDX" -lt "${#TODAY_SLOTS[@]}" ]; then
+  if [ "$NEXT_IDX" -lt "${#NEXT_SLOTS[@]}" ] && { [ "$TODAY_IDX" -ge "$MAX_TODAY_ALLOCATION" ] || [ "$TODAY_IDX" -ge "${#TODAY_SLOTS[@]}" ]; }; then
+    DATE="$NEXT_DATE"
+    SLOT="${NEXT_SLOTS[$NEXT_IDX]}"
+    NEXT_QUEUED_PIDS+=("$PID")
+    NEXT_IDX=$((NEXT_IDX + 1))
+  elif [ "$TODAY_IDX" -lt "$MAX_TODAY_ALLOCATION" ] && [ "$TODAY_IDX" -lt "${#TODAY_SLOTS[@]}" ]; then
+    DATE="$TODAY"
+    SLOT="${TODAY_SLOTS[$TODAY_IDX]}"
+    TODAY_QUEUED_PIDS+=("$PID")
+    TODAY_IDX=$((TODAY_IDX + 1))
+  elif [ "$NEXT_IDX" -lt "${#NEXT_SLOTS[@]}" ]; then
+    DATE="$NEXT_DATE"
+    SLOT="${NEXT_SLOTS[$NEXT_IDX]}"
+    NEXT_QUEUED_PIDS+=("$PID")
+    NEXT_IDX=$((NEXT_IDX + 1))
+  elif [ "$TODAY_IDX" -lt "${#TODAY_SLOTS[@]}" ]; then
     DATE="$TODAY"
     SLOT="${TODAY_SLOTS[$TODAY_IDX]}"
     TODAY_QUEUED_PIDS+=("$PID")
     TODAY_IDX=$((TODAY_IDX + 1))
   else
     DATE="$NEXT_DATE"
-    SLOT="${NEXT_SLOTS[$NEXT_IDX]}"
+    SLOT="${NEXT_SLOTS[0]:-09:15}"
     NEXT_QUEUED_PIDS+=("$PID")
     NEXT_IDX=$((NEXT_IDX + 1))
   fi
@@ -536,19 +570,33 @@ flock -u 200
 exec 200>&-
 
 stage 6.5 "platform-schedule"
+TODAY_PLATFORM_OK=1
+NEXT_PLATFORM_OK=1
+
 if [ "${#TODAY_QUEUED_PIDS[@]}" -gt 0 ]; then
+  log "scheduling ${#TODAY_QUEUED_PIDS[@]} projects for today ($TODAY)"
   if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$TODAY" 2>&1 | tee -a "$RUN_LOG"; then
-    write_state "platform-schedule" "failed" "date=$TODAY"
-    fail "current-day YouTube scheduling failed; queued projects retained"
+    TODAY_PLATFORM_OK=0
+    write_state "platform-schedule" "warning" "date=$TODAY error=today_native_scheduling_failed"
+    log "WARNING: current-day YouTube scheduling failed; continuing to schedule next-day projects"
   fi
 fi
+
 if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
+  log "scheduling ${#NEXT_QUEUED_PIDS[@]} projects for next day ($NEXT_DATE)"
   if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
+    NEXT_PLATFORM_OK=0
     write_state "platform-schedule" "failed" "date=$NEXT_DATE"
     fail "next-day YouTube scheduling failed; queued projects retained"
   fi
 fi
-write_state "platform-schedule" "ok" "today=$(IFS=,; echo "${TODAY_QUEUED_PIDS[*]}") next=$(IFS=,; echo "${NEXT_QUEUED_PIDS[*]}")"
+
+if [ "$TODAY_PLATFORM_OK" -eq 0 ]; then
+  log "WARNING: current-day YouTube scheduling encountered errors, but next-day videos were successfully scheduled"
+  write_state "platform-schedule" "partial" "today_failed=true next=$(IFS=,; echo "${NEXT_QUEUED_PIDS[*]}")"
+else
+  write_state "platform-schedule" "ok" "today=$(IFS=,; echo "${TODAY_QUEUED_PIDS[*]}") next=$(IFS=,; echo "${NEXT_QUEUED_PIDS[*]}")"
+fi
 
 # ===== STAGE 7: STALE CLEANUP — remove obsolete unscheduled candidate dirs =====
 stage 7 "cleanup"

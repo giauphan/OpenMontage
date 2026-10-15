@@ -74,3 +74,16 @@ def test_docker_md_documents_codex_and_mount_structure():
     assert "~/.codex" in content
     assert "auth.json" in content
 
+
+def test_publish_active_projects_supports_include_overdue_flag():
+    pub_script = ROOT / "scripts" / "publish_active_projects.py"
+    result = subprocess.run(
+        [sys.executable, str(pub_script), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0
+    assert "--include-overdue" in result.stdout
+
+

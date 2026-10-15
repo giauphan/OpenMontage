@@ -488,6 +488,7 @@ def main() -> int:
     parser.add_argument("--slot", choices=["09:15", "14:15", "21:15"], help="Run only queued VN slot")
     parser.add_argument("--date", help="Filter projects by exactly this YYYY-MM-DD date and pass to publisher")
     parser.add_argument("--only-platform", choices=["youtube", "facebook", "instagram"], help="Limit publishing to one platform")
+    parser.add_argument("--include-overdue", action="store_true", help="Include uncompleted overdue projects from earlier slots")
     args = parser.parse_args()
 
     if not args.dry_run:
@@ -502,7 +503,8 @@ def main() -> int:
 
     if args.slot:
         local_date = args.date or datetime.now(publish_timezone(schedule)).date().isoformat()
-        projects = scheduled_projects_for_slot(projects, args.slot, local_date)
+        include_overdue = args.include_overdue or os.environ.get("PUBLISH_INCLUDE_OVERDUE", "0") == "1"
+        projects = scheduled_projects_for_slot(projects, args.slot, local_date, include_overdue=include_overdue)
 
     if args.date and not args.slot:
         projects = [

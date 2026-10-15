@@ -404,3 +404,167 @@ exit 1
     fd_file = tmp_path / "fd_199_inherited.txt"
     assert fd_file.is_file()
     assert fd_file.read_text().strip() == "False"
+
+
+def test_today_batch_error_does_not_abort_next_day_generation_and_publishing(tmp_path: Path):
+    """When today's batch encounters an error in Stage 2, the pipeline must NOT abort;
+    it must continue to generate, validate, queue, and platform-schedule next-day videos.
+    """
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+
+    # Mock schedule_today_native.py to fail for TODAY, but succeed for NEXT_DATE
+    schedule_mock = """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+# Record all invocations
+with open("native-schedule-calls.log", "a") as f:
+    f.write(" ".join(sys.argv) + "\\n")
+
+# Check the --date argument
+if "--date" in sys.argv:
+    idx = sys.argv.index("--date")
+    target_date = sys.argv[idx + 1]
+    with open("today_date.txt", "r") as tf:
+        today_date = tf.read().strip()
+    # Fail if today's date, succeed if tomorrow/next-day
+    if target_date == today_date:
+        print("SIMULATED ERROR: Today scheduling failed", file=sys.stderr)
+        raise SystemExit(1)
+
+raise SystemExit(0)
+"""
+    write_executable(scripts / "schedule_today_native.py", schedule_mock)
+
+    today = datetime.now(timezone.utc).strftime("%F")
+    (tmp_path / "today_date.txt").write_text(today, encoding="utf-8")
+
+    # Put a failing project into active_projects for today
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    schedule["active_projects"] = [
+        {"project_id": "today_failing_proj", "publish_date": today, "publish_time": "01:00"}
+    ]
+    schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+
+    result = run_pipeline(tmp_path, scripts, binaries)
+
+    assert result.returncode == 0, f"Expected pipeline to succeed for next day, but failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+
+    # Verify that schedule_today_native was invoked for next day
+    calls = (tmp_path / "native-schedule-calls.log").read_text(encoding="utf-8")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    assert f"--date {tomorrow}" in calls
+
+    # Verify that new projects were queued for tomorrow
+    updated_schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    tomorrow_projects = [
+        p["project_id"] for p in updated_schedule.get("active_projects", [])
+        if isinstance(p, dict) and p.get("publish_date") == tomorrow
+    ]
+    assert len(tomorrow_projects) > 0, "Expected next-day projects to be queued"
+    assert "cand_fail" in tomorrow_projects or "cand_pass" in tomorrow_projects
+
+    # Verify heartbeat completed
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    assert heartbeat.is_file()
+    assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "completed"
+
+
+def test_today_platform_schedule_failure_still_schedules_next_day(tmp_path: Path):
+    """When Stage 6.5 encounters a failure scheduling today's project, next-day scheduling must still proceed."""
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+
+    # Mock schedule_today_native.py to fail for TODAY in stage 6.5, but succeed for tomorrow
+    schedule_mock = """#!/usr/bin/env python3
+import sys
+
+with open("native-schedule-calls-stage6.log", "a") as f:
+    f.write(" ".join(sys.argv) + "\\n")
+
+if "--date" in sys.argv:
+    idx = sys.argv.index("--date")
+    target_date = sys.argv[idx + 1]
+    with open("today_date.txt", "r") as tf:
+        today_date = tf.read().strip()
+    if target_date == today_date:
+        # Fails for today
+        print("ERROR: today upload failed", file=sys.stderr)
+        raise SystemExit(1)
+
+raise SystemExit(0)
+"""
+    write_executable(scripts / "schedule_today_native.py", schedule_mock)
+
+    today = datetime.now(timezone.utc).strftime("%F")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    (tmp_path / "today_date.txt").write_text(today, encoding="utf-8")
+
+    result = run_pipeline(tmp_path, scripts, binaries)
+
+    assert result.returncode == 0, f"Expected pipeline to succeed, got:\n{result.stdout}\n{result.stderr}"
+
+    calls = (tmp_path / "native-schedule-calls-stage6.log").read_text(encoding="utf-8")
+    assert f"--date {tomorrow}" in calls
+
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    assert heartbeat.is_file()
+    assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "completed"
+
+
+def test_cron_empty_today_allocates_both_today_and_next_day(tmp_path: Path):
+    """When cron runs with empty active_projects, newly validated projects must be allocated
+
+    to BOTH today (for same-day publishing) and next day (for next-day platform publishing).
+    """
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+
+    # Mock schedule_today_native.py to record all date calls
+    schedule_mock = """#!/usr/bin/env python3
+import sys
+
+with open("native-schedule-both-dates.log", "a") as f:
+    f.write(" ".join(sys.argv) + "\\n")
+
+raise SystemExit(0)
+"""
+    write_executable(scripts / "schedule_today_native.py", schedule_mock)
+
+    # Empty active_projects
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    schedule["active_projects"] = []
+    # Configure slot far in future for today
+    schedule["slots"]["publish_slots_vn"] = ["23:59"]
+    schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+
+    today = datetime.now(timezone.utc).strftime("%F")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+
+    result = run_pipeline(tmp_path, scripts, binaries)
+
+    assert result.returncode == 0, f"Expected pipeline to succeed, got:\n{result.stdout}\n{result.stderr}"
+
+    calls = (tmp_path / "native-schedule-both-dates.log").read_text(encoding="utf-8")
+    # Verify that BOTH today AND tomorrow were platform-scheduled
+    assert f"--date {today}" in calls
+    assert f"--date {tomorrow}" in calls
+
+    # Verify that both dates have projects queued in active_projects
+    updated_schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    today_pids = [
+        p["project_id"] for p in updated_schedule.get("active_projects", [])
+        if isinstance(p, dict) and p.get("publish_date") == today
+    ]
+    tomorrow_pids = [
+        p["project_id"] for p in updated_schedule.get("active_projects", [])
+        if isinstance(p, dict) and p.get("publish_date") == tomorrow
+    ]
+    assert len(today_pids) >= 1, "Expected at least 1 project queued for today"
+    assert len(tomorrow_pids) >= 1, "Expected at least 1 project queued for tomorrow"
+
+    heartbeat = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
+    assert heartbeat.is_file()
+    assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "completed"
+
+
