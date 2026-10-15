@@ -120,7 +120,6 @@ class YoutubePublisher(BaseTool):
 
     SCOPES = [
         "https://www.googleapis.com/auth/youtube.upload",
-        "https://www.googleapis.com/auth/youtube.readonly",
     ]
 
     def _get_authenticated_service(self, client_secret_file: Path, token_file: Path, interactive: bool = True):
@@ -132,9 +131,12 @@ class YoutubePublisher(BaseTool):
         creds = None
         if token_file.is_file():
             try:
-                creds = Credentials.from_authorized_user_file(str(token_file), self.SCOPES)
+                creds = Credentials.from_authorized_user_file(str(token_file))
             except Exception:
-                creds = None
+                try:
+                    creds = Credentials.from_authorized_user_file(str(token_file), self.SCOPES)
+                except Exception:
+                    creds = None
 
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
