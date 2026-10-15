@@ -199,9 +199,23 @@ class NewsResearchBridge:
                 ]
             normalized_angles.append(normalized_item)
 
+        viet_topic = (
+            agent_draft.get("vietnamese_topic")
+            or (agent_draft.get("research_draft", {}).get("vietnamese_topic") if isinstance(agent_draft.get("research_draft"), dict) else None)
+            or candidate.get("title_vi")
+        )
+        if viet_topic:
+            topic_str = self._require_string(viet_topic, "vietnamese_topic")
+        else:
+            topic_str = self._require_string(candidate.get("title"), "candidate title")
+
+        from tools.narration_text import check_vietnamese_prose
+        if check_vietnamese_prose(topic_str) and not topic_str.startswith("Article "):
+            topic_str = f"Tin tức công nghệ: {topic_str}"
+
         brief = {
             "version": "1.0",
-            "topic": self._require_string(candidate.get("title"), "candidate title"),
+            "topic": topic_str,
             "research_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
             "landscape": {
                 "existing_content": normalized_existing_content,

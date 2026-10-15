@@ -235,6 +235,7 @@ class CodexNewsSelector:
             "{\n"
             '  "selected_candidate_id": "<id>",\n'
             '  "selection_rationale": "...",\n'
+            '  "vietnamese_topic": "Tiêu đề tiếng Việt chuẩn xác cho video (ví dụ: Bản cập nhật Ubuntu 26.10 mới nhất)",\n'
             '  "research_draft": {\n'
             '    "landscape": {\n'
             '      "existing_content": [\n'

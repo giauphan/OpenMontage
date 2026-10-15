@@ -253,11 +253,18 @@ def test_schedule_today_native_blocks_invalid_metadata(tmp_path: Path):
 
     mock_store = MagicMock()
 
+    from datetime import datetime as dt_cls
+    class FakeDateTime(dt_cls):
+        @classmethod
+        def now(cls, tz=None):
+            return dt_cls(2026, 10, 1, 10, 0, tzinfo=tz)
+
     with patch("scripts.schedule_today_native.load_config", return_value=cfg), \
          patch("sys.argv", ["schedule_today_native.py", "--date", "2026-10-01"]), \
          patch("scripts.schedule_today_native.ROOT", tmp_path), \
          patch("scripts.schedule_today_native.PublishStore", return_value=mock_store), \
-         patch("scripts.schedule_today_native.YoutubePublisher") as mock_yt_cls:
+         patch("scripts.schedule_today_native.YoutubePublisher") as mock_yt_cls, \
+         patch("scripts.schedule_today_native.datetime", FakeDateTime):
         # Running scheduler must fail/skip and NOT claim the invalid project
         with pytest.raises(SystemExit) as exc:
             schedule_main()
