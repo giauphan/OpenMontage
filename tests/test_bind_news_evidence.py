@@ -46,3 +46,28 @@ def test_bind_news_evidence_satisfies_all_gates(tmp_path: Path):
     # Validate against lib.news_release_gate
     rel_res = require_news_evidence(project_dir, "24")
     assert rel_res["ok"] is True
+
+
+def test_bind_news_evidence_fixes_missing_section_ids(tmp_path: Path):
+    project_dir = tmp_path / "cand_missing_ids"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    script_data = {
+        "version": "1.0",
+        "title": "Bản tin không có section id",
+        "sections": [
+            {"text_vi": "Đoạn 1 không có id."},
+            {"id": "", "text_vi": "Đoạn 2 id rỗng."},
+            {"id": "custom_3", "text_vi": "Đoạn 3 có id."},
+        ],
+    }
+    (artifacts_dir / "script_vi.json").write_text(json.dumps(script_data, ensure_ascii=False), encoding="utf-8")
+    (artifacts_dir / "research_brief.json").write_text(json.dumps({"topic": "Tin mới"}), encoding="utf-8")
+    (project_dir / "project.json").write_text(json.dumps({"pipeline_type": "newsnow"}), encoding="utf-8")
+
+    assert bind_news_evidence(project_dir) is True
+    val_res = validate_news_evidence(project_dir, 24.0)
+    assert val_res["ok"] is True
+    assert not val_res["errors"]
+

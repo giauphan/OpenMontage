@@ -53,6 +53,19 @@ def bind_news_evidence(project_dir: Path) -> bool:
         print("ERROR: script has no sections", file=sys.stderr)
         return False
 
+    modified_script = False
+    for idx, sec in enumerate(sections):
+        if not isinstance(sec, dict):
+            continue
+        sid = sec.get("id")
+        if sid is None or (isinstance(sid, str) and not sid.strip()) or isinstance(sid, bool):
+            sec["id"] = f"sec_{idx}"
+            modified_script = True
+
+    if modified_script:
+        script_bytes = json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
+        script_path.write_bytes(script_bytes)
+
     brief_data = {}
     if brief_path.is_file():
         try:
