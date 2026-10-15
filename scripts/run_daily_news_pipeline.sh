@@ -344,7 +344,7 @@ run_directors() {
         export PYTHONPATH="$PYTHONPATH"
         export CODEX_HOME="/home/node/.codex_pipeline"
         mkdir -p "$CODEX_HOME"
-        export CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"
+        export CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
         if [ -s "$CODEX_HOME/auth.json" ]; then
           export OPENAI_API_KEY="$(jq -r .OPENAI_API_KEY "$CODEX_HOME/auth.json" 2>/dev/null || true)"
         fi
@@ -368,7 +368,7 @@ run_directors() {
     if [ -n "$CODEX_BIN" ]; then
       export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
       mkdir -p "$CODEX_HOME"
-      export CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"
+      export CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
       timeout --signal=TERM --kill-after=30s "$DIRECTORS_TIMEOUT_SECONDS" "$CODEX_BIN" exec --dangerously-bypass-approvals-and-sandbox --json --config "model=\"$CODEX_MODEL\"" "$prompt" < /dev/null
     else
       echo "[$(date -u +%FT%TZ)] ERROR: codex CLI not found, cannot run directors" >&2

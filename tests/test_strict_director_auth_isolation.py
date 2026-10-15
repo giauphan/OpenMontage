@@ -61,7 +61,7 @@ def test_director_invocations_pin_documented_gateway_model():
     launches = [line for line in script.splitlines() if "CODEX_BIN" in line and "exec" in line]
     assert launches
     assert all('--config "model=\\\"$CODEX_MODEL\\\""' in line for line in launches)
-    assert 'CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"' in script
+    assert 'CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"' in script
 
 
 def test_node_user_reads_api_key_from_pipeline_profile():

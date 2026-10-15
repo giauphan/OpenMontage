@@ -95,7 +95,7 @@ STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 # Use Gateway's documented model catalog instead of stale local profile aliases.
-CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"
+CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
 export CODEX_MODEL
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
