@@ -146,3 +146,82 @@ def test_disk_threshold_blocks_preflight_when_space_insufficient(tmp_path: Path)
     hb = tmp_path / "logs" / "heartbeat" / "daily_orchestrator.json"
     assert hb.is_file()
     assert json.loads(hb.read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_stage3_quarantines_all_attempts_when_retry_fails_without_project_id(tmp_path: Path):
+    """Attempt 1 partial projects must be quarantined even if attempt 2 fails without emitting PROJECT_ID."""
+    scripts_dir = tmp_path / "scripts"
+    config_dir = tmp_path / "config"
+    projects_dir = tmp_path / "projects"
+    bin_dir = tmp_path / "bin"
+    for d in (scripts_dir, config_dir, projects_dir, bin_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts_dir / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+
+    (config_dir / "publish_schedule.json").write_text(
+        json.dumps({"active_projects": []}),
+        encoding="utf-8",
+    )
+
+    for name in ("codex", "ffmpeg", "ffprobe"):
+        mock_bin = bin_dir / name
+        mock_bin.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        mock_bin.chmod(0o755)
+
+    count_file = tmp_path / "attempt_count.txt"
+    mock_pipeline = scripts_dir / "run_daily_news_pipeline.sh"
+    mock_pipeline.write_text(
+        f"""#!/usr/bin/env bash
+set -eu
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+COUNT_FILE="{count_file}"
+count=0
+[ ! -f "$COUNT_FILE" ] || count=$(cat "$COUNT_FILE")
+count=$((count + 1))
+printf '%s' "$count" > "$COUNT_FILE"
+
+if [ "$count" -eq 1 ]; then
+  mkdir -p "$ROOT/projects/cand_attempt1_fail"
+  PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c 'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))' "$ROOT/projects/cand_attempt1_fail"
+  echo "PROJECT_ID=cand_attempt1_fail"
+  exit 5
+fi
+
+# Attempt 2 fails immediately before emitting any PROJECT_ID
+echo "Attempt 2 failed with connection error" >&2
+exit 1
+""",
+        encoding="utf-8",
+    )
+    mock_pipeline.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "PUBLISH_TZ": "Asia/Ho_Chi_Minh",
+        "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+        "TMP_ROOT": str(tmp_path / "tmp_root"),
+        "MIN_DISK_MB": "0",
+        "MIN_TMP_DISK_MB": "0",
+        "DAILY_GENERATION_RETRIES": "2",
+        "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+    }
+    (tmp_path / "tmp_root").mkdir(exist_ok=True)
+
+    result = subprocess.run(
+        ["bash", str(scripts_dir / "run_strict_docker_publish.sh")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    quarantine = projects_dir / "_failed_generation_recovered"
+    assert not (projects_dir / "cand_attempt1_fail").exists()
+    assert (quarantine / "cand_attempt1_fail").is_dir()

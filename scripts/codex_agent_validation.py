@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -518,7 +519,6 @@ def resolve_codex_cli() -> str:
     """Robustly resolve Codex CLI binary path."""
     candidates = [
         shutil.which("codex"),
-        "/home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex",
         "/usr/local/bin/codex",
         "/usr/bin/codex",
         "/home/node/.npm-global/bin/codex",
@@ -1512,21 +1512,29 @@ Return a valid JSON object matching this schema:
             logger.info("Agent CLI not found; falling back to non-strict autonomous heuristic review")
             return self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
 
-        try:
-            return self._execute_cli_review(agent_bin, video_path, metadata_path, prior_results)
-        except Exception as exc:
-            if self.strict_mode:
-                logger.error("Strict Codex Agent review failed: %s", exc)
-                return [
-                    ValidationResult(
-                        check_name="Codex Agent Review Gate",
-                        passed=False,
-                        message=f"Strict Codex agent review failed: {exc}",
-                        details={"error": str(exc), "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
-                    )
-                ]
-            logger.info("Agent CLI review skipped (%s); applying autonomous heuristic review in non-strict mode", exc)
-            return self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
+        attempts = max(1, getattr(self, "retry_count", 1))
+        last_exc = None
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._execute_cli_review(agent_bin, video_path, metadata_path, prior_results)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < attempts:
+                    logger.warning("Agent CLI review attempt %d/%d failed: %s; retrying...", attempt, attempts, exc)
+                    time.sleep(0.5)
+        exc = last_exc
+        if self.strict_mode:
+            logger.error("Strict Codex Agent review failed after %d attempts: %s", attempts, exc)
+            return [
+                ValidationResult(
+                    check_name="Codex Agent Review Gate",
+                    passed=False,
+                    message=f"Strict Codex agent review failed: {exc}",
+                    details={"error": str(exc), "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
+                )
+            ]
+        logger.info("Agent CLI review skipped (%s); applying autonomous heuristic review in non-strict mode", exc)
+        return self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
 
     claude_agent_strict_review = codex_agent_strict_review
 
@@ -1556,9 +1564,11 @@ Return a valid JSON object matching this schema:
 
         # Step 4: Codex Agent Review
         if self.strict_mode:
-            for video_path in video_paths:
-                agent_results = self.codex_agent_strict_review(video_path, metadata_path, prior_results=all_results)
-                all_results.extend(agent_results)
+            deterministic_failed = any(not r.passed for r in all_results)
+            if not deterministic_failed:
+                for video_path in video_paths:
+                    agent_results = self.codex_agent_strict_review(video_path, metadata_path, prior_results=all_results)
+                    all_results.extend(agent_results)
 
         self.results = all_results
 
@@ -1644,7 +1654,7 @@ def main():
     project_dir = Path(args.project_dir)
     if not project_dir.exists():
         print(f"Error: Project directory not found: {project_dir}")
-        sys.exit(1)
+        sys.exit(2)
 
     video_paths = [
         project_dir / "renders" / "final_full_vi_9x16.mp4",
@@ -1655,6 +1665,7 @@ def main():
     validator = CodexAgentValidator(
         project_dir=project_dir,
         strict_mode=args.strict,
+        retry_count=args.retry,
         review_transport=review_transport,
     )
 
@@ -1709,7 +1720,15 @@ def main():
                 details={"failed_checks": [r.message for r in validation_data["results"] if not r.passed]},
             )
         print(f"Result: {validation_data['color']} VALIDATION FAILED")
-        sys.exit(1)
+        deterministic_failed = any(
+            not r.passed for r in validation_data.get("results", [])
+            if r.check_name in (
+                "Technical Contract", "Duration Check", "Stream Integrity",
+                "Content Quality", "Metadata Validation", "Metadata Structure",
+                "Metadata Language"
+            )
+        )
+        sys.exit(2 if deterministic_failed else 1)
 
 
 if __name__ == "__main__":

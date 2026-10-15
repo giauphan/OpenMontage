@@ -354,3 +354,53 @@ def test_lock_contender_does_not_overwrite_active_heartbeat(tmp_path: Path):
 
     assert result.returncode == 75
     assert json.loads(heartbeat.read_text(encoding="utf-8")) == active
+
+
+def test_validation_deterministic_failure_aborts_retry_immediately(tmp_path: Path):
+    """When validation fails with exit 2 (deterministic), Stage 5 must not retry 3 times."""
+    scripts, config, binaries = create_fixture(
+        tmp_path,
+        """import sys
+from pathlib import Path
+project = Path(sys.argv[1]).name
+counter = Path(f'{project}-validation-count')
+count = int(counter.read_text()) if counter.exists() else 0
+count += 1
+counter.write_text(str(count))
+raise SystemExit(2)
+""",
+    )
+
+    occupy_today_slots(config)
+    result = run_pipeline(tmp_path, scripts, binaries)
+
+    assert result.returncode != 0
+    # Must have only run once per candidate, breaking out immediately on exit 2
+    assert (tmp_path / "cand_fail-validation-count").read_text(encoding="utf-8") == "1"
+    assert (tmp_path / "cand_pass-validation-count").read_text(encoding="utf-8") == "1"
+
+
+def test_orchestrator_lock_fd_has_cloexec(tmp_path: Path):
+    """File descriptor 199 (orchestrator lock) must have FD_CLOEXEC set so child processes do not inherit it."""
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+
+    # Hook run_daily_news_pipeline.sh to check if fd 199 is inherited
+    probe_script = """#!/usr/bin/env bash
+python3 -c '
+import os, sys
+try:
+    os.fstat(199)
+    is_open = True
+except OSError:
+    is_open = False
+with open("fd_199_inherited.txt", "w") as f:
+    f.write(str(is_open))
+'
+exit 1
+"""
+    write_executable(scripts / "run_daily_news_pipeline.sh", probe_script)
+    run_pipeline(tmp_path, scripts, binaries)
+
+    fd_file = tmp_path / "fd_199_inherited.txt"
+    assert fd_file.is_file()
+    assert fd_file.read_text().strip() == "False"

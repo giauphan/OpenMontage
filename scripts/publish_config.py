@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = ROOT / "config" / "publish_schedule.json"
+ROOT = Path(os.environ.get("OPENMONTAGE_ROOT") or Path(__file__).resolve().parents[1])
+CONFIG_PATH = Path(os.environ.get("OPENMONTAGE_CONFIG") or ROOT / "config" / "publish_schedule.json")
 
 
 def _parse_hhmm(value: str) -> dt_time:

@@ -42,4 +42,9 @@ ENV PYTHONPATH=/app
 # Make validation scripts executable
 RUN chmod +x scripts/codex_agent_validation.py scripts/validate_render_quality.py scripts/validate_publish_metadata.py
 
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
+

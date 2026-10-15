@@ -613,3 +613,47 @@ class TestCodexFailClosedStrictReview:
         assert len(results) == 1
         assert results[0].passed is False
         assert "Mock review strictly forbidden in production mode" in results[0].message
+
+    def test_execute_validation_skips_agent_review_when_technical_contract_fails(self, monkeypatch):
+        test_dir = Path(tempfile.mkdtemp())
+        validator = CodexAgentValidator(test_dir, strict_mode=True)
+        video_path = test_dir / "missing.mp4"
+        meta_path = test_dir / "publish_metadata.json"
+
+        agent_review_called = []
+        monkeypatch.setattr(
+            validator,
+            "codex_agent_strict_review",
+            lambda *a, **k: agent_review_called.append(True) or [],
+        )
+
+        result = validator.execute_validation([video_path], meta_path)
+        assert result["overall_status"] == "FAIL"
+        # Must fast-fail without running expensive agent review
+        assert len(agent_review_called) == 0
+
+    def test_strict_review_retries_transient_failure_up_to_retry_count(self, monkeypatch):
+        test_dir = Path(tempfile.mkdtemp())
+        (test_dir / "hyperframes").mkdir(parents=True, exist_ok=True)
+        (test_dir / "hyperframes" / "index.html").write_text("<html><body>scene</body></html>", encoding="utf-8")
+        validator = CodexAgentValidator(test_dir, strict_mode=True, retry_count=3)
+        video_path = test_dir / "video.mp4"
+        video_path.write_bytes(b"content" * 100)
+        meta_path = test_dir / "meta.json"
+        meta_path.write_text("{}", encoding="utf-8")
+
+        monkeypatch.setattr("scripts.codex_agent_validation.resolve_agent_cli", lambda: "/usr/bin/codex")
+        monkeypatch.setattr(validator, "_extract_frames", lambda *a, **k: [test_dir / f"f{i}.png" for i in range(3)])
+
+        attempts = []
+        def _mock_exec(*args, **kwargs):
+            attempts.append(len(attempts) + 1)
+            raise subprocess.TimeoutExpired(cmd=["codex"], timeout=30)
+
+        monkeypatch.setattr(validator, "_execute_cli_review", _mock_exec)
+        results = validator.codex_agent_strict_review(video_path, meta_path)
+
+        assert len(results) == 1
+        assert results[0].passed is False
+        assert len(attempts) == 3
+

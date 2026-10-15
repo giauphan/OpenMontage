@@ -7,10 +7,7 @@ mkdir -p "$ROOT/logs"
 if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
-export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:$HOME/.local/share/uv/tools/edge-tts/bin:/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:$PATH"
-if [ -d "$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin" ]; then
-  export PATH="$HOME/.npm/_npx/702923228c2ce1e6/node_modules/.bin:$PATH"
-fi
+export PATH="$HOME/.local/share/uv/tools/edge-tts/bin:/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 export PYTHONPATH="$ROOT"
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
@@ -73,7 +70,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   set +e
   CODEX_BIN="$(command -v codex || true)"
   if [ -z "$CODEX_BIN" ]; then
-    for c in /home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex /usr/local/bin/codex /usr/bin/codex; do
+    for c in /usr/local/bin/codex /usr/bin/codex "$HOME/.local/bin/codex"; do
       if [ -x "$c" ]; then CODEX_BIN="$c"; break; fi
     done
   fi

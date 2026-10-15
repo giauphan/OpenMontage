@@ -5,11 +5,11 @@
 # Each stage is a hard gate; any failure stops the workflow before publishing.
 set -euo pipefail
 
-export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:/app/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+mkdir -p "$ROOT/logs/heartbeat" "$ROOT/logs/strict_docker_publish"
 
-	ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-	cd "$ROOT"
-	mkdir -p "$ROOT/logs/heartbeat" "$ROOT/logs/strict_docker_publish"
+export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # Serialize the complete strict run, including preflight and generation. Keep
 # this stable lock file on the shared ROOT filesystem and never unlink it:
@@ -94,6 +94,9 @@ RUN_LOG="$LOG_DIR/run_${RUN_TS}.log"
 STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
+# Use Gateway's documented model catalog instead of stale local profile aliases.
+CODEX_MODEL="${CODEX_MODEL:-gpt-5.6-sol}"
+export CODEX_MODEL
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
@@ -224,8 +227,8 @@ newsnow_preflight() {
 }
 
 cleanup_failed_generation() {
-  local generate_log="$1"
   local pid dir
+  local log_files=("$@")
 
   # Move (never rm -rf) failed-generation project dirs to a quarantine root so
   # recovery evidence and unpublished assets are preserved for diagnosis.
@@ -245,7 +248,7 @@ cleanup_failed_generation() {
       fi
     done
   done < <(
-    grep -h 'PROJECT_ID=' "$generate_log" 2>/dev/null |
+    grep -h 'PROJECT_ID=' "${log_files[@]}" 2>/dev/null |
       sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' |
       sort -u
   )
@@ -325,7 +328,7 @@ else
     GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}_attempt${GENERATION_ATTEMPT}.log"
     log "generation attempt $GENERATION_ATTEMPT/$GENERATION_RETRIES"
     set +e
-    bash "$ROOT/scripts/run_daily_news_pipeline.sh" 2>&1 | tee "$GENERATE_LOG"
+    bash "$ROOT/scripts/run_daily_news_pipeline.sh" 199>&- 2>&1 | tee "$GENERATE_LOG"
     GEN_STATUS="${PIPESTATUS[0]}"
     set -e
     mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
@@ -337,12 +340,12 @@ else
 fi
 
 [ "${#PROJECT_IDS[@]}" -gt 0 ] || {
-  cleanup_failed_generation "$GENERATE_LOG"
+  cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log "$GENERATE_LOG"
   write_state "generate" "failed"
   fail "expected at least 1 project from generation after $GENERATION_ATTEMPT attempts"
 }
 if [ "$GEN_STATUS" -ne 0 ]; then
-  cleanup_failed_generation "$GENERATE_LOG"
+  cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log "$GENERATE_LOG"
   write_state "generate" "failed"
   fail "generation failed after $GENERATION_ATTEMPT attempts (exit=$GEN_STATUS; see $GENERATE_LOG)"
 fi
@@ -404,9 +407,14 @@ for PID in "${VERIFY_OK_PIDS[@]}"; do
   VALIDATION_PASSED=0
   for ((retry=1; retry<=MAX_RETRIES; retry++)); do
     log "attempt $retry/$MAX_RETRIES for $PID"
-    if "$PY" "$ROOT/scripts/codex_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" \
-        >> "$CLAUDE_LOG" 2>&1; then
+    val_status=0
+    "$PY" "$ROOT/scripts/codex_agent_validation.py" "$PDIR" --strict --retry "$MAX_RETRIES" 199>&- \
+        >> "$CLAUDE_LOG" 2>&1 || val_status=$?
+    if [ "$val_status" -eq 0 ]; then
       VALIDATION_PASSED=1
+      break
+    elif [ "$val_status" -eq 2 ]; then
+      log "attempt $retry encountered deterministic failure for $PID; skipping redundant retries"
       break
     fi
     log "attempt $retry failed for $PID"
