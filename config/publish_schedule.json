@@ -9,6 +9,11 @@
     "account": "primary"
   },
   "slots": {
+    "today_publish_slots_vn": [
+      "19:15",
+      "21:15",
+      "23:30"
+    ],
     "publish_slots_vn": [
       "09:15",
       "14:15",

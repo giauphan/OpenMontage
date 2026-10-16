@@ -492,7 +492,7 @@ QUEUED_PIDS=()
 TODAY_QUEUED_PIDS=()
 NEXT_QUEUED_PIDS=()
 
-TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_vn // ["09:15", "14:15", "18:45", "21:15", "23:30"]' "$SCHEDULE")
+TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_vn // .slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
 mapfile -t TODAY_CANDIDATE_SLOTS < <(jq -r '.[]' <<< "$TODAY_SLOTS_JSON")
 
 NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")

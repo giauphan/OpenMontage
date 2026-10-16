@@ -255,7 +255,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     flex-direction: column !important;
     justify-content: center !important;
     align-items: center !important;
-    padding: 60px 48px !important;
+    padding: 80px 48px 300px 48px !important;
     box-sizing: border-box !important;
 }
 .scene > div:not(.om-asr-caption), .card, .container, [class*="card"], [class*="container"], [class*="box"], [class*="plate"] {
@@ -265,6 +265,10 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18) !important;
     backdrop-filter: blur(14px) !important;
     box-sizing: border-box !important;
+    width: 960px !important;
+    max-width: 90vw !important;
+    margin: 16px auto !important;
+    padding: 32px 40px !important;
 }
 /* High-contrast typography */
 h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {

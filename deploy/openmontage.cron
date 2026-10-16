@@ -39,6 +39,9 @@ CODEX_MODEL=model-medium-hight
 # 11:45 UTC (18:45 Vietnam) — Publish slot 2b (Instagram only)
 45 11 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 18:45 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
+# 12:15 UTC (19:15 Vietnam) — Publish slot 2c (Instagram only)
+15 12 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 19:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
+
 # 14:15 UTC (21:15 Vietnam) — Publish slot 3 (Instagram only)
 15 14 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 21:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
