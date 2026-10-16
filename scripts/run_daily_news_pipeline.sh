@@ -783,6 +783,19 @@ materialize_hyperframes_assets() {
   fi
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
+    local comp_dur
+    comp_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$target/narration.mp3" 2>/dev/null || echo 0)
+    if [ -n "$comp_dur" ] && awk -v d="$comp_dur" 'BEGIN{exit !(d > 5)}'; then
+      "$PY" -c "
+import re, sys
+p = sys.argv[1]
+dur = float(sys.argv[2])
+text = open(p, 'r', encoding='utf-8').read()
+text = re.sub(r'data-duration=\"[^\"]+\"', f'data-duration=\"{dur:.3f}\"', text)
+text = re.sub(r'const\s+dur\s*=\s*[0-9.]+;', f'const dur = {dur:.3f};', text)
+open(p, 'w', encoding='utf-8').write(text)
+" "$project_root/$composition/index.html" "$comp_dur" 2>/dev/null || true
+    fi
     "$PY" "$ROOT/scripts/install_news_captions.py" \
       "$project_root/$composition/index.html" \
       "$target/narration.mp3" \

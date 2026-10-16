@@ -139,8 +139,8 @@ def main():
     narration = project / "assets" / narration_name
     tmp = project / "assets" / f"{narration_name}.synth.mp3"
 
-    # Try increasing speed until it fits, starting at 0 (natural).
-    rates = [None] + [f"+{p}%" for p in range(5, 41, 5)]
+    # Try increasing or decreasing speed until it fits, starting at natural.
+    rates = [None] + [f"-{p}%" for p in range(5, 26, 5)] + [f"+{p}%" for p in range(5, 41, 5)]
     chosen = None
     for rate in rates:
         warn(f"synth rate={rate or 'natural'}")
@@ -187,6 +187,16 @@ def main():
                 shutil.copy2(narration, root_assets / "narration.mp3")
             if narration != root_assets / "narration_reels.mp3":
                 shutil.copy2(narration, root_assets / "narration_reels.mp3")
+
+    # Sync composition data-duration with chosen narration duration so render matches audio
+    for comp in (("hyperframes_reels",) if args.reels_only else ("hyperframes", "hyperframes_reels")):
+        comp_index = project / comp / "index.html"
+        if comp_index.is_file():
+            html_text = comp_index.read_text(encoding="utf-8")
+            html_text = re.sub(r'data-duration="[^"]+"', f'data-duration="{dur:.3f}"', html_text)
+            html_text = re.sub(r"const\s+dur\s*=\s*[0-9.]+;", f"const dur = {dur:.3f};", html_text)
+            comp_index.write_text(html_text, encoding="utf-8")
+            warn(f"synced {comp}/index.html data-duration to {dur:.3f}s")
 
     # Repair quality (fonts + audio src bindings). This gate is mandatory:
     # skipping it silently was how landscape/missing-font compositions reached
