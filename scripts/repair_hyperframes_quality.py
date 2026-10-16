@@ -159,7 +159,7 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             html = html[:start_pos] + stage_open + inner_scenes + stage_close + html[end_pos:]
             root_open = re.search(r"<div\b[^>]*id=[\"']stage[\"'][^>]*>", html)
             if "#stage" not in html and "<style>" in html:
-                stage_css = "\n        #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background-color: #0f172a; }\n"
+                stage_css = "\n        #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif; }\n"
                 html = html.replace("<style>", "<style>" + stage_css, 1)
         else:
             root_open = re.search(r"<div\b[^>]*>", html)
@@ -241,6 +241,21 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
 h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [class*='caption'], [class*='text'] { overflow-wrap: break-word !important; word-wrap: break-word !important; word-break: break-word !important; max-width: 100%; box-sizing: border-box; }
 </style>"""
         html = html.replace("</style>", wrap_css_rule, 1)
+
+    if "/* Visual Quality Enhancement */" not in html and "</style>" in html:
+        enhancement_css = """
+/* Visual Quality Enhancement */
+#stage { background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%) !important; }
+.scene { background: transparent !important; }
+.scene > div:not(.om-asr-caption), .scene > .card, .scene > .container, .scene > .content, .scene > [class*="box"] {
+    background: rgba(30, 41, 59, 0.75) !important;
+    border: 1px solid rgba(56, 189, 248, 0.35) !important;
+    border-radius: 28px !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(56, 189, 248, 0.15) !important;
+    backdrop-filter: blur(12px) !important;
+}
+</style>"""
+        html = html.replace("</style>", enhancement_css, 1)
 
     if "overflow: hidden" not in html:
         root_match = re.search(r"(#root|body|html)\s*\{[^{}]*\}", html)

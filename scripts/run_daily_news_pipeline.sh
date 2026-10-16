@@ -222,7 +222,7 @@ fi
 # PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
 set +e
-"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count 6 2>&1 | tee "$PRODUCE_LOG"
+"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count "${NEWS_PRODUCE_COUNT:-8}" 2>&1 | tee "$PRODUCE_LOG"
 PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
@@ -254,7 +254,7 @@ fi
 fi
 
 SUCCESSFUL_COUNT=0
-EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
+EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
@@ -276,7 +276,7 @@ echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_L
 DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 
 set +e
-DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-3600}"
+DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-300}"
 DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-40}"
 PROMPT_DIR="$ROOT/scripts/prompts"
 render_director_prompt() {

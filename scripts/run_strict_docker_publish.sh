@@ -466,9 +466,10 @@ done
   write_state "claude-validate" "failed"
   fail "claude validation failed for all projects (see $CLAUDE_LOG)"
 }
-if [ "${#VALIDATED_PIDS[@]}" -lt 3 ]; then
+TARGET_VALIDATED_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
+if [ "${#VALIDATED_PIDS[@]}" -lt "$TARGET_VALIDATED_COUNT" ]; then
   write_state "claude-validate" "partial" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
-  log "WARNING: PARTIAL: strict validation achieved only ${#VALIDATED_PIDS[@]}/3 validated projects (see $CLAUDE_LOG)"
+  log "WARNING: PARTIAL: strict validation achieved only ${#VALIDATED_PIDS[@]}/$TARGET_VALIDATED_COUNT validated projects (see $CLAUDE_LOG)"
 else
   write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 fi
@@ -491,8 +492,11 @@ QUEUED_PIDS=()
 TODAY_QUEUED_PIDS=()
 NEXT_QUEUED_PIDS=()
 
-SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
-mapfile -t SLOTS < <(jq -r '.[]' <<< "$SLOTS_JSON")
+TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_vn // ["09:15", "14:15", "18:45", "21:15", "23:30"]' "$SCHEDULE")
+mapfile -t TODAY_CANDIDATE_SLOTS < <(jq -r '.[]' <<< "$TODAY_SLOTS_JSON")
+
+NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
+mapfile -t NEXT_CANDIDATE_SLOTS < <(jq -r '.[]' <<< "$NEXT_SLOTS_JSON")
 
 declare -A TODAY_OCCUPIED=()
 declare -A NEXT_OCCUPIED=()
@@ -506,11 +510,13 @@ done < <(jq -r --arg date "$NEXT_DATE" '.active_projects[]? | select(type == "ob
 NOW_EPOCH=$(date +%s)
 TODAY_SLOTS=()
 NEXT_SLOTS=()
-for SLOT in "${SLOTS[@]}"; do
+for SLOT in "${TODAY_CANDIDATE_SLOTS[@]}"; do
   SLOT_EPOCH=$(TZ="$PUBLISH_TZ" date -d "$TODAY $SLOT" +%s 2>/dev/null || echo 0)
   if [ "$SLOT_EPOCH" -gt "$((NOW_EPOCH + 1200))" ] && [ -z "${TODAY_OCCUPIED[$SLOT]:-}" ]; then
     TODAY_SLOTS+=("$SLOT")
   fi
+done
+for SLOT in "${NEXT_CANDIDATE_SLOTS[@]}"; do
   if [ -z "${NEXT_OCCUPIED[$SLOT]:-}" ]; then
     NEXT_SLOTS+=("$SLOT")
   fi
@@ -523,18 +529,19 @@ AVAILABLE_SLOT_COUNT=$((${#TODAY_SLOTS[@]} + ${#NEXT_SLOTS[@]}))
 TMP_QUEUE=$(mktemp)
 cp "$SCHEDULE" "$TMP_QUEUE"
 
-# Determine target allocation between today (recovery) and next day (primary).
-# Next day is the primary target for daily generation.
-# If today already has scheduled projects, all new projects go to NEXT_DATE (unless next day is full).
-# If today has NO projects and has open future slots, allocate at most 1 slot to today, and the rest to NEXT_DATE,
-# guaranteeing that both today and next day have scheduled videos on the platform.
+# Determine target allocation between today (fill up to TARGET_TODAY_COUNT, default 3) and next day (primary target).
+TARGET_TODAY_COUNT="${TARGET_TODAY_COUNT:-3}"
+CURRENT_TODAY_COUNT="${#TODAY_PROJECT_IDS[@]}"
+NEEDED_TODAY=0
+if [ "$CURRENT_TODAY_COUNT" -lt "$TARGET_TODAY_COUNT" ]; then
+  NEEDED_TODAY=$((TARGET_TODAY_COUNT - CURRENT_TODAY_COUNT))
+fi
 
 MAX_TODAY_ALLOCATION=0
-if [ "${TODAY_BATCH_FAILED:-0}" -eq 0 ] && [ "${#TODAY_PROJECT_IDS[@]}" -eq 0 ] && [ "${#TODAY_SLOTS[@]}" -gt 0 ]; then
-  if [ "${#VALIDATED_PIDS[@]}" -ge 1 ]; then
-    MAX_TODAY_ALLOCATION=1
-  elif [ "${#NEXT_SLOTS[@]}" -eq 0 ]; then
-    MAX_TODAY_ALLOCATION=1
+if [ "${TODAY_BATCH_FAILED:-0}" -eq 0 ] && [ "$NEEDED_TODAY" -gt 0 ] && [ "${#TODAY_SLOTS[@]}" -gt 0 ]; then
+  MAX_TODAY_ALLOCATION="$NEEDED_TODAY"
+  if [ "$MAX_TODAY_ALLOCATION" -gt "${#TODAY_SLOTS[@]}" ]; then
+    MAX_TODAY_ALLOCATION="${#TODAY_SLOTS[@]}"
   fi
 fi
 
