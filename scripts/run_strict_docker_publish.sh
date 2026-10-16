@@ -240,6 +240,13 @@ cleanup_failed_generation() {
       log "preserving scheduled failed-generation project: $pid"
       continue
     fi
+    if [ -f "$ROOT/projects/$pid/validation_status.json" ]; then
+      is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$ROOT/projects/$pid/validation_status.json" 2>/dev/null || echo false)
+      if [ "$is_valid" = "true" ]; then
+        log "preserving validated project: $pid"
+        continue
+      fi
+    fi
     for dir in "$ROOT/projects/$pid" "$ROOT/projects_news/$pid"; do
       if [ -d "$dir" ]; then
         mkdir -p "$FAILED_GENERATION_RECOVERY_ROOT"
@@ -348,12 +355,26 @@ fi
   write_state "generate" "failed"
   fail "expected at least 1 project from generation after $GENERATION_ATTEMPT attempts"
 }
-if [ "$GEN_STATUS" -ne 0 ]; then
+VALID_COUNT=0
+for pid in "${PROJECT_IDS[@]}"; do
+  if [ -d "$ROOT/projects/$pid" ] && [ -f "$ROOT/projects/$pid/validation_status.json" ]; then
+    is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$ROOT/projects/$pid/validation_status.json" 2>/dev/null || echo false)
+    if [ "$is_valid" = "true" ]; then
+      VALID_COUNT=$((VALID_COUNT + 1))
+    fi
+  fi
+done
+
+if [ "$GEN_STATUS" -ne 0 ] && [ "$VALID_COUNT" -eq 0 ]; then
   cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log "$GENERATE_LOG"
   write_state "generate" "failed"
   fail "generation failed after $GENERATION_ATTEMPT attempts (exit=$GEN_STATUS; see $GENERATE_LOG)"
 fi
-write_state "generate" "ok"
+if [ "$GEN_STATUS" -eq 0 ]; then
+  write_state "generate" "ok"
+else
+  write_state "generate" "partial" "valid_count=$VALID_COUNT"
+fi
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"
 
@@ -500,7 +521,7 @@ cp "$SCHEDULE" "$TMP_QUEUE"
 
 MAX_TODAY_ALLOCATION=0
 if [ "${TODAY_BATCH_FAILED:-0}" -eq 0 ] && [ "${#TODAY_PROJECT_IDS[@]}" -eq 0 ] && [ "${#TODAY_SLOTS[@]}" -gt 0 ]; then
-  if [ "${#VALIDATED_PIDS[@]}" -gt 1 ]; then
+  if [ "${#VALIDATED_PIDS[@]}" -ge 1 ]; then
     MAX_TODAY_ALLOCATION=1
   elif [ "${#NEXT_SLOTS[@]}" -eq 0 ]; then
     MAX_TODAY_ALLOCATION=1
