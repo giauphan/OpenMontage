@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -348,6 +349,11 @@ def main() -> int:
         action="store_true",
         help="Enable strict visual content checks (enhanced black/detect, edge + motion variance)",
     )
+    parser.add_argument(
+        "--no-auto-repair",
+        action="store_true",
+        help="Do not trigger fix_narration_timing.py automatically on timing mismatch",
+    )
     args = parser.parse_args()
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
     narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
@@ -377,16 +383,18 @@ def main() -> int:
                 strict=args.strict,
             )
         )
-    if errors and any("stale relative to narration" in e or "differs from narration" in e for e in errors):
+    allow_repair = not getattr(args, "no_auto_repair", False) and not os.environ.get("OPENMONTAGE_NO_AUTO_REPAIR")
+    if allow_repair and errors and any("stale relative to narration" in e or "differs from narration" in e for e in errors):
         fix_script = Path(__file__).resolve().parent / "fix_narration_timing.py"
         if fix_script.is_file():
             print("Auto-repairing narration timing and re-rendering...", file=sys.stderr)
             fix_cmd = [sys.executable, str(fix_script), str(args.project_dir), "--tolerance", str(args.tolerance)]
             if args.render == "reels":
                 fix_cmd.append("--reels-only")
-            repair_proc = subprocess.run(fix_cmd, capture_output=True, text=True)
+            env = dict(os.environ, OPENMONTAGE_NO_AUTO_REPAIR="1")
+            repair_proc = subprocess.run(fix_cmd, capture_output=True, text=True, env=env)
             if repair_proc.returncode == 0:
-                # Re-run validation checks
+                # Re-run validation checks without further auto-repair
                 errors = []
                 for render_kind, render_name, narration, max_duration in renders:
                     if args.render and render_kind != args.render:

@@ -230,6 +230,7 @@ def main():
         sys.executable,
         str(ROOT / "scripts" / "validate_render_quality.py"),
         str(project),
+        "--no-auto-repair",
     ]
     if args.reels_only:
         qa_command += ["--render", "reels", "--min-duration", "0", "--reels-max-duration", "60"]
