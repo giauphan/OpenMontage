@@ -485,7 +485,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Publish all active projects")
     parser.add_argument("--dry-run", action="store_true", help="Validate without uploading or touching Firebase")
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed Firebase records")
-    parser.add_argument("--slot", choices=["09:15", "14:15", "21:15"], help="Run only queued VN slot")
+    parser.add_argument("--slot", help="Run only queued VN slot (e.g. 09:15, 14:15, 19:15, 21:15, 23:30)")
     parser.add_argument("--date", help="Filter projects by exactly this YYYY-MM-DD date and pass to publisher")
     parser.add_argument("--only-platform", choices=["youtube", "facebook", "instagram"], help="Limit publishing to one platform")
     parser.add_argument("--include-overdue", action="store_true", help="Include uncompleted overdue projects from earlier slots")
