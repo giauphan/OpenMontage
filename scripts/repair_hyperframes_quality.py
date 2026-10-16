@@ -245,17 +245,61 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     if "/* Visual Quality Enhancement */" not in html and "</style>" in html:
         enhancement_css = """
 /* Visual Quality Enhancement */
-#stage { background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%) !important; }
-.scene { background: transparent !important; }
-.scene > div:not(.om-asr-caption), .scene > .card, .scene > .container, .scene > .content, .scene > [class*="box"] {
-    background: rgba(30, 41, 59, 0.75) !important;
-    border: 1px solid rgba(56, 189, 248, 0.35) !important;
+#stage {
+    background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%) !important;
+    font-family: 'BeVietnamPro', sans-serif !important;
+}
+.scene {
+    background: transparent !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    padding: 60px 48px !important;
+    box-sizing: border-box !important;
+}
+.scene > div:not(.om-asr-caption), .card, .container, [class*="card"], [class*="container"], [class*="box"], [class*="plate"] {
+    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(56, 189, 248, 0.4) !important;
     border-radius: 28px !important;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(56, 189, 248, 0.15) !important;
-    backdrop-filter: blur(12px) !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18) !important;
+    backdrop-filter: blur(14px) !important;
+    box-sizing: border-box !important;
+}
+/* High-contrast typography */
+h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9) !important;
+}
+p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class*="highlight"]) {
+    color: #f8fafc !important;
+    font-weight: 500 !important;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important;
+}
+.brand-name, .badge, .category, .tag, [class*="badge"], [class*="tag"] {
+    color: #38bdf8 !important;
+    background: rgba(15, 23, 42, 0.85) !important;
+    border: 1px solid rgba(56, 189, 248, 0.5) !important;
+    border-radius: 9999px !important;
+    padding: 8px 24px !important;
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.25) !important;
+}
+.highlight-text, .accent, [class*="highlight"], [class*="accent"], [class*="metric"], [class*="stat"] {
+    color: #38bdf8 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 20px rgba(56, 189, 248, 0.4) !important;
 }
 </style>"""
         html = html.replace("</style>", enhancement_css, 1)
+
+    # Sanitize abrupt sentence cutoffs in text elements
+    html = re.sub(
+        r'\b(xuống|lên|vào|ra|của|và|là|khi|được|cho|với|tại|từ|về|đến|trong|ngoài|bởi|như|do)\s*(</(?:p|div|span)>)',
+        r'.\2',
+        html,
+        flags=re.IGNORECASE,
+    )
 
     if "overflow: hidden" not in html:
         root_match = re.search(r"(#root|body|html)\s*\{[^{}]*\}", html)
