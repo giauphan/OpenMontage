@@ -5,7 +5,7 @@ Generate or repair all three director outputs for {{PROJECT_DIR}}.
 1. script_vi.json
 Must be a flat JSON file at {{PROJECT_DIR}}/artifacts/script_vi.json (do not embed inside checkpoint).
 Schema keys: version (1.0), title, total_duration_seconds, sections (array of: id, text, start_seconds, end_seconds).
-Content: 100% correct Vietnamese spelling, exact grammatical tone marks, correct technical terminology. Rich spoken-word narration, 150-250 spoken words total (45-60s expected spoken duration). No dead air. Use a strong 3-second hook.
+Content: 100% correct Vietnamese spelling, exact grammatical tone marks, correct technical terminology. Rich spoken-word narration, 150-250 spoken words total (45-60s expected spoken duration). No dead air. Use a strong 3-second hook. CRITICAL: NEVER truncate or cut off text mid-sentence or mid-word (e.g. ending abruptly in "...chỉ k"). Every section MUST be a complete, grammatically sound, fully articulated Vietnamese sentence.
 
 News evidence is a required external input. Use and preserve only supplied frozen source materials at {{PROJECT_DIR}}/artifacts/news_evidence.json and its referenced content files; keep every factual statement grounded in the supplied research brief and source excerpts. Never create or edit news_evidence.json, claim that editorial review occurred, fill reviewer/reviewed_at fields, or invent citations, excerpts, URLs, source dates, or verification. If required evidence or source content is missing, report a blocking failure rather than filling gaps. Human source retrieval and review are external prerequisites; the pipeline will validate the finished script against the independently reviewed evidence before narration or render.
 
@@ -15,11 +15,14 @@ hyperframes_reels/index.html: Identical structure but shortened to <=60s for Ins
 Content & Quality for both:
 - NO visible "Montage" or "OpenMontage" branding anywhere.
 - Grounding: Base the narration and on-screen text 100% on the factual technology news in {{PROJECT_DIR}}/artifacts/research_brief.json. Do not invent unrelated numbers or generic filler.
-- Visual scene diversity: Deliver at least 4 visually distinct scenes with varied editorial layouts:
-  * Scene 1: Hero breaking news headline with category badge, high-contrast title, and glowing accent.
-  * Scene 2: Key data/stats plate with numeric callouts, metric badges, or comparison points.
-  * Scene 3: Deep-dive insight card, direct quote, tech architecture, or context breakdown.
-  * Scene 4: Future impact / key takeaway summary callout with actionable conclusion.
+- Visual scene diversity & styling (MANDATORY — QA strictly rejects plain/solid text slides as "placeholder scaffold"):
+  * Never use a plain solid color background. Use rich dark gradients on #stage (e.g. `background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif;`).
+  * Wrap each scene's content in a glassmorphic card container (e.g. `background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 28px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(56, 189, 248, 0.15); backdrop-filter: blur(12px); padding: 50px 40px;`).
+  * Include distinct graphic elements across scenes:
+    - Scene 1: Category badge with glowing border (`#38bdf8`) + bold headline title.
+    - Scene 2: Key data/stats plate with large numeric callouts (e.g. `font-size: 72px; color: #38bdf8; font-weight: 800;`) and metric badges.
+    - Scene 3: Deep-dive insight card with bullet highlights or architectural step cards.
+    - Scene 4: Future impact / key takeaway card with glowing callout border.
 - High-contrast typography: All headings, body text, badges, and metrics MUST use bright, highly readable colors on dark backgrounds (e.g. #ffffff for titles, #f8fafc for body text, #38bdf8 cyan or #fbbf24 amber for highlights). NEVER use black or dark grey text (#000, #1e293b, #333) on dark cards or backgrounds. All text must be clearly legible when rendered to video.
 - CSS sizing must load fit-content; never use fixed width/height container constraints that silently clip dynamic text. Use CSS: `width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box; display: inline-block; padding: 10px 20px;`
 - High-contrast visual plates ensuring the final composition meets strict 0.5000% edge-density QA gates.
