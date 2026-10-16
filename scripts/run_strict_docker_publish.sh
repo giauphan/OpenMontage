@@ -440,6 +440,14 @@ for PID in "${VERIFY_OK_PIDS[@]}"; do
   PDIR="$ROOT/projects/$PID"
   log "claude validating $PID"
   VALIDATION_PASSED=0
+  if [ -f "$PDIR/validation_status.json" ]; then
+    is_valid=$(jq -r 'if type == "array" then any(.[]; .strict_quality_pass == true) else .strict_quality_pass end // false' "$PDIR/validation_status.json" 2>/dev/null || echo false)
+    if [ "$is_valid" = "true" ]; then
+      log "project $PID already verified strict quality pass in generation stage"
+      VALIDATED_PIDS+=("$PID")
+      continue
+    fi
+  fi
   for ((retry=1; retry<=MAX_RETRIES; retry++)); do
     log "attempt $retry/$MAX_RETRIES for $PID"
     val_status=0

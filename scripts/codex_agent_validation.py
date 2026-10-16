@@ -1277,11 +1277,14 @@ Return a valid JSON object matching this schema:
                         pass
 
         if is_codex:
+            codex_model = env.get("CODEX_MODEL", "model-medium-hight")
             cmd = [
                 agent_bin,
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--json",
+                "--config",
+                f'model="{codex_model}"',
                 "-",
             ]
         else:
