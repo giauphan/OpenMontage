@@ -328,7 +328,7 @@ PROJECT_IDS=()
 GENERATION_ATTEMPT=0
 GEN_STATUS=1
 if [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
-  GENERATE_LOG=$(ls -t "$LOG_DIR"/generate_*.log | head -1)
+  GENERATE_LOG="${STRICT_PUBLISH_GENERATE_LOG:-$(ls -t "$LOG_DIR"/generate_*.log | head -1)}"
   [ -f "$GENERATE_LOG" ] || fail "STRICT_PUBLISH_SKIP_GENERATE=1 but no generation log exists"
   mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
   GEN_STATUS=0
@@ -343,7 +343,17 @@ else
     GEN_STATUS="${PIPESTATUS[0]}"
     set -e
     mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
-    if [ "$GEN_STATUS" -eq 0 ] && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
+    VALID_COUNT=0
+    for pid in "${PROJECT_IDS[@]}"; do
+      if [ -d "$ROOT/projects/$pid" ] && [ -f "$ROOT/projects/$pid/validation_status.json" ]; then
+        is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$ROOT/projects/$pid/validation_status.json" 2>/dev/null || echo false)
+        if [ "$is_valid" = "true" ]; then
+          VALID_COUNT=$((VALID_COUNT + 1))
+        fi
+      fi
+    done
+    if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge 1 ]; } && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
+      log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT validated project(s) (exit=$GEN_STATUS)"
       break
     fi
     log "generation attempt $GENERATION_ATTEMPT failed (exit=$GEN_STATUS projects=${#PROJECT_IDS[@]})"
