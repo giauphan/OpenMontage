@@ -294,11 +294,24 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
         html = html.replace("</style>", enhancement_css, 1)
 
     # Sanitize abrupt sentence cutoffs in text elements
+    # 1. Strip dangling unpunctuated clauses if a complete sentence ending with [.!?] preceded it
+    html = re.sub(
+        r'([.!?])\s+[^<.!?]{3,}\s*(</(?:p|div|span)>)',
+        r'\1\2',
+        html,
+    )
+    # 2. Safety net for specific dangling connector words
     html = re.sub(
         r'\b(xuống|lên|vào|ra|của|và|là|khi|được|cho|với|tại|từ|về|đến|trong|ngoài|bởi|như|do)\s*(</(?:p|div|span)>)',
         r'.\2',
         html,
         flags=re.IGNORECASE,
+    )
+    # 3. Ensure prose elements end with terminal punctuation
+    html = re.sub(
+        r'([^.!?\s>])\s*(</(?:p|div|span)>)',
+        r'\1.\2',
+        html,
     )
 
     if "overflow: hidden" not in html:

@@ -1280,6 +1280,7 @@ Return a valid JSON object matching this schema:
             cmd = [
                 agent_bin,
                 "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
                 "--json",
                 "-",
             ]
