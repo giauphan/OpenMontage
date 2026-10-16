@@ -10,7 +10,7 @@
 # Instagram slots: Instagram lacks native scheduling, so cron triggers Instagram publishing
 # at specific Vietnam time slots. YouTube uses platform-native scheduling; Facebook is disabled.
 
-PATH=/usr/local/bin:/usr/bin:/bin
+PATH=/app/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
 PATH_TO_OPENMONTAGE=/app
 CODEX_HOME=/root/.codex_pipeline
 # Explicit freshness policy required by the news evidence gate.
@@ -28,29 +28,29 @@ CODEX_MODEL=model-medium-hight
 
 # 23:00 UTC (06:00 Vietnam next day) — Strict orchestrator: publish today's slots,
 # generate next-day videos, validate, queue them for tomorrow's slot cron.
-0 23 * * * cd /app && OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/run_strict_docker_publish.sh >> logs/cron_pipeline.log 2>&1
+0 23 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/run_strict_docker_publish.sh >> logs/cron_pipeline.log 2>&1
 
 # 02:15 UTC (09:15 Vietnam) — Publish slot 1 (Instagram only)
-15 2 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 09:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
+15 2 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 09:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
 # 07:15 UTC (14:15 Vietnam) — Publish slot 2 (Instagram only)
-15 7 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 14:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
+15 7 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 14:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
 # 11:45 UTC (18:45 Vietnam) — Publish slot 2b (Instagram only)
-45 11 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 18:45 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
+45 11 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 18:45 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
 # 12:15 UTC (19:15 Vietnam) — Publish slot 2c (Instagram only)
-15 12 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 19:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
+15 12 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 19:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
 # 14:15 UTC (21:15 Vietnam) — Publish slot 3 (Instagram only)
-15 14 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 21:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
+15 14 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 21:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
 # 16:30 UTC (23:30 Vietnam) — Publish slot 3b (Instagram only)
-30 16 * * * cd /app && export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 23:30 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
+30 16 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 23:30 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
 # Hourly, independent of generation success. Canonical verified-publication guards
 # remain mandatory; no age-based deletion and no publishing. flock prevents overlap.
-35 * * * * cd /app && PYTHONPATH=/app /usr/bin/flock -n /app/logs/published_cleanup.lock /usr/bin/python3 -m scripts.cleanup_published_projects --apply >> logs/cron_cleanup.log 2>&1
+35 * * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; PYTHONPATH=/app /usr/bin/flock -n /app/logs/published_cleanup.lock /usr/bin/python3 -m scripts.cleanup_published_projects --apply >> logs/cron_cleanup.log 2>&1
 
 # Folder structure:
 # - projects/ - New generated projects (daily pipeline)

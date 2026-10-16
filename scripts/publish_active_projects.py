@@ -23,6 +23,13 @@ if str(ROOT) not in sys.path:
 
 from scripts.publish_config import load_config, publish_timezone
 
+try:
+    from dotenv import load_dotenv
+    if (ROOT / ".env").is_file():
+        load_dotenv(ROOT / ".env")
+except ImportError:
+    pass
+
 CONFIG = ROOT / "config" / "publish_schedule.json"
 PUBLISHER = ROOT / "scripts" / "publish_manual_video.py"
 # Bounded deadline for a single project publish so a hung publisher cannot
@@ -579,10 +586,23 @@ def main() -> int:
                     if CONFIG.is_file():
                         try:
                             sched = json.loads(CONFIG.read_text(encoding="utf-8"))
+                            val_file = project_dir / "validation_status.json"
+                            is_verified = False
+                            if val_file.is_file():
+                                try:
+                                    v_raw = json.loads(val_file.read_text(encoding="utf-8"))
+                                    v_recs = v_raw if isinstance(v_raw, list) else [v_raw]
+                                    is_verified = any(r.get("status") == "PASS" and r.get("strict_quality_pass") is True for r in v_recs)
+                                except Exception:
+                                    pass
+
                             for item in sched.get("active_projects", []):
                                 if (item.get("project_id") if isinstance(item, dict) else item) == project_id and isinstance(item, dict):
-                                    item["status"] = "validation_rejected"
-                                    item["alert"] = "quality_gate_rejected"
+                                    if not is_verified:
+                                        item["status"] = "validation_rejected"
+                                        item["alert"] = "quality_gate_rejected"
+                                    else:
+                                        item["alert"] = "platform_publish_retry_needed"
                             temp_cfg = CONFIG.with_suffix(".json.tmp")
                             temp_cfg.write_text(json.dumps(sched, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                             temp_cfg.replace(CONFIG)
