@@ -284,4 +284,4 @@ def test_default_invocation_retains_live_acquisition_path_and_director_guard():
     assert rehearsal_gate < fetch_path < produce_path
     assert 'else\n# Step 0: Fetch current NewsNow sources' in source
     assert guard < call
-    assert 'if [ -z "$REHEARSAL_MANIFEST" ]; then\n    chmod 777 "$ROOT"' in source
+    assert 'if [ -d "$PROJECT_DIR" ] && [ -z "$REHEARSAL_MANIFEST" ]; then' in source

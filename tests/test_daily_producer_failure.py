@@ -88,7 +88,7 @@ date() { printf '20300101T000000Z\n'; }
 def test_failed_director_cannot_recover_from_existing_artifacts(tmp_path, status):
     # Exercise the actual post-retry boundary with a validator accepting old files.
     start = SOURCE.index("set -e\n#", SOURCE.index("validate_current_director_artifacts()"))
-    end = SOURCE.index('\nif [ "$DIRECTOR_EXIT" -eq 0 ]; then\n  NEWS_EVIDENCE_LOG', start)
+    end = SOURCE.index('\nif [ "$DIRECTOR_EXIT" -eq 0 ]; then', start)
     setup = f'''
 PROJECT_ID=old-project
 TEMPLATE_MODE=0

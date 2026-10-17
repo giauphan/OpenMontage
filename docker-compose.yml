@@ -48,6 +48,7 @@ services:
       - ~/.cache/huggingface:/root/.cache/huggingface
     command: >
       bash -c "
+        (command -v cron >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || (apt-get update && apt-get install -y cron jq)) &&
         mkdir -p /app/logs &&
         crontab deploy/openmontage.cron &&
         cron -f
