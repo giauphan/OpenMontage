@@ -124,6 +124,25 @@ def run_produce(args: argparse.Namespace) -> None:
 
     project_ids: List[str] = []
     used_ids: set[str] = set()
+
+    # Pre-populate used_ids with already scheduled projects and existing validated projects
+    sched_path = Path("config/publish_schedule.json")
+    if sched_path.is_file():
+        try:
+            with sched_path.open("r", encoding="utf-8") as f:
+                sched_data = json.load(f)
+            for item in sched_data.get("active_projects", []):
+                if isinstance(item, dict) and item.get("project_id"):
+                    used_ids.add(item["project_id"])
+        except Exception:
+            pass
+
+    for p_dir in (Path("projects"), Path("projects_news")):
+        if p_dir.is_dir():
+            for p in p_dir.iterdir():
+                if p.is_dir() and ((p / "validation_status.json").is_file() or (p / "renders").is_dir()):
+                    used_ids.add(p.name)
+
     max_attempts = max(count * 3, len(ranked))
     attempts = 0
     while len(project_ids) < count and attempts < max_attempts:

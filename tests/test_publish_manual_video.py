@@ -664,3 +664,54 @@ def test_enforce_release_preflight_approval_list(tmp_path: Path):
         enforce_release_preflight(project_dir, metadata, strict=False)
 
 
+def test_enforce_release_preflight_unattended_news_project(tmp_path: Path):
+    """Unattended news pipeline projects (research checkpoint only, no proposal/human approval) pass preflight."""
+    from scripts.publish_manual_video import enforce_release_preflight
+
+    project_dir = tmp_path / "projects" / "cand_news_unattended"
+    project_dir.mkdir(parents=True)
+    (project_dir / "project.json").write_text(json.dumps({
+        "version": "1.0",
+        "project_id": "cand_news_unattended",
+        "title": "Tin tức AI hôm nay",
+        "pipeline_type": "animated-explainer",
+    }), encoding="utf-8")
+
+    from tests.contracts.test_phase0_contracts import sample_artifact
+    brief = sample_artifact("research_brief")
+
+    # Only checkpoint_research exists (unattended news pipeline contract)
+    cp_data = {
+        "version": "1.0",
+        "project_id": "cand_news_unattended",
+        "pipeline_type": "animated-explainer",
+        "stage": "research",
+        "status": "completed",
+        "timestamp": "2026-10-17T00:00:00Z",
+        "artifacts": {"research_brief": brief},
+    }
+    (project_dir / "checkpoint_research.json").write_text(json.dumps(cp_data), encoding="utf-8")
+    (project_dir / "artifacts").mkdir(parents=True)
+    (project_dir / "artifacts" / "research_brief.json").write_text(json.dumps(brief), encoding="utf-8")
+
+    # Media and metadata
+    renders = project_dir / "renders"
+    renders.mkdir()
+    (renders / "final_reels_vi_9x16.mp4").write_bytes(b"dummy-reels")
+    (renders / "final_full_vi_9x16.mp4").write_bytes(b"dummy-full")
+
+    metadata = {
+        "id": "cand_news_unattended",
+        "title": "Tin tức AI hôm nay",
+        "description": "Chi tiết tin tức",
+        "yt_shorts": "renders/final_reels_vi_9x16.mp4",
+        "ig_reels": "renders/final_reels_vi_9x16.mp4",
+        "fb_video": "renders/final_full_vi_9x16.mp4",
+    }
+    (project_dir / "publish_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    with patch("scripts.publish_manual_video.validate_project_quality"):
+        # Should not raise missing checkpoint_proposal or missing approval
+        enforce_release_preflight(project_dir, metadata, strict=False)
+
+

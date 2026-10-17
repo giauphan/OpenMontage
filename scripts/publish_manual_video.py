@@ -819,6 +819,9 @@ def enforce_release_preflight(
             CANONICAL_STAGE_ARTIFACTS,
         )
         from lib.pipeline_loader import load_pipeline_readonly
+        from lib.news_release_gate import is_news_project
+
+        is_news = is_news_project(project_dir, metadata)
 
         try:
             stages = get_pipeline_stages(pipeline_type)
@@ -836,9 +839,20 @@ def enforce_release_preflight(
         except Exception:
             pass
 
+        is_interactive_production = bool(
+            (project_dir / "checkpoint_proposal.json").is_file()
+            or (project_dir / "approval.json").is_file()
+            or (project_dir / "human_approval.json").is_file()
+            or "human_approval" in metadata
+        )
+
         for st_name in predecessor_stages:
             cp_file = project_dir / f"checkpoint_{st_name}.json"
             if not cp_file.is_file():
+                if is_news and not is_interactive_production:
+                    # In automated unattended news pipeline, only the research stage creates a checkpoint;
+                    # subsequent stages run unattended and are verified by validate_project_quality.
+                    continue
                 raise RuntimeError(
                     f"Release preflight failed: Missing required stage checkpoint for {st_name!r} "
                     f"(expected {cp_file.name})"
@@ -886,14 +900,21 @@ def enforce_release_preflight(
                     )
 
     # --- Step 3: Explicit Human Approval Bound to Media SHA-256 ---
-    requires_approval = bool(
-        project_marker.is_file()
+    is_interactive_production = bool(
+        (project_dir / "checkpoint_proposal.json").is_file()
         or (project_dir / "approval.json").is_file()
         or (project_dir / "human_approval.json").is_file()
         or "human_approval" in metadata
-        or os.environ.get("PRODUCTION_RELEASE") == "1"
-        or os.environ.get("STRICT_PRODUCTION") == "1"
     )
+    if is_news and not is_interactive_production:
+        requires_approval = False
+    else:
+        requires_approval = bool(
+            project_marker.is_file()
+            or is_interactive_production
+            or os.environ.get("PRODUCTION_RELEASE") == "1"
+            or os.environ.get("STRICT_PRODUCTION") == "1"
+        )
 
     if requires_approval:
         approval = None

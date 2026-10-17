@@ -68,25 +68,41 @@ fi
 export CODEX_PIPELINE_PROFILE="omniroute"
 export PRODUCTION_RELEASE="${PRODUCTION_RELEASE:-1}"
 
-if [ ! -s "$CODEX_HOME/auth.json" ] && [ -d "/etc/codex_source" ]; then
-  bash "$ROOT/scripts/init_codex_profile.sh" /etc/codex_source "$CODEX_HOME" || true
+if [ -d "/etc/codex_source" ]; then
+  src_key="$(jq -r '.OPENAI_API_KEY // empty' /etc/codex_source/auth.json 2>/dev/null || true)"
+  cur_key="$(jq -r '.OPENAI_API_KEY // empty' "$CODEX_HOME/auth.json" 2>/dev/null || true)"
+  if [ ! -s "$CODEX_HOME/auth.json" ] || [ -n "$src_key" -a "$src_key" != "$cur_key" ]; then
+    REFRESH_CODEX_PROFILE=1 bash "$ROOT/scripts/init_codex_profile.sh" /etc/codex_source "$CODEX_HOME" || true
+  fi
+  if [ -d "/home/node" ]; then
+    node_cur_key="$(jq -r '.OPENAI_API_KEY // empty' /home/node/.codex_pipeline/auth.json 2>/dev/null || true)"
+    if [ ! -s "/home/node/.codex_pipeline/auth.json" ] || [ -n "$src_key" -a "$src_key" != "$node_cur_key" ]; then
+      REFRESH_CODEX_PROFILE=1 bash "$ROOT/scripts/init_codex_profile.sh" /etc/codex_source /home/node/.codex_pipeline node || true
+    fi
+  fi
 fi
 
 # Load provider API key from the selected Codex profile auth store into the local
-# environment for Codex CLI calls in cron/non-interactive context. The key is never
-# printed: jq reads only when auth.json contains the field; otherwise the variable
-# is cleared so no stale credential can be used.
-if [ -f "$CODEX_HOME/auth.json" ]; then
+# environment for Codex CLI calls in cron/non-interactive context, preserving any
+# already valid OPENAI_API_KEY present in the environment (e.g. from .env).
+if [ -z "${OPENAI_API_KEY:-}" ] && [ -f "$CODEX_HOME/auth.json" ]; then
   _api_key="$(jq -r '.OPENAI_API_KEY // empty' "$CODEX_HOME/auth.json" 2>/dev/null || true)"
   if [ -n "$_api_key" ]; then
     export OPENAI_API_KEY="$_api_key"
-  else
-    unset OPENAI_API_KEY
   fi
-else
-  unset OPENAI_API_KEY
+  unset _api_key
 fi
-unset _api_key
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+  for p_home in "$CODEX_HOME" "/home/node/.codex_pipeline"; do
+    if [ -f "$p_home/auth.json" ]; then
+      pk="$(jq -r '.OPENAI_API_KEY // empty' "$p_home/auth.json" 2>/dev/null || true)"
+      if [ -n "$pk" -a "$pk" != "$OPENAI_API_KEY" ]; then
+        tmp_auth="$(mktemp "$p_home/auth.XXXXXX" 2>/dev/null || mktemp /tmp/auth.XXXXXX)"
+        jq --arg k "$OPENAI_API_KEY" '.OPENAI_API_KEY = $k' "$p_home/auth.json" > "$tmp_auth" 2>/dev/null && mv "$tmp_auth" "$p_home/auth.json" || rm -f "$tmp_auth"
+      fi
+    fi
+  done
+fi
 
 LOG_DIR="$ROOT/logs/strict_docker_publish"
 mkdir -p "$LOG_DIR"
@@ -298,9 +314,12 @@ TODAY=$(TZ="$PUBLISH_TZ" date +%F)
 NEXT_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
 mapfile -t TODAY_PROJECT_IDS < <(jq -r --arg d "$TODAY" \
   '.active_projects[]? | select((.publish_date // "") == $d) | (.project_id // empty)' "$SCHEDULE")
+mapfile -t EXISTING_SCHEDULED_IDS < <(jq -r \
+  '.active_projects[]? | (.project_id // empty)' "$SCHEDULE")
 log "today publish date (local $PUBLISH_TZ): $TODAY"
 log "next publish date (local $PUBLISH_TZ): $NEXT_DATE"
 log "due today projects: ${TODAY_PROJECT_IDS[*]:-none}"
+log "existing scheduled projects: ${EXISTING_SCHEDULED_IDS[*]:-none}"
 write_state "prepare" "ok" "today=$TODAY next=$NEXT_DATE due=$(IFS=,; echo "${TODAY_PROJECT_IDS[*]}")"
 
 # ===== STAGE 2: TODAY BATCH — verify native scheduling =====
@@ -345,6 +364,9 @@ else
     mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
     VALID_COUNT=0
     for pid in "${PROJECT_IDS[@]}"; do
+      if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
+        continue
+      fi
       if [ -d "$ROOT/projects/$pid" ] && [ -f "$ROOT/projects/$pid/validation_status.json" ]; then
         is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$ROOT/projects/$pid/validation_status.json" 2>/dev/null || echo false)
         if [ "$is_valid" = "true" ]; then
@@ -360,10 +382,18 @@ else
   done
 fi
 
+FILTERED_PROJECT_IDS=()
+for pid in "${PROJECT_IDS[@]}"; do
+  if [[ ! " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
+    FILTERED_PROJECT_IDS+=("$pid")
+  fi
+done
+PROJECT_IDS=("${FILTERED_PROJECT_IDS[@]}")
+
 [ "${#PROJECT_IDS[@]}" -gt 0 ] || {
   cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log "$GENERATE_LOG"
   write_state "generate" "failed"
-  fail "expected at least 1 project from generation after $GENERATION_ATTEMPT attempts"
+  fail "expected at least 1 new project from generation after $GENERATION_ATTEMPT attempts"
 }
 VALID_COUNT=0
 for pid in "${PROJECT_IDS[@]}"; do
