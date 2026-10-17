@@ -339,6 +339,13 @@ run_directors() {
     if [ -n "$CODEX_BIN" ]; then
       export CODEX_BIN
       if id node >/dev/null 2>&1; then
+        if [ -n "${OPENAI_API_KEY:-}" ] && [ -d /home/node/.codex_pipeline ]; then
+          cur_k="$(jq -r .OPENAI_API_KEY /home/node/.codex_pipeline/auth.json 2>/dev/null || true)"
+          if [ "$cur_k" != "$OPENAI_API_KEY" ]; then
+            tmp_a="$(mktemp /home/node/.codex_pipeline/auth.XXXXXX 2>/dev/null || mktemp /tmp/auth.XXXXXX)"
+            jq --arg k "$OPENAI_API_KEY" '.OPENAI_API_KEY = $k' /home/node/.codex_pipeline/auth.json > "$tmp_a" 2>/dev/null && mv "$tmp_a" /home/node/.codex_pipeline/auth.json && chown node:node /home/node/.codex_pipeline/auth.json || rm -f "$tmp_a"
+          fi
+        fi
         su node -p -s /bin/bash -c '
         export PATH="$PATH"; export HOME="/home/node"
         export PYTHONPATH="$PYTHONPATH"
@@ -347,13 +354,6 @@ run_directors() {
         export CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
         if [ -z "${OPENAI_API_KEY:-}" ] && [ -s "$CODEX_HOME/auth.json" ]; then
           export OPENAI_API_KEY="$(jq -r .OPENAI_API_KEY "$CODEX_HOME/auth.json" 2>/dev/null || true)"
-        fi
-        if [ -n "${OPENAI_API_KEY:-}" ] && [ -s "$CODEX_HOME/auth.json" ]; then
-          cur_k="$(jq -r .OPENAI_API_KEY "$CODEX_HOME/auth.json" 2>/dev/null || true)"
-          if [ "$cur_k" != "$OPENAI_API_KEY" ]; then
-            tmp_a="$(mktemp "$CODEX_HOME/auth.XXXXXX" 2>/dev/null || mktemp /tmp/auth.XXXXXX)"
-            jq --arg k "$OPENAI_API_KEY" '.OPENAI_API_KEY = $k' "$CODEX_HOME/auth.json" > "$tmp_a" 2>/dev/null && mv "$tmp_a" "$CODEX_HOME/auth.json" || rm -f "$tmp_a"
-          fi
         fi
         cd "$PROJECT_DIR"
         test -s "artifacts/research_brief.json" || exit 7
