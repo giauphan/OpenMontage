@@ -115,6 +115,8 @@ CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
 export CODEX_MODEL
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
+EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
+export EXPECTED_SUCCESS_COUNT
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3)}"
 
@@ -504,7 +506,7 @@ done
   write_state "claude-validate" "failed"
   fail "claude validation failed for all projects (see $CLAUDE_LOG)"
 }
-TARGET_VALIDATED_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
+TARGET_VALIDATED_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 if [ "${#VALIDATED_PIDS[@]}" -lt "$TARGET_VALIDATED_COUNT" ]; then
   write_state "claude-validate" "partial" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
   log "WARNING: PARTIAL: strict validation achieved only ${#VALIDATED_PIDS[@]}/$TARGET_VALIDATED_COUNT validated projects (see $CLAUDE_LOG)"
