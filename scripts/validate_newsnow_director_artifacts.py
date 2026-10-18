@@ -332,37 +332,52 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
         "total_duration_seconds": 68.0,
         "sections": [
             {
+                "id": "intro",
                 "section_id": "intro",
                 "text": f"Tin tức công nghệ AI: {title_nfc}. Đây là bước tiến công nghệ đột phá mới nhất vừa được công bố.",
                 "text_vi": f"Tin tức công nghệ AI: {title_nfc}. Đây là bước tiến công nghệ đột phá mới nhất vừa được công bố.",
+                "start_seconds": 0.0,
+                "end_seconds": 12.0,
                 "duration_seconds": 12.0,
                 "scene_type": "title"
             },
             {
+                "id": "context",
                 "section_id": "context",
                 "text": f"{summary_nfc} Giải pháp này giải quyết triệt để các hạn chế cố hữu trước đây trong vận hành và triển khai thực tế.",
                 "text_vi": f"{summary_nfc} Giải pháp này giải quyết triệt để các hạn chế cố hữu trước đây trong vận hành và triển khai thực tế.",
+                "start_seconds": 12.0,
+                "end_seconds": 26.0,
                 "duration_seconds": 14.0,
                 "scene_type": "context"
             },
             {
+                "id": "details",
                 "section_id": "details",
                 "text": f"{detail_nfc} Hệ thống mang lại khả năng mở rộng linh hoạt, tối ưu chi phí hạ tầng và nâng cao độ chính xác xử lý dữ liệu.",
                 "text_vi": f"{detail_nfc} Hệ thống mang lại khả năng mở rộng linh hoạt, tối ưu chi phí hạ tầng và nâng cao độ chính xác xử lý dữ liệu.",
+                "start_seconds": 26.0,
+                "end_seconds": 42.0,
                 "duration_seconds": 16.0,
                 "scene_type": "details"
             },
             {
+                "id": "impact",
                 "section_id": "impact",
                 "text": "Điểm đột phá công nghệ này mở ra tiềm năng ứng dụng to lớn trong tự động hóa, chuyển đổi số doanh nghiệp và phát triển các hệ thống thông minh thế hệ mới.",
                 "text_vi": "Điểm đột phá công nghệ này mở ra tiềm năng ứng dụng to lớn trong tự động hóa, chuyển đổi số doanh nghiệp và phát triển các hệ thống thông minh thế hệ mới.",
+                "start_seconds": 42.0,
+                "end_seconds": 56.0,
                 "duration_seconds": 14.0,
                 "scene_type": "impact"
             },
             {
+                "id": "conclusion",
                 "section_id": "conclusion",
                 "text": "Sự phát triển vượt bậc này sẽ định hình tương lai ngành công nghệ trong thời gian tới. Hãy theo dõi chúng tôi để cập nhật những tiến bộ công nghệ mới nhất mỗi ngày.",
                 "text_vi": "Sự phát triển vượt bậc này sẽ định hình tương lai ngành công nghệ trong thời gian tới. Hãy theo dõi chúng tôi để cập nhật những tiến bộ công nghệ mới nhất mỗi ngày.",
+                "start_seconds": 56.0,
+                "end_seconds": 68.0,
                 "duration_seconds": 12.0,
                 "scene_type": "conclusion"
             }

@@ -337,6 +337,18 @@ def main() -> int:
         help="ffmpeg binary used for decode-level audio/video content checks",
     )
     parser.add_argument("--min-duration", type=float, default=5.0)
+    parser.add_argument(
+        "--full-min-duration",
+        type=float,
+        default=None,
+        help="Minimum duration in seconds for full render (overrides --min-duration for full)",
+    )
+    parser.add_argument(
+        "--reels-min-duration",
+        type=float,
+        default=None,
+        help="Minimum duration in seconds for reels render (overrides --min-duration for reels)",
+    )
     parser.add_argument("--tolerance", type=float, default=3.0)
     parser.add_argument("--reels-max-duration", type=float, default=None)
     parser.add_argument(
@@ -361,12 +373,15 @@ def main() -> int:
     full_narration = resolve_narration(args.project_dir, "narration.mp3")
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
 
+    full_min = args.full_min_duration if args.full_min_duration is not None else args.min_duration
+    reels_min = args.reels_min_duration if args.reels_min_duration is not None else args.min_duration
+
     renders = (
-        ("full", FULL_RENDER, full_narration, None),
-        ("reels", REELS_RENDER, reels_narration, args.reels_max_duration),
+        ("full", FULL_RENDER, full_narration, full_min, None),
+        ("reels", REELS_RENDER, reels_narration, reels_min, args.reels_max_duration),
     )
     errors: list[str] = []
-    for render_kind, render_name, narration, max_duration in renders:
+    for render_kind, render_name, narration, min_dur, max_duration in renders:
         if args.render and render_kind != args.render:
             continue
         errors.extend(
@@ -375,7 +390,7 @@ def main() -> int:
                 narration,
                 args.ffprobe,
                 ffmpeg,
-                args.min_duration,
+                min_dur,
                 args.tolerance,
                 PORTRAIT_DIMENSIONS,
                 max_duration,
@@ -396,7 +411,7 @@ def main() -> int:
             if repair_proc.returncode == 0:
                 # Re-run validation checks without further auto-repair
                 errors = []
-                for render_kind, render_name, narration, max_duration in renders:
+                for render_kind, render_name, narration, min_dur, max_duration in renders:
                     if args.render and render_kind != args.render:
                         continue
                     errors.extend(
@@ -405,7 +420,7 @@ def main() -> int:
                             narration,
                             args.ffprobe,
                             ffmpeg,
-                            args.min_duration,
+                            min_dur,
                             args.tolerance,
                             PORTRAIT_DIMENSIONS,
                             max_duration,

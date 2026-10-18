@@ -28,7 +28,7 @@ Content & Quality for both:
 - CSS sizing must load fit-content; never use fixed width/height container constraints that silently clip dynamic text. Use CSS: `width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box; display: inline-block; padding: 10px 20px;`
 - High-contrast visual plates ensuring the final composition meets strict 0.5000% edge-density QA gates.
 - GSAP Scene Transitions & Audio-Visual Sync:
-  * In script_vi.json, ensure exact non-overlapping section timestamps across 5 distinct scenes totaling 60-75s (e.g. section 1: 0.0s to 12.0s, section 2: 12.0s to 26.0s, section 3: 26.0s to 42.0s, section 4: 42.0s to 56.0s, section 5: 56.0s to 68.0s).
+  * In script_vi.json, ensure exact non-overlapping section timestamps across 5 distinct scenes: intro (0.0s to 12.0s), context (12.0s to 26.0s), details (26.0s to 42.0s), impact (42.0s to 56.0s), conclusion (56.0s to 68.0s) totaling 60-75s.
   * In HTML & GSAP, every scene's entrance MUST strictly match its script section start time. If section 2 starts at 12.0s, scene 2 GSAP animations and entrance MUST start at 12.0s (NOT arbitrary or guessed times).
   * Scene 1 must stay visible until Scene 2 starts: e.g. `tl.to("#scene-1", {opacity: 0, duration: 0.3}, 12.0)`. NEVER fade out a scene before the next scene enters. A frame sampled at any random second must display rich headlines, cards, and text — NEVER a blank or black canvas.
 - Layout & Footer Collision Prevention:
