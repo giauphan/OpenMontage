@@ -1,5 +1,5 @@
 hooks:
-  enabled: false
+  enabled: true
   mode: auto              # off | auto | required
   strict_body_edl: true
   default_strategy: overlay_only

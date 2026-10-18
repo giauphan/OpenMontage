@@ -185,6 +185,37 @@ def _validate_hook_plan_status(
     hook_plan = artifacts.get("hook_plan")
     policy_mode = policy.mode if policy else "off"
 
+    # HookGuard policy only applies if policy is enabled/active
+    if not policy or not policy.is_active():
+        if not hook_plan:
+            return
+
+    # Check whether this pipeline supports hook_plan
+    is_hook_pipeline = False
+    if pipeline_type:
+        if pipeline_type == "clip-factory":
+            is_hook_pipeline = True
+        else:
+            try:
+                from lib.pipeline_loader import load_pipeline_readonly
+                manifest = load_pipeline_readonly(pipeline_type)
+                for st_def in manifest.get("stages", {}).values():
+                    if isinstance(st_def, dict) and (
+                        "hook_plan" in st_def.get("produces", [])
+                        or "hook_plan" in st_def.get("optional_artifacts_in", [])
+                        or "hook_plan" in st_def.get("required_artifacts_in", [])
+                    ):
+                        is_hook_pipeline = True
+                        break
+            except Exception:
+                is_hook_pipeline = False
+    else:
+        is_hook_pipeline = bool(hook_plan)
+
+    # Non-hook pipelines without hook_plan should never be blocked
+    if not is_hook_pipeline and not hook_plan:
+        return
+
     # If policy mode is required, edit stage must include hook_plan with PASS
     if policy_mode == "required" and stage == "edit" and status in {"completed", "awaiting_human"}:
         if not hook_plan:

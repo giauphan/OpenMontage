@@ -233,11 +233,20 @@ def test_canonical_edl_preroll_normalization():
 
 # --- Policy and Checkpoint Tests ---
 
-def test_policy_loading_defaults():
-    policy = load_hook_policy()
+def test_policy_loading_defaults(tmp_path):
+    empty_cfg = tmp_path / "empty.yaml"
+    empty_cfg.write_text("hooks: {}\n")
+    policy = load_hook_policy(config_path=empty_cfg)
     assert policy.enabled is False
     assert policy.mode == "off"
     assert policy.is_active() is False
+
+
+def test_policy_loading_active_from_profiles():
+    policy = load_hook_policy()
+    assert policy.enabled is True
+    assert policy.mode == "auto"
+    assert policy.is_active() is True
 
 
 def test_policy_loading_env_overrides(monkeypatch):
