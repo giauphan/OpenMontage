@@ -87,7 +87,7 @@ def evaluate_hook_guard(
             diagnostics["preroll"] = "allow_preroll is False in policy"
         preroll_span = candidate.get("preroll_span", {})
         added_duration = float(preroll_span.get("added_duration_seconds", hook_duration))
-        if policy.max_added_duration_seconds is not None and added_duration > policy.max_added_duration_seconds:
+        if added_duration > policy.max_added_duration_seconds:
             reason_codes.append("REJECTED_DURATION_BUDGET_EXCEEDED")
             diagnostics["duration_budget"] = {
                 "added_duration": added_duration,

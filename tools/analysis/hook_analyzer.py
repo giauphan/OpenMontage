@@ -280,6 +280,10 @@ class HookAnalyzer(BaseTool):
         if found_problem:
             p_text = f"The biggest mistake: {found_problem[:45]}"
             claim_text = found_problem
+        elif transcript:
+            first_line = transcript.split(".")[0].strip()
+            p_text = f"The common mistake with {topic}"
+            claim_text = first_line or f"Key considerations in {topic}"
         else:
             p_text = f"The common mistake with {topic}"
             claim_text = f"Addressing key problems in {topic}"
@@ -311,6 +315,19 @@ class HookAnalyzer(BaseTool):
         cand_idx += 1
 
         # 3. Solution First
+        solution_keywords = ["solution", "fix", "how to", "master", "technique", "key", "tip", "rule", "step", "pacing", "faster", "better", "use", "make"]
+        found_solution = None
+        if transcript:
+            for line in re.split(r"[.!?]", transcript):
+                line_str = line.strip()
+                if any(kw in line_str.lower() for kw in solution_keywords):
+                    found_solution = line_str
+                    break
+            if not found_solution:
+                found_solution = transcript.split(".")[0].strip()
+
+        claim_sol = found_solution if found_solution else f"Techniques and solutions for {topic}"
+
         candidates.append({
             "id": f"cand-{cand_idx}",
             "intent": "solution_first",
@@ -323,7 +340,7 @@ class HookAnalyzer(BaseTool):
                     "source_id": source_id,
                     "start_seconds": 0.0,
                     "end_seconds": window_duration,
-                    "claim": f"Techniques and solutions for {topic}",
+                    "claim": claim_sol,
                 }
             ],
             "rank_features": {
@@ -344,10 +361,8 @@ class HookAnalyzer(BaseTool):
             dp_claim = dp.get("claim", "")
             if dp_claim:
                 ev_dp: dict[str, Any] = {
-                    "kind": "transcript" if transcript else "script",
-                    "source_id": source_id,
-                    "start_seconds": 0.0,
-                    "end_seconds": window_duration,
+                    "kind": "external_source",
+                    "source_id": dp.get("source_id", "data_point"),
                     "claim": dp_claim,
                 }
                 if dp.get("source_url"):
@@ -375,17 +390,17 @@ class HookAnalyzer(BaseTool):
         if external_news:
             news_item = external_news[0]
             headline = news_item.get("claim") or news_item.get("headline", "")
-            if headline and news_item.get("source_url"):
+            pub_date = news_item.get("publication_date")
+            event_date = news_item.get("event_date")
+            if headline and news_item.get("source_url") and (pub_date or event_date):
                 ev_news: dict[str, Any] = {
                     "kind": "external_source",
                     "source_id": "news_source",
                     "claim": headline,
                     "source_url": news_item.get("source_url"),
+                    **({"publication_date": pub_date} if pub_date else {}),
+                    **({"event_date": event_date} if event_date else {}),
                 }
-                if news_item.get("publication_date"):
-                    ev_news["publication_date"] = news_item["publication_date"]
-                if news_item.get("event_date"):
-                    ev_news["event_date"] = news_item["event_date"]
                 candidates.append({
                     "id": f"cand-{cand_idx}",
                     "intent": "news_first",

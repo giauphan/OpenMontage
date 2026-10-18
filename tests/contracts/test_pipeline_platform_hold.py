@@ -299,3 +299,28 @@ def test_schedule_today_native_skips_held_platforms(monkeypatch):
          patch("scripts.schedule_today_native.load_config", return_value=mock_cfg):
         ret = stn_main()
     assert ret == 0
+
+
+def test_cleanup_eligibility_blocks_when_held_routes_pending(tmp_path: Path, monkeypatch):
+    """Verify that cleanup fails when a candidate platform is held and still unpublished."""
+    pdir = tmp_path / "projects" / "cand_partial_hold"
+    pdir.mkdir(parents=True)
+    (pdir / "publish_metadata.json").write_text(
+        json.dumps({
+            "id": "cand_partial_hold",
+            "title": "Title",
+            "description": "Desc",
+            "yt_shorts": "renders/final_reels_vi_9x16.mp4",
+            "ig_reels": "renders/final_reels_vi_9x16.mp4",
+        }),
+        encoding="utf-8",
+    )
+    # Hold only Instagram; YouTube is active but unpublished
+    monkeypatch.setenv("HOLD_PLATFORMS", "ig")
+    eligible, reason, _ = is_project_eligible_for_cleanup(
+        "cand_partial_hold",
+        project_dir=pdir,
+        root=tmp_path,
+    )
+    assert eligible is False
+    assert "held_routes_pending" in reason

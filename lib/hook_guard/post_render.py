@@ -67,10 +67,9 @@ def check_first_seconds_black(video_path: Path | str, max_check_seconds: float =
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        for m in re.finditer(r"black_start:([\d.]+)\s+(?:black_end:([\d.]+)|black_duration:([\d.]+))", proc.stderr):
-            start = float(m.group(1))
-            end = float(m.group(2)) if m.group(2) is not None else start + float(m.group(3))
-            if start <= 0.05 and end >= max_check_seconds - 0.15:
+        for m in re.finditer(r"black_start:([\d.]+)\s+black_end:([\d.]+)", proc.stderr):
+            start, end = float(m.group(1)), float(m.group(2))
+            if start <= 0.05 and end >= max_check_seconds - 0.1:
                 return True
         return False
     except Exception:

@@ -334,6 +334,26 @@ def is_project_eligible_for_cleanup(
         except Exception:
             store = None
 
+    candidate_enabled_routes = get_required_routes_for_project(
+        project_id,
+        project_dir=resolved_dir if (resolved_dir and resolved_dir.is_dir()) else None,
+        metadata=meta,
+        ignore_held=True,
+        enabled_platforms=enabled_platforms,
+    )
+    held_routes = [r for r in candidate_enabled_routes if r not in required_routes]
+    if held_routes:
+        if store is not None and pub_date:
+            unpub_held = []
+            for hp, hk in held_routes:
+                h_rec = store.get(publish_key(pub_date, project_id, hp, hk))
+                if not h_rec or h_rec.get("status") != "published":
+                    unpub_held.append((hp, hk))
+            if unpub_held:
+                return False, f"held_routes_pending: {unpub_held}", meta
+        else:
+            return False, f"held_routes_pending: {held_routes}", meta
+
     has_active_store_records = False
     all_store_published = True
     missing_or_incomplete = []
