@@ -183,7 +183,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID" >&2
       exit 1
     fi
-    local reels_cap=58
+    local reels_cap=59.5
     if awk "BEGIN{exit !($narration_duration > $reels_cap)}"; then
       "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
         || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"

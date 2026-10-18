@@ -759,7 +759,7 @@ materialize_hyperframes_assets() {
   validate_project_background_music "$project_root" "$PROJECT_ID" || return 1
   # Reels/Shorts must stay under the 60s platform limit. Derive a capped
   # narration for the reels composition so its aligned timeline is <=60s.
-  local reels_cap=58
+  local reels_cap=59.5
   if awk -v d="$narration_duration" -v c="$reels_cap" 'BEGIN{exit !(d > c)}'; then
     "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
       || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"

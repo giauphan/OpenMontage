@@ -37,7 +37,7 @@ def main():
                 [FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(narration)],
                 capture_output=True, text=True
             )
-            duration = 60.0
+            duration = 68.0
             if result.returncode == 0:
                 try:
                     duration = float(json.loads(result.stdout)["format"]["duration"])

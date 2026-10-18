@@ -317,6 +317,11 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
     if check_vietnamese_prose(summary_nfc):
         summary_nfc = "Phát triển đột phá trong hệ sinh thái trí tuệ nhân tạo và công nghệ hiện đại."
 
+    detail_claim = claims[2] if len(claims) > 2 else "Công nghệ này áp dụng các thuật toán tối ưu hóa tiên tiến, kết hợp khả năng xử lý song song tốc độ cao."
+    detail_nfc = _ud.normalize("NFC", detail_claim[:180])
+    if check_vietnamese_prose(detail_nfc):
+        detail_nfc = "Công nghệ này áp dụng các thuật toán tối ưu hóa tiên tiến, kết hợp khả năng xử lý song song tốc độ cao."
+
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     canonical_script = artifacts_dir / "script_vi.json"
@@ -324,34 +329,41 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
     script_data = {
         "version": "1.0",
         "title": title_nfc,
-        "total_duration_seconds": 36.0,
+        "total_duration_seconds": 68.0,
         "sections": [
             {
                 "section_id": "intro",
-                "text": f"Tin tức công nghệ AI: {title_nfc}.",
-                "text_vi": f"Tin tức công nghệ AI: {title_nfc}.",
-                "duration_seconds": 8.0,
+                "text": f"Tin tức công nghệ AI: {title_nfc}. Đây là bước tiến công nghệ đột phá mới nhất vừa được công bố.",
+                "text_vi": f"Tin tức công nghệ AI: {title_nfc}. Đây là bước tiến công nghệ đột phá mới nhất vừa được công bố.",
+                "duration_seconds": 12.0,
                 "scene_type": "title"
             },
             {
                 "section_id": "context",
-                "text": summary_nfc,
-                "text_vi": summary_nfc,
-                "duration_seconds": 10.0,
+                "text": f"{summary_nfc} Giải pháp này giải quyết triệt để các hạn chế cố hữu trước đây trong vận hành và triển khai thực tế.",
+                "text_vi": f"{summary_nfc} Giải pháp này giải quyết triệt để các hạn chế cố hữu trước đây trong vận hành và triển khai thực tế.",
+                "duration_seconds": 14.0,
                 "scene_type": "context"
             },
             {
                 "section_id": "details",
-                "text": "Điểm đột phá công nghệ này mang lại giá trị thực tiễn và tối ưu hóa vượt trội.",
-                "text_vi": "Điểm đột phá công nghệ này mang lại giá trị thực tiễn và tối ưu hóa vượt trội.",
-                "duration_seconds": 10.0,
+                "text": f"{detail_nfc} Hệ thống mang lại khả năng mở rộng linh hoạt, tối ưu chi phí hạ tầng và nâng cao độ chính xác xử lý dữ liệu.",
+                "text_vi": f"{detail_nfc} Hệ thống mang lại khả năng mở rộng linh hoạt, tối ưu chi phí hạ tầng và nâng cao độ chính xác xử lý dữ liệu.",
+                "duration_seconds": 16.0,
                 "scene_type": "details"
             },
             {
+                "section_id": "impact",
+                "text": "Điểm đột phá công nghệ này mở ra tiềm năng ứng dụng to lớn trong tự động hóa, chuyển đổi số doanh nghiệp và phát triển các hệ thống thông minh thế hệ mới.",
+                "text_vi": "Điểm đột phá công nghệ này mở ra tiềm năng ứng dụng to lớn trong tự động hóa, chuyển đổi số doanh nghiệp và phát triển các hệ thống thông minh thế hệ mới.",
+                "duration_seconds": 14.0,
+                "scene_type": "impact"
+            },
+            {
                 "section_id": "conclusion",
-                "text": "Hãy theo dõi chúng tôi để cập nhật những tiến bộ công nghệ mới nhất mỗi ngày.",
-                "text_vi": "Hãy theo dõi chúng tôi để cập nhật những tiến bộ công nghệ mới nhất mỗi ngày.",
-                "duration_seconds": 8.0,
+                "text": "Sự phát triển vượt bậc này sẽ định hình tương lai ngành công nghệ trong thời gian tới. Hãy theo dõi chúng tôi để cập nhật những tiến bộ công nghệ mới nhất mỗi ngày.",
+                "text_vi": "Sự phát triển vượt bậc này sẽ định hình tương lai ngành công nghệ trong thời gian tới. Hãy theo dõi chúng tôi để cập nhật những tiến bộ công nghệ mới nhất mỗi ngày.",
+                "duration_seconds": 12.0,
                 "scene_type": "conclusion"
             }
         ]
@@ -364,7 +376,7 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
         hf_dir.mkdir(parents=True, exist_ok=True)
         html_file = hf_dir / "index.html"
         
-        duration = 32.0 if is_reels else 36.0
+        duration = 59.5 if is_reels else 68.0
         html_content = f"""<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -484,16 +496,20 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
         <div class="brand-name">TIN TỨC CÔNG NGHỆ AI</div>
     </div>
     <div id="context" class="scene" data-scene-id="context">
-        <div class="section-header">TỔNG QUAN ĐỘT PHÁ</div>
+        <div class="section-header">BỐI CẢNH & THÁCH THỨC</div>
         <div class="body-text">{summary_nfc}</div>
     </div>
     <div id="details" class="scene" data-scene-id="details">
+        <div class="section-header">KIẾN TRÚC & ĐỘT PHÁ</div>
+        <div class="highlight-text">{detail_nfc}</div>
+    </div>
+    <div id="impact" class="scene" data-scene-id="impact">
         <div class="section-header">TÁC ĐỘNG THỰC TIỄN</div>
-        <div class="highlight-text">Tối ưu hóa hiệu năng và mở rộng ứng dụng trong hệ sinh thái số hiện đại</div>
+        <div class="body-text">Mở ra tiềm năng ứng dụng to lớn trong tự động hóa và phát triển hệ sinh thái số hiện đại</div>
     </div>
     <div id="conclusion" class="scene" data-scene-id="conclusion">
         <div class="title-large">ĐỒNG HÀNH CÙNG CÔNG NGHỆ</div>
-        <div class="footer-text">Cập nhật xu hướng AI mỗi ngày</div>
+        <div class="footer-text">Cập nhật những xu hướng và phân tích công nghệ AI mỗi ngày</div>
     </div>
     </div>
     <script>
@@ -502,7 +518,7 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
         window.__timelines['main'] = tl;
         tl.set(".scene:not(#intro)", {{ opacity: 0 }});
         const dur = {duration};
-        const sDur = dur / 4;
+        const sDur = dur / 5;
 
         tl.to("#intro", {{duration: 0.5, opacity: 1, scale: 1.05}})
           .to("#intro .title-large", {{duration: 2.0, opacity: 1, y: -20}}, "-=0.3")
@@ -521,6 +537,12 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
           .to("#details .highlight-text", {{duration: 2.5, opacity: 1, y: 20}}, "-=2.0")
           .to("#details", {{duration: sDur - 3.0, scale: 1.08}})
           .to("#details", {{duration: 0.5, opacity: 0}})
+
+          .to("#impact", {{duration: 0.5, opacity: 1, scale: 1.05}})
+          .to("#impact .section-header", {{duration: 2.0, opacity: 1, y: -20}}, "-=0.3")
+          .to("#impact .body-text", {{duration: 2.5, opacity: 1, y: 20}}, "-=2.0")
+          .to("#impact", {{duration: sDur - 3.0, scale: 1.08}})
+          .to("#impact", {{duration: 0.5, opacity: 0}})
 
           .to("#conclusion", {{duration: 0.5, opacity: 1, scale: 1.05}})
           .to("#conclusion .title-large", {{duration: 2.0, opacity: 1, y: -20}}, "-=0.3")
