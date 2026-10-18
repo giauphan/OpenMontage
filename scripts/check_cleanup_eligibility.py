@@ -199,6 +199,7 @@ def is_project_eligible_for_cleanup(
     date: str | None = None,
     config_path: Path | None = None,
     root: Path | None = None,
+    held_platforms: set[str] | list[str] | str | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     """Verify if a project is fully published across all required destinations and eligible for cleanup.
     
@@ -310,8 +311,17 @@ def is_project_eligible_for_cleanup(
         project_id,
         project_dir=resolved_dir if (resolved_dir and resolved_dir.is_dir()) else None,
         metadata=meta,
+        held_platforms=held_platforms,
     )
     if not required_routes:
+        all_routes = get_required_routes_for_project(
+            project_id,
+            project_dir=resolved_dir if (resolved_dir and resolved_dir.is_dir()) else None,
+            metadata=meta,
+            ignore_held=True,
+        )
+        if all_routes:
+            return False, "all_candidate_routes_currently_held", {}
         return False, "no_required_routes_identified_fail_closed", {}
 
     # 5. Check PublishStore if available (STRICTLY READ-ONLY - R2)
@@ -478,15 +488,45 @@ def main() -> int:
         action="store_true",
         help="Non-deleting reconciliation: query existing remote status for scheduled records and persist authoritative evidence. Never uploads or deletes.",
     )
+    parser.add_argument(
+        "--hold-platform",
+        action="append",
+        default=[],
+        dest="hold_platforms_list",
+        help="Hold (pause/skip) publishing to specific platform (e.g. ig, fb, tiktok, ytb). Can be repeated.",
+    )
+    parser.add_argument(
+        "--hold-platforms",
+        type=str,
+        default="",
+        help="Comma-separated platforms to hold (e.g. 'ig,fb,tiktok,ytb')",
+    )
+    parser.add_argument("--hold-ig", action="store_true", help="Hold Instagram publishing")
+    parser.add_argument("--hold-fb", action="store_true", help="Hold Facebook publishing")
+    parser.add_argument("--hold-tiktok", action="store_true", help="Hold TikTok publishing")
+    parser.add_argument("--hold-ytb", action="store_true", help="Hold YouTube publishing")
     args = parser.parse_args()
 
+    cli_held: list[str] = list(args.hold_platforms_list)
+    if args.hold_platforms:
+        cli_held.append(args.hold_platforms)
+    if args.hold_ig:
+        cli_held.append("instagram")
+    if args.hold_fb:
+        cli_held.append("facebook")
+    if args.hold_tiktok:
+        cli_held.append("tiktok")
+    if args.hold_ytb:
+        cli_held.append("youtube")
+
     if args.reconcile:
-        return _run_reconciliation(args.pid, args.date)
+        return _run_reconciliation(args.pid, args.date, held_platforms=cli_held)
 
     eligible, reason, _ = is_project_eligible_for_cleanup(
         args.pid,
         project_dir=Path(args.dir) if args.dir else None,
         date=args.date,
+        held_platforms=cli_held,
     )
     if eligible:
         print(f"ELIGIBLE: {args.pid} ({reason})")
@@ -496,7 +536,11 @@ def main() -> int:
         return 1
 
 
-def _run_reconciliation(project_id: str, date: str | None) -> int:
+def _run_reconciliation(
+    project_id: str,
+    date: str | None,
+    held_platforms: set[str] | list[str] | str | None = None,
+) -> int:
     """Canonical, non-deleting reconciliation path (Finding 3).
 
     Queries existing remote publication status for scheduled records and persists
@@ -515,7 +559,7 @@ def _run_reconciliation(project_id: str, date: str | None) -> int:
         print(f"RECONCILE_BLOCKED: PublishStore unavailable ({exc})", file=sys.stderr)
         return 2
 
-    routes = get_required_routes_for_project(project_id)
+    routes = get_required_routes_for_project(project_id, held_platforms=held_platforms)
     if not routes:
         print(f"RECONCILE_SKIP: no required routes identified for {project_id}")
         return 0

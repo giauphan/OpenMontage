@@ -13,7 +13,13 @@ from zoneinfo import ZoneInfo
 ROOT = Path(os.environ.get("OPENMONTAGE_ROOT") or Path(__file__).resolve().parents[1])
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from scripts.publish_config import load_config, publish_timezone
+from scripts.publish_config import (
+    load_config,
+    publish_timezone,
+    canonical_platform_name,
+    get_held_platforms,
+    is_platform_held,
+)
 from scripts.validate_publish_metadata import validate_metadata
 from tools.news import template_provenance
 from tools.publish_store import PublishStore
@@ -84,7 +90,37 @@ def _template_provenance_gate(project_dir) -> tuple[bool, str | None, str | None
 def main():
     parser = argparse.ArgumentParser(description="Same-day native scheduler for queued slots")
     parser.add_argument("--date", help="Override local date YYYY-MM-DD (default today)")
+    parser.add_argument(
+        "--hold-platform",
+        action="append",
+        default=[],
+        dest="hold_platforms_list",
+        help="Hold (pause/skip) publishing to specific platform (e.g. ig, fb, tiktok, ytb). Can be repeated.",
+    )
+    parser.add_argument(
+        "--hold-platforms",
+        type=str,
+        default="",
+        help="Comma-separated platforms to hold (e.g. 'ig,fb,tiktok,ytb')",
+    )
+    parser.add_argument("--hold-ig", action="store_true", help="Hold Instagram publishing")
+    parser.add_argument("--hold-fb", action="store_true", help="Hold Facebook publishing")
+    parser.add_argument("--hold-tiktok", action="store_true", help="Hold TikTok publishing")
+    parser.add_argument("--hold-ytb", action="store_true", help="Hold YouTube publishing")
     args = parser.parse_args()
+
+    cli_held: list[str] = list(args.hold_platforms_list)
+    if args.hold_platforms:
+        cli_held.append(args.hold_platforms)
+    if args.hold_ig:
+        cli_held.append("instagram")
+    if args.hold_fb:
+        cli_held.append("facebook")
+    if args.hold_tiktok:
+        cli_held.append("tiktok")
+    if args.hold_ytb:
+        cli_held.append("youtube")
+
     cfg = load_config()
     tz = ZoneInfo(cfg["timezone"])
     yt_account = cfg["youtube"]["account"]
@@ -179,45 +215,52 @@ def main():
         if isinstance(ig_rel, dict):
             ig_rel = ig_rel.get("path") or ig_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
         ig_account = cfg.get("instagram", {}).get("account_id") or cfg.get("meta", {}).get("ig_account_id")
-        asset_path = project_dir / yt_rel if yt_rel else None
-        if not asset_path or not asset_path.is_file():
-            print(f"failed {proj}: missing YouTube asset file {asset_path}")
-            failed = True
-            continue
         scheduled_for = publish_at.isoformat()
-        yt_key = None; yt_claimed = False
+
         # YT
-        if yt_rel and (project_dir / yt_rel).is_file():
-            yt_key, yt_claimed,_ = store.claim(
-                date=date,
-                topic=topic_meta["id"],
-                platform="youtube",
-                account=yt_account,
-                kind="short",
-                status="scheduling",
-                title=topic_meta["title"],
-                asset_path=project_dir/yt_rel,
-                scheduled_for=scheduled_for,
-                content_hash=content_hash,
-                template_id=template_id,
-            )
-        if yt_claimed:
-            try:
-                payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
-                r = YoutubePublisher().execute(payload)
-                if r.success:
-                    store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
-                    print(f"YT scheduled {proj} {scheduled_for}")
-                else:
-                    store.mark_failed(yt_key, r.error)
-                    print(f"YT failed {proj}: {r.error}")
-                    failed = True
-            except Exception as e:
-                store.mark_failed(yt_key, str(e))
-                print(f"YT error {proj}: {e}")
+        if is_platform_held("youtube", cfg=cfg, extra_held=cli_held):
+            print(f"⏸️ HOLD: Skipping YouTube scheduling for {proj} (held by pipeline flag/env)")
+        else:
+            asset_path = project_dir / yt_rel if yt_rel else None
+            if not asset_path or not asset_path.is_file():
+                print(f"failed {proj}: missing YouTube asset file {asset_path}")
                 failed = True
+                continue
+            yt_key = None; yt_claimed = False
+            if yt_rel and (project_dir / yt_rel).is_file():
+                yt_key, yt_claimed,_ = store.claim(
+                    date=date,
+                    topic=topic_meta["id"],
+                    platform="youtube",
+                    account=yt_account,
+                    kind="short",
+                    status="scheduling",
+                    title=topic_meta["title"],
+                    asset_path=project_dir/yt_rel,
+                    scheduled_for=scheduled_for,
+                    content_hash=content_hash,
+                    template_id=template_id,
+                )
+            if yt_claimed:
+                try:
+                    payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
+                    r = YoutubePublisher().execute(payload)
+                    if r.success:
+                        store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
+                        print(f"YT scheduled {proj} {scheduled_for}")
+                    else:
+                        store.mark_failed(yt_key, r.error)
+                        print(f"YT failed {proj}: {r.error}")
+                        failed = True
+                except Exception as e:
+                    store.mark_failed(yt_key, str(e))
+                    print(f"YT error {proj}: {e}")
+                    failed = True
+
         # Schedule Instagram Reels
-        if ig_account and ig_rel and (project_dir / ig_rel).is_file():
+        if is_platform_held("instagram", cfg=cfg, extra_held=cli_held):
+            print(f"⏸️ HOLD: Skipping Instagram scheduling for {proj} (held by pipeline flag/env)")
+        elif ig_account and ig_rel and (project_dir / ig_rel).is_file():
             ig_key, ig_claimed,_ = store.claim(
                 date=date,
                 topic=topic_meta["id"],

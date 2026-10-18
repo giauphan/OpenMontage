@@ -53,6 +53,42 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 # STRICT_HEARTBEAT_TRAPS_END
 
+# Parse hold flags if provided
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --hold-platform)
+      HOLD_PLATFORMS="${HOLD_PLATFORMS:+${HOLD_PLATFORMS},}$2"
+      shift 2
+      ;;
+    --hold-platforms|--hold-pipeline)
+      HOLD_PLATFORMS="${HOLD_PLATFORMS:+${HOLD_PLATFORMS},}$2"
+      shift 2
+      ;;
+    --hold-ig)
+      HOLD_PLATFORMS="${HOLD_PLATFORMS:+${HOLD_PLATFORMS},}instagram"
+      shift
+      ;;
+    --hold-fb)
+      HOLD_PLATFORMS="${HOLD_PLATFORMS:+${HOLD_PLATFORMS},}facebook"
+      shift
+      ;;
+    --hold-tiktok)
+      HOLD_PLATFORMS="${HOLD_PLATFORMS:+${HOLD_PLATFORMS},}tiktok"
+      shift
+      ;;
+    --hold-ytb)
+      HOLD_PLATFORMS="${HOLD_PLATFORMS:+${HOLD_PLATFORMS},}youtube"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [ -n "${HOLD_PLATFORMS:-}" ]; then
+  export HOLD_PLATFORMS
+fi
+
 export FACEBOOK_PUBLISH_ENABLED=0
 
 # Codex pipeline profile: resolved and validated by scripts/codex_agent_validation.py.

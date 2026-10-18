@@ -21,7 +21,13 @@ ROOT = Path(os.environ.get("OPENMONTAGE_ROOT") or Path(__file__).resolve().paren
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.publish_config import load_config, publish_timezone
+from scripts.publish_config import (
+    load_config,
+    publish_timezone,
+    canonical_platform_name,
+    get_held_platforms,
+    is_platform_held,
+)
 
 try:
     from dotenv import load_dotenv
@@ -286,6 +292,7 @@ def deactivate_project(
     store=None,
     date: str | None = None,
     instagram_mode: bool = False,
+    held_platforms: set[str] | list[str] | str | None = None,
 ) -> bool:
     """Safely deactivate published project from schedule and delete its media directory.
     
@@ -385,6 +392,7 @@ def deactivate_project(
             req_routes = get_required_routes_for_project(
                 project_id,
                 project_dir=resolved_dir if resolved_dir.is_dir() else None,
+                held_platforms=held_platforms,
             )
             if req_routes:
                 reconcile_project_publications(store, project_id, pub_date, req_routes)
@@ -398,6 +406,7 @@ def deactivate_project(
             date=pub_date,
             config_path=CONFIG,
             root=ROOT,
+            held_platforms=held_platforms,
         )
         if not eligible:
             print(f"Project retained: {reason} for {project_id}")
@@ -494,14 +503,51 @@ def main() -> int:
     parser.add_argument("--retry-failed", action="store_true", help="Retry failed Firebase records")
     parser.add_argument("--slot", help="Run only queued VN slot (e.g. 09:15, 14:15, 19:15, 21:15, 23:30)")
     parser.add_argument("--date", help="Filter projects by exactly this YYYY-MM-DD date and pass to publisher")
-    parser.add_argument("--only-platform", choices=["youtube", "facebook", "instagram"], help="Limit publishing to one platform")
+    parser.add_argument("--only-platform", type=str, default=None, help="Limit publishing to one platform (e.g. ig, fb, tiktok, ytb)")
     parser.add_argument("--include-overdue", action="store_true", help="Include uncompleted overdue projects from earlier slots")
+    parser.add_argument(
+        "--hold-platform",
+        action="append",
+        default=[],
+        dest="hold_platforms_list",
+        help="Hold (pause/skip) publishing to specific platform (e.g. ig, fb, tiktok, ytb). Can be repeated.",
+    )
+    parser.add_argument(
+        "--hold-platforms",
+        type=str,
+        default="",
+        help="Comma-separated platforms to hold (e.g. 'ig,fb,tiktok,ytb')",
+    )
+    parser.add_argument("--hold-ig", action="store_true", help="Hold Instagram publishing")
+    parser.add_argument("--hold-fb", action="store_true", help="Hold Facebook publishing")
+    parser.add_argument("--hold-tiktok", action="store_true", help="Hold TikTok publishing")
+    parser.add_argument("--hold-ytb", action="store_true", help="Hold YouTube publishing")
     args = parser.parse_args()
+
+    cli_held: list[str] = list(args.hold_platforms_list)
+    if args.hold_platforms:
+        cli_held.append(args.hold_platforms)
+    if args.hold_ig:
+        cli_held.append("instagram")
+    if args.hold_fb:
+        cli_held.append("facebook")
+    if args.hold_tiktok:
+        cli_held.append("tiktok")
+    if args.hold_ytb:
+        cli_held.append("youtube")
 
     if not args.dry_run:
         write_slot_heartbeat(args.slot, "started")
 
     schedule = load_config()
+
+    if args.only_platform:
+        args.only_platform = canonical_platform_name(args.only_platform)
+        if is_platform_held(args.only_platform, cfg=schedule, extra_held=cli_held):
+            print(f"⏸️ HOLD: Platform {args.only_platform} is held by pipeline flag/env. Exiting cleanly.")
+            _finish_slot_heartbeat(args.slot, 0, args.dry_run)
+            return 0
+
     projects = schedule.get("active_projects", [])
     if not isinstance(projects, list):
         print("ERROR: active_projects must be a list")
@@ -564,11 +610,18 @@ def main() -> int:
         if hasattr(args, "only_platform") and args.only_platform:
             command.extend(["--only-platform", args.only_platform])
 
+        for p in cli_held:
+            command.extend(["--hold-platform", p])
+
         print(f"\n=== Publishing {project_id} ===")
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT) + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
         if "MULTI_PLATFORM" not in env:
             env["MULTI_PLATFORM"] = "0"
+
+        held_set = get_held_platforms(schedule, extra_held=cli_held)
+        if held_set:
+            env["HOLD_PLATFORMS"] = ",".join(sorted(held_set))
 
         result = _run_publisher(command, env, project_id, args)
         if result is None:
