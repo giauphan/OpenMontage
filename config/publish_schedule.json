@@ -37,34 +37,9 @@
       "publish_time": "21:15"
     },
     {
-      "project_id": "cand_cc1b4b4d0eb79f00",
-      "publish_date": "2026-10-16",
-      "publish_time": "19:15"
-    },
-    {
-      "project_id": "cand_24eb98f257e9e94e",
-      "publish_date": "2026-10-16",
-      "publish_time": "23:30"
-    },
-    {
-      "project_id": "cand_7c11a3cd5f90c485",
-      "publish_date": "2026-10-17",
-      "publish_time": "09:15"
-    },
-    {
-      "project_id": "cand_29231689654fb86a",
-      "publish_date": "2026-10-17",
-      "publish_time": "14:15"
-    },
-    {
       "project_id": "cand_13899991ca58d567",
       "publish_date": "2026-10-17",
       "publish_time": "21:15"
-    },
-    {
-      "project_id": "cand_ea1ffb435b205d0b",
-      "publish_date": "2026-10-18",
-      "publish_time": "09:15"
     },
     {
       "project_id": "cand_5f42dd27973ab420",
@@ -74,6 +49,21 @@
     {
       "project_id": "cand_95c9e7e2449fec3a",
       "publish_date": "2026-10-18",
+      "publish_time": "21:15"
+    },
+    {
+      "project_id": "cand_0d261e1cbe90c2ba",
+      "publish_date": "2026-10-19",
+      "publish_time": "09:15"
+    },
+    {
+      "project_id": "cand_2877c615b39e6830",
+      "publish_date": "2026-10-19",
+      "publish_time": "14:15"
+    },
+    {
+      "project_id": "cand_c2b418a44fd13b06",
+      "publish_date": "2026-10-19",
       "publish_time": "21:15"
     }
   ]
