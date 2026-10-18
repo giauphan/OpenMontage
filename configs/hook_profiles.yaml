@@ -1,0 +1,35 @@
+hooks:
+  enabled: false
+  mode: auto              # off | auto | required
+  strict_body_edl: true
+  default_strategy: overlay_only
+  max_candidates: 5
+  allow_preroll: false
+  max_added_duration_seconds: 0
+  allow_generated_tts: false
+  allow_claim_rewrite: false
+  allow_external_fact_generation: false
+  fail_behavior: skip_hook  # in auto mode only: skip_hook | block
+  profiles:
+    youtube_shorts:
+      preferred_visible_within_seconds: 2.0
+      aspect_ratio: "9:16"
+      safe_zones:
+        top_margin_pct: 0.15
+        bottom_margin_pct: 0.20
+        side_margin_pct: 0.08
+    tiktok:
+      preferred_visible_within_seconds: 3.0
+      aspect_ratio: "9:16"
+      safe_zones:
+        top_margin_pct: 0.12
+        bottom_margin_pct: 0.22
+        side_margin_pct: 0.10
+    youtube_longform:
+      preferred_visible_within_seconds: 5.0
+      deliver_core_promise_early: true
+      aspect_ratio: "16:9"
+      safe_zones:
+        top_margin_pct: 0.08
+        bottom_margin_pct: 0.12
+        side_margin_pct: 0.05

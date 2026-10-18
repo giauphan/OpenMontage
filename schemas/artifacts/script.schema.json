@@ -98,6 +98,19 @@
       },
       "minItems": 1
     },
+    "hook_intent": {
+      "type": "string",
+      "enum": [
+        "problem_first",
+        "solution_first",
+        "news_first",
+        "topic_question",
+        "surprise_fact",
+        "visual_payoff",
+        "story_tension"
+      ],
+      "description": "Optional HookGuard intent classifying the narrative opening."
+    },
     "metadata": { "type": "object" }
   },
   "additionalProperties": false

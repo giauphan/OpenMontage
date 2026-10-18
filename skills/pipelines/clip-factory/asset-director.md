@@ -51,7 +51,7 @@ Use `audio_enhance` across the clip set so the batch feels like one series:
 
 ### 4. Keep Hook Assets Lightweight
 
-Most hook overlays should be text-first and template-based. Do not spend time or budget generating bespoke art unless the batch truly benefits.
+Most hook overlays should be text-first and template-based. When HookGuard is active, materialize the selected candidate's text as a job-scoped image asset in `projects/<project-id>/assets/images/` via the runtime adapter, and register it in `asset_manifest.assets` with `metadata.is_hook: true`. Avoid bespoke art generation for hooks unless the brief explicitly calls for it.
 
 ### 5. Use Metadata For Batch Structure
 

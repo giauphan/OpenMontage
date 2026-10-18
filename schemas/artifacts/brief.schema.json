@@ -42,6 +42,19 @@
       "description": "2-3 angle options for user to choose from"
     },
     "selected_angle": { "type": "string" },
+    "hook_intent": {
+      "type": "string",
+      "enum": [
+        "problem_first",
+        "solution_first",
+        "news_first",
+        "topic_question",
+        "surprise_fact",
+        "visual_payoff",
+        "story_tension"
+      ],
+      "description": "Optional HookGuard intent classifying the opening structure."
+    },
     "metadata": { "type": "object" }
   },
   "additionalProperties": false

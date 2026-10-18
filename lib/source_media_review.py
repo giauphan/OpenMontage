@@ -90,11 +90,19 @@ def _probe_video(path: Path, tool_registry: Any) -> dict[str, Any]:
             timestamps = _sample_timestamps(duration, count=4)
             sample_result = frame_sampler.execute({
                 "input_path": str(path),
+                "strategy": "timestamps",
                 "timestamps": timestamps,
                 "output_dir": str(path.parent / ".source_review_frames"),
             })
             if sample_result.success:
-                result["representative_frames"] = sample_result.data.get("frame_paths", [])
+                frames_data = sample_result.data.get("frames", [])
+                if frames_data:
+                    result["representative_frames"] = [
+                        f.get("path") if isinstance(f, dict) else str(f)
+                        for f in frames_data
+                    ]
+                else:
+                    result["representative_frames"] = sample_result.data.get("frame_paths", [])
     except Exception as e:
         logger.warning("frame_sampler failed for %s: %s", path, e)
 
@@ -200,6 +208,11 @@ def _transcribe_if_available(
             result = transcriber.execute({"input_path": str(path)})
             if result.success:
                 text = result.data.get("text", "")
+                if not text and "segments" in result.data:
+                    text = " ".join(
+                        s.get("text", "") for s in result.data.get("segments", [])
+                        if isinstance(s, dict)
+                    ).strip()
                 if text:
                     # Return summary, not full transcript
                     words = text.split()

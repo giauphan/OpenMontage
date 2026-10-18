@@ -58,6 +58,11 @@ Recommended metadata keys:
 - overlay stack is readable on mobile,
 - the batch retains consistent styling and fades.
 
+### 6. HookGuard Authorized Decisions (Binding)
+
+When HookGuard is active, only `hook_guard`-authorized hook overlays may be committed to `edit_decisions`. The hook must be added as an overlay asset in a safe region without mutating canonical body cuts or body audio schedules. In `auto` mode, if a hook fails the guard, revert the overlay and proceed with the baseline edit decisions. In `required` mode, failing hooks block completion.
+
+
 ## Common Pitfalls
 
 - Building one highlight reel instead of independent clips.

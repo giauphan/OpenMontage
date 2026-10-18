@@ -82,6 +82,11 @@ Each candidate should record:
 - the set covers the source deliberately instead of clustering in one section,
 - low-quality candidates are rejected honestly.
 
+### 5.1 HookGuard Candidate Generation (Opt-In / Auto)
+
+When HookGuard is enabled, call `hook_analyzer` to generate source-grounded opening hook candidates linked to transcript word timestamps. Record candidate proposals in `hook_plan` so downstream edit and asset stages have verified evidence and safe layout windows. Never write direct unverified hooks to script or edit decisions.
+
+
 ### Mid-Production Fact Verification
 
 If you encounter uncertainty during script writing:

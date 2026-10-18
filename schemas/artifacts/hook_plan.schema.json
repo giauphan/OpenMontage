@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/hook_plan",
+  "title": "Hook Plan",
+  "description": "Versioned hook proposal, ranking, and guard verification contract produced by HookGuard.",
+  "type": "object",
+  "required": ["version", "status", "project_id", "policy", "source", "candidates", "guard_result"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "status": {
+      "type": "string",
+      "enum": ["PROPOSED", "SELECTED", "REJECTED", "SKIPPED", "PASS"]
+    },
+    "project_id": { "type": "string" },
+    "policy": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["off", "auto", "required"]
+        },
+        "preserve_body_edl": { "type": "boolean", "default": true },
+        "allow_preroll": { "type": "boolean", "default": false },
+        "max_added_duration_seconds": { "type": "number", "minimum": 0, "default": 0 },
+        "allow_generated_tts": { "type": "boolean", "default": false },
+        "allow_claim_rewrite": { "type": "boolean", "default": false },
+        "fail_behavior": {
+          "type": "string",
+          "enum": ["skip_hook", "block"],
+          "default": "skip_hook"
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["existing_video", "script", "brief"]
+        },
+        "source_video_id": { "type": "string" },
+        "baseline_body_edl_sha256": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "intent", "mode", "text", "window", "evidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "problem_first",
+              "solution_first",
+              "news_first",
+              "topic_question",
+              "surprise_fact",
+              "visual_payoff",
+              "story_tension"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "overlay_text",
+              "caption_emphasis",
+              "extractive_preroll",
+              "script_opening",
+              "multimodal_vfx"
+            ]
+          },
+          "text": { "type": "string" },
+          "window": {
+            "type": "object",
+            "required": ["start_seconds", "end_seconds"],
+            "properties": {
+              "start_seconds": { "type": "number", "minimum": 0 },
+              "end_seconds": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": false
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["transcript", "script", "source_range", "external_source", "visual_event"]
+                },
+                "source_id": { "type": "string" },
+                "start_seconds": { "type": "number", "minimum": 0 },
+                "end_seconds": { "type": "number", "minimum": 0 },
+                "claim": { "type": "string" },
+                "source_url": { "type": "string" },
+                "publication_date": { "type": "string" },
+                "event_date": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "rank_features": {
+            "type": "object",
+            "properties": {
+              "relevance": { "type": "number" },
+              "coherence": { "type": "number" },
+              "viewer_promise": { "type": "number" },
+              "visual_relevance": { "type": "number" },
+              "audio_novelty": { "type": "number" },
+              "continuity_penalty": { "type": "number" },
+              "repetition_penalty": { "type": "number" },
+              "occlusion_risk": { "type": "number" }
+            },
+            "additionalProperties": false
+          },
+          "score": { "type": "number" },
+          "proposed_runtime": {
+            "type": "string",
+            "enum": ["remotion", "hyperframes", "ffmpeg"]
+          },
+          "preroll_span": {
+            "type": "object",
+            "required": ["source_in_seconds", "source_out_seconds"],
+            "properties": {
+              "source_in_seconds": { "type": "number", "minimum": 0 },
+              "source_out_seconds": { "type": "number", "minimum": 0 },
+              "added_duration_seconds": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "selected_candidate_id": {
+      "type": ["string", "null"]
+    },
+    "guard_result": {
+      "type": "object",
+      "required": ["status", "rule_version", "reason_codes"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["PASS", "REJECTED", "SKIPPED"]
+        },
+        "rule_version": { "type": "string" },
+        "reason_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "diagnostics": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

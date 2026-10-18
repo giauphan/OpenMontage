@@ -167,6 +167,47 @@ def _validate_artifacts_for_stage(
                 f"Artifact {artifact_name!r} failed schema validation: {exc}"
             ) from exc
 
+    _validate_hook_plan_status(stage, status, artifacts, pipeline_type)
+
+
+def _validate_hook_plan_status(
+    stage: str,
+    status: str,
+    artifacts: dict[str, Any],
+    pipeline_type: str | None = None,
+) -> None:
+    try:
+        from lib.hook_guard.config import load_hook_policy
+        policy = load_hook_policy()
+    except Exception:
+        policy = None
+
+    hook_plan = artifacts.get("hook_plan")
+    policy_mode = policy.mode if policy else "off"
+
+    # If policy mode is required, edit stage must include hook_plan with PASS
+    if policy_mode == "required" and stage == "edit" and status in {"completed", "awaiting_human"}:
+        if not hook_plan:
+            raise CheckpointValidationError(
+                "HookGuard mode is 'required' but 'hook_plan' artifact is missing from edit stage."
+            )
+        guard_res = hook_plan.get("guard_result", {})
+        if guard_res.get("status") != "PASS":
+            raise CheckpointValidationError(
+                f"HookGuard mode is 'required' but hook_plan status is {guard_res.get('status')!r} "
+                f"({guard_res.get('reason_codes')})."
+            )
+
+    # If hook_plan is present, enforce status cannot be REJECTED for completed/awaiting_human
+    if hook_plan and status in {"completed", "awaiting_human"}:
+        guard_res = hook_plan.get("guard_result", {})
+        g_status = guard_res.get("status")
+        if g_status == "REJECTED":
+            raise CheckpointValidationError(
+                f"Cannot advance stage with REJECTED hook_plan: {guard_res.get('reason_codes')}. "
+                "In auto mode, rejected hooks must be skipped or reverted before checkpointing."
+            )
+
 
 def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
     """Validate checkpoint structure and canonical artifact payloads.

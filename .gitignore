@@ -121,6 +121,7 @@ venv/
 *.json
 !package.json
 !package-lock.json
+!schemas/**/*.json
 !templates/news/**/*.json
 !config/publish_platforms.json
 !config/publish_platforms.example.json
