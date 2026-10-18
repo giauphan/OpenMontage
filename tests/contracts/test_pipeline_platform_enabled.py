@@ -100,6 +100,28 @@ def test_get_enabled_platforms_config_file(tmp_path: Path, monkeypatch):
     assert is_platform_enabled("instagram") is False
 
 
+def test_publish_platforms_example_file(monkeypatch):
+    """Verify that config/publish_platforms.example.json is valid and loadable."""
+    example_path = ROOT / "config" / "publish_platforms.example.json"
+    assert example_path.is_file()
+
+    # Verify JSON syntax and metadata
+    data = json.loads(example_path.read_text(encoding="utf-8"))
+    assert "enabled_platforms" in data
+    assert "_supported_aliases" in data
+
+    # Test loading via OPENMONTAGE_PLATFORMS_CONFIG
+    monkeypatch.setenv("OPENMONTAGE_PLATFORMS_CONFIG", str(example_path))
+    monkeypatch.delenv("ENABLED_PLATFORMS", raising=False)
+    monkeypatch.delenv("ACTIVE_PLATFORMS", raising=False)
+    monkeypatch.delenv("PUBLISH_PLATFORMS", raising=False)
+
+    enabled = get_enabled_platforms()
+    assert enabled == {"youtube"}
+    assert is_platform_enabled("youtube") is True
+    assert is_platform_enabled("instagram") is False
+
+
 def test_get_enabled_platforms_schedule_dict():
     """Verify loading from schedule config dictionary."""
     cfg = {"enabled_platforms": ["youtube"]}

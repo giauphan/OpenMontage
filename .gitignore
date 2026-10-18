@@ -123,6 +123,8 @@ venv/
 !package-lock.json
 !templates/news/**/*.json
 !config/publish_platforms.json
+!config/publish_platforms.example.json
+!config/publish_platforms.json.example
 !config/publish_schedule.json
 logs
 .claude/worktrees/

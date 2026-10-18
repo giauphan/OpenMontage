@@ -1,0 +1,17 @@
+{
+  "_comment": "Example configuration for OpenMontage publish platforms. Copy to config/publish_platforms.json to use.",
+  "_supported_aliases": {
+    "youtube": ["youtube", "ytb", "yt"],
+    "instagram": ["instagram", "ig", "insta"],
+    "facebook": ["facebook", "fb"],
+    "tiktok": ["tiktok", "tt"]
+  },
+  "_examples": {
+    "youtube_only": ["youtube"],
+    "youtube_and_instagram": ["youtube", "instagram"],
+    "all_platforms": ["youtube", "instagram", "facebook", "tiktok"]
+  },
+  "enabled_platforms": [
+    "youtube"
+  ]
+}
