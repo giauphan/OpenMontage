@@ -27,6 +27,8 @@ from scripts.publish_config import (
     canonical_platform_name,
     get_held_platforms,
     is_platform_held,
+    get_enabled_platforms,
+    is_platform_enabled,
 )
 
 try:
@@ -293,6 +295,7 @@ def deactivate_project(
     date: str | None = None,
     instagram_mode: bool = False,
     held_platforms: set[str] | list[str] | str | None = None,
+    enabled_platforms: set[str] | list[str] | str | None = None,
 ) -> bool:
     """Safely deactivate published project from schedule and delete its media directory.
     
@@ -393,6 +396,7 @@ def deactivate_project(
                 project_id,
                 project_dir=resolved_dir if resolved_dir.is_dir() else None,
                 held_platforms=held_platforms,
+                enabled_platforms=enabled_platforms,
             )
             if req_routes:
                 reconcile_project_publications(store, project_id, pub_date, req_routes)
@@ -407,6 +411,7 @@ def deactivate_project(
             config_path=CONFIG,
             root=ROOT,
             held_platforms=held_platforms,
+            enabled_platforms=enabled_platforms,
         )
         if not eligible:
             print(f"Project retained: {reason} for {project_id}")
@@ -522,6 +527,19 @@ def main() -> int:
     parser.add_argument("--hold-fb", action="store_true", help="Hold Facebook publishing")
     parser.add_argument("--hold-tiktok", action="store_true", help="Hold TikTok publishing")
     parser.add_argument("--hold-ytb", action="store_true", help="Hold YouTube publishing")
+    parser.add_argument(
+        "--enabled-platforms",
+        type=str,
+        default="",
+        help="Comma or space separated platforms to enable (e.g. 'ytb' or 'youtube,instagram')",
+    )
+    parser.add_argument(
+        "--enable-platform",
+        action="append",
+        default=[],
+        dest="enabled_platforms_list",
+        help="Enable a specific platform (e.g. ytb, ig, fb, tiktok). Can be repeated.",
+    )
     args = parser.parse_args()
 
     cli_held: list[str] = list(args.hold_platforms_list)
@@ -536,6 +554,12 @@ def main() -> int:
     if args.hold_ytb:
         cli_held.append("youtube")
 
+    cli_enabled: list[str] = list(args.enabled_platforms_list)
+    if args.enabled_platforms:
+        cli_enabled.append(args.enabled_platforms)
+    if not cli_enabled:
+        cli_enabled = None
+
     if not args.dry_run:
         write_slot_heartbeat(args.slot, "started")
 
@@ -543,8 +567,8 @@ def main() -> int:
 
     if args.only_platform:
         args.only_platform = canonical_platform_name(args.only_platform)
-        if is_platform_held(args.only_platform, cfg=schedule, extra_held=cli_held):
-            print(f"⏸️ HOLD: Platform {args.only_platform} is held by pipeline flag/env. Exiting cleanly.")
+        if not is_platform_enabled(args.only_platform, cfg=schedule, extra_held=cli_held, extra_enabled=cli_enabled):
+            print(f"⏸️ DISABLED/HELD: Platform {args.only_platform} is not enabled or is held. Exiting cleanly.")
             _finish_slot_heartbeat(args.slot, 0, args.dry_run)
             return 0
 
@@ -613,6 +637,10 @@ def main() -> int:
         for p in cli_held:
             command.extend(["--hold-platform", p])
 
+        if cli_enabled:
+            for p in cli_enabled:
+                command.extend(["--enable-platform", p])
+
         print(f"\n=== Publishing {project_id} ===")
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT) + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
@@ -622,6 +650,10 @@ def main() -> int:
         held_set = get_held_platforms(schedule, extra_held=cli_held)
         if held_set:
             env["HOLD_PLATFORMS"] = ",".join(sorted(held_set))
+
+        enabled_set = get_enabled_platforms(schedule, extra_enabled=cli_enabled)
+        if enabled_set is not None:
+            env["ENABLED_PLATFORMS"] = ",".join(sorted(enabled_set))
 
         result = _run_publisher(command, env, project_id, args)
         if result is None:

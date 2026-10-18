@@ -25,6 +25,8 @@ from scripts.publish_config import (
     canonical_platform_name,
     get_held_platforms,
     is_platform_held,
+    get_enabled_platforms,
+    is_platform_enabled,
 )
 from tools.narration_text import validate_vietnamese_narration
 from tools.publish_store import PublishStore, file_sha256, publish_key
@@ -194,6 +196,8 @@ def get_required_routes_for_project(
     metadata: dict | None = None,
     ignore_held: bool = False,
     held_platforms: set[str] | list[str] | str | None = None,
+    enabled_platforms: set[str] | list[str] | str | None = None,
+    ignore_disabled: bool = False,
 ) -> list[tuple[str, str]]:
     """Determine all required platform routes (platform, kind) for a project."""
     root = ROOT
@@ -230,6 +234,11 @@ def get_required_routes_for_project(
     if meta and meta.get("tiktok"):
         routes.append(("tiktok", "video"))
 
+    if not ignore_disabled:
+        enabled = get_enabled_platforms(extra_enabled=enabled_platforms)
+        if enabled is not None:
+            routes = [(platform, kind) for platform, kind in routes if platform in enabled]
+
     if not ignore_held:
         held = get_held_platforms(extra_held=held_platforms)
         if held:
@@ -246,6 +255,7 @@ def canonical_platform_records_published(
     project_dir: Path | None = None,
     routes: list[tuple[str, str]] | None = None,
     held_platforms: set[str] | list[str] | str | None = None,
+    enabled_platforms: set[str] | list[str] | str | None = None,
 ) -> bool:
     try:
         if routes:
@@ -254,9 +264,25 @@ def canonical_platform_records_published(
                 and record.get("status") == "published"
                 for platform, kind in routes
             )
+        if store is not None and date:
+            from scripts.check_cleanup_eligibility import reconcile_project_publications
+            req_routes = get_required_routes_for_project(
+                topic,
+                project_dir=project_dir,
+                held_platforms=held_platforms,
+                enabled_platforms=enabled_platforms,
+            )
+            if req_routes:
+                reconcile_project_publications(store, topic, date, req_routes)
+
         from scripts.check_cleanup_eligibility import is_project_eligible_for_cleanup
         eligible, reason, _ = is_project_eligible_for_cleanup(
-            topic, project_dir=project_dir, store=store, date=date, held_platforms=held_platforms
+            topic,
+            project_dir=project_dir,
+            store=store,
+            date=date,
+            held_platforms=held_platforms,
+            enabled_platforms=enabled_platforms,
         )
         if not eligible:
             print(f"Publication not complete for {topic}: {reason}", file=sys.stderr)
@@ -301,6 +327,7 @@ def publish_batch(
     strict: bool = True,
     enforce_preflight: bool | None = None,
     held_platforms: set[str] | list[str] | str | None = None,
+    enabled_platforms: set[str] | list[str] | str | None = None,
 ) -> dict:
     """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
@@ -320,12 +347,13 @@ def publish_batch(
     
     if only_platform:
         only_platform = canonical_platform_name(only_platform)
-        if is_platform_held(only_platform, extra_held=held_platforms):
-            print(f"⏸️ HOLD: Platform {only_platform} is held by pipeline flag/env. Skipping publish.")
+        if not is_platform_enabled(only_platform, extra_enabled=enabled_platforms, extra_held=held_platforms):
+            reason = "held" if is_platform_held(only_platform, extra_held=held_platforms) else "disabled"
+            print(f"⏸️ {reason.upper()}: Platform {only_platform} is {reason} by pipeline flag/env/config. Skipping publish.")
             kind = PLATFORM_ROUTES.get(only_platform, ("short", ""))[0]
             results["platforms"][f"{only_platform}/{kind}"] = {
                 "status": "held",
-                "reason": f"{only_platform} held by pipeline flag/env",
+                "reason": f"{only_platform} {reason} by pipeline flag/env/config",
             }
             return results
 
@@ -362,21 +390,22 @@ def publish_batch(
             for platform, account in (("youtube", YT_ACCOUNT),)
         ]
 
-    # Filter out held platforms from platform contract
+    # Filter out held and non-enabled platforms from platform contract
     active_contract = []
     for platform, account, kind, field in platform_contract:
-        if is_platform_held(platform, extra_held=held_platforms):
-            print(f"⏸️ HOLD: Skipping {platform} (platform is held by pipeline flag/env)")
+        if not is_platform_enabled(platform, extra_enabled=enabled_platforms, extra_held=held_platforms):
+            reason = "held" if is_platform_held(platform, extra_held=held_platforms) else "disabled"
+            print(f"⏸️ {reason.upper()}: Skipping {platform} (platform is {reason} by pipeline flag/env/config)")
             results["platforms"][f"{platform}/{kind}"] = {
                 "status": "held",
-                "reason": f"{platform} held by pipeline flag/env",
+                "reason": f"{platform} {reason} by pipeline flag/env/config",
             }
         else:
             active_contract.append((platform, account, kind, field))
 
     platform_contract = active_contract
     if not platform_contract:
-        print("⏸️ All candidate platforms for this batch are currently held. Exiting batch cleanly.")
+        print("⏸️ All candidate platforms for this batch are currently held or disabled. Exiting batch cleanly.")
         return results
     
     if "fb_video" not in metadata and "fb_reels" in metadata:
@@ -686,11 +715,15 @@ def publish_batch(
                         )
                         print(f"✅ Firebase record updated: {key} -> scheduled")
                     else:
+                        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                         store.mark_published(
                             key,
                             video_id=vid_id,
                             video_url=vid_url,
-                            published_at=datetime.now(timezone.utc).isoformat(),
+                            published_at=now_iso,
+                            verified_at=now_iso,
+                            remote_status={"privacy_status": "public", "upload_status": "processed"} if platform == "youtube" else {"status": "published"},
+                            media_sha256=file_sha256(video_path) if video_path and Path(video_path).is_file() else None,
                         )
                         print(f"✅ Firebase record updated: {key} -> published")
                 except Exception as fb_error:
@@ -1133,6 +1166,19 @@ def main():
     parser.add_argument("--hold-fb", action="store_true", help="Hold Facebook publishing")
     parser.add_argument("--hold-tiktok", action="store_true", help="Hold TikTok publishing")
     parser.add_argument("--hold-ytb", action="store_true", help="Hold YouTube publishing")
+    parser.add_argument(
+        "--enabled-platforms",
+        type=str,
+        default="",
+        help="Comma or space separated platforms to enable (e.g. 'ytb' or 'youtube,instagram')",
+    )
+    parser.add_argument(
+        "--enable-platform",
+        action="append",
+        default=[],
+        dest="enabled_platforms_list",
+        help="Enable a specific platform (e.g. ytb, ig, fb, tiktok). Can be repeated.",
+    )
     args = parser.parse_args()
 
     project_path = Path(args.project_dir)
@@ -1152,6 +1198,12 @@ def main():
     if args.hold_ytb:
         cli_held.append("youtube")
 
+    cli_enabled: list[str] = list(args.enabled_platforms_list)
+    if args.enabled_platforms:
+        cli_enabled.append(args.enabled_platforms)
+    if not cli_enabled:
+        cli_enabled = None
+
     only_platform = canonical_platform_name(args.only_platform) if args.only_platform else None
 
     # Load metadata
@@ -1164,8 +1216,8 @@ def main():
     try:
         from lib.news_release_gate import require_news_evidence
         require_news_evidence(project_path, metadata=metadata)
-        # Skip release preflight if only targeted platform is held
-        if not (only_platform and is_platform_held(only_platform, extra_held=cli_held)):
+        # Skip release preflight if only targeted platform is held or disabled
+        if not (only_platform and not is_platform_enabled(only_platform, extra_enabled=cli_enabled, extra_held=cli_held)):
             enforce_release_preflight(project_path, metadata, strict=True, force=args.force)
     except Exception as exc:
         print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
@@ -1198,6 +1250,7 @@ def main():
         strict=True,
         enforce_preflight=False,
         held_platforms=cli_held,
+        enabled_platforms=cli_enabled,
     )
 
     # Print summary
@@ -1247,7 +1300,7 @@ def main():
     batch_succeeded = (batch_success_count == total_platforms) and len(results["errors"]) == 0
 
     all_canonical_published = canonical_platform_records_published(
-        store, date=today, topic=metadata["id"], project_dir=project_path, held_platforms=cli_held
+        store, date=today, topic=metadata["id"], project_dir=project_path, held_platforms=cli_held, enabled_platforms=cli_enabled
     )
 
     if all_canonical_published:
@@ -1262,6 +1315,7 @@ def main():
                 date=today,
                 instagram_mode=instagram_mode,
                 held_platforms=cli_held,
+                enabled_platforms=cli_enabled,
             ):
                 print("\n❌ Cleanup blocked: canonical Firebase publish records are incomplete; project retained")
                 return 1

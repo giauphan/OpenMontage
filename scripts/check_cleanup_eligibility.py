@@ -200,6 +200,7 @@ def is_project_eligible_for_cleanup(
     config_path: Path | None = None,
     root: Path | None = None,
     held_platforms: set[str] | list[str] | str | None = None,
+    enabled_platforms: set[str] | list[str] | str | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     """Verify if a project is fully published across all required destinations and eligible for cleanup.
     
@@ -312,6 +313,7 @@ def is_project_eligible_for_cleanup(
         project_dir=resolved_dir if (resolved_dir and resolved_dir.is_dir()) else None,
         metadata=meta,
         held_platforms=held_platforms,
+        enabled_platforms=enabled_platforms,
     )
     if not required_routes:
         all_routes = get_required_routes_for_project(
@@ -319,6 +321,7 @@ def is_project_eligible_for_cleanup(
             project_dir=resolved_dir if (resolved_dir and resolved_dir.is_dir()) else None,
             metadata=meta,
             ignore_held=True,
+            ignore_disabled=True,
         )
         if all_routes:
             return False, "all_candidate_routes_currently_held", {}
@@ -374,7 +377,7 @@ def is_project_eligible_for_cleanup(
                 for platform, kind in required_routes:
                     key = publish_key(pub_date, project_id, platform, kind)
                     rec = store.get(key)
-                    stored_hash = rec.get("media_sha256")
+                    stored_hash = rec.get("media_sha256") or rec.get("source_sha256")
                     if not stored_hash:
                         # R3: Missing hash fails closed; never skip verification
                         return (
@@ -505,6 +508,19 @@ def main() -> int:
     parser.add_argument("--hold-fb", action="store_true", help="Hold Facebook publishing")
     parser.add_argument("--hold-tiktok", action="store_true", help="Hold TikTok publishing")
     parser.add_argument("--hold-ytb", action="store_true", help="Hold YouTube publishing")
+    parser.add_argument(
+        "--enabled-platforms",
+        type=str,
+        default="",
+        help="Comma-separated platforms to enable (e.g. 'ytb' or 'youtube,instagram')",
+    )
+    parser.add_argument(
+        "--enable-platform",
+        action="append",
+        default=[],
+        dest="enabled_platforms_list",
+        help="Enable a specific platform (e.g. ytb, ig, fb, tiktok). Can be repeated.",
+    )
     args = parser.parse_args()
 
     cli_held: list[str] = list(args.hold_platforms_list)
@@ -519,14 +535,21 @@ def main() -> int:
     if args.hold_ytb:
         cli_held.append("youtube")
 
+    cli_enabled: list[str] = list(args.enabled_platforms_list)
+    if args.enabled_platforms:
+        cli_enabled.append(args.enabled_platforms)
+    if not cli_enabled:
+        cli_enabled = None
+
     if args.reconcile:
-        return _run_reconciliation(args.pid, args.date, held_platforms=cli_held)
+        return _run_reconciliation(args.pid, args.date, held_platforms=cli_held, enabled_platforms=cli_enabled)
 
     eligible, reason, _ = is_project_eligible_for_cleanup(
         args.pid,
         project_dir=Path(args.dir) if args.dir else None,
         date=args.date,
         held_platforms=cli_held,
+        enabled_platforms=cli_enabled,
     )
     if eligible:
         print(f"ELIGIBLE: {args.pid} ({reason})")
@@ -540,6 +563,7 @@ def _run_reconciliation(
     project_id: str,
     date: str | None,
     held_platforms: set[str] | list[str] | str | None = None,
+    enabled_platforms: set[str] | list[str] | str | None = None,
 ) -> int:
     """Canonical, non-deleting reconciliation path (Finding 3).
 
@@ -559,7 +583,9 @@ def _run_reconciliation(
         print(f"RECONCILE_BLOCKED: PublishStore unavailable ({exc})", file=sys.stderr)
         return 2
 
-    routes = get_required_routes_for_project(project_id, held_platforms=held_platforms)
+    routes = get_required_routes_for_project(
+        project_id, held_platforms=held_platforms, enabled_platforms=enabled_platforms
+    )
     if not routes:
         print(f"RECONCILE_SKIP: no required routes identified for {project_id}")
         return 0

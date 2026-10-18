@@ -19,6 +19,8 @@ from scripts.publish_config import (
     canonical_platform_name,
     get_held_platforms,
     is_platform_held,
+    get_enabled_platforms,
+    is_platform_enabled,
 )
 from scripts.validate_publish_metadata import validate_metadata
 from tools.news import template_provenance
@@ -107,6 +109,19 @@ def main():
     parser.add_argument("--hold-fb", action="store_true", help="Hold Facebook publishing")
     parser.add_argument("--hold-tiktok", action="store_true", help="Hold TikTok publishing")
     parser.add_argument("--hold-ytb", action="store_true", help="Hold YouTube publishing")
+    parser.add_argument(
+        "--enabled-platforms",
+        type=str,
+        default="",
+        help="Comma or space separated platforms to enable (e.g. 'ytb' or 'youtube,instagram')",
+    )
+    parser.add_argument(
+        "--enable-platform",
+        action="append",
+        default=[],
+        dest="enabled_platforms_list",
+        help="Enable a specific platform (e.g. ytb, ig, fb, tiktok). Can be repeated.",
+    )
     args = parser.parse_args()
 
     cli_held: list[str] = list(args.hold_platforms_list)
@@ -120,6 +135,12 @@ def main():
         cli_held.append("tiktok")
     if args.hold_ytb:
         cli_held.append("youtube")
+
+    cli_enabled: list[str] = list(args.enabled_platforms_list)
+    if args.enabled_platforms:
+        cli_enabled.append(args.enabled_platforms)
+    if not cli_enabled:
+        cli_enabled = None
 
     cfg = load_config()
     tz = ZoneInfo(cfg["timezone"])
@@ -218,8 +239,8 @@ def main():
         scheduled_for = publish_at.isoformat()
 
         # YT
-        if is_platform_held("youtube", cfg=cfg, extra_held=cli_held):
-            print(f"⏸️ HOLD: Skipping YouTube scheduling for {proj} (held by pipeline flag/env)")
+        if not is_platform_enabled("youtube", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
+            print(f"⏸️ HOLD/DISABLED: Skipping YouTube scheduling for {proj} (not enabled or held by pipeline flag/env)")
         else:
             asset_path = project_dir / yt_rel if yt_rel else None
             if not asset_path or not asset_path.is_file():
@@ -258,8 +279,8 @@ def main():
                     failed = True
 
         # Schedule Instagram Reels
-        if is_platform_held("instagram", cfg=cfg, extra_held=cli_held):
-            print(f"⏸️ HOLD: Skipping Instagram scheduling for {proj} (held by pipeline flag/env)")
+        if not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
+            print(f"⏸️ HOLD/DISABLED: Skipping Instagram scheduling for {proj} (not enabled or held by pipeline flag/env)")
         elif ig_account and ig_rel and (project_dir / ig_rel).is_file():
             ig_key, ig_claimed,_ = store.claim(
                 date=date,

@@ -548,6 +548,7 @@ def test_get_required_routes_not_narrowed_by_instagram_mode(tmp_path: Path, monk
     project_dir, metadata, _sha = _setup_valid_pipeline_project(tmp_path)
     monkeypatch.setenv("INSTAGRAM_MODE", "1")
     monkeypatch.setenv("FACEBOOK_PUBLISH_ENABLED", "1")
+    monkeypatch.setenv("ENABLED_PLATFORMS", "youtube,instagram,facebook")
 
     routes = get_required_routes_for_project("cand_test", project_dir=project_dir, metadata=metadata)
     # Must still require YouTube and Instagram (and Facebook), not just Instagram!

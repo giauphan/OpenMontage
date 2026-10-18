@@ -53,7 +53,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 # STRICT_HEARTBEAT_TRAPS_END
 
-# Parse hold flags if provided
+# Parse hold and enable flags if provided
 while [ $# -gt 0 ]; do
   case "$1" in
     --hold-platform)
@@ -80,6 +80,10 @@ while [ $# -gt 0 ]; do
       HOLD_PLATFORMS="${HOLD_PLATFORMS:+${HOLD_PLATFORMS},}youtube"
       shift
       ;;
+    --enabled-platforms|--enabled-platform|--enable-platform|--only-platform)
+      ENABLED_PLATFORMS="${ENABLED_PLATFORMS:+${ENABLED_PLATFORMS},}$2"
+      shift 2
+      ;;
     *)
       shift
       ;;
@@ -87,6 +91,9 @@ while [ $# -gt 0 ]; do
 done
 if [ -n "${HOLD_PLATFORMS:-}" ]; then
   export HOLD_PLATFORMS
+fi
+if [ -n "${ENABLED_PLATFORMS:-}" ]; then
+  export ENABLED_PLATFORMS
 fi
 
 export FACEBOOK_PUBLISH_ENABLED=0

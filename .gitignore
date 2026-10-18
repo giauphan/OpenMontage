@@ -122,6 +122,8 @@ venv/
 !package.json
 !package-lock.json
 !templates/news/**/*.json
+!config/publish_platforms.json
+!config/publish_schedule.json
 logs
 .claude/worktrees/
 .env.*plan/

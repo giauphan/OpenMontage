@@ -299,6 +299,7 @@ class PublishStore:
             "normalized_title": normalize_identity(title),
             "asset_path": str(asset_path),
             "source_sha256": source_sha256,
+            "media_sha256": source_sha256,
             "visual_sha256": visual_sha256,
             "content_hash": content_hash,
             "template_id": template_id,
@@ -359,6 +360,7 @@ class PublishStore:
         published_at: str | None = None,
         verified_at: str | None = None,
         remote_status: dict[str, Any] | None = None,
+        media_sha256: str | None = None,
     ) -> dict[str, Any]:
         update_data = {
             "status": "published",
@@ -372,6 +374,8 @@ class PublishStore:
             update_data["verified_at"] = verified_at
         if remote_status is not None:
             update_data["remote_status"] = remote_status
+        if media_sha256 is not None:
+            update_data["media_sha256"] = media_sha256
         return self.update(key, update_data)
 
     def mark_failed(self, key: str, error: str) -> dict[str, Any]:
