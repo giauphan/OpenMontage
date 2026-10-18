@@ -343,22 +343,22 @@ class HookAnalyzer(BaseTool):
             dp = data_points[0]
             dp_claim = dp.get("claim", "")
             if dp_claim:
+                ev_dp: dict[str, Any] = {
+                    "kind": "transcript" if transcript else "script",
+                    "source_id": source_id,
+                    "start_seconds": 0.0,
+                    "end_seconds": window_duration,
+                    "claim": dp_claim,
+                }
+                if dp.get("source_url"):
+                    ev_dp["source_url"] = dp["source_url"]
                 candidates.append({
                     "id": f"cand-{cand_idx}",
                     "intent": "surprise_fact",
                     "mode": "overlay_text",
                     "text": f"Surprising stat: {dp_claim}",
                     "window": {"start_seconds": 0.0, "end_seconds": window_duration},
-                    "evidence": [
-                        {
-                            "kind": "transcript" if transcript else "script",
-                            "source_id": source_id,
-                            "start_seconds": 0.0,
-                            "end_seconds": window_duration,
-                            "claim": dp_claim,
-                            "source_url": dp.get("source_url", ""),
-                        }
-                    ],
+                    "evidence": [ev_dp],
                     "rank_features": {
                         "relevance": 0.92,
                         "coherence": 0.95,
@@ -376,22 +376,23 @@ class HookAnalyzer(BaseTool):
             news_item = external_news[0]
             headline = news_item.get("claim") or news_item.get("headline", "")
             if headline and news_item.get("source_url"):
+                ev_news: dict[str, Any] = {
+                    "kind": "external_source",
+                    "source_id": "news_source",
+                    "claim": headline,
+                    "source_url": news_item.get("source_url"),
+                }
+                if news_item.get("publication_date"):
+                    ev_news["publication_date"] = news_item["publication_date"]
+                if news_item.get("event_date"):
+                    ev_news["event_date"] = news_item["event_date"]
                 candidates.append({
                     "id": f"cand-{cand_idx}",
                     "intent": "news_first",
                     "mode": "overlay_text",
                     "text": f"Breaking: {headline[:60]}",
                     "window": {"start_seconds": 0.0, "end_seconds": window_duration},
-                    "evidence": [
-                        {
-                            "kind": "external_source",
-                            "source_id": "news_source",
-                            "claim": headline,
-                            "source_url": news_item.get("source_url"),
-                            "publication_date": news_item.get("publication_date", "2026-10-18"),
-                            "event_date": news_item.get("event_date", "2026-10-18"),
-                        }
-                    ],
+                    "evidence": [ev_news],
                     "rank_features": {
                         "relevance": 0.95,
                         "coherence": 0.95,

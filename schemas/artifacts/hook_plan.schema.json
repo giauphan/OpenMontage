@@ -101,7 +101,8 @@
                 "claim": { "type": "string" },
                 "source_url": { "type": "string" },
                 "publication_date": { "type": "string" },
-                "event_date": { "type": "string" }
+                "event_date": { "type": "string" },
+                "citation": { "type": "string" }
               },
               "additionalProperties": false
             }
@@ -134,7 +135,16 @@
               "added_duration_seconds": { "type": "number", "minimum": 0 }
             },
             "additionalProperties": false
-          }
+          },
+          "boundary_flags": {
+            "type": "object",
+            "properties": {
+              "mid_word_cut": { "type": "boolean" },
+              "mid_sentence_cut": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          },
+          "has_generated_tts": { "type": "boolean" }
         },
         "additionalProperties": false
       }

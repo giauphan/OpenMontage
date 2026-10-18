@@ -57,7 +57,8 @@ def check_first_seconds_black(video_path: Path | str, max_check_seconds: float =
 
     cmd = [
         "ffmpeg",
-        "-v", "error",
+        "-hide_banner",
+        "-v", "info",
         "-t", str(max_check_seconds),
         "-i", str(path),
         "-vf", "blackdetect=d=0.5:pix_th=0.10",
@@ -66,9 +67,11 @@ def check_first_seconds_black(video_path: Path | str, max_check_seconds: float =
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        # If blackdetect finds black spanning the full duration:
-        if "black_start:0" in proc.stderr and f"black_duration:{max_check_seconds}" in proc.stderr:
-            return True
+        for m in re.finditer(r"black_start:([\d.]+)\s+(?:black_end:([\d.]+)|black_duration:([\d.]+))", proc.stderr):
+            start = float(m.group(1))
+            end = float(m.group(2)) if m.group(2) is not None else start + float(m.group(3))
+            if start <= 0.05 and end >= max_check_seconds - 0.15:
+                return True
         return False
     except Exception:
         return False

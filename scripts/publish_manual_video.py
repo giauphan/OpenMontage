@@ -716,13 +716,35 @@ def publish_batch(
                         print(f"✅ Firebase record updated: {key} -> scheduled")
                     else:
                         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                        remote_st = None
+                        if platform == "youtube" and hasattr(publisher, "check_video_published"):
+                            try:
+                                v_info = publisher.check_video_published(vid_id)
+                                if v_info and v_info.get("privacy_status") and v_info.get("upload_status"):
+                                    remote_st = {
+                                        "privacy_status": v_info["privacy_status"],
+                                        "upload_status": v_info["upload_status"],
+                                    }
+                            except Exception:
+                                pass
+                        elif platform in ("instagram", "facebook") and hasattr(publisher, "check_media_published"):
+                            try:
+                                m_info = publisher.check_media_published(vid_id, platform=platform)
+                                if m_info and m_info.get("status"):
+                                    remote_st = m_info
+                            except Exception:
+                                pass
+
+                        if remote_st is None:
+                            remote_st = {"privacy_status": "public", "upload_status": "processed"} if platform == "youtube" else {"status": "published"}
+
                         store.mark_published(
                             key,
                             video_id=vid_id,
                             video_url=vid_url,
                             published_at=now_iso,
                             verified_at=now_iso,
-                            remote_status={"privacy_status": "public", "upload_status": "processed"} if platform == "youtube" else {"status": "published"},
+                            remote_status=remote_st,
                             media_sha256=file_sha256(video_path) if video_path and Path(video_path).is_file() else None,
                         )
                         print(f"✅ Firebase record updated: {key} -> published")

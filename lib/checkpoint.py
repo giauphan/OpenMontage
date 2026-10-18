@@ -199,7 +199,7 @@ def _validate_hook_plan_status(
             try:
                 from lib.pipeline_loader import load_pipeline_readonly
                 manifest = load_pipeline_readonly(pipeline_type)
-                for st_def in manifest.get("stages", {}).values():
+                for st_def in manifest.get("stages", []) or []:
                     if isinstance(st_def, dict) and (
                         "hook_plan" in st_def.get("produces", [])
                         or "hook_plan" in st_def.get("optional_artifacts_in", [])

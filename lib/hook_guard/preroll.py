@@ -78,7 +78,7 @@ def apply_extractive_preroll(
     src_out = float(preroll_span["source_out_seconds"])
     added_duration = max(0.0, src_out - src_in)
 
-    if policy and policy.max_added_duration_seconds > 0:
+    if policy and policy.max_added_duration_seconds is not None:
         if added_duration > policy.max_added_duration_seconds:
             raise ValueError(
                 f"Pre-roll duration {added_duration:.2f}s exceeds policy limit {policy.max_added_duration_seconds:.2f}s"
