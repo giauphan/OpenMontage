@@ -1,0 +1,2607 @@
+{
+  "metadata": {
+    "commit_head": "6f400a1c54ed0ac63ebef881b6386746ad9b6954",
+    "tool_count": 109,
+    "pipeline_count": 14
+  },
+  "tools": {
+    "audio_energy": {
+      "name": "audio_energy",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.audio_energy",
+      "class_name": "AudioEnergy",
+      "dependencies": [
+        "binary:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "audio_probe": {
+      "name": "audio_probe",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "ffprobe",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.audio_probe",
+      "class_name": "AudioProbe",
+      "dependencies": [
+        "binary:ffprobe"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "azure_stt": {
+      "name": "azure_stt",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "azure",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.azure_stt",
+      "class_name": "AzureSpeechToText",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [
+        "transcriber"
+      ],
+      "agent_skills": [
+        "azure-speech-to-text"
+      ],
+      "render_engines": []
+    },
+    "composition_validator": {
+      "name": "composition_validator",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "local",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.composition_validator",
+      "class_name": "CompositionValidator",
+      "dependencies": [
+        "binary:ffprobe"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "dashscope_asr": {
+      "name": "dashscope_asr",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "dashscope",
+      "tier": "ToolTier.ANALYZE",
+      "status": "unknown",
+      "module": "tools.analysis.dashscope_asr",
+      "class_name": "DashscopeAsr",
+      "dependencies": [],
+      "supports": {
+        "word_timestamps": true,
+        "multilingual": true,
+        "offline": false
+      },
+      "fallback_tools": [
+        "transcriber"
+      ],
+      "agent_skills": [
+        "dashscope"
+      ],
+      "render_engines": []
+    },
+    "face_tracker": {
+      "name": "face_tracker",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "mediapipe",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.face_tracker",
+      "class_name": "FaceTracker",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "frame_sampler": {
+      "name": "frame_sampler",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.frame_sampler",
+      "class_name": "FrameSampler",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "hook_analyzer": {
+      "name": "hook_analyzer",
+      "version": "1.0.0",
+      "capability": "analysis",
+      "provider": "hookguard",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.hook_analyzer",
+      "class_name": "HookAnalyzer",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "video-understand",
+        "video-edit"
+      ],
+      "render_engines": []
+    },
+    "hook_guard": {
+      "name": "hook_guard",
+      "version": "1.0.0",
+      "capability": "analysis",
+      "provider": "hookguard",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.hook_guard",
+      "class_name": "HookGuard",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "video-understand",
+        "video-edit"
+      ],
+      "render_engines": []
+    },
+    "scene_detect": {
+      "name": "scene_detect",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.scene_detect",
+      "class_name": "SceneDetect",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "transcriber": {
+      "name": "transcriber",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "whisperx",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.transcriber",
+      "class_name": "Transcriber",
+      "dependencies": [
+        "python:faster_whisper"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "speech-to-text"
+      ],
+      "render_engines": []
+    },
+    "transcript_fetcher": {
+      "name": "transcript_fetcher",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "youtube-transcript-api",
+      "tier": "ToolTier.ANALYZE",
+      "status": "unknown",
+      "module": "tools.analysis.transcript_fetcher",
+      "class_name": "TranscriptFetcher",
+      "dependencies": [
+        "python:youtube_transcript_api"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "video_analyzer": {
+      "name": "video_analyzer",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "multi",
+      "tier": "ToolTier.ANALYZE",
+      "status": "unknown",
+      "module": "tools.analysis.video_analyzer",
+      "class_name": "VideoAnalyzer",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "video-understand",
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "video_downloader": {
+      "name": "video_downloader",
+      "version": "0.1.0",
+      "capability": "source_ingest",
+      "provider": "yt-dlp",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.analysis.video_downloader",
+      "class_name": "VideoDownloader",
+      "dependencies": [
+        "python:yt_dlp"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "video-download"
+      ],
+      "render_engines": []
+    },
+    "video_understand": {
+      "name": "video_understand",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "transformers",
+      "tier": "ToolTier.ANALYZE",
+      "status": "unknown",
+      "module": "tools.analysis.video_understand",
+      "class_name": "VideoUnderstand",
+      "dependencies": [
+        "python:transformers",
+        "python:torch"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "video-understand"
+      ],
+      "render_engines": []
+    },
+    "visual_qa": {
+      "name": "visual_qa",
+      "version": "0.1.0",
+      "capability": "analysis",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.analysis.visual_qa",
+      "class_name": "VisualQA",
+      "dependencies": [
+        "cmd:ffmpeg",
+        "cmd:ffprobe"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "audio_enhance": {
+      "name": "audio_enhance",
+      "version": "0.1.0",
+      "capability": "audio_processing",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.audio.audio_enhance",
+      "class_name": "AudioEnhance",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg",
+        "elevenlabs"
+      ],
+      "render_engines": []
+    },
+    "audio_mixer": {
+      "name": "audio_mixer",
+      "version": "0.1.0",
+      "capability": "audio_processing",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.audio.audio_mixer",
+      "class_name": "AudioMixer",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg",
+        "video-toolkit"
+      ],
+      "render_engines": []
+    },
+    "dashscope_tts": {
+      "name": "dashscope_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "dashscope",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.dashscope_tts",
+      "class_name": "DashscopeTTS",
+      "dependencies": [],
+      "supports": {
+        "voice_cloning": false,
+        "multilingual": true,
+        "offline": false,
+        "native_audio": true
+      },
+      "fallback_tools": [
+        "doubao_tts",
+        "elevenlabs_tts",
+        "openai_tts",
+        "piper_tts"
+      ],
+      "agent_skills": [
+        "dashscope"
+      ],
+      "render_engines": []
+    },
+    "doubao_tts": {
+      "name": "doubao_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "doubao",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.doubao_tts",
+      "class_name": "DoubaoTTS",
+      "dependencies": [],
+      "supports": {
+        "voice_cloning": false,
+        "multilingual": true,
+        "offline": false,
+        "native_audio": true,
+        "timestamps": true,
+        "long_text_async": true
+      },
+      "fallback_tools": [
+        "google_tts",
+        "elevenlabs_tts",
+        "openai_tts",
+        "piper_tts"
+      ],
+      "agent_skills": [
+        "doubao-tts",
+        "text-to-speech"
+      ],
+      "render_engines": []
+    },
+    "elevenlabs_tts": {
+      "name": "elevenlabs_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "elevenlabs",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.elevenlabs_tts",
+      "class_name": "ElevenLabsTTS",
+      "dependencies": [],
+      "supports": {
+        "voice_cloning": true,
+        "multilingual": true,
+        "offline": false,
+        "native_audio": true
+      },
+      "fallback_tools": [
+        "openai_tts",
+        "piper_tts"
+      ],
+      "agent_skills": [
+        "elevenlabs",
+        "text-to-speech"
+      ],
+      "render_engines": []
+    },
+    "freesound_music": {
+      "name": "freesound_music",
+      "version": "0.1.0",
+      "capability": "music_search",
+      "provider": "freesound",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.audio.freesound_music",
+      "class_name": "FreesoundMusic",
+      "dependencies": [],
+      "supports": {
+        "duration_filter": true,
+        "rating_sort": true,
+        "tag_metadata": true,
+        "free_creative_commons": true
+      },
+      "fallback_tools": [
+        "pixabay_music",
+        "music_gen"
+      ],
+      "agent_skills": [
+        "music"
+      ],
+      "render_engines": []
+    },
+    "google_music": {
+      "name": "google_music",
+      "version": "0.1.0",
+      "capability": "music_generation",
+      "provider": "google",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.audio.google_music",
+      "class_name": "GoogleMusic",
+      "dependencies": [],
+      "supports": {
+        "instrumental": true,
+        "vocals": true,
+        "custom_lyrics": true,
+        "style_control": true,
+        "long_form": true
+      },
+      "fallback_tools": [
+        "music_gen"
+      ],
+      "agent_skills": [
+        "lyria"
+      ],
+      "render_engines": []
+    },
+    "google_tts": {
+      "name": "google_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "google_tts",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.google_tts",
+      "class_name": "GoogleTTS",
+      "dependencies": [],
+      "supports": {
+        "voice_cloning": false,
+        "multilingual": true,
+        "offline": false,
+        "native_audio": true,
+        "ssml": true
+      },
+      "fallback_tools": [
+        "openai_tts",
+        "elevenlabs_tts",
+        "piper_tts"
+      ],
+      "agent_skills": [
+        "text-to-speech"
+      ],
+      "render_engines": []
+    },
+    "kling_tts": {
+      "name": "kling_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "kling_official",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.kling_tts",
+      "class_name": "KlingTTS",
+      "dependencies": [
+        "env:KLING_API_KEY"
+      ],
+      "supports": {
+        "multilingual": true,
+        "voice_selection": true,
+        "offline": false,
+        "native_audio": true
+      },
+      "fallback_tools": [
+        "doubao_tts",
+        "elevenlabs_tts",
+        "openai_tts",
+        "google_tts",
+        "piper_tts"
+      ],
+      "agent_skills": [
+        "kling-official",
+        "text-to-speech"
+      ],
+      "render_engines": []
+    },
+    "music_gen": {
+      "name": "music_gen",
+      "version": "0.1.0",
+      "capability": "music_generation",
+      "provider": "elevenlabs",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.audio.music_gen",
+      "class_name": "MusicGen",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "music",
+        "sound-effects",
+        "elevenlabs"
+      ],
+      "render_engines": []
+    },
+    "music_library": {
+      "name": "music_library",
+      "version": "0.1.0",
+      "capability": "music_library",
+      "provider": "local",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.audio.music_library",
+      "class_name": "MusicLibrary",
+      "dependencies": [],
+      "supports": {
+        "local_offline": true,
+        "free": true,
+        "duration_when_ffprobe_present": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "music"
+      ],
+      "render_engines": []
+    },
+    "openai_tts": {
+      "name": "openai_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "openai",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.openai_tts",
+      "class_name": "OpenAITTS",
+      "dependencies": [],
+      "supports": {
+        "voice_cloning": false,
+        "multilingual": true,
+        "offline": false,
+        "native_audio": true
+      },
+      "fallback_tools": [
+        "piper_tts"
+      ],
+      "agent_skills": [
+        "openai-docs"
+      ],
+      "render_engines": []
+    },
+    "piper_tts": {
+      "name": "piper_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "piper",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.piper_tts",
+      "class_name": "PiperTTS",
+      "dependencies": [
+        "cmd:piper"
+      ],
+      "supports": {
+        "voice_cloning": false,
+        "multilingual": false,
+        "offline": true,
+        "native_audio": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "text-to-speech"
+      ],
+      "render_engines": []
+    },
+    "pixabay_music": {
+      "name": "pixabay_music",
+      "version": "0.1.0",
+      "capability": "music_search",
+      "provider": "pixabay_music",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.audio.pixabay_music",
+      "class_name": "PixabayMusic",
+      "dependencies": [],
+      "supports": {
+        "duration_filter": true,
+        "free_commercial_use": true,
+        "no_api_key": true
+      },
+      "fallback_tools": [
+        "freesound_music",
+        "music_gen"
+      ],
+      "agent_skills": [
+        "music"
+      ],
+      "render_engines": []
+    },
+    "suno_music": {
+      "name": "suno_music",
+      "version": "0.1.0",
+      "capability": "music_generation",
+      "provider": "suno",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.audio.suno_music",
+      "class_name": "SunoMusic",
+      "dependencies": [],
+      "supports": {
+        "instrumental": true,
+        "vocals": true,
+        "custom_lyrics": true,
+        "style_control": true,
+        "long_form": true
+      },
+      "fallback_tools": [
+        "music_gen"
+      ],
+      "agent_skills": [
+        "music"
+      ],
+      "render_engines": []
+    },
+    "tts_selector": {
+      "name": "tts_selector",
+      "version": "0.2.0",
+      "capability": "tts",
+      "provider": "selector",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.tts_selector",
+      "class_name": "TTSSelector",
+      "dependencies": [],
+      "supports": {
+        "user_preference_routing": true,
+        "offline_fallback": true,
+        "multilingual": true
+      },
+      "fallback_tools": [
+        "dashscope_tts",
+        "doubao_tts",
+        "elevenlabs_tts",
+        "google_tts",
+        "kling_tts",
+        "openai_tts",
+        "piper_tts"
+      ],
+      "agent_skills": [
+        "text-to-speech",
+        "elevenlabs",
+        "openai-docs"
+      ],
+      "render_engines": []
+    },
+    "kling_avatar": {
+      "name": "kling_avatar",
+      "version": "0.1.0",
+      "capability": "avatar",
+      "provider": "kling_official",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.avatar.kling_avatar",
+      "class_name": "KlingAvatar",
+      "dependencies": [
+        "env:KLING_API_KEY"
+      ],
+      "supports": {
+        "photo_to_video": true,
+        "audio_driven_animation": true,
+        "offline": false,
+        "cloud_render": true
+      },
+      "fallback_tools": [
+        "talking_head",
+        "lip_sync"
+      ],
+      "agent_skills": [
+        "kling-official",
+        "avatar-video"
+      ],
+      "render_engines": []
+    },
+    "kling_lip_sync": {
+      "name": "kling_lip_sync",
+      "version": "0.1.0",
+      "capability": "avatar",
+      "provider": "kling_official",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.avatar.kling_lip_sync",
+      "class_name": "KlingLipSync",
+      "dependencies": [
+        "env:KLING_API_KEY"
+      ],
+      "supports": {
+        "lip_sync": true,
+        "face_selection": true,
+        "offline": false,
+        "cloud_render": true
+      },
+      "fallback_tools": [
+        "lip_sync"
+      ],
+      "agent_skills": [
+        "kling-official",
+        "avatar-video"
+      ],
+      "render_engines": []
+    },
+    "lip_sync": {
+      "name": "lip_sync",
+      "version": "0.1.0",
+      "capability": "avatar",
+      "provider": "wav2lip",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.avatar.lip_sync",
+      "class_name": "LipSync",
+      "dependencies": [
+        "python:torch",
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "talking_head": {
+      "name": "talking_head",
+      "version": "0.1.0",
+      "capability": "avatar",
+      "provider": "sadtalker",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.avatar.talking_head",
+      "class_name": "TalkingHead",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "cap_recorder": {
+      "name": "cap_recorder",
+      "version": "0.1.0",
+      "capability": "screen_capture",
+      "provider": "cap",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.capture.cap_recorder",
+      "class_name": "CapRecorder",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [
+        "screen_recorder"
+      ],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "screen_capture_selector": {
+      "name": "screen_capture_selector",
+      "version": "0.1.0",
+      "capability": "screen_capture",
+      "provider": "selector",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.capture.screen_capture_selector",
+      "class_name": "ScreenCaptureSelector",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [
+        "cap",
+        "ffmpeg"
+      ],
+      "agent_skills": [
+        "screen-demo"
+      ],
+      "render_engines": []
+    },
+    "screen_recorder": {
+      "name": "screen_recorder",
+      "version": "0.1.0",
+      "capability": "screen_capture",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.capture.screen_recorder",
+      "class_name": "ScreenRecorder",
+      "dependencies": [
+        "binary:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [
+        "cap_recorder"
+      ],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "action_timeline_compiler": {
+      "name": "action_timeline_compiler",
+      "version": "0.1.0",
+      "capability": "character_animation",
+      "provider": "openmontage",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.character.character_animation",
+      "class_name": "ActionTimelineCompiler",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "pose-library-design",
+        "svg-character-animation",
+        "gsap-timeline"
+      ],
+      "render_engines": []
+    },
+    "character_animation_reviewer": {
+      "name": "character_animation_reviewer",
+      "version": "0.1.0",
+      "capability": "character_animation",
+      "provider": "openmontage",
+      "tier": "ToolTier.ANALYZE",
+      "status": "unknown",
+      "module": "tools.character.character_animation",
+      "class_name": "CharacterAnimationReviewer",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "character-animation-qa"
+      ],
+      "render_engines": []
+    },
+    "character_rig_renderer": {
+      "name": "character_rig_renderer",
+      "version": "0.1.0",
+      "capability": "character_animation",
+      "provider": "openmontage",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.character.character_animation",
+      "class_name": "CharacterRigRenderer",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "character-rigging",
+        "svg-character-animation",
+        "canvas-procedural-animation",
+        "gsap-core",
+        "gsap-timeline",
+        "remotion-best-practices",
+        "hyperframes"
+      ],
+      "render_engines": []
+    },
+    "character_spec_generator": {
+      "name": "character_spec_generator",
+      "version": "0.1.0",
+      "capability": "character_animation",
+      "provider": "openmontage",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.character.character_animation",
+      "class_name": "CharacterSpecGenerator",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "character-rigging",
+        "pose-library-design"
+      ],
+      "render_engines": []
+    },
+    "pose_library_builder": {
+      "name": "pose_library_builder",
+      "version": "0.1.0",
+      "capability": "character_animation",
+      "provider": "openmontage",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.character.character_animation",
+      "class_name": "PoseLibraryBuilder",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "pose-library-design",
+        "character-rigging",
+        "svg-character-animation"
+      ],
+      "render_engines": []
+    },
+    "svg_rig_builder": {
+      "name": "svg_rig_builder",
+      "version": "0.1.0",
+      "capability": "character_animation",
+      "provider": "openmontage",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.character.character_animation",
+      "class_name": "SvgRigBuilder",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "character-rigging",
+        "svg-character-animation",
+        "gsap-core",
+        "gsap-timeline"
+      ],
+      "render_engines": []
+    },
+    "bg_remove": {
+      "name": "bg_remove",
+      "version": "0.1.0",
+      "capability": "enhancement",
+      "provider": "rembg",
+      "tier": "ToolTier.ENHANCE",
+      "status": "unknown",
+      "module": "tools.enhancement.bg_remove",
+      "class_name": "BgRemove",
+      "dependencies": [
+        "python:rembg",
+        "python:PIL"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "color_grade": {
+      "name": "color_grade",
+      "version": "0.1.0",
+      "capability": "enhancement",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.enhancement.color_grade",
+      "class_name": "ColorGrade",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "eye_enhance": {
+      "name": "eye_enhance",
+      "version": "0.1.0",
+      "capability": "enhancement",
+      "provider": "mediapipe",
+      "tier": "ToolTier.ENHANCE",
+      "status": "unknown",
+      "module": "tools.enhancement.eye_enhance",
+      "class_name": "EyeEnhance",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "face_enhance": {
+      "name": "face_enhance",
+      "version": "0.1.0",
+      "capability": "enhancement",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.enhancement.face_enhance",
+      "class_name": "FaceEnhance",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "face_restore": {
+      "name": "face_restore",
+      "version": "0.1.0",
+      "capability": "enhancement",
+      "provider": "codeformer",
+      "tier": "ToolTier.ENHANCE",
+      "status": "unknown",
+      "module": "tools.enhancement.face_restore",
+      "class_name": "FaceRestore",
+      "dependencies": [
+        "python:gfpgan",
+        "python:torch"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "upscale": {
+      "name": "upscale",
+      "version": "0.1.0",
+      "capability": "enhancement",
+      "provider": "realesrgan",
+      "tier": "ToolTier.ENHANCE",
+      "status": "unknown",
+      "module": "tools.enhancement.upscale",
+      "class_name": "Upscale",
+      "dependencies": [
+        "python:realesrgan",
+        "python:torch",
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "code_snippet": {
+      "name": "code_snippet",
+      "version": "0.1.0",
+      "capability": "graphics",
+      "provider": "pygments",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.graphics.code_snippet",
+      "class_name": "CodeSnippet",
+      "dependencies": [
+        "python:pygments",
+        "python:PIL"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "comfyui_image": {
+      "name": "comfyui_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "comfyui",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.comfyui_image",
+      "class_name": "ComfyUIImage",
+      "dependencies": [],
+      "supports": {
+        "seed": true,
+        "custom_size": true,
+        "custom_workflow": true,
+        "custom_output_node": true,
+        "offline": true
+      },
+      "fallback_tools": [
+        "flux_image",
+        "local_diffusion",
+        "openai_image"
+      ],
+      "agent_skills": [
+        "comfyui",
+        "flux-best-practices"
+      ],
+      "render_engines": []
+    },
+    "dashscope_image": {
+      "name": "dashscope_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "dashscope",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.dashscope_image",
+      "class_name": "DashscopeImage",
+      "dependencies": [],
+      "supports": {
+        "multiple_outputs": true,
+        "aspect_ratio": true,
+        "resolution": true,
+        "negative_prompt": true,
+        "seed": true
+      },
+      "fallback_tools": [
+        "grok_image",
+        "openai_image",
+        "flux_image",
+        "recraft_image"
+      ],
+      "agent_skills": [
+        "dashscope"
+      ],
+      "render_engines": []
+    },
+    "diagram_gen": {
+      "name": "diagram_gen",
+      "version": "0.1.0",
+      "capability": "graphics",
+      "provider": "mermaid",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.graphics.diagram_gen",
+      "class_name": "DiagramGen",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "beautiful-mermaid",
+        "d3-viz"
+      ],
+      "render_engines": []
+    },
+    "flux_image": {
+      "name": "flux_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "flux",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.flux_image",
+      "class_name": "FluxImage",
+      "dependencies": [],
+      "supports": {
+        "negative_prompt": true,
+        "seed": true,
+        "custom_size": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "flux-best-practices",
+        "bfl-api"
+      ],
+      "render_engines": []
+    },
+    "google_imagen": {
+      "name": "google_imagen",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "google_imagen",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.google_imagen",
+      "class_name": "GoogleImagen",
+      "dependencies": [],
+      "supports": {
+        "negative_prompt": false,
+        "seed": false,
+        "custom_size": false,
+        "aspect_ratio": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "grok_image": {
+      "name": "grok_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "grok",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.grok_image",
+      "class_name": "GrokImage",
+      "dependencies": [],
+      "supports": {
+        "image_edit": true,
+        "multiple_outputs": true,
+        "aspect_ratio": true,
+        "resolution": true,
+        "reference_image": true,
+        "multiple_reference_images": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "grok-media"
+      ],
+      "render_engines": []
+    },
+    "image_gen": {
+      "name": "image_gen",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "multi",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.graphics.image_gen",
+      "class_name": "ImageGen",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "flux-best-practices",
+        "bfl-api"
+      ],
+      "render_engines": []
+    },
+    "image_selector": {
+      "name": "image_selector",
+      "version": "0.2.0",
+      "capability": "image_generation",
+      "provider": "selector",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.image_selector",
+      "class_name": "ImageSelector",
+      "dependencies": [],
+      "supports": {
+        "user_preference_routing": true,
+        "offline_fallback": true,
+        "stock_fallback": true
+      },
+      "fallback_tools": [
+        "comfyui_image",
+        "dashscope_image",
+        "flux_image",
+        "google_imagen",
+        "grok_image",
+        "image_gen",
+        "kling_official_image",
+        "local_diffusion",
+        "openai_image",
+        "pexels_image",
+        "pixabay_image",
+        "recraft_image"
+      ],
+      "agent_skills": [
+        "flux-best-practices",
+        "bfl-api"
+      ],
+      "render_engines": []
+    },
+    "kling_official_image": {
+      "name": "kling_official_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "kling_official",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.kling_official_image",
+      "class_name": "KlingOfficialImage",
+      "dependencies": [
+        "env:KLING_API_KEY"
+      ],
+      "supports": {
+        "text_to_image": true,
+        "image_edit": true,
+        "negative_prompt": true,
+        "aspect_ratio": true
+      },
+      "fallback_tools": [
+        "flux_image",
+        "google_imagen",
+        "openai_image",
+        "recraft_image"
+      ],
+      "agent_skills": [
+        "kling-official"
+      ],
+      "render_engines": []
+    },
+    "local_diffusion": {
+      "name": "local_diffusion",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "local_diffusion",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.local_diffusion",
+      "class_name": "LocalDiffusion",
+      "dependencies": [],
+      "supports": {
+        "negative_prompt": true,
+        "seed": true,
+        "offline": true,
+        "custom_size": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "math_animate": {
+      "name": "math_animate",
+      "version": "0.1.0",
+      "capability": "graphics",
+      "provider": "manim",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.math_animate",
+      "class_name": "MathAnimate",
+      "dependencies": [
+        "cmd:manim"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "manimce-best-practices",
+        "manim-composer"
+      ],
+      "render_engines": []
+    },
+    "openai_image": {
+      "name": "openai_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "openai",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.openai_image",
+      "class_name": "OpenAIImage",
+      "dependencies": [],
+      "supports": {
+        "complex_instructions": true,
+        "text_in_image": true,
+        "multiple_outputs": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "flux-best-practices"
+      ],
+      "render_engines": []
+    },
+    "pexels_image": {
+      "name": "pexels_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "pexels",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.graphics.pexels_image",
+      "class_name": "PexelsImage",
+      "dependencies": [],
+      "supports": {
+        "orientation_filter": true,
+        "size_filter": true,
+        "color_filter": true,
+        "locale": true,
+        "free_commercial_use": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "pixabay_image": {
+      "name": "pixabay_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "pixabay",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.graphics.pixabay_image",
+      "class_name": "PixabayImage",
+      "dependencies": [],
+      "supports": {
+        "orientation_filter": true,
+        "category_filter": true,
+        "color_filter": true,
+        "image_type_filter": true,
+        "editors_choice": true,
+        "free_commercial_use": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "recraft_image": {
+      "name": "recraft_image",
+      "version": "0.1.0",
+      "capability": "image_generation",
+      "provider": "recraft",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.recraft_image",
+      "class_name": "RecraftImage",
+      "dependencies": [],
+      "supports": {
+        "svg_output": true,
+        "text_rendering": true,
+        "color_palette": true,
+        "custom_size": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "copyright_preflight": {
+      "name": "copyright_preflight",
+      "version": "0.1.0",
+      "capability": "publish",
+      "provider": "copyright_preflight",
+      "tier": "ToolTier.PUBLISH",
+      "status": "unknown",
+      "module": "tools.publishers.copyright_preflight",
+      "class_name": "CopyrightPreflight",
+      "dependencies": [
+        "command:ffprobe"
+      ],
+      "supports": {
+        "local_offline": true,
+        "free": true,
+        "uploads": false
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "export_bundle": {
+      "name": "export_bundle",
+      "version": "0.1.0",
+      "capability": "publish",
+      "provider": "local",
+      "tier": "ToolTier.PUBLISH",
+      "status": "unknown",
+      "module": "tools.publishers.export_bundle",
+      "class_name": "ExportBundle",
+      "dependencies": [],
+      "supports": {
+        "local_offline": true,
+        "free": true,
+        "uploads": false
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "meta_publisher": {
+      "name": "meta_publisher",
+      "version": "0.2.0",
+      "capability": "publish",
+      "provider": "meta",
+      "tier": "ToolTier.PUBLISH",
+      "status": "unknown",
+      "module": "tools.publishers.meta_publisher",
+      "class_name": "MetaPublisher",
+      "dependencies": [
+        "env:TOKEN_FACEBOOK",
+        "python:requests",
+        "python:boto3"
+      ],
+      "supports": {
+        "local_offline": false,
+        "free": true,
+        "uploads": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "tiktok_publisher": {
+      "name": "tiktok_publisher",
+      "version": "0.1.0",
+      "capability": "publish",
+      "provider": "tiktok",
+      "tier": "ToolTier.PUBLISH",
+      "status": "unknown",
+      "module": "tools.publishers.tiktok_publisher",
+      "class_name": "TiktokPublisher",
+      "dependencies": [
+        "cmd:google-chrome",
+        "python:playwright",
+        "python:dns"
+      ],
+      "supports": {
+        "local_offline": false,
+        "free": true,
+        "uploads": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "youtube_publisher": {
+      "name": "youtube_publisher",
+      "version": "0.1.0",
+      "capability": "publish",
+      "provider": "youtube",
+      "tier": "ToolTier.PUBLISH",
+      "status": "unknown",
+      "module": "tools.publishers.youtube_publisher",
+      "class_name": "YoutubePublisher",
+      "dependencies": [
+        "env:YOUTUBE_CLIENT_SECRET_FILE",
+        "python:googleapiclient",
+        "python:google_auth_oauthlib"
+      ],
+      "supports": {
+        "local_offline": false,
+        "free": true,
+        "uploads": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "subtitle_gen": {
+      "name": "subtitle_gen",
+      "version": "0.1.0",
+      "capability": "subtitle",
+      "provider": "openmontage",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.subtitle.subtitle_gen",
+      "class_name": "SubtitleGen",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "remotion-best-practices"
+      ],
+      "render_engines": []
+    },
+    "auto_reframe": {
+      "name": "auto_reframe",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.auto_reframe",
+      "class_name": "AutoReframe",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "clip_search": {
+      "name": "clip_search",
+      "version": "0.1.0",
+      "capability": "clip_retrieval",
+      "provider": "openmontage",
+      "tier": "ToolTier.ANALYZE",
+      "status": "unknown",
+      "module": "tools.video.clip_search",
+      "class_name": "ClipSearch",
+      "dependencies": [
+        "python:numpy",
+        "python:transformers",
+        "python:torch"
+      ],
+      "supports": {
+        "fused_visual_tag_scoring": true,
+        "motion_filter": true,
+        "kind_filter": true,
+        "exclude_list": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "cogvideo_video": {
+      "name": "cogvideo_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "cogvideo",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.cogvideo_video",
+      "class_name": "CogVideoVideo",
+      "dependencies": [],
+      "supports": {
+        "reference_image": true,
+        "offline": true,
+        "native_audio": false,
+        "local_gpu": true
+      },
+      "fallback_tools": [
+        "wan_video",
+        "hunyuan_video",
+        "ltx_video_local",
+        "image_selector"
+      ],
+      "agent_skills": [
+        "ltx2"
+      ],
+      "render_engines": []
+    },
+    "comfyui_video": {
+      "name": "comfyui_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "comfyui",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.comfyui_video",
+      "class_name": "ComfyUIVideo",
+      "dependencies": [],
+      "supports": {
+        "seed": true,
+        "reference_image": true,
+        "custom_workflow": true,
+        "custom_output_node": true,
+        "offline": true
+      },
+      "fallback_tools": [
+        "wan_video",
+        "hunyuan_video",
+        "ltx_video_local",
+        "kling_video"
+      ],
+      "agent_skills": [
+        "comfyui",
+        "ai-video-gen",
+        "ltx2"
+      ],
+      "render_engines": []
+    },
+    "corpus_builder": {
+      "name": "corpus_builder",
+      "version": "0.1.0",
+      "capability": "corpus_population",
+      "provider": "openmontage",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.video.corpus_builder",
+      "class_name": "CorpusBuilder",
+      "dependencies": [
+        "python:cv2",
+        "python:numpy",
+        "python:requests",
+        "python:PIL",
+        "python:transformers",
+        "python:torch"
+      ],
+      "supports": {
+        "multi_source": true,
+        "video_and_image": true,
+        "append_only": true,
+        "resumable": true
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "direct_clip_search": {
+      "name": "direct_clip_search",
+      "version": "0.1.0",
+      "capability": "clip_acquisition",
+      "provider": "openmontage",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.video.direct_clip_search",
+      "class_name": "DirectClipSearch",
+      "dependencies": [
+        "python:requests"
+      ],
+      "supports": {
+        "multi_source": true,
+        "video_and_image": true,
+        "provider_agnostic": true,
+        "cross_act_reuse": true
+      },
+      "fallback_tools": [
+        "corpus_builder",
+        "pexels_video"
+      ],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "gemini_omni_video": {
+      "name": "gemini_omni_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "gemini_omni",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.gemini_omni_video",
+      "class_name": "GeminiOmniVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "reference_to_video": true,
+        "edit_video": true,
+        "conversational_editing": true,
+        "native_audio": true,
+        "text_rendering": true,
+        "timecode_control": true,
+        "seed": false,
+        "negative_prompt": false,
+        "first_last_frame_to_video": false
+      },
+      "fallback_tools": [
+        "veo_video",
+        "sora_video",
+        "kling_video",
+        "minimax_video"
+      ],
+      "agent_skills": [
+        "gemini-omni",
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "green_screen_composite": {
+      "name": "green_screen_composite",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.green_screen_composite",
+      "class_name": "GreenScreenComposite",
+      "dependencies": [
+        "cmd:ffmpeg",
+        "python:numpy",
+        "python:PIL"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "green_screen_processor": {
+      "name": "green_screen_processor",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.green_screen_processor",
+      "class_name": "GreenScreenProcessor",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "grok_video": {
+      "name": "grok_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "grok",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.grok_video",
+      "class_name": "GrokVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "reference_to_video": true,
+        "reference_image": true,
+        "multiple_reference_images": true,
+        "native_audio": true,
+        "lip_sync": true,
+        "cinematic_quality": true
+      },
+      "fallback_tools": [
+        "veo_video",
+        "runway_video",
+        "kling_video",
+        "minimax_video"
+      ],
+      "agent_skills": [
+        "grok-media",
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "heygen_video": {
+      "name": "heygen_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "heygen",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.heygen_video",
+      "class_name": "HeyGenVideo",
+      "dependencies": [],
+      "supports": {
+        "reference_image": true,
+        "offline": false,
+        "native_audio": false,
+        "cloud_generation": true
+      },
+      "fallback_tools": [
+        "wan_video",
+        "hunyuan_video",
+        "ltx_video_local",
+        "cogvideo_video",
+        "ltx_video_modal",
+        "image_selector"
+      ],
+      "agent_skills": [
+        "ai-video-gen",
+        "create-video"
+      ],
+      "render_engines": []
+    },
+    "higgsfield_video": {
+      "name": "higgsfield_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "higgsfield",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.higgsfield_video",
+      "class_name": "HiggsFieldVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "character_consistency": true,
+        "multi_model_routing": true,
+        "native_audio": true,
+        "cinematic_quality": true,
+        "camera_direction": true,
+        "lip_sync": true,
+        "multi_shot": true
+      },
+      "fallback_tools": [
+        "seedance_video",
+        "seedance_replicate",
+        "kling_video",
+        "veo_video",
+        "minimax_video"
+      ],
+      "agent_skills": [
+        "seedance-2-0",
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "hunyuan_video": {
+      "name": "hunyuan_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "hunyuan",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.hunyuan_video",
+      "class_name": "HunyuanVideo",
+      "dependencies": [],
+      "supports": {
+        "reference_image": true,
+        "offline": true,
+        "native_audio": false,
+        "local_gpu": true
+      },
+      "fallback_tools": [
+        "wan_video",
+        "ltx_video_local",
+        "cogvideo_video",
+        "image_selector"
+      ],
+      "agent_skills": [
+        "ltx2"
+      ],
+      "render_engines": []
+    },
+    "hyperframes_compose": {
+      "name": "hyperframes_compose",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "hyperframes",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.hyperframes_compose",
+      "class_name": "HyperFramesCompose",
+      "dependencies": [
+        "cmd:npx",
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [
+        "video_compose"
+      ],
+      "agent_skills": [
+        "hyperframes",
+        "hyperframes-cli",
+        "hyperframes-registry",
+        "website-to-hyperframes",
+        "gsap-core",
+        "gsap-timeline"
+      ],
+      "render_engines": []
+    },
+    "jimeng_video": {
+      "name": "jimeng_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "volcengine",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.jimeng_video",
+      "class_name": "JimengVideo",
+      "dependencies": [
+        "env:VOLC_ACCESSKEY",
+        "env:VOLC_SECRETKEY"
+      ],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "native_audio": false,
+        "seed": true
+      },
+      "fallback_tools": [
+        "minimax_video",
+        "kling_video",
+        "veo_video"
+      ],
+      "agent_skills": [
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "kling_official_video": {
+      "name": "kling_official_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "kling_official",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.kling_official_video",
+      "class_name": "KlingOfficialVideo",
+      "dependencies": [
+        "env:KLING_API_KEY"
+      ],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "reference_to_video": true,
+        "reference_image": true,
+        "negative_prompt": true,
+        "aspect_ratio": true
+      },
+      "fallback_tools": [
+        "kling_video",
+        "seedance_video",
+        "veo_video",
+        "minimax_video"
+      ],
+      "agent_skills": [
+        "ai-video-gen",
+        "kling-official"
+      ],
+      "render_engines": []
+    },
+    "kling_video": {
+      "name": "kling_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "kling",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.kling_video",
+      "class_name": "KlingVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "native_audio": true,
+        "cinematic_quality": true
+      },
+      "fallback_tools": [
+        "minimax_video",
+        "veo_video",
+        "wan_video"
+      ],
+      "agent_skills": [
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "ltx_video_local": {
+      "name": "ltx_video_local",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "ltx",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.ltx_video_local",
+      "class_name": "LTXVideoLocal",
+      "dependencies": [],
+      "supports": {
+        "reference_image": true,
+        "offline": true,
+        "native_audio": false,
+        "local_gpu": true
+      },
+      "fallback_tools": [
+        "wan_video",
+        "hunyuan_video",
+        "cogvideo_video",
+        "ltx_video_modal",
+        "image_selector"
+      ],
+      "agent_skills": [
+        "ltx2"
+      ],
+      "render_engines": []
+    },
+    "ltx_video_modal": {
+      "name": "ltx_video_modal",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "ltx-modal",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.ltx_video_modal",
+      "class_name": "LTXVideoModal",
+      "dependencies": [],
+      "supports": {
+        "reference_image": true,
+        "offline": false,
+        "native_audio": false,
+        "self_hosted_cloud": true
+      },
+      "fallback_tools": [
+        "ltx_video_local",
+        "wan_video",
+        "hunyuan_video",
+        "cogvideo_video",
+        "image_selector"
+      ],
+      "agent_skills": [
+        "ltx2"
+      ],
+      "render_engines": []
+    },
+    "minimax_video": {
+      "name": "minimax_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "minimax",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.minimax_video",
+      "class_name": "MiniMaxVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "camera_direction": true
+      },
+      "fallback_tools": [
+        "kling_video",
+        "veo_video",
+        "wan_video"
+      ],
+      "agent_skills": [
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "multishot": {
+      "name": "multishot",
+      "version": "0.1.0",
+      "capability": "multishot_orchestration",
+      "provider": "openmontage",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.multishot",
+      "class_name": "Multishot",
+      "dependencies": [],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "pexels_video": {
+      "name": "pexels_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "pexels",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.video.pexels_video",
+      "class_name": "PexelsVideo",
+      "dependencies": [],
+      "supports": {
+        "orientation_filter": true,
+        "size_filter": true,
+        "free_commercial_use": true
+      },
+      "fallback_tools": [
+        "pixabay_video"
+      ],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "pixabay_video": {
+      "name": "pixabay_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "pixabay",
+      "tier": "ToolTier.SOURCE",
+      "status": "unknown",
+      "module": "tools.video.pixabay_video",
+      "class_name": "PixabayVideo",
+      "dependencies": [],
+      "supports": {
+        "video_type_filter": true,
+        "category_filter": true,
+        "editors_choice": true,
+        "free_commercial_use": true
+      },
+      "fallback_tools": [
+        "pexels_video"
+      ],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "remotion_caption_burn": {
+      "name": "remotion_caption_burn",
+      "version": "0.1.0",
+      "capability": "subtitle",
+      "provider": "remotion",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.remotion_caption_burn",
+      "class_name": "RemotionCaptionBurn",
+      "dependencies": [
+        "cmd:ffmpeg",
+        "cmd:ffprobe"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "remotion-best-practices",
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "runway_video": {
+      "name": "runway_video",
+      "version": "0.2.0",
+      "capability": "video_generation",
+      "provider": "runway",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.runway_video",
+      "class_name": "RunwayVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "professional_control": true,
+        "native_audio": true,
+        "cinematic_quality": true,
+        "camera_direction": true,
+        "lip_sync": true,
+        "multi_shot": true
+      },
+      "fallback_tools": [
+        "seedance_video",
+        "seedance_replicate",
+        "kling_video",
+        "veo_video",
+        "minimax_video",
+        "wan_video"
+      ],
+      "agent_skills": [
+        "seedance-2-0",
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "seedance_replicate": {
+      "name": "seedance_replicate",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "seedance",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.seedance_replicate",
+      "class_name": "SeedanceReplicate",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "reference_image": true,
+        "native_audio": true,
+        "cinematic_quality": true,
+        "camera_direction": true,
+        "lip_sync": true,
+        "multi_shot": true,
+        "aspect_ratio": true,
+        "seed": true
+      },
+      "fallback_tools": [
+        "seedance_video",
+        "veo_video",
+        "kling_video",
+        "minimax_video"
+      ],
+      "agent_skills": [
+        "seedance-2-0",
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "seedance_video": {
+      "name": "seedance_video",
+      "version": "0.2.0",
+      "capability": "video_generation",
+      "provider": "seedance",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.seedance_video",
+      "class_name": "SeedanceVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "reference_to_video": true,
+        "multiple_reference_images": true,
+        "reference_image": true,
+        "native_audio": true,
+        "cinematic_quality": true,
+        "camera_direction": true,
+        "lip_sync": true,
+        "multi_shot": true,
+        "aspect_ratio": true,
+        "seed": true
+      },
+      "fallback_tools": [
+        "veo_video",
+        "kling_video",
+        "minimax_video"
+      ],
+      "agent_skills": [
+        "seedance-2-0",
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "showcase_card": {
+      "name": "showcase_card",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.showcase_card",
+      "class_name": "ShowcaseCard",
+      "dependencies": [
+        "cmd:ffmpeg",
+        "cmd:ffprobe"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg",
+        "video-toolkit"
+      ],
+      "render_engines": []
+    },
+    "silence_cutter": {
+      "name": "silence_cutter",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.silence_cutter",
+      "class_name": "SilenceCutter",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg"
+      ],
+      "render_engines": []
+    },
+    "sora_video": {
+      "name": "sora_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "openai",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.sora_video",
+      "class_name": "SoraVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "native_audio": true,
+        "camera_direction": true,
+        "social_ads": true,
+        "short_clips": true
+      },
+      "fallback_tools": [
+        "veo_video",
+        "gemini_omni_video",
+        "seedance_video",
+        "kling_video",
+        "minimax_video"
+      ],
+      "agent_skills": [
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "veo_video": {
+      "name": "veo_video",
+      "version": "0.2.0",
+      "capability": "video_generation",
+      "provider": "veo",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.veo_video",
+      "class_name": "VeoVideo",
+      "dependencies": [],
+      "supports": {
+        "text_to_video": true,
+        "image_to_video": true,
+        "reference_to_video": true,
+        "first_last_frame_to_video": true,
+        "native_audio": true,
+        "dialogue_generation": true,
+        "ambient_sound": true
+      },
+      "fallback_tools": [
+        "gemini_omni_video",
+        "kling_video",
+        "minimax_video",
+        "wan_video"
+      ],
+      "agent_skills": [
+        "ai-video-gen"
+      ],
+      "render_engines": []
+    },
+    "video_compose": {
+      "name": "video_compose",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.video_compose",
+      "class_name": "VideoCompose",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "remotion-best-practices",
+        "remotion",
+        "ffmpeg"
+      ],
+      "render_engines": {
+        "ffmpeg": true,
+        "remotion": false,
+        "hyperframes": true
+      }
+    },
+    "video_selector": {
+      "name": "video_selector",
+      "version": "0.3.1",
+      "capability": "video_generation",
+      "provider": "selector",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.video_selector",
+      "class_name": "VideoSelector",
+      "dependencies": [],
+      "supports": {
+        "user_preference_routing": true,
+        "offline_fallback": true,
+        "reference_image": true,
+        "stock_fallback": true
+      },
+      "fallback_tools": [
+        "cogvideo_video",
+        "comfyui_video",
+        "gemini_omni_video",
+        "grok_video",
+        "heygen_video",
+        "higgsfield_video",
+        "hunyuan_video",
+        "jimeng_video",
+        "kling_official_video",
+        "kling_video",
+        "ltx_video_local",
+        "ltx_video_modal",
+        "minimax_video",
+        "pexels_video",
+        "pixabay_video",
+        "runway_video",
+        "seedance_replicate",
+        "seedance_video",
+        "sora_video",
+        "veo_video",
+        "wan_video",
+        "image_selector"
+      ],
+      "agent_skills": [
+        "ai-video-gen",
+        "create-video",
+        "ltx2",
+        "gemini-omni"
+      ],
+      "render_engines": []
+    },
+    "video_stitch": {
+      "name": "video_stitch",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.video_stitch",
+      "class_name": "VideoStitch",
+      "dependencies": [
+        "cmd:ffmpeg",
+        "cmd:ffprobe"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg",
+        "video-toolkit"
+      ],
+      "render_engines": []
+    },
+    "video_trimmer": {
+      "name": "video_trimmer",
+      "version": "0.1.0",
+      "capability": "video_post",
+      "provider": "ffmpeg",
+      "tier": "ToolTier.CORE",
+      "status": "unknown",
+      "module": "tools.video.video_trimmer",
+      "class_name": "VideoTrimmer",
+      "dependencies": [
+        "cmd:ffmpeg"
+      ],
+      "supports": {},
+      "fallback_tools": [],
+      "agent_skills": [
+        "ffmpeg",
+        "video-toolkit"
+      ],
+      "render_engines": []
+    },
+    "wan_video": {
+      "name": "wan_video",
+      "version": "0.1.0",
+      "capability": "video_generation",
+      "provider": "wan",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.video.wan_video",
+      "class_name": "WanVideo",
+      "dependencies": [],
+      "supports": {
+        "reference_image": true,
+        "offline": true,
+        "native_audio": false,
+        "local_gpu": true
+      },
+      "fallback_tools": [
+        "hunyuan_video",
+        "ltx_video_local",
+        "cogvideo_video",
+        "image_selector"
+      ],
+      "agent_skills": [
+        "ltx2"
+      ],
+      "render_engines": []
+    }
+  },
+  "pipelines": {
+    "animated-explainer": {
+      "file": "pipeline_defs/animated-explainer.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "animation": {
+      "file": "pipeline_defs/animation.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "avatar-spokesperson": {
+      "file": "pipeline_defs/avatar-spokesperson.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "character-animation": {
+      "file": "pipeline_defs/character-animation.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "cinematic": {
+      "file": "pipeline_defs/cinematic.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "clip-factory": {
+      "file": "pipeline_defs/clip-factory.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "documentary-montage": {
+      "file": "pipeline_defs/documentary-montage.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "framework-smoke": {
+      "file": "pipeline_defs/framework-smoke.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "hybrid": {
+      "file": "pipeline_defs/hybrid.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "localization-dub": {
+      "file": "pipeline_defs/localization-dub.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "multi-shot": {
+      "file": "pipeline_defs/multi-shot.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "podcast-repurpose": {
+      "file": "pipeline_defs/podcast-repurpose.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "screen-demo": {
+      "file": "pipeline_defs/screen-demo.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    },
+    "talking-head": {
+      "file": "pipeline_defs/talking-head.yaml",
+      "error": "'list' object has no attribute 'keys'"
+    }
+  }
+}
