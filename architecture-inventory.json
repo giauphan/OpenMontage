@@ -1,8 +1,6 @@
 {
   "metadata": {
-    "scanned_from_commit": "a1f653b6ba8a55c7d303019e35b91016472f3d5c",
-    "tracked_files_count": 2463,
-    "python_version": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]"
+    "tracked_files_count": 2463
   },
   "hotspots": [
     {
@@ -28333,7 +28331,7 @@
     "plan/completed/OPENMONTAGE_ARCHITECTURE_MIGRATION_PLAN.md": {
       "physical_loc": 514,
       "logical_loc": 385,
-      "bytes": 39601,
+      "bytes": 39683,
       "language": "markdown"
     },
     "remotion-composer/SCENE_TYPES.md": {
@@ -28983,9 +28981,9 @@
       "language": "python"
     },
     "scripts/architecture_inventory.py": {
-      "physical_loc": 504,
-      "logical_loc": 421,
-      "bytes": 18189,
+      "physical_loc": 501,
+      "logical_loc": 417,
+      "bytes": 18104,
       "classes": [],
       "functions": [
         {
@@ -29039,7 +29037,7 @@
         {
           "name": "main",
           "lineno": 373,
-          "loc": 128,
+          "loc": 125,
           "complexity": 14
         }
       ],

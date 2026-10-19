@@ -447,11 +447,10 @@ def main():
     reachability_data = build_reachability_report(tracked_files, tools_data, pipelines_data)
 
     # Write output files
+    # Write output files (deterministic without run-specific commit or python build strings)
     arch_output = {
         "metadata": {
-            "scanned_from_commit": git_head,
             "tracked_files_count": len(tracked_files),
-            "python_version": sys.version,
         },
         "hotspots": hotspots[:30],
         "files": inventory_by_file,
@@ -459,7 +458,6 @@ def main():
 
     contract_output = {
         "metadata": {
-            "scanned_from_commit": git_head,
             "tool_count": len(tools_data),
             "pipeline_count": len(pipelines_data),
         },
@@ -469,7 +467,6 @@ def main():
 
     reachability_output = {
         "metadata": {
-            "scanned_from_commit": git_head,
             "total_files": len(reachability_data),
             "unknown_count": sum(1 for v in reachability_data.values() if v["status"] == "UNKNOWN"),
             "active_count": sum(1 for v in reachability_data.values() if v["status"] == "ACTIVE"),

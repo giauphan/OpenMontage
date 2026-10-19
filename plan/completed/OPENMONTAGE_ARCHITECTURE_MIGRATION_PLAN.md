@@ -1,6 +1,6 @@
 # OpenMontage — Architecture Migration & Maintainability Remediation Plan
 
-> **Status:** COMPLETED (Phases 0-6 implemented; archived in repository)  
+> **Status:** ARCHIVED EXECUTION PLAN (Migration implementation, contracts, and inventories completed in PR #28; baseline plan preserved for provenance)  
 > **Target repository:** `giauphan/OpenMontage`  
 > **Archived repository destination:** `plan/completed/OPENMONTAGE_ARCHITECTURE_MIGRATION_PLAN.md`  
 > **Prepared:** 2026-10-19  
@@ -173,7 +173,7 @@ OpenMontage/
 ├── docs/architecture/
 │   ├── ADR-001-incremental-modularization.md [proposed]
 │   └── module-ownership.md                   [proposed]
-└── plan/pending/
+└── plan/completed/
     └── OPENMONTAGE_ARCHITECTURE_MIGRATION_PLAN.md  [this plan]
 ```
 
