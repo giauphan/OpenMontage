@@ -52,6 +52,12 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+from tools.video._compose.asset_resolution import (
+    IMAGE_EXTENSIONS as _IMAGE_EXTENSIONS_SET,
+    is_image as _is_image_fn,
+    resolve_cuts as _resolve_cuts_fn,
+    cuts_to_cinematic_scenes as _cuts_to_cinematic_scenes_fn,
+)
 
 
 class VideoCompose(BaseTool):
@@ -366,12 +372,12 @@ class VideoCompose(BaseTool):
         result.duration_seconds = round(time.time() - start, 2)
         return result
 
-    _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
+    _IMAGE_EXTENSIONS = _IMAGE_EXTENSIONS_SET
 
     @staticmethod
     def _is_image(path: Path) -> bool:
         """Check if a file is a still image (routes to Remotion, not FFmpeg)."""
-        return path.suffix.lower() in VideoCompose._IMAGE_EXTENSIONS
+        return _is_image_fn(path)
 
     @staticmethod
     def _has_audio_stream(path: Path) -> bool:
@@ -820,65 +826,7 @@ class VideoCompose(BaseTool):
     @staticmethod
     def _cuts_to_cinematic_scenes(cuts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Adapt canonical sequential cuts to CinematicRenderer's scene contract."""
-
-        scenes: list[dict[str, Any]] = []
-        timeline_cursor = 0.0
-        hard_transitions = {"cut", "none"}
-        title_types = {"hero_title", "text_card", "title"}
-
-        for index, cut in enumerate(cuts):
-            try:
-                source_in = float(cut.get("in_seconds", 0))
-                source_out = float(cut.get("out_seconds", source_in))
-                speed = max(float(cut.get("speed", 1.0)), 0.1)
-            except (TypeError, ValueError):
-                continue
-            duration = max(0.0, (source_out - source_in) / speed)
-            if duration <= 0:
-                continue
-
-            scene_id = str(cut.get("id") or f"cut-{index + 1}")
-            source = str(cut.get("source") or "")
-            cut_type = str(cut.get("type") or "").lower()
-            common = {
-                "id": scene_id,
-                "startSeconds": timeline_cursor,
-                "durationSeconds": duration,
-            }
-
-            if cut_type in title_types or not source:
-                scene: dict[str, Any] = {
-                    **common,
-                    "kind": "title",
-                    "text": str(
-                        cut.get("text")
-                        or cut.get("title")
-                        or cut.get("reason")
-                        or scene_id
-                    ),
-                }
-                if source:
-                    scene["backgroundSrc"] = source
-                    scene["backgroundTrimBeforeSeconds"] = source_in
-                    scene["backgroundTrimAfterSeconds"] = source_out
-            else:
-                scene = {
-                    **common,
-                    "kind": "video",
-                    "src": source,
-                    "trimBeforeSeconds": source_in,
-                    "trimAfterSeconds": source_out,
-                    "playbackRate": speed,
-                }
-                if str(cut.get("transition_in") or "").lower() in hard_transitions:
-                    scene["fadeInFrames"] = 0
-                if str(cut.get("transition_out") or "").lower() in hard_transitions:
-                    scene["fadeOutFrames"] = 0
-
-            scenes.append(scene)
-            timeline_cursor += duration
-
-        return scenes
+        return _cuts_to_cinematic_scenes_fn(cuts)
 
     @staticmethod
     def _stage_remotion_media(value: Any, public_dir: Path) -> int:
@@ -1603,21 +1551,12 @@ class VideoCompose(BaseTool):
         output_path = Path(inputs.get("output_path", "renders/output.mp4"))
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Build asset lookup: id -> asset info
-        asset_lookup = {a["id"]: a for a in asset_manifest.get("assets", [])}
-
         cuts = edit_decisions.get("cuts", [])
         if not cuts:
             return ToolResult(success=False, error="No cuts in edit_decisions")
 
         # Resolve asset IDs in cuts to file paths
-        resolved_cuts = []
-        for cut in cuts:
-            source_id = cut.get("source", "")
-            resolved_cut = dict(cut)
-            if source_id in asset_lookup:
-                resolved_cut["source"] = asset_lookup[source_id]["path"]
-            resolved_cuts.append(resolved_cut)
+        resolved_cuts = _resolve_cuts_fn(cuts, asset_manifest)
 
         # --- Pre-compose validation gate ---
         scene_plan = inputs.get("scene_plan")
