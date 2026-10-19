@@ -58,6 +58,25 @@ from tools.video._compose.asset_resolution import (
     resolve_cuts as _resolve_cuts_fn,
     cuts_to_cinematic_scenes as _cuts_to_cinematic_scenes_fn,
 )
+from tools.video._compose.validation import (
+    TTS_PUNCTUATION_LEAK_WORDS as _TTS_PUNCTUATION_LEAK_WORDS_SET,
+    read_text_file as _read_text_file_fn,
+    tokenize_text as _tokenize_fn,
+    compare_transcript_to_script as _compare_transcript_to_script_fn,
+    pre_compose_validation as _pre_compose_validation_fn,
+)
+from tools.video._compose.runtime_policy import (
+    validate_render_runtime as _validate_render_runtime_fn,
+    is_remotion_atelier as _is_remotion_atelier_fn,
+    check_runtime_availability as _check_runtime_availability_fn,
+    detect_runtime_swap as _detect_runtime_swap_fn,
+)
+from tools.video._compose.ffmpeg_commands import (
+    build_atempo as _build_atempo_fn,
+    parse_probe_fps as _parse_probe_fps_fn,
+    resolve_subtitle_style as _resolve_subtitle_style_fn,
+    build_subtitle_style as _build_subtitle_style_fn,
+)
 
 
 class VideoCompose(BaseTool):
@@ -1372,111 +1391,10 @@ class VideoCompose(BaseTool):
         scene_plan: list[dict] | None = None,
         asset_manifest: dict[str, Any] | None = None,
     ) -> ToolResult | None:
-        """Pre-compose quality gate — blocks render on critical violations.
-
-        Checks:
-        1. Delivery promise violation: motion-required brief with >70% still cuts → BLOCK
-        2. Slideshow risk score "fail" (average ≥ 4.0) → BLOCK
-        3. Missing renderer_family → WARN (log only, don't block)
-
-        Returns a failed ToolResult if render should be blocked, None if OK to proceed.
-        """
-        log = logging.getLogger("video_compose")
-        warnings: list[str] = []
-        blocks: list[str] = []
-
-        # --- 1. Delivery promise check ---
-        delivery_data = edit_decisions.get("metadata", {}).get("delivery_promise")
-        if not delivery_data:
-            # Also check top-level (proposal_packet nests it at top level)
-            delivery_data = edit_decisions.get("delivery_promise")
-
-        if delivery_data:
-            try:
-                from lib.delivery_promise import DeliveryPromise
-                promise = DeliveryPromise.from_dict(delivery_data)
-                result = promise.validate_cuts(resolved_cuts)
-                if not result["valid"]:
-                    for v in result["violations"]:
-                        blocks.append(f"Delivery promise violation: {v}")
-            except Exception as e:
-                log.warning("Could not validate delivery promise: %s", e)
-        else:
-            warnings.append("No delivery_promise in edit_decisions — skipping promise validation")
-
-        # --- 2. Slideshow risk check ---
-        renderer_family = edit_decisions.get("renderer_family")
-        scenes = scene_plan or []
-
-        # If no scene_plan passed, try to extract scene info from cuts
-        if not scenes and resolved_cuts:
-            scenes = [
-                {
-                    "type": c.get("type", ""),
-                    "description": c.get("reason", ""),
-                    "shot_language": c.get("shot_language", {}),
-                    "shot_intent": c.get("shot_intent"),
-                    "narrative_role": c.get("narrative_role"),
-                    "information_role": c.get("information_role"),
-                    "hero_moment": c.get("hero_moment", False),
-                }
-                for c in resolved_cuts
-            ]
-
-        if scenes:
-            try:
-                from lib.slideshow_risk import score_slideshow_risk
-                render_runtime = edit_decisions.get("render_runtime")
-                risk = score_slideshow_risk(
-                    scenes, edit_decisions, renderer_family, render_runtime
-                )
-                if risk["verdict"] == "fail":
-                    blocks.append(
-                        f"Slideshow risk score {risk['average']:.1f}/5.0 (verdict: fail). "
-                        f"Video plan looks like a slideshow — revise scene plan before rendering."
-                    )
-                elif risk["verdict"] == "revise":
-                    warnings.append(
-                        f"Slideshow risk score {risk['average']:.1f}/5.0 (verdict: revise). "
-                        f"Consider improving scene variety before final render."
-                    )
-            except Exception as e:
-                log.warning("Could not compute slideshow risk: %s", e)
-
-        # --- 3. Missing renderer_family (BLOCK — must be set at proposal) ---
-        if not renderer_family:
-            blocks.append(
-                "No renderer_family in edit_decisions. "
-                "renderer_family must be set at proposal stage and locked before compose. "
-                "Re-run the proposal stage with a renderer_family selection."
-            )
-
-        # --- 4. Music copyright / platform policy check ---
-        if asset_manifest is not None:
-            try:
-                from lib.music_policy import validate_music_policy
-                music_errors = validate_music_policy(asset_manifest, edit_decisions)
-                for err in music_errors:
-                    blocks.append(f"Music policy: {err}")
-            except Exception as e:
-                log.warning("Could not validate music policy: %s", e)
-
-        # Log warnings
-        for w in warnings:
-            log.warning("[pre-compose] %s", w)
-
-        # Block on critical violations
-        if blocks:
-            return ToolResult(
-                success=False,
-                error=(
-                    "Pre-compose validation failed — render blocked.\n"
-                    + "\n".join(f"  • {b}" for b in blocks)
-                    + ("\n\nWarnings:\n" + "\n".join(f"  • {w}" for w in warnings) if warnings else "")
-                ),
-            )
-
-        return None
+        """Pre-compose quality gate — blocks render on critical violations."""
+        return _pre_compose_validation_fn(
+            edit_decisions, resolved_cuts, scene_plan, asset_manifest
+        )
 
     def _render(self, inputs: dict[str, Any]) -> ToolResult:
         """High-level render: assemble edit decisions + asset manifest into final video.
@@ -1501,48 +1419,14 @@ class VideoCompose(BaseTool):
             return ToolResult(success=False, error="edit_decisions required for render")
 
         # --- Runtime routing: honor render_runtime locked at proposal ---
-        # Silent swaps are forbidden by governance. Resolve this before any
-        # composition-mode branching so `composition_mode="atelier"` cannot
-        # accidentally force the Remotion atelier path when HyperFrames or
-        # FFmpeg was approved.
-        render_runtime = (edit_decisions.get("render_runtime") or "").strip().lower()
+        is_valid_rt, rt_err = _validate_render_runtime_fn(edit_decisions)
+        if not is_valid_rt:
+            return ToolResult(success=False, error=rt_err)
 
-        if not render_runtime:
-            return ToolResult(
-                success=False,
-                error=(
-                    "render_runtime is not set in edit_decisions. Per governance, "
-                    "it MUST be locked at proposal stage (proposal_packet."
-                    "production_plan.render_runtime) and carried forward through "
-                    "edit_decisions.render_runtime. Valid values: 'remotion', "
-                    "'hyperframes', 'ffmpeg'. Re-run the proposal stage with an "
-                    "explicit runtime choice — do NOT default this field."
-                ),
-            )
-
-        if render_runtime not in {"remotion", "hyperframes", "ffmpeg"}:
-            return ToolResult(
-                success=False,
-                error=(
-                    f"Unknown render_runtime {render_runtime!r}. "
-                    f"Valid values: remotion, hyperframes, ffmpeg. "
-                    f"render_runtime must be set at proposal stage."
-                ),
-            )
+        render_runtime = edit_decisions["render_runtime"].strip().lower()
 
         # --- Atelier (bespoke) mode -------------------------------------
-        # Hand-authored, project-local Remotion composition. Deliberately
-        # bypasses the cut-schema, the stock scene-type registry, and the
-        # RENDERER_FAMILY_MAP. This is the "hand-stitched every time" path:
-        # the agent writes a fresh composition (its own scenes, theme, motion)
-        # under remotion-composer/projects/<slug>/ and points this renderer at
-        # it. No reusable creative components; a new visual language per video.
-        # Triggered by composition_mode="atelier" (or renderer_family="bespoke").
-        remotion_atelier_requested = (
-            edit_decisions.get("composition_mode") == "atelier"
-            or edit_decisions.get("renderer_family") == "bespoke"
-        )
-        if render_runtime == "remotion" and remotion_atelier_requested:
+        if _is_remotion_atelier_fn(edit_decisions, render_runtime):
             return self._render_via_atelier(inputs, edit_decisions)
 
         if not asset_manifest:
@@ -2052,37 +1936,17 @@ class VideoCompose(BaseTool):
     # Punctuation/SSML-leak words that should NEVER appear in rendered audio.
     # When a TTS engine reads a literal "..." as the word "dot", or a "—" as
     # "hyphen", those leak into the transcript. Catching these in the final
-    # review is the difference between catching a bad voice render in-tool
-    # vs. shipping a video that says "dot dot dot" twelve times. CRITICAL.
-    _TTS_PUNCTUATION_LEAK_WORDS = {
-        "dot", "dots", "ellipsis", "period", "periods",
-        "comma", "commas", "semicolon", "colon",
-        "dash", "hyphen", "emdash", "endash",
-        "parenthesis", "bracket", "brace",
-        "asterisk", "slash", "backslash",
-        "exclamation", "question mark",
-    }
+    _TTS_PUNCTUATION_LEAK_WORDS = _TTS_PUNCTUATION_LEAK_WORDS_SET
 
     @staticmethod
     def _read_text_file(path: str | Path | None) -> str | None:
         """Read a small text file if given a path; None-safe and exception-safe."""
-        if not path:
-            return None
-        try:
-            return Path(path).read_text(encoding="utf-8")
-        except Exception:
-            return None
+        return _read_text_file_fn(path)
 
     @classmethod
     def _tokenize(cls, text: str) -> list[str]:
-        """Split text into comparable word tokens (lowercased, punctuation
-        stripped, numeric-word-aware). Empty tokens dropped."""
-        import re
-
-        # Preserve hyphenated words as single tokens ("many-worlds" -> "many-worlds").
-        # Drop everything except letters, digits, hyphens, apostrophes.
-        cleaned = re.sub(r"[^A-Za-z0-9\-' ]+", " ", text.lower())
-        return [t for t in cleaned.split() if t and t != "-"]
+        """Split text into comparable word tokens."""
+        return _tokenize_fn(text)
 
     @classmethod
     def _compare_transcript_to_script(
@@ -2090,107 +1954,8 @@ class VideoCompose(BaseTool):
         transcript_path: Path,
         script_text: str,
     ) -> dict[str, Any]:
-        """Compare a word-level transcript against the source script.
-
-        Purpose: catch TTS failures that look fine on audio-volume/duration
-        checks but produce garbage content. The canonical example is
-        Chirp3-HD reading ellipses ("...") literally as the word "dot" — our
-        volume check says "narration present, not clipped" and the video
-        ships. This check diffs the actual transcribed audio against what
-        was supposed to be said, and flags:
-
-        - Spurious punctuation-leak words ("dot", "comma", "hyphen", etc.)
-          that appear in audio but not script → CRITICAL
-        - Overall word-accuracy ratio against script → SUGGESTION if < 0.9
-
-        Returns the transcript_comparison section of final_review, or a
-        placeholder with an issue describing why the check couldn't run
-        (missing transcript, missing script) so the review never goes
-        silently quiet on this contract.
-        """
-        result: dict[str, Any] = {
-            "transcript_matches_script": False,
-            "word_accuracy": None,
-            "script_word_count": 0,
-            "transcript_word_count": 0,
-            "spurious_punctuation_words": [],
-            "issues": [],
-        }
-
-        if not transcript_path or not Path(transcript_path).is_file():
-            result["issues"].append(
-                "transcript_comparison skipped: narration_transcript not provided"
-            )
-            return result
-        if not script_text:
-            result["issues"].append(
-                "transcript_comparison skipped: script_text not provided"
-            )
-            return result
-
-        try:
-            transcript_data = json.loads(Path(transcript_path).read_text(encoding="utf-8"))
-        except Exception as e:
-            result["issues"].append(f"transcript_comparison could not parse transcript: {e}")
-            return result
-
-        transcript_words = [
-            w.get("word", "").strip() for w in transcript_data.get("word_timestamps", [])
-        ]
-        transcript_tokens = cls._tokenize(" ".join(transcript_words))
-        script_tokens = cls._tokenize(script_text)
-
-        result["script_word_count"] = len(script_tokens)
-        result["transcript_word_count"] = len(transcript_tokens)
-
-        if not script_tokens or not transcript_tokens:
-            result["issues"].append(
-                f"transcript_comparison: empty token set "
-                f"(script={len(script_tokens)}, transcript={len(transcript_tokens)})"
-            )
-            return result
-
-        # --- Punctuation-leak detection (TTS reading literal punctuation) ---
-        script_set = set(script_tokens)
-        leak_occurrences: dict[str, int] = {}
-        for token in transcript_tokens:
-            if token in cls._TTS_PUNCTUATION_LEAK_WORDS and token not in script_set:
-                leak_occurrences[token] = leak_occurrences.get(token, 0) + 1
-
-        if leak_occurrences:
-            formatted = ", ".join(
-                f"{w!r}×{n}" for w, n in sorted(leak_occurrences.items(), key=lambda x: -x[1])
-            )
-            result["spurious_punctuation_words"] = [
-                {"word": w, "count": n} for w, n in leak_occurrences.items()
-            ]
-            result["issues"].append(
-                f"TTS punctuation leak: transcript contains {formatted} — "
-                f"these words are NOT in the script, which means the voice "
-                f"engine is reading literal punctuation aloud. Rewrite the "
-                f"script to eliminate the corresponding characters (ellipses, "
-                f"em-dashes, etc.) and regenerate narration."
-            )
-
-        # --- Word accuracy via set overlap (cheap & ordering-insensitive) ---
-        # We don't penalize small word-order differences or minor TTS
-        # hallucinations; we just want to know "did 90%+ of the script's
-        # content make it into the audio." Using set overlap on the script
-        # side is robust to transcription noise.
-        matched = sum(1 for t in script_tokens if t in set(transcript_tokens))
-        accuracy = matched / max(1, len(script_tokens))
-        result["word_accuracy"] = round(accuracy, 3)
-        result["transcript_matches_script"] = accuracy >= 0.9 and not leak_occurrences
-
-        if accuracy < 0.9:
-            result["issues"].append(
-                f"Low transcript-to-script match: only {accuracy:.0%} of script "
-                f"words appear in the transcribed audio ({matched}/"
-                f"{len(script_tokens)}). Narration may be truncated, mispronounced, "
-                f"or the wrong script was used."
-            )
-
-        return result
+        """Compare a word-level transcript against the source script."""
+        return _compare_transcript_to_script_fn(transcript_path, script_text)
 
     def _run_final_review(
         self,
@@ -2608,13 +2373,7 @@ class VideoCompose(BaseTool):
     @staticmethod
     def _parse_probe_fps(fps_str: str) -> float:
         """Parse ffprobe fps string like '30/1' or '24000/1001'."""
-        try:
-            if "/" in fps_str:
-                num, den = fps_str.split("/")
-                return round(int(num) / max(int(den), 1), 2)
-            return float(fps_str)
-        except (ValueError, ZeroDivisionError):
-            return 0.0
+        return _parse_probe_fps_fn(fps_str)
 
     def _burn_subtitles(self, inputs: dict[str, Any]) -> ToolResult:
         """Burn subtitle file into video."""
@@ -2773,82 +2532,15 @@ class VideoCompose(BaseTool):
         edit_decisions: dict | None,
         playbook: dict | None,
     ) -> dict:
-        """Resolve subtitle style with layered priority.
-
-        Priority: explicit_style > edit_decisions.subtitles.style > playbook > defaults.
-        This prevents every video from looking identical (Arial bold white).
-        """
-        # Start with minimal fallback defaults
-        resolved = {
-            "font": "Inter",
-            "font_size": 28,
-            "bold": True,
-            "outline_width": 2,
-            "shadow": 0,
-            "margin_v": 40,
-            "alignment": 2,
-        }
-
-        # Layer 1: Playbook-derived style
-        if playbook:
-            typo = playbook.get("typography", {})
-            colors = playbook.get("visual_language", {}).get("color_palette", {})
-            if typo.get("body", {}).get("family"):
-                resolved["font"] = typo["body"]["family"]
-            if colors.get("text"):
-                resolved["primary_color"] = colors["text"]
-            if colors.get("background"):
-                resolved["outline_color"] = colors["background"]
-                # Semi-transparent background for readability
-                bg = colors["background"]
-                resolved["back_color"] = bg
-
-        # Layer 2: edit_decisions subtitle style
-        if edit_decisions:
-            ed_style = edit_decisions.get("subtitles", {}).get("style", {})
-            for k, v in ed_style.items():
-                if v is not None:
-                    resolved[k] = v
-
-        # Layer 3: Explicit override (highest priority)
-        if explicit_style:
-            for k, v in explicit_style.items():
-                if v is not None:
-                    resolved[k] = v
-
-        return resolved
+        """Resolve subtitle style with layered priority."""
+        return _resolve_subtitle_style_fn(explicit_style, edit_decisions, playbook)
 
     @staticmethod
     def _build_subtitle_style(style: dict) -> str:
         """Build ASS force_style string from style dict."""
-        parts = []
-        parts.append(f"FontName={style.get('font', 'Inter')}")
-        parts.append(f"FontSize={style.get('font_size', 28)}")
-        parts.append(f"Bold={1 if style.get('bold', True) else 0}")
-        if style.get("primary_color"):
-            parts.append(f"PrimaryColour={style['primary_color']}")
-        if style.get("outline_color"):
-            parts.append(f"OutlineColour={style['outline_color']}")
-        if style.get("back_color"):
-            parts.append(f"BackColour={style['back_color']}")
-        border_style = style.get("border_style", 1)
-        parts.append(f"BorderStyle={border_style}")
-        parts.append(f"Outline={style.get('outline_width', 2)}")
-        parts.append(f"Shadow={style.get('shadow', 0)}")
-        parts.append(f"MarginV={style.get('margin_v', 40)}")
-        parts.append(f"Alignment={style.get('alignment', 2)}")
-        return ",".join(parts)
+        return _build_subtitle_style_fn(style)
 
     @staticmethod
     def _build_atempo(factor: float) -> str:
         """Build atempo filter chain for audio speed adjustment."""
-        filters = []
-        remaining = factor
-        while remaining > 100.0:
-            filters.append("atempo=100.0")
-            remaining /= 100.0
-        while remaining < 0.5:
-            filters.append("atempo=0.5")
-            remaining /= 0.5
-        filters.append(f"atempo={remaining:.4f}")
-        return ",".join(filters)
+        return _build_atempo_fn(factor)
