@@ -121,16 +121,11 @@ class TestArchitectureFitness:
         vc = VideoCompose()
         assert isinstance(vc, BaseTool)
         vc_ops = vc.input_schema.get("properties", {}).get("operation", {}).get("enum", [])
-        assert "render" in vc_ops
-        assert "preview" in vc_ops
-        assert "validate" in vc_ops
-        assert "status" in vc_ops
+        expected_vc_ops = {"compose", "render", "remotion_render", "burn_subtitles", "overlay", "encode"}
+        assert set(vc_ops) == expected_vc_ops
 
         hfc = HyperFramesCompose()
         assert isinstance(hfc, BaseTool)
         hfc_ops = hfc.input_schema.get("properties", {}).get("operation", {}).get("enum", [])
-        assert "render" in hfc_ops
-        assert "preview" in hfc_ops
-        assert "lint" in hfc_ops
-        assert "validate" in hfc_ops
-        assert "scaffold" in hfc_ops
+        expected_hfc_ops = {"render", "lint", "validate", "doctor", "scaffold_workspace", "add_block"}
+        assert set(hfc_ops) == expected_hfc_ops
