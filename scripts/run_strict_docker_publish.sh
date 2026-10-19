@@ -157,7 +157,7 @@ PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
 export CODEX_MODEL
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
-GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-2}"
+GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-3}"
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 export EXPECTED_SUCCESS_COUNT
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
@@ -424,6 +424,10 @@ else
       break
     fi
     log "generation attempt $GENERATION_ATTEMPT failed (exit=$GEN_STATUS projects=${#PROJECT_IDS[@]})"
+    if [ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]; then
+      log "pausing 30s before generation retry attempt $((GENERATION_ATTEMPT + 1))..."
+      sleep 30
+    fi
   done
 fi
 
@@ -705,10 +709,19 @@ fi
 
 if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
   log "scheduling ${#NEXT_QUEUED_PIDS[@]} projects for next day ($NEXT_DATE)"
-  if ! "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
-    NEXT_PLATFORM_OK=0
+  NEXT_PLATFORM_OK=0
+  for sched_attempt in 1 2 3; do
+    log "YouTube scheduling attempt $sched_attempt/3 for next day ($NEXT_DATE)"
+    if "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
+      NEXT_PLATFORM_OK=1
+      break
+    fi
+    log "WARNING: YouTube scheduling attempt $sched_attempt/3 failed; pausing 15s before retry..."
+    sleep 15
+  done
+  if [ "$NEXT_PLATFORM_OK" -eq 0 ]; then
     write_state "platform-schedule" "failed" "date=$NEXT_DATE"
-    fail "next-day YouTube scheduling failed; queued projects retained"
+    fail "next-day YouTube scheduling failed after 3 attempts; queued projects retained"
   fi
 fi
 

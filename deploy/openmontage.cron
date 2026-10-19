@@ -30,6 +30,12 @@ CODEX_MODEL=model-medium-hight
 # generate next-day videos, validate, queue them for tomorrow's slot cron.
 0 23 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; EXPECTED_SUCCESS_COUNT=3 OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/run_strict_docker_publish.sh >> logs/cron_pipeline.log 2>&1
 
+# 23:30, 00:30, 01:30 UTC — Automated pipeline retry checkpoints:
+# Verifies that tomorrow's slots are successfully scheduled. If incomplete (<3),
+# retries the daily pipeline automatically before the day's first publishing slot (02:15 UTC).
+30 23,0,1 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; EXPECTED_SUCCESS_COUNT=3 OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/retry_daily_pipeline.sh >> logs/cron_pipeline.log 2>&1
+
+
 # 02:15 UTC (09:15 Vietnam) — Publish slot 1 (Instagram only)
 15 2 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 09:15 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 

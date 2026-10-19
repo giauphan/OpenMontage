@@ -203,12 +203,18 @@ def run_produce(args: argparse.Namespace) -> None:
             continue
         project_ids.append(project_id)
 
-    if len(project_ids) != count:
+    min_required = min(count, int(os.environ.get("MIN_PRODUCE_COUNT", 3)))
+    if len(project_ids) < min_required:
         logger.error(
-            f"Initialized {len(project_ids)} of {count} requested project(s) after "
+            f"Initialized {len(project_ids)} of {count} requested project(s) (minimum {min_required} required) after "
             f"{attempts} selection attempts."
         )
         sys.exit(1)
+    if len(project_ids) < count:
+        logger.warning(
+            f"Initialized {len(project_ids)} of {count} requested project(s) after "
+            f"{attempts} selection attempts; proceeding with {len(project_ids)} projects."
+        )
 
     for pid in project_ids:
         print(f"PROJECT_ID={pid}")

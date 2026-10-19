@@ -263,20 +263,29 @@ def main():
                     template_id=template_id,
                 )
             if yt_claimed:
-                try:
-                    payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
-                    r = YoutubePublisher().execute(payload)
-                    if r.success:
-                        store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
-                        print(f"YT scheduled {proj} {scheduled_for}")
-                    else:
-                        store.mark_failed(yt_key, r.error)
-                        print(f"YT failed {proj}: {r.error}")
-                        failed = True
-                except Exception as e:
-                    store.mark_failed(yt_key, str(e))
-                    print(f"YT error {proj}: {e}")
-                    failed = True
+                max_yt_attempts = 3
+                for yt_attempt in range(1, max_yt_attempts + 1):
+                    try:
+                        payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
+                        r = YoutubePublisher().execute(payload)
+                        if r.success:
+                            store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
+                            print(f"YT scheduled {proj} {scheduled_for}")
+                            break
+                        else:
+                            print(f"YT attempt {yt_attempt}/{max_yt_attempts} failed {proj}: {r.error}")
+                            if yt_attempt < max_yt_attempts:
+                                time.sleep(5 * yt_attempt)
+                            else:
+                                store.mark_failed(yt_key, r.error)
+                                failed = True
+                    except Exception as e:
+                        print(f"YT attempt {yt_attempt}/{max_yt_attempts} error {proj}: {e}")
+                        if yt_attempt < max_yt_attempts:
+                            time.sleep(5 * yt_attempt)
+                        else:
+                            store.mark_failed(yt_key, str(e))
+                            failed = True
 
         # Schedule Instagram Reels
         if not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
