@@ -129,7 +129,9 @@ venv/
 !config/publish_schedule.json
 logs
 *.lock
+!uv.lock
 *.log
 .claude/worktrees/
 .env.*
+!.env.example
 plan/
