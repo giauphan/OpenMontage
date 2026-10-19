@@ -37,6 +37,7 @@ from tools.base_tool import (
     ToolStability,
     ToolStatus,
     ToolTier,
+)
 from tools.video._hyperframes.template import (
     format_float as _format_float_fn,
     escape_text as _escape_text_fn,
