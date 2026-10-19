@@ -50,6 +50,8 @@ def lock_test_env(tmp_path: Path, binaries: Path) -> dict[str, str]:
         "MIN_DISK_MB": "0",
         "MIN_TMP_DISK_MB": "0",
         "TMP_ROOT": str(tmp_path / "tmp"),
+        "GENERATION_RETRY_DELAY_SECONDS": "0",
+        "DAILY_GENERATION_RETRIES": "1",
     }
 
 
