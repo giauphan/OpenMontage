@@ -270,6 +270,8 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
 # Step 2.5: Run Directors pipeline via Codex CLI (unattended, logged) (P2)
 DIRECTORS_LOG="$ROOT/logs/directors_${PROJECT_ID}_$(date -u +%Y%m%dT%H%M%SZ).log"
 START_TS=$(date -u +%s)
+DIRECTOR_SESSION_START_NS="$("$PY" -c 'import time; print(time.time_ns())')" || exit 1
+DIRECTOR_ATTEMPT_START_NS="$DIRECTOR_SESSION_START_NS"
 
 echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_LOG"
 
@@ -503,15 +505,15 @@ DIRECTOR_ATTEMPT=1
 validate_current_director_artifacts() {
   local output status
   output=$("$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" \
-    --min-mtime-ns "$DIRECTOR_ATTEMPT_START_NS" --require-compositions 2>&1)
+    --min-mtime-ns "$DIRECTOR_SESSION_START_NS" --require-compositions 2>&1)
   status=$?
   if [ "$status" -eq 0 ]; then
     if ! "$PY" -c 'import pathlib,sys
 root = pathlib.Path(sys.argv[1]); cutoff = int(sys.argv[2])
 paths = [root / name / "index.html" for name in ("hyperframes", "hyperframes_reels")]
 raise SystemExit(0 if all(p.is_file() and p.stat().st_mtime_ns >= cutoff for p in paths) else 1)' \
-        "$PROJECT_DIR" "$DIRECTOR_ATTEMPT_START_NS"; then
-      DIRECTOR_VALIDATION_ERRORS="Both compositions must be written by the current director attempt"
+        "$PROJECT_DIR" "$DIRECTOR_SESSION_START_NS"; then
+      DIRECTOR_VALIDATION_ERRORS="Both compositions must be written by the current director session"
       printf '%s\n' "$DIRECTOR_VALIDATION_ERRORS" >> "$DIRECTORS_LOG"
       return 1
     fi
