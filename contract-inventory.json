@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "commit_head": "6f400a1c54ed0ac63ebef881b6386746ad9b6954",
+    "commit_head": "a40e5a1db76a2d347bd5029bf81f13ad708888e6",
     "tool_count": 109,
     "pipeline_count": 14
   },
@@ -2549,59 +2549,394 @@
   "pipelines": {
     "animated-explainer": {
       "file": "pipeline_defs/animated-explainer.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "animated-explainer",
+      "stages": [
+        "research",
+        "proposal",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_mixer",
+        "code_snippet",
+        "diagram_gen",
+        "export_bundle",
+        "frame_sampler",
+        "hyperframes_compose",
+        "image_selector",
+        "math_animate",
+        "music_gen",
+        "pixabay_music",
+        "scene_detect",
+        "transcript_fetcher",
+        "tts_selector",
+        "video_analyzer",
+        "video_compose",
+        "video_downloader",
+        "video_selector",
+        "video_stitch"
+      ]
     },
     "animation": {
       "file": "pipeline_defs/animation.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "animation",
+      "stages": [
+        "research",
+        "proposal",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_mixer",
+        "code_snippet",
+        "diagram_gen",
+        "frame_sampler",
+        "hyperframes_compose",
+        "image_selector",
+        "math_animate",
+        "music_gen",
+        "pixabay_music",
+        "scene_detect",
+        "transcriber",
+        "transcript_fetcher",
+        "tts_selector",
+        "video_analyzer",
+        "video_compose",
+        "video_downloader",
+        "video_selector",
+        "video_stitch"
+      ]
     },
     "avatar-spokesperson": {
       "file": "pipeline_defs/avatar-spokesperson.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "avatar-spokesperson",
+      "stages": [
+        "idea",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "image_selector",
+        "lip_sync",
+        "pixabay_music",
+        "subtitle_gen",
+        "talking_head",
+        "transcriber",
+        "tts_selector",
+        "video_compose",
+        "video_selector",
+        "video_stitch"
+      ]
     },
     "character-animation": {
       "file": "pipeline_defs/character-animation.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "character-animation",
+      "stages": [
+        "research",
+        "proposal",
+        "script",
+        "character_design",
+        "rig_plan",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "action_timeline_compiler",
+        "audio_mixer",
+        "character_animation_reviewer",
+        "character_rig_renderer",
+        "character_spec_generator",
+        "frame_sampler",
+        "image_selector",
+        "music_gen",
+        "pixabay_music",
+        "pose_library_builder",
+        "scene_detect",
+        "svg_rig_builder",
+        "transcriber",
+        "transcript_fetcher",
+        "tts_selector",
+        "video_analyzer",
+        "video_compose",
+        "video_downloader"
+      ]
     },
     "cinematic": {
       "file": "pipeline_defs/cinematic.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "cinematic",
+      "stages": [
+        "research",
+        "proposal",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "color_grade",
+        "frame_sampler",
+        "freesound_music",
+        "hyperframes_compose",
+        "image_selector",
+        "music_gen",
+        "pixabay_music",
+        "scene_detect",
+        "subtitle_gen",
+        "transcriber",
+        "transcript_fetcher",
+        "video_analyzer",
+        "video_compose",
+        "video_downloader",
+        "video_selector",
+        "video_stitch",
+        "video_trimmer",
+        "web_search"
+      ]
     },
     "clip-factory": {
       "file": "pipeline_defs/clip-factory.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "clip-factory",
+      "stages": [
+        "idea",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "color_grade",
+        "frame_sampler",
+        "hook_analyzer",
+        "hook_guard",
+        "scene_detect",
+        "subtitle_gen",
+        "transcriber",
+        "video_compose",
+        "video_trimmer"
+      ]
     },
     "documentary-montage": {
       "file": "pipeline_defs/documentary-montage.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "documentary-montage",
+      "stages": [
+        "idea",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose"
+      ],
+      "tools_referenced": [
+        "audio_mixer",
+        "clip_search",
+        "color_grade",
+        "corpus_builder",
+        "direct_clip_search",
+        "music_gen",
+        "pixabay_music",
+        "video_compose",
+        "video_stitch",
+        "video_trimmer"
+      ]
     },
     "framework-smoke": {
       "file": "pipeline_defs/framework-smoke.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "framework-smoke",
+      "stages": [
+        "research",
+        "script"
+      ],
+      "tools_referenced": []
     },
     "hybrid": {
       "file": "pipeline_defs/hybrid.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "hybrid",
+      "stages": [
+        "idea",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "code_snippet",
+        "color_grade",
+        "diagram_gen",
+        "frame_sampler",
+        "hyperframes_compose",
+        "image_selector",
+        "music_gen",
+        "pixabay_music",
+        "scene_detect",
+        "subtitle_gen",
+        "transcriber",
+        "tts_selector",
+        "video_compose",
+        "video_selector",
+        "video_stitch",
+        "video_trimmer"
+      ]
     },
     "localization-dub": {
       "file": "pipeline_defs/localization-dub.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "localization-dub",
+      "stages": [
+        "idea",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "frame_sampler",
+        "lip_sync",
+        "pixabay_music",
+        "scene_detect",
+        "subtitle_gen",
+        "transcriber",
+        "tts_selector",
+        "video_compose",
+        "video_trimmer"
+      ]
     },
     "multi-shot": {
       "file": "pipeline_defs/multi-shot.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "multi-shot",
+      "stages": [
+        "idea",
+        "story",
+        "identity",
+        "shot_plan",
+        "planning",
+        "assets",
+        "edit",
+        "compose"
+      ],
+      "tools_referenced": [
+        "multishot",
+        "tts_selector",
+        "video_compose",
+        "video_selector"
+      ]
     },
     "podcast-repurpose": {
       "file": "pipeline_defs/podcast-repurpose.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "podcast-repurpose",
+      "stages": [
+        "idea",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "diagram_gen",
+        "frame_sampler",
+        "image_selector",
+        "music_gen",
+        "pixabay_music",
+        "subtitle_gen",
+        "transcriber",
+        "video_compose",
+        "video_trimmer"
+      ]
     },
     "screen-demo": {
       "file": "pipeline_defs/screen-demo.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "screen-demo",
+      "stages": [
+        "idea",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "diagram_gen",
+        "frame_sampler",
+        "hyperframes_compose",
+        "image_selector",
+        "scene_detect",
+        "subtitle_gen",
+        "transcriber",
+        "tts_selector",
+        "video_compose",
+        "video_trimmer"
+      ]
     },
     "talking-head": {
       "file": "pipeline_defs/talking-head.yaml",
-      "error": "'list' object has no attribute 'keys'"
+      "name": "talking-head",
+      "stages": [
+        "idea",
+        "script",
+        "scene_plan",
+        "assets",
+        "edit",
+        "compose",
+        "publish"
+      ],
+      "tools_referenced": [
+        "audio_enhance",
+        "audio_mixer",
+        "auto_reframe",
+        "color_grade",
+        "eye_enhance",
+        "face_enhance",
+        "face_tracker",
+        "frame_sampler",
+        "image_selector",
+        "pixabay_music",
+        "remotion_caption_burn",
+        "showcase_card",
+        "silence_cutter",
+        "subtitle_gen",
+        "transcriber",
+        "video_compose",
+        "video_stitch",
+        "video_trimmer",
+        "visual_qa"
+      ]
     }
   }
 }

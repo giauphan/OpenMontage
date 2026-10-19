@@ -217,21 +217,33 @@ def inventory_pipelines() -> Dict[str, Any]:
         try:
             with open(f, "r", encoding="utf-8") as yf:
                 data = yaml.safe_load(yf) or {}
+                raw_stages = data.get("stages") or []
+                if isinstance(raw_stages, dict):
+                    stage_defs = [{"name": k, **v} for k, v in raw_stages.items() if isinstance(v, dict)]
+                elif isinstance(raw_stages, list):
+                    stage_defs = [s for s in raw_stages if isinstance(s, dict)]
+                else:
+                    stage_defs = []
+
                 pipelines[f.stem] = {
                     "file": str(f.relative_to(ROOT_DIR)),
                     "name": data.get("name", f.stem),
-                    "stages": list(data.get("stages", {}).keys()),
+                    "stages": [s.get("name") for s in stage_defs if s.get("name")],
                     "tools_referenced": [],
                 }
                 # Collect tool references
                 tools_ref = set()
-                for stage_name, stage_def in data.get("stages", {}).items():
-                    for tool in stage_def.get("tools_available", []):
-                        tools_ref.add(tool)
-                    for tool in stage_def.get("required_tools", []):
-                        tools_ref.add(tool)
-                    for tool in stage_def.get("fallback_tools", []):
-                        tools_ref.add(tool)
+                ref_input = data.get("reference_input") or {}
+                if isinstance(ref_input, dict):
+                    for tool in ref_input.get("analysis_tools", []):
+                        if isinstance(tool, str):
+                            tools_ref.add(tool)
+
+                for stage_def in stage_defs:
+                    for key in ("tools_available", "required_tools", "fallback_tools"):
+                        for tool in stage_def.get(key, []) or []:
+                            if isinstance(tool, str):
+                                tools_ref.add(tool)
                 pipelines[f.stem]["tools_referenced"] = sorted(tools_ref)
         except Exception as e:
             pipelines[f.stem] = {"file": str(f.relative_to(ROOT_DIR)), "error": str(e)}

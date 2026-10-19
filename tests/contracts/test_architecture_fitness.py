@@ -43,8 +43,8 @@ class TestArchitectureFitness:
                         f"Forbidden import: {py_file.name} imports from {module}"
                     )
                     for alias in node.names:
-                        assert alias.name != "VideoCompose", (
-                            f"Forbidden import: {py_file.name} imports VideoCompose"
+                        assert alias.name != "VideoCompose" and "video_compose" not in alias.name, (
+                            f"Forbidden import: {py_file.name} imports {alias.name}"
                         )
 
     def test_hyperframes_helpers_do_not_import_facade(self):
@@ -66,8 +66,8 @@ class TestArchitectureFitness:
                         f"Forbidden import: {py_file.name} imports from {module}"
                     )
                     for alias in node.names:
-                        assert alias.name != "HyperFramesCompose", (
-                            f"Forbidden import: {py_file.name} imports HyperFramesCompose"
+                        assert alias.name != "HyperFramesCompose" and "hyperframes_compose" not in alias.name, (
+                            f"Forbidden import: {py_file.name} imports {alias.name}"
                         )
 
     def test_internal_helpers_do_not_subclass_basetool(self):

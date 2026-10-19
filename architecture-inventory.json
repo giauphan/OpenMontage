@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "commit_head": "6f400a1c54ed0ac63ebef881b6386746ad9b6954",
-    "tracked_files_count": 2446,
+    "commit_head": "a40e5a1db76a2d347bd5029bf81f13ad708888e6",
+    "tracked_files_count": 2466,
     "python_version": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]"
   },
   "hotspots": [
@@ -23,9 +23,9 @@
     },
     {
       "path": "tools/video/video_compose.py",
-      "physical_loc": 2915,
-      "logical_loc": 2361,
-      "complexity": 396,
+      "physical_loc": 2546,
+      "logical_loc": 2066,
+      "complexity": 324,
       "classes": 1,
       "functions": 0
     },
@@ -71,9 +71,9 @@
     },
     {
       "path": "tools/video/hyperframes_compose.py",
-      "physical_loc": 1357,
-      "logical_loc": 1190,
-      "complexity": 168,
+      "physical_loc": 1188,
+      "logical_loc": 1042,
+      "complexity": 137,
       "classes": 1,
       "functions": 0
     },
@@ -23563,6 +23563,12 @@
       "bytes": 7212,
       "language": "markdown"
     },
+    "architecture-inventory.json": {
+      "physical_loc": 60442,
+      "logical_loc": 60442,
+      "bytes": 1508968,
+      "language": "json"
+    },
     "assets/logo.png": {
       "physical_loc": 2393,
       "logical_loc": 2292,
@@ -23966,9 +23972,9 @@
       "language": "json"
     },
     "config/publish_schedule.json": {
-      "physical_loc": 70,
-      "logical_loc": 70,
-      "bytes": 1413,
+      "physical_loc": 85,
+      "logical_loc": 85,
+      "bytes": 1785,
       "language": "json"
     },
     "configs/hook_profiles.yaml": {
@@ -23976,6 +23982,12 @@
       "logical_loc": 35,
       "bytes": 1015,
       "language": "yaml"
+    },
+    "contract-inventory.json": {
+      "physical_loc": 2607,
+      "logical_loc": 2607,
+      "bytes": 68009,
+      "language": "json"
     },
     "deploy/openmontage.cron": {
       "physical_loc": 65,
@@ -24002,9 +24014,9 @@
       "language": "other"
     },
     "docs/ARCHITECTURE.md": {
-      "physical_loc": 525,
-      "logical_loc": 396,
-      "bytes": 22856,
+      "physical_loc": 542,
+      "logical_loc": 409,
+      "bytes": 24405,
       "language": "markdown"
     },
     "docs/CLAUDE_AGENT_VALIDATION.md": {
@@ -24059,6 +24071,18 @@
       "physical_loc": 63,
       "logical_loc": 46,
       "bytes": 2183,
+      "language": "markdown"
+    },
+    "docs/architecture/ADR-001-incremental-modularization.md": {
+      "physical_loc": 51,
+      "logical_loc": 41,
+      "bytes": 3614,
+      "language": "markdown"
+    },
+    "docs/architecture/module-ownership.md": {
+      "physical_loc": 50,
+      "logical_loc": 41,
+      "bytes": 3051,
       "language": "markdown"
     },
     "docs/comfyui-adapter-plan.md": {
@@ -28318,6 +28342,18 @@
       "bytes": 9615,
       "language": "markdown"
     },
+    "plan/completed/OPENMONTAGE_ARCHITECTURE_MIGRATION_PLAN.md": {
+      "physical_loc": 514,
+      "logical_loc": 385,
+      "bytes": 39623,
+      "language": "markdown"
+    },
+    "reachability-inventory.json": {
+      "physical_loc": 14686,
+      "logical_loc": 14686,
+      "bytes": 398937,
+      "language": "json"
+    },
     "remotion-composer/SCENE_TYPES.md": {
       "physical_loc": 65,
       "logical_loc": 50,
@@ -28962,6 +28998,70 @@
         }
       ],
       "complexity": 1,
+      "language": "python"
+    },
+    "scripts/architecture_inventory.py": {
+      "physical_loc": 463,
+      "logical_loc": 381,
+      "bytes": 16611,
+      "classes": [],
+      "functions": [
+        {
+          "name": "get_git_tracked_files",
+          "lineno": 25,
+          "loc": 10,
+          "complexity": 1
+        },
+        {
+          "name": "calculate_complexity",
+          "lineno": 37,
+          "loc": 21,
+          "complexity": 4
+        },
+        {
+          "name": "analyze_python_file",
+          "lineno": 60,
+          "loc": 67,
+          "complexity": 11
+        },
+        {
+          "name": "analyze_other_file",
+          "lineno": 129,
+          "loc": 18,
+          "complexity": 2
+        },
+        {
+          "name": "extract_imports",
+          "lineno": 149,
+          "loc": 16,
+          "complexity": 7
+        },
+        {
+          "name": "inventory_tools_and_registry",
+          "lineno": 167,
+          "loc": 39,
+          "complexity": 6
+        },
+        {
+          "name": "inventory_pipelines",
+          "lineno": 208,
+          "loc": 44,
+          "complexity": 18
+        },
+        {
+          "name": "build_reachability_report",
+          "lineno": 254,
+          "loc": 76,
+          "complexity": 20
+        },
+        {
+          "name": "main",
+          "lineno": 332,
+          "loc": 128,
+          "complexity": 14
+        }
+      ],
+      "complexity": 76,
       "language": "python"
     },
     "scripts/atelier_snapshots.py": {
@@ -29780,25 +29880,25 @@
       "language": "python"
     },
     "scripts/generate_news_captions.py": {
-      "physical_loc": 94,
-      "logical_loc": 80,
-      "bytes": 3801,
+      "physical_loc": 133,
+      "logical_loc": 115,
+      "bytes": 5159,
       "classes": [],
       "functions": [
         {
           "name": "generate_captions",
           "lineno": 16,
-          "loc": 61,
-          "complexity": 11
+          "loc": 100,
+          "complexity": 28
         },
         {
           "name": "main",
-          "lineno": 79,
+          "lineno": 118,
           "loc": 12,
           "complexity": 2
         }
       ],
-      "complexity": 14,
+      "complexity": 31,
       "language": "python"
     },
     "scripts/generate_vn_subtitles.py": {
@@ -30943,9 +31043,9 @@
       "language": "python"
     },
     "scripts/run_daily_news_pipeline.sh": {
-      "physical_loc": 1120,
-      "logical_loc": 1047,
-      "bytes": 54051,
+      "physical_loc": 1121,
+      "logical_loc": 1048,
+      "bytes": 54101,
       "language": "other"
     },
     "scripts/run_directors_for_existing.sh": {
@@ -31041,9 +31141,9 @@
       "language": "other"
     },
     "scripts/run_strict_docker_publish.sh": {
-      "physical_loc": 764,
-      "logical_loc": 701,
-      "bytes": 33203,
+      "physical_loc": 767,
+      "logical_loc": 704,
+      "bytes": 33408,
       "language": "other"
     },
     "scripts/run_youtube_schedule.sh": {
@@ -33690,6 +33790,54 @@
         }
       ],
       "complexity": 6,
+      "language": "python"
+    },
+    "tests/contracts/test_architecture_fitness.py": {
+      "physical_loc": 131,
+      "logical_loc": 114,
+      "bytes": 6265,
+      "classes": [
+        {
+          "name": "TestArchitectureFitness",
+          "lineno": 24,
+          "loc": 108,
+          "methods": [
+            {
+              "name": "test_compose_helpers_do_not_import_facade",
+              "lineno": 27,
+              "loc": 22,
+              "complexity": 12
+            },
+            {
+              "name": "test_hyperframes_helpers_do_not_import_facade",
+              "lineno": 50,
+              "loc": 22,
+              "complexity": 12
+            },
+            {
+              "name": "test_internal_helpers_do_not_subclass_basetool",
+              "lineno": 73,
+              "loc": 27,
+              "complexity": 7
+            },
+            {
+              "name": "test_modular_extracts_loc_budget",
+              "lineno": 101,
+              "loc": 17,
+              "complexity": 6
+            },
+            {
+              "name": "test_facades_maintain_required_operations",
+              "lineno": 119,
+              "loc": 13,
+              "complexity": 5
+            }
+          ],
+          "complexity": 38
+        }
+      ],
+      "functions": [],
+      "complexity": 38,
       "language": "python"
     },
     "tests/contracts/test_backlot_contract.py": {
@@ -42884,6 +43032,54 @@
       "complexity": 78,
       "language": "python"
     },
+    "tests/contracts/test_pipeline_reference_integrity.py": {
+      "physical_loc": 99,
+      "logical_loc": 80,
+      "bytes": 4117,
+      "classes": [
+        {
+          "name": "TestPipelineReferenceIntegrity",
+          "lineno": 17,
+          "loc": 83,
+          "methods": [
+            {
+              "name": "setup_class",
+              "lineno": 21,
+              "loc": 3,
+              "complexity": 1
+            },
+            {
+              "name": "test_all_manifests_parse_yaml",
+              "lineno": 25,
+              "loc": 10,
+              "complexity": 6
+            },
+            {
+              "name": "test_standard_manifests_validate_against_schema",
+              "lineno": 36,
+              "loc": 23,
+              "complexity": 5
+            },
+            {
+              "name": "test_load_pipeline_readonly_caching",
+              "lineno": 60,
+              "loc": 5,
+              "complexity": 2
+            },
+            {
+              "name": "test_referenced_skills_and_tools_exist",
+              "lineno": 66,
+              "loc": 34,
+              "complexity": 12
+            }
+          ],
+          "complexity": 22
+        }
+      ],
+      "functions": [],
+      "complexity": 22,
+      "language": "python"
+    },
     "tests/contracts/test_remotion_video_transition_contract.py": {
       "physical_loc": 28,
       "logical_loc": 20,
@@ -43110,6 +43306,54 @@
       "complexity": 9,
       "language": "python"
     },
+    "tests/contracts/test_tool_registry_parity.py": {
+      "physical_loc": 68,
+      "logical_loc": 54,
+      "bytes": 2720,
+      "classes": [
+        {
+          "name": "TestToolRegistryParity",
+          "lineno": 14,
+          "loc": 55,
+          "methods": [
+            {
+              "name": "test_discovery_baseline",
+              "lineno": 17,
+              "loc": 5,
+              "complexity": 2
+            },
+            {
+              "name": "test_all_tools_inherit_base_tool",
+              "lineno": 23,
+              "loc": 7,
+              "complexity": 4
+            },
+            {
+              "name": "test_core_capabilities_exist",
+              "lineno": 31,
+              "loc": 18,
+              "complexity": 6
+            },
+            {
+              "name": "test_provider_menu_summary_structure",
+              "lineno": 50,
+              "loc": 9,
+              "complexity": 5
+            },
+            {
+              "name": "test_no_private_helper_tools_registered",
+              "lineno": 60,
+              "loc": 9,
+              "complexity": 4
+            }
+          ],
+          "complexity": 17
+        }
+      ],
+      "functions": [],
+      "complexity": 17,
+      "language": "python"
+    },
     "tests/contracts/test_utf8_file_io.py": {
       "physical_loc": 30,
       "logical_loc": 23,
@@ -43124,6 +43368,78 @@
         }
       ],
       "complexity": 7,
+      "language": "python"
+    },
+    "tests/contracts/test_video_compose_stability.py": {
+      "physical_loc": 173,
+      "logical_loc": 142,
+      "bytes": 6764,
+      "classes": [
+        {
+          "name": "TestVideoComposeStability",
+          "lineno": 19,
+          "loc": 155,
+          "methods": [
+            {
+              "name": "test_metadata_contract",
+              "lineno": 22,
+              "loc": 14,
+              "complexity": 12
+            },
+            {
+              "name": "test_input_schema_contract",
+              "lineno": 37,
+              "loc": 20,
+              "complexity": 7
+            },
+            {
+              "name": "test_registry_discovery",
+              "lineno": 58,
+              "loc": 8,
+              "complexity": 4
+            },
+            {
+              "name": "test_get_info_structure",
+              "lineno": 67,
+              "loc": 11,
+              "complexity": 8
+            },
+            {
+              "name": "test_invalid_input_fails_gracefully",
+              "lineno": 79,
+              "loc": 16,
+              "complexity": 6
+            },
+            {
+              "name": "test_pure_helpers_atempo",
+              "lineno": 96,
+              "loc": 8,
+              "complexity": 3
+            },
+            {
+              "name": "test_pure_helpers_is_image",
+              "lineno": 105,
+              "loc": 7,
+              "complexity": 6
+            },
+            {
+              "name": "test_pure_helpers_tokenizer_and_transcript_comparison",
+              "lineno": 113,
+              "loc": 21,
+              "complexity": 7
+            },
+            {
+              "name": "test_runtime_policy_fail_closed_on_missing_runtime",
+              "lineno": 135,
+              "loc": 39,
+              "complexity": 3
+            }
+          ],
+          "complexity": 48
+        }
+      ],
+      "functions": [],
+      "complexity": 48,
       "language": "python"
     },
     "tests/contracts/test_video_duration_one_minute_rule.py": {
@@ -43384,6 +43700,12 @@
       "functions": [],
       "complexity": 1,
       "language": "python"
+    },
+    "tests/fixtures/architecture/sanitized_composition_input.json": {
+      "physical_loc": 35,
+      "logical_loc": 35,
+      "bytes": 648,
+      "language": "json"
     },
     "tests/fixtures/hookguard_corpus.py": {
       "physical_loc": 334,
@@ -45141,9 +45463,9 @@
       "language": "python"
     },
     "tests/test_daily_producer_failure.py": {
-      "physical_loc": 128,
-      "logical_loc": 107,
-      "bytes": 5297,
+      "physical_loc": 129,
+      "logical_loc": 108,
+      "bytes": 5332,
       "classes": [],
       "functions": [
         {
@@ -45197,7 +45519,7 @@
         {
           "name": "test_compositions_must_belong_to_current_attempt",
           "lineno": 105,
-          "loc": 24,
+          "loc": 25,
           "complexity": 3
         }
       ],
@@ -46706,9 +47028,9 @@
       "language": "python"
     },
     "tests/test_strict_generation_singleflight.py": {
-      "physical_loc": 221,
-      "logical_loc": 198,
-      "bytes": 8412,
+      "physical_loc": 223,
+      "logical_loc": 200,
+      "bytes": 8500,
       "classes": [],
       "functions": [
         {
@@ -46720,42 +47042,42 @@
         {
           "name": "lock_test_env",
           "lineno": 39,
-          "loc": 15,
+          "loc": 17,
           "complexity": 1
         },
         {
           "name": "wait_for_generation",
-          "lineno": 56,
+          "lineno": 58,
           "loc": 6,
           "complexity": 4
         },
         {
           "name": "kill_process_group",
-          "lineno": 64,
+          "lineno": 66,
           "loc": 7,
           "complexity": 3
         },
         {
           "name": "test_overlapping_strict_run_exits_before_creating_run_state",
-          "lineno": 73,
+          "lineno": 75,
           "loc": 42,
           "complexity": 7
         },
         {
           "name": "test_lock_released_after_success_and_failure",
-          "lineno": 117,
+          "lineno": 119,
           "loc": 13,
           "complexity": 5
         },
         {
           "name": "test_lock_released_after_process_group_termination",
-          "lineno": 132,
+          "lineno": 134,
           "loc": 32,
           "complexity": 4
         },
         {
           "name": "test_sigkill_parent_keeps_lock_until_inherited_descendants_exit",
-          "lineno": 166,
+          "lineno": 168,
           "loc": 56,
           "complexity": 8
         }
@@ -47676,6 +47998,194 @@
         }
       ],
       "complexity": 10,
+      "language": "python"
+    },
+    "tests/tools/test_compose_module_extracts.py": {
+      "physical_loc": 345,
+      "logical_loc": 283,
+      "bytes": 12557,
+      "classes": [
+        {
+          "name": "TestAssetResolutionExtract",
+          "lineno": 45,
+          "loc": 77,
+          "methods": [
+            {
+              "name": "test_is_image",
+              "lineno": 48,
+              "loc": 7,
+              "complexity": 7
+            },
+            {
+              "name": "test_build_asset_lookup",
+              "lineno": 56,
+              "loc": 13,
+              "complexity": 6
+            },
+            {
+              "name": "test_resolve_cuts",
+              "lineno": 70,
+              "loc": 15,
+              "complexity": 5
+            },
+            {
+              "name": "test_cuts_to_cinematic_scenes",
+              "lineno": 86,
+              "loc": 36,
+              "complexity": 12
+            }
+          ],
+          "complexity": 27
+        },
+        {
+          "name": "TestValidationExtract",
+          "lineno": 124,
+          "loc": 54,
+          "methods": [
+            {
+              "name": "test_tokenize_text",
+              "lineno": 127,
+              "loc": 7,
+              "complexity": 6
+            },
+            {
+              "name": "test_read_text_file",
+              "lineno": 135,
+              "loc": 7,
+              "complexity": 4
+            },
+            {
+              "name": "test_compare_transcript_to_script",
+              "lineno": 143,
+              "loc": 26,
+              "complexity": 8
+            },
+            {
+              "name": "test_pre_compose_validation_blocks_missing_renderer_family",
+              "lineno": 170,
+              "loc": 8,
+              "complexity": 4
+            }
+          ],
+          "complexity": 19
+        },
+        {
+          "name": "TestRuntimePolicyExtract",
+          "lineno": 180,
+          "loc": 54,
+          "methods": [
+            {
+              "name": "test_validate_render_runtime",
+              "lineno": 183,
+              "loc": 17,
+              "complexity": 11
+            },
+            {
+              "name": "test_is_remotion_atelier",
+              "lineno": 201,
+              "loc": 5,
+              "complexity": 5
+            },
+            {
+              "name": "test_check_runtime_availability",
+              "lineno": 207,
+              "loc": 14,
+              "complexity": 7
+            },
+            {
+              "name": "test_detect_runtime_swap",
+              "lineno": 222,
+              "loc": 12,
+              "complexity": 5
+            }
+          ],
+          "complexity": 25
+        },
+        {
+          "name": "TestFFmpegCommandsExtract",
+          "lineno": 236,
+          "loc": 28,
+          "methods": [
+            {
+              "name": "test_build_atempo",
+              "lineno": 239,
+              "loc": 4,
+              "complexity": 3
+            },
+            {
+              "name": "test_parse_probe_fps",
+              "lineno": 244,
+              "loc": 5,
+              "complexity": 5
+            },
+            {
+              "name": "test_resolve_and_build_subtitle_style",
+              "lineno": 250,
+              "loc": 14,
+              "complexity": 7
+            }
+          ],
+          "complexity": 13
+        },
+        {
+          "name": "TestHyperFramesTemplateExtract",
+          "lineno": 266,
+          "loc": 79,
+          "methods": [
+            {
+              "name": "test_format_float",
+              "lineno": 269,
+              "loc": 6,
+              "complexity": 6
+            },
+            {
+              "name": "test_escape_text",
+              "lineno": 276,
+              "loc": 4,
+              "complexity": 4
+            },
+            {
+              "name": "test_escape_attr",
+              "lineno": 281,
+              "loc": 4,
+              "complexity": 4
+            },
+            {
+              "name": "test_rel_from_workspace",
+              "lineno": 286,
+              "loc": 5,
+              "complexity": 5
+            },
+            {
+              "name": "test_compute_total_duration",
+              "lineno": 292,
+              "loc": 3,
+              "complexity": 3
+            },
+            {
+              "name": "test_cut_to_html_text_card",
+              "lineno": 296,
+              "loc": 7,
+              "complexity": 5
+            },
+            {
+              "name": "test_cut_to_html_image_and_video",
+              "lineno": 304,
+              "loc": 14,
+              "complexity": 7
+            },
+            {
+              "name": "test_generate_index_html",
+              "lineno": 319,
+              "loc": 26,
+              "complexity": 7
+            }
+          ],
+          "complexity": 34
+        }
+      ],
+      "functions": [],
+      "complexity": 114,
       "language": "python"
     },
     "tests/tools/test_corpus_builder_total_failure.py": {
@@ -50528,73 +51038,73 @@
       "language": "python"
     },
     "tests/tools/test_vietnamese_enforcement.py": {
-      "physical_loc": 274,
-      "logical_loc": 216,
-      "bytes": 11801,
+      "physical_loc": 278,
+      "logical_loc": 220,
+      "bytes": 12093,
       "classes": [],
       "functions": [
         {
           "name": "test_language_heuristics",
           "lineno": 20,
-          "loc": 23,
-          "complexity": 12
+          "loc": 27,
+          "complexity": 13
         },
         {
           "name": "test_ssml_narration_rejects_english_prose",
-          "lineno": 44,
+          "lineno": 48,
           "loc": 6,
           "complexity": 2
         },
         {
           "name": "test_conflicting_script_fields_prefer_vietnamese_or_fail_closed",
-          "lineno": 52,
+          "lineno": 56,
           "loc": 13,
           "complexity": 3
         },
         {
           "name": "test_invalid_fallback_claims_do_not_create_stale_script",
-          "lineno": 67,
+          "lineno": 71,
           "loc": 15,
           "complexity": 3
         },
         {
           "name": "test_metadata_validation_blocks_conflicting_source_copy",
-          "lineno": 84,
+          "lineno": 88,
           "loc": 10,
           "complexity": 3
         },
         {
           "name": "test_social_publishers_reject_english_caption_before_network",
-          "lineno": 96,
+          "lineno": 100,
           "loc": 19,
           "complexity": 8
         },
         {
           "name": "test_metadata_validation_enforces_vietnamese",
-          "lineno": 117,
+          "lineno": 121,
           "loc": 34,
           "complexity": 6
         },
         {
           "name": "test_director_artifacts_enforces_vietnamese",
-          "lineno": 152,
+          "lineno": 156,
           "loc": 36,
           "complexity": 5
         },
         {
           "name": "test_youtube_publisher_rejects_english_prose",
-          "lineno": 189,
+          "lineno": 193,
           "loc": 34,
           "complexity": 8
         },
         {
           "name": "test_schedule_today_native_blocks_invalid_metadata",
-          "lineno": 224,
+          "lineno": 228,
           "loc": 50,
           "complexity": 6
         }
       ],
-      "complexity": 47,
+      "complexity": 48,
       "language": "python"
     },
     "tools/__init__.py": {
@@ -55271,125 +55781,125 @@
       "language": "python"
     },
     "tools/narration_text.py": {
-      "physical_loc": 418,
-      "logical_loc": 314,
-      "bytes": 17853,
+      "physical_loc": 429,
+      "logical_loc": 322,
+      "bytes": 18563,
       "classes": [],
       "functions": [
         {
           "name": "check_vietnamese_prose",
           "lineno": 210,
-          "loc": 35,
-          "complexity": 15
+          "loc": 46,
+          "complexity": 19
         },
         {
           "name": "validate_vietnamese_narration",
-          "lineno": 248,
+          "lineno": 259,
           "loc": 11,
           "complexity": 3
         },
         {
           "name": "_load_lexicon",
-          "lineno": 261,
+          "lineno": 272,
           "loc": 10,
           "complexity": 3
         },
         {
           "name": "normalize_text",
-          "lineno": 273,
+          "lineno": 284,
           "loc": 10,
           "complexity": 2
         },
         {
           "name": "_spell_acronym",
-          "lineno": 285,
+          "lineno": 296,
           "loc": 2,
           "complexity": 1
         },
         {
           "name": "localize_pronunciation",
-          "lineno": 289,
+          "lineno": 300,
           "loc": 29,
           "complexity": 2
         },
         {
           "name": "prepare_narration_ssml",
-          "lineno": 320,
+          "lineno": 331,
           "loc": 43,
           "complexity": 4
         },
         {
           "name": "prepare_narration",
-          "lineno": 365,
+          "lineno": 376,
           "loc": 19,
           "complexity": 4
         },
         {
           "name": "validate_display_text",
-          "lineno": 386,
+          "lineno": 397,
           "loc": 7,
           "complexity": 2
         },
         {
           "name": "main",
-          "lineno": 395,
+          "lineno": 406,
           "loc": 18,
           "complexity": 3
         }
       ],
-      "complexity": 31,
+      "complexity": 35,
       "language": "python"
     },
     "tools/news/news_pipeline_cli.py": {
-      "physical_loc": 336,
-      "logical_loc": 277,
-      "bytes": 13114,
+      "physical_loc": 345,
+      "logical_loc": 283,
+      "bytes": 13636,
       "classes": [],
       "functions": [
         {
           "name": "run_ingest",
-          "lineno": 27,
+          "lineno": 28,
           "loc": 27,
           "complexity": 5
         },
         {
           "name": "_init_candidate_project",
-          "lineno": 56,
+          "lineno": 57,
           "loc": 24,
           "complexity": 2
         },
         {
           "name": "run_fetch",
-          "lineno": 82,
+          "lineno": 83,
           "loc": 4,
           "complexity": 1
         },
         {
           "name": "run_produce",
-          "lineno": 88,
-          "loc": 134,
-          "complexity": 32
+          "lineno": 89,
+          "loc": 142,
+          "complexity": 33
         },
         {
           "name": "run_capture_source",
-          "lineno": 225,
+          "lineno": 234,
           "loc": 26,
           "complexity": 5
         },
         {
           "name": "run_prepare_review",
-          "lineno": 253,
+          "lineno": 262,
           "loc": 26,
           "complexity": 5
         },
         {
           "name": "main",
-          "lineno": 281,
+          "lineno": 290,
           "loc": 52,
           "complexity": 6
         }
       ],
-      "complexity": 51,
+      "complexity": 52,
       "language": "python"
     },
     "tools/news/newsnow_adapter.py": {
@@ -56445,6 +56955,212 @@
       "classes": [],
       "functions": [],
       "complexity": 1,
+      "language": "python"
+    },
+    "tools/video/_compose/__init__.py": {
+      "physical_loc": 5,
+      "logical_loc": 4,
+      "bytes": 176,
+      "classes": [],
+      "functions": [],
+      "complexity": 1,
+      "language": "python"
+    },
+    "tools/video/_compose/asset_resolution.py": {
+      "physical_loc": 119,
+      "logical_loc": 101,
+      "bytes": 3765,
+      "classes": [],
+      "functions": [
+        {
+          "name": "is_image",
+          "lineno": 23,
+          "loc": 5,
+          "complexity": 2
+        },
+        {
+          "name": "build_asset_lookup",
+          "lineno": 30,
+          "loc": 5,
+          "complexity": 3
+        },
+        {
+          "name": "resolve_cuts",
+          "lineno": 37,
+          "loc": 21,
+          "complexity": 6
+        },
+        {
+          "name": "cuts_to_cinematic_scenes",
+          "lineno": 60,
+          "loc": 60,
+          "complexity": 17
+        }
+      ],
+      "complexity": 25,
+      "language": "python"
+    },
+    "tools/video/_compose/ffmpeg_commands.py": {
+      "physical_loc": 102,
+      "logical_loc": 83,
+      "bytes": 3367,
+      "classes": [],
+      "functions": [
+        {
+          "name": "build_atempo",
+          "lineno": 11,
+          "loc": 12,
+          "complexity": 3
+        },
+        {
+          "name": "parse_probe_fps",
+          "lineno": 25,
+          "loc": 9,
+          "complexity": 3
+        },
+        {
+          "name": "resolve_subtitle_style",
+          "lineno": 36,
+          "loc": 46,
+          "complexity": 11
+        },
+        {
+          "name": "build_subtitle_style",
+          "lineno": 84,
+          "loc": 19,
+          "complexity": 4
+        }
+      ],
+      "complexity": 18,
+      "language": "python"
+    },
+    "tools/video/_compose/runtime_policy.py": {
+      "physical_loc": 116,
+      "logical_loc": 94,
+      "bytes": 4339,
+      "classes": [],
+      "functions": [
+        {
+          "name": "validate_render_runtime",
+          "lineno": 14,
+          "loc": 29,
+          "complexity": 5
+        },
+        {
+          "name": "is_remotion_atelier",
+          "lineno": 45,
+          "loc": 8,
+          "complexity": 3
+        },
+        {
+          "name": "check_runtime_availability",
+          "lineno": 55,
+          "loc": 29,
+          "complexity": 7
+        },
+        {
+          "name": "detect_runtime_swap",
+          "lineno": 86,
+          "loc": 31,
+          "complexity": 10
+        }
+      ],
+      "complexity": 22,
+      "language": "python"
+    },
+    "tools/video/_compose/validation.py": {
+      "physical_loc": 224,
+      "logical_loc": 187,
+      "bytes": 8298,
+      "classes": [],
+      "functions": [
+        {
+          "name": "read_text_file",
+          "lineno": 26,
+          "loc": 8,
+          "complexity": 3
+        },
+        {
+          "name": "tokenize_text",
+          "lineno": 36,
+          "loc": 4,
+          "complexity": 2
+        },
+        {
+          "name": "compare_transcript_to_script",
+          "lineno": 42,
+          "loc": 82,
+          "complexity": 13
+        },
+        {
+          "name": "pre_compose_validation",
+          "lineno": 126,
+          "loc": 99,
+          "complexity": 19
+        }
+      ],
+      "complexity": 34,
+      "language": "python"
+    },
+    "tools/video/_hyperframes/__init__.py": {
+      "physical_loc": 5,
+      "logical_loc": 4,
+      "bytes": 182,
+      "classes": [],
+      "functions": [],
+      "complexity": 1,
+      "language": "python"
+    },
+    "tools/video/_hyperframes/template.py": {
+      "physical_loc": 221,
+      "logical_loc": 192,
+      "bytes": 7983,
+      "classes": [],
+      "functions": [
+        {
+          "name": "format_float",
+          "lineno": 14,
+          "loc": 6,
+          "complexity": 2
+        },
+        {
+          "name": "escape_text",
+          "lineno": 22,
+          "loc": 3,
+          "complexity": 2
+        },
+        {
+          "name": "escape_attr",
+          "lineno": 27,
+          "loc": 3,
+          "complexity": 2
+        },
+        {
+          "name": "rel_from_workspace",
+          "lineno": 32,
+          "loc": 13,
+          "complexity": 5
+        },
+        {
+          "name": "compute_total_duration",
+          "lineno": 47,
+          "loc": 5,
+          "complexity": 3
+        },
+        {
+          "name": "cut_to_html",
+          "lineno": 54,
+          "loc": 81,
+          "complexity": 21
+        },
+        {
+          "name": "generate_index_html",
+          "lineno": 137,
+          "loc": 85,
+          "complexity": 7
+        }
+      ],
+      "complexity": 36,
       "language": "python"
     },
     "tools/video/_shared.py": {
@@ -57564,219 +58280,219 @@
       "language": "python"
     },
     "tools/video/hyperframes_compose.py": {
-      "physical_loc": 1357,
-      "logical_loc": 1190,
-      "bytes": 53708,
+      "physical_loc": 1188,
+      "logical_loc": 1042,
+      "bytes": 46382,
       "classes": [
         {
           "name": "HyperFramesCompose",
-          "lineno": 51,
-          "loc": 1307,
+          "lineno": 59,
+          "loc": 1130,
           "methods": [
             {
               "name": "_node_major_version",
-              "lineno": 241,
+              "lineno": 249,
               "loc": 17,
               "complexity": 5
             },
             {
               "name": "_resolve_npm_package",
-              "lineno": 260,
+              "lineno": 268,
               "loc": 53,
               "complexity": 11
             },
             {
               "name": "_probe_cli",
-              "lineno": 315,
+              "lineno": 323,
               "loc": 37,
               "complexity": 6
             },
             {
               "name": "_runtime_check",
-              "lineno": 353,
+              "lineno": 361,
               "loc": 53,
               "complexity": 9
             },
             {
               "name": "get_status",
-              "lineno": 407,
+              "lineno": 415,
               "loc": 3,
               "complexity": 1
             },
             {
               "name": "get_info",
-              "lineno": 411,
+              "lineno": 419,
               "loc": 18,
               "complexity": 3
             },
             {
               "name": "estimate_cost",
-              "lineno": 430,
+              "lineno": 438,
               "loc": 2,
               "complexity": 1
             },
             {
               "name": "estimate_runtime",
-              "lineno": 433,
+              "lineno": 441,
               "loc": 9,
               "complexity": 5
             },
             {
               "name": "execute",
-              "lineno": 447,
+              "lineno": 455,
               "loc": 24,
               "complexity": 8
             },
             {
               "name": "_doctor",
-              "lineno": 476,
+              "lineno": 484,
               "loc": 37,
               "complexity": 5
             },
             {
               "name": "_scaffold",
-              "lineno": 514,
+              "lineno": 522,
               "loc": 90,
               "complexity": 7
             },
             {
               "name": "_lint",
-              "lineno": 605,
+              "lineno": 613,
               "loc": 21,
               "complexity": 5
             },
             {
               "name": "_validate",
-              "lineno": 627,
+              "lineno": 635,
               "loc": 24,
               "complexity": 6
             },
             {
               "name": "_add_block",
-              "lineno": 652,
+              "lineno": 660,
               "loc": 45,
               "complexity": 7
             },
             {
               "name": "_render",
-              "lineno": 698,
+              "lineno": 706,
               "loc": 179,
               "complexity": 19
             },
             {
               "name": "_sha256_file",
-              "lineno": 879,
+              "lineno": 887,
               "loc": 6,
               "complexity": 3
             },
             {
               "name": "_require_workspace",
-              "lineno": 891,
+              "lineno": 899,
               "loc": 5,
               "complexity": 2
             },
             {
               "name": "_resolve_dimensions",
-              "lineno": 898,
+              "lineno": 906,
               "loc": 12,
               "complexity": 3
             },
             {
               "name": "_compute_total_duration",
-              "lineno": 912,
-              "loc": 4,
-              "complexity": 3
+              "lineno": 920,
+              "loc": 2,
+              "complexity": 1
             },
             {
               "name": "_file_sha256",
-              "lineno": 918,
+              "lineno": 924,
               "loc": 6,
               "complexity": 3
             },
             {
               "name": "_copy_if_needed",
-              "lineno": 926,
+              "lineno": 932,
               "loc": 11,
               "complexity": 4
             },
             {
               "name": "_resolve_and_stage_assets",
-              "lineno": 938,
+              "lineno": 944,
               "loc": 30,
               "complexity": 6
             },
             {
               "name": "_resolve_audio_refs",
-              "lineno": 969,
+              "lineno": 975,
               "loc": 49,
               "complexity": 17
             },
             {
               "name": "_is_inside",
-              "lineno": 1020,
+              "lineno": 1026,
               "loc": 6,
               "complexity": 2
             },
             {
               "name": "_style_bridge",
-              "lineno": 1027,
+              "lineno": 1033,
               "loc": 56,
               "complexity": 12
             },
             {
               "name": "_generate_index_html",
-              "lineno": 1088,
-              "loc": 96,
-              "complexity": 7
+              "lineno": 1094,
+              "loc": 15,
+              "complexity": 1
             },
             {
               "name": "_cut_to_html",
-              "lineno": 1185,
-              "loc": 80,
-              "complexity": 21
+              "lineno": 1110,
+              "loc": 5,
+              "complexity": 1
             },
             {
               "name": "_run_hf",
-              "lineno": 1270,
+              "lineno": 1120,
               "loc": 39,
               "complexity": 6
             },
             {
               "name": "_parse_json_output",
-              "lineno": 1311,
+              "lineno": 1161,
               "loc": 12,
               "complexity": 6
             },
             {
               "name": "_f",
-              "lineno": 1325,
+              "lineno": 1175,
               "loc": 2,
               "complexity": 1
             },
             {
               "name": "_escape_text",
-              "lineno": 1329,
-              "loc": 6,
+              "lineno": 1179,
+              "loc": 2,
               "complexity": 1
             },
             {
               "name": "_escape_attr",
-              "lineno": 1337,
+              "lineno": 1183,
               "loc": 2,
               "complexity": 1
             },
             {
               "name": "_rel_from_workspace",
-              "lineno": 1341,
-              "loc": 17,
-              "complexity": 4
+              "lineno": 1187,
+              "loc": 2,
+              "complexity": 1
             }
           ],
-          "complexity": 168
+          "complexity": 137
         }
       ],
       "functions": [],
-      "complexity": 168,
+      "complexity": 137,
       "language": "python"
     },
     "tools/video/jimeng_video.py": {
@@ -59821,225 +60537,225 @@
       "language": "python"
     },
     "tools/video/video_compose.py": {
-      "physical_loc": 2915,
-      "logical_loc": 2361,
-      "bytes": 130007,
+      "physical_loc": 2546,
+      "logical_loc": 2066,
+      "bytes": 113855,
       "classes": [
         {
           "name": "VideoCompose",
-          "lineno": 57,
-          "loc": 2859,
+          "lineno": 82,
+          "loc": 2465,
           "methods": [
             {
               "name": "_remotion_available",
-              "lineno": 241,
+              "lineno": 266,
               "loc": 14,
               "complexity": 5
             },
             {
               "name": "_ffmpeg_available",
-              "lineno": 256,
+              "lineno": 281,
               "loc": 5,
               "complexity": 1
             },
             {
               "name": "_hyperframes_available",
-              "lineno": 262,
+              "lineno": 287,
               "loc": 11,
               "complexity": 2
             },
             {
               "name": "get_info",
-              "lineno": 274,
+              "lineno": 299,
               "loc": 69,
               "complexity": 6
             },
             {
               "name": "execute",
-              "lineno": 344,
+              "lineno": 369,
               "loc": 24,
               "complexity": 8
             },
             {
               "name": "_is_image",
-              "lineno": 372,
+              "lineno": 397,
               "loc": 3,
               "complexity": 1
             },
             {
               "name": "_has_audio_stream",
-              "lineno": 377,
+              "lineno": 402,
               "loc": 24,
               "complexity": 2
             },
             {
               "name": "_probe_video_stream_duration",
-              "lineno": 402,
+              "lineno": 427,
               "loc": 35,
               "complexity": 6
             },
             {
               "name": "_mux_external_audio",
-              "lineno": 438,
+              "lineno": 463,
               "loc": 54,
               "complexity": 7
             },
             {
               "name": "_compose",
-              "lineno": 493,
+              "lineno": 518,
               "loc": 290,
               "complexity": 40
             },
             {
               "name": "_get_composition_id",
-              "lineno": 805,
+              "lineno": 830,
               "loc": 14,
               "complexity": 2
             },
             {
               "name": "_cuts_to_cinematic_scenes",
-              "lineno": 821,
-              "loc": 61,
-              "complexity": 17
+              "lineno": 846,
+              "loc": 3,
+              "complexity": 1
             },
             {
               "name": "_stage_remotion_media",
-              "lineno": 884,
+              "lineno": 851,
               "loc": 53,
               "complexity": 18
             },
             {
               "name": "_render_via_atelier",
-              "lineno": 938,
+              "lineno": 905,
               "loc": 180,
               "complexity": 23
             },
             {
               "name": "_stage_atelier_project",
-              "lineno": 1124,
+              "lineno": 1091,
               "loc": 69,
               "complexity": 15
             },
             {
               "name": "_run_atelier_checks",
-              "lineno": 1209,
+              "lineno": 1176,
               "loc": 59,
               "complexity": 11
             },
             {
               "name": "_build_theme_from_playbook",
-              "lineno": 1270,
+              "lineno": 1237,
               "loc": 109,
               "complexity": 12
             },
             {
               "name": "_needs_remotion",
-              "lineno": 1380,
+              "lineno": 1347,
               "loc": 39,
               "complexity": 11
             },
             {
               "name": "_pre_compose_validation",
-              "lineno": 1420,
-              "loc": 112,
-              "complexity": 19
+              "lineno": 1387,
+              "loc": 11,
+              "complexity": 1
             },
             {
               "name": "_render",
-              "lineno": 1533,
-              "loc": 211,
-              "complexity": 34
+              "lineno": 1399,
+              "loc": 168,
+              "complexity": 28
             },
             {
               "name": "_render_via_hyperframes",
-              "lineno": 1745,
+              "lineno": 1568,
               "loc": 126,
               "complexity": 21
             },
             {
               "name": "_render_via_ffmpeg",
-              "lineno": 1872,
+              "lineno": 1695,
               "loc": 59,
               "complexity": 12
             },
             {
               "name": "_remotion_render",
-              "lineno": 1932,
+              "lineno": 1755,
               "loc": 176,
               "complexity": 36
             },
             {
               "name": "_read_text_file",
-              "lineno": 2128,
-              "loc": 8,
-              "complexity": 3
+              "lineno": 1942,
+              "loc": 3,
+              "complexity": 1
             },
             {
               "name": "_tokenize",
-              "lineno": 2138,
-              "loc": 9,
-              "complexity": 2
+              "lineno": 1947,
+              "loc": 3,
+              "complexity": 1
             },
             {
               "name": "_compare_transcript_to_script",
-              "lineno": 2149,
-              "loc": 106,
-              "complexity": 13
+              "lineno": 1952,
+              "loc": 7,
+              "complexity": 1
             },
             {
               "name": "_run_final_review",
-              "lineno": 2256,
+              "lineno": 1960,
               "loc": 412,
               "complexity": 67
             },
             {
               "name": "_parse_probe_fps",
-              "lineno": 2670,
-              "loc": 9,
-              "complexity": 3
+              "lineno": 2374,
+              "loc": 3,
+              "complexity": 1
             },
             {
               "name": "_burn_subtitles",
-              "lineno": 2680,
+              "lineno": 2378,
               "loc": 36,
               "complexity": 3
             },
             {
               "name": "_overlay",
-              "lineno": 2717,
+              "lineno": 2415,
               "loc": 69,
               "complexity": 7
             },
             {
               "name": "_encode",
-              "lineno": 2787,
+              "lineno": 2485,
               "loc": 43,
               "complexity": 4
             },
             {
               "name": "_resolve_subtitle_style",
-              "lineno": 2832,
-              "loc": 49,
-              "complexity": 11
+              "lineno": 2530,
+              "loc": 7,
+              "complexity": 1
             },
             {
               "name": "_build_subtitle_style",
-              "lineno": 2883,
-              "loc": 19,
-              "complexity": 4
+              "lineno": 2539,
+              "loc": 3,
+              "complexity": 1
             },
             {
               "name": "_build_atempo",
-              "lineno": 2904,
-              "loc": 12,
-              "complexity": 3
+              "lineno": 2544,
+              "loc": 3,
+              "complexity": 1
             }
           ],
-          "complexity": 396
+          "complexity": 324
         }
       ],
       "functions": [],
-      "complexity": 396,
+      "complexity": 324,
       "language": "python"
     },
     "tools/video/video_selector.py": {

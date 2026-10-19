@@ -15,10 +15,10 @@ class TestToolRegistryParity:
     """Parity tests for tool discovery and registry API."""
 
     def test_discovery_baseline(self):
-        """Registry must discover at least 109 tools without unhandled exceptions."""
+        """Registry must discover exactly 109 tools without unhandled exceptions."""
         reg = ToolRegistry()
         reg.discover()
-        assert len(reg._tools) >= 109, f"Expected at least 109 tools, found {len(reg._tools)}"
+        assert len(reg._tools) == 109, f"Expected exactly 109 tools, found {len(reg._tools)}"
 
     def test_all_tools_inherit_base_tool(self):
         """Every tool discovered must be a concrete BaseTool subclass."""
@@ -58,11 +58,12 @@ class TestToolRegistryParity:
         assert "runtime_warnings" in summary
 
     def test_no_private_helper_tools_registered(self):
-        """No internal private helper classes (e.g. from _compose) should register as tools."""
+        """No internal private helper classes (e.g. from _compose or _hyperframes) should register as tools."""
         reg = ToolRegistry()
         reg.discover()
         for name, tool in reg._tools.items():
-            assert not tool.__class__.__module__.endswith("._compose"), (
-                f"Private module registered tool: {name} from {tool.__class__.__module__}"
+            module_parts = tool.__class__.__module__.split(".")
+            assert not any(p in {"_compose", "_hyperframes"} for p in module_parts), (
+                f"Private helper module registered tool: {name} from {tool.__class__.__module__}"
             )
             assert not name.startswith("_"), f"Tool name starts with underscore: {name}"
