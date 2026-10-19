@@ -37,8 +37,15 @@ from tools.base_tool import (
     ToolStability,
     ToolStatus,
     ToolTier,
+from tools.video._hyperframes.template import (
+    format_float as _format_float_fn,
+    escape_text as _escape_text_fn,
+    escape_attr as _escape_attr_fn,
+    rel_from_workspace as _rel_from_workspace_fn,
+    compute_total_duration as _compute_total_duration_fn,
+    cut_to_html as _cut_to_html_fn,
+    generate_index_html as _generate_index_html_fn,
 )
-
 
 log = logging.getLogger("hyperframes_compose")
 
@@ -910,9 +917,7 @@ class HyperFramesCompose(BaseTool):
 
     @staticmethod
     def _compute_total_duration(cuts: list[dict]) -> float:
-        if not cuts:
-            return 0.0
-        return max(float(c.get("out_seconds", 0) or 0) for c in cuts)
+        return _compute_total_duration_fn(cuts)
 
     @staticmethod
     def _file_sha256(path: Path) -> str:
@@ -1095,173 +1100,17 @@ class HyperFramesCompose(BaseTool):
         css_vars: dict[str, str],
         title: str,
     ) -> str:
-        """Emit a HyperFrames-contract-compliant index.html.
-
-        Phase 1 covers the minimum required for smoke-testing the runtime:
-        - still images (img.clip)
-        - video clips (video.clip, muted playsinline + separate audio if needed)
-        - text cards (div.clip with styled <h1>)
-        - narration segments (audio)
-        - music bed (audio, lower volume)
-
-        Richer scene types (registry blocks, kinetic typography) are authored
-        by the agent directly into compositions/ — this generator just
-        provides a functional starting skeleton.
-        """
-        vars_css = "\n      ".join(f"{k}: {v};" for k, v in css_vars.items())
-
-        clip_html: list[str] = []
-        entrance_tweens: list[str] = []
-        for i, cut in enumerate(cuts):
-            html, tween = self._cut_to_html(i, cut, width, height)
-            clip_html.append(html)
-            if tween:
-                entrance_tweens.append(tween)
-
-        audio_html: list[str] = []
-        for j, nar in enumerate(audio_refs.get("narration") or []):
-            src = self._rel_from_workspace(nar["src"])
-            start = nar.get("start_seconds", 0)
-            end = nar.get("end_seconds")
-            duration = (end - start) if end and end > start else (total_duration - start)
-            audio_html.append(
-                f'<audio id="nar-{j}" '
-                f'data-start="{self._f(start)}" data-duration="{self._f(duration)}" '
-                f'data-track-index="2" src="{self._escape_attr(src)}" '
-                f'data-volume="1"></audio>'
-            )
-
-        music = audio_refs.get("music")
-        if music:
-            src = self._rel_from_workspace(music["src"])
-            audio_html.append(
-                f'<audio id="music" '
-                f'data-start="0" data-duration="{self._f(total_duration)}" '
-                f'data-track-index="3" src="{self._escape_attr(src)}" '
-                f'data-volume="{self._f(music["volume"])}"></audio>'
-            )
-
-        tween_block = "\n        ".join(entrance_tweens) if entrance_tweens else "// no tweens"
-
-        return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>{self._escape_text(title)}</title>
-  <style>
-    :root {{
-      {vars_css}
-    }}
-    body {{ margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-body); }}
-    [data-composition-id="root"] {{
-      position: relative;
-      width: {width}px;
-      height: {height}px;
-      overflow: hidden;
-    }}
-    .clip {{ position: absolute; inset: 0; }}
-    .clip.video-clip, .clip.image-clip {{ object-fit: cover; width: 100%; height: 100%; }}
-    .clip.text-card {{ display: flex; align-items: center; justify-content: center; padding: 120px 160px; box-sizing: border-box; text-align: center; }}
-    .clip.text-card h1 {{ font-family: var(--font-heading); font-weight: 700; font-size: 96px; line-height: 1.1; margin: 0; color: var(--color-fg); }}
-    .clip.text-card .subtitle {{ font-size: 36px; margin-top: 24px; color: var(--color-accent); }}
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-</head>
-<body>
-  <div data-composition-id="root" data-start="0" data-duration="{self._f(total_duration)}" data-width="{width}" data-height="{height}">
-    {"".join(clip_html)}
-    {"".join(audio_html)}
-    <script>
-      window.__timelines = window.__timelines || {{}};
-      const tl = gsap.timeline({{ paused: true }});
-      {tween_block}
-      window.__timelines["root"] = tl;
-    </script>
-  </div>
-</body>
-</html>
-"""
+        """Emit a HyperFrames-contract-compliant index.html."""
+        return _generate_index_html_fn(
+            cuts, audio_refs, width, height, total_duration, css_vars, title,
+            _IMAGE_EXTENSIONS, _VIDEO_EXTENSIONS
+        )
 
     def _cut_to_html(
         self, index: int, cut: dict, width: int, height: int
     ) -> tuple[str, Optional[str]]:
         """Render one cut + its entrance tween. Returns (html, tween or None)."""
-        cut_id = f"cut-{index}"
-        in_s = float(cut.get("in_seconds", 0) or 0)
-        out_s = float(cut.get("out_seconds", 0) or 0)
-        duration = max(0.1, out_s - in_s)
-
-        source = cut.get("source") or ""
-        cut_type = (cut.get("type") or "").lower()
-        text = cut.get("text") or cut.get("title") or ""
-
-        src_path = Path(source) if source else None
-        ext = src_path.suffix.lower() if src_path else ""
-
-        # Decide scene shape
-        if cut_type in {"text_card", "hero_title", "callout"} or (not source and text):
-            inner = f'<h1>{self._escape_text(text or f"Scene {index + 1}")}</h1>'
-            subtitle = cut.get("subtitle") or cut.get("caption")
-            if subtitle:
-                inner += f'<div class="subtitle">{self._escape_text(subtitle)}</div>'
-            html = (
-                f'<div id="{cut_id}" class="clip text-card" '
-                f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
-                f'data-track-index="1">{inner}</div>'
-            )
-            # Mild entrance — fade + lift.
-            tween = (
-                f'tl.from("#{cut_id} h1", {{ y: 40, opacity: 0, duration: 0.6, '
-                f'ease: "power3.out" }}, {self._f(in_s + 0.1)});'
-            )
-            return html, tween
-
-        if ext in _IMAGE_EXTENSIONS and src_path:
-            rel = self._rel_from_workspace(str(src_path))
-            html = (
-                f'<img id="{cut_id}" class="clip image-clip" '
-                f'src="{self._escape_attr(rel)}" '
-                f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
-                f'data-track-index="1" alt="">'
-            )
-            tween = (
-                f'tl.from("#{cut_id}", {{ scale: 1.05, opacity: 0, duration: 0.5, '
-                f'ease: "power2.out" }}, {self._f(in_s)});'
-            )
-            return html, tween
-
-        if ext in _VIDEO_EXTENSIONS and src_path:
-            rel = self._rel_from_workspace(str(src_path))
-            html = (
-                f'<video id="{cut_id}" class="clip video-clip" '
-                f'src="{self._escape_attr(rel)}" '
-                f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
-                f'data-track-index="1" muted playsinline></video>'
-            )
-            return html, None
-
-        # Unknown cut shape — render a placeholder text card so the render
-        # still succeeds; lint/validate will surface the issue.
-        if ext in {".html", ".htm"} and src_path:
-            rel = self._rel_from_workspace(str(src_path))
-            composition_id = Path(rel).stem
-            html = (
-                f'<div id="{cut_id}" class="clip composition-clip" '
-                f'data-composition-id="{self._escape_attr(composition_id)}" '
-                f'data-composition-src="{self._escape_attr(rel)}" '
-                f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
-                f'data-width="{width}" data-height="{height}" '
-                f'data-track-index="1"></div>'
-            )
-            return html, None
-
-        placeholder = self._escape_text(text or cut.get("reason") or f"Scene {index + 1}")
-        html = (
-            f'<div id="{cut_id}" class="clip text-card" '
-            f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
-            f'data-track-index="1"><h1>{placeholder}</h1></div>'
-        )
-        return html, None
+        return _cut_to_html_fn(index, cut, width, height, _IMAGE_EXTENSIONS, _VIDEO_EXTENSIONS)
 
     # ------------------------------------------------------------------
     # Utilities
@@ -1323,35 +1172,16 @@ class HyperFramesCompose(BaseTool):
 
     @staticmethod
     def _f(v: float) -> str:
-        return f"{float(v):.3f}".rstrip("0").rstrip(".")
+        return _format_float_fn(v)
 
     @staticmethod
     def _escape_text(s: str) -> str:
-        return (
-            s.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        return _escape_text_fn(s)
 
     @staticmethod
     def _escape_attr(s: str) -> str:
-        return HyperFramesCompose._escape_text(s).replace('"', "&quot;")
+        return _escape_attr_fn(s)
 
     @staticmethod
     def _rel_from_workspace(path: str) -> str:
-        """HyperFrames resolves src= relative to index.html. Our asset files
-        live under workspace/assets/, so when we stage a copy we know the
-        relative path is `assets/<name>`. For files already in the workspace
-        tree, fall back to the file name.
-        """
-        p = Path(path)
-        # If it's already a relative path starting with assets/, keep as-is.
-        if not p.is_absolute():
-            return str(p).replace("\\", "/")
-        parts = p.parts
-        for anchor in ("assets", "compositions"):
-            if anchor in parts:
-                index = len(parts) - 1 - list(reversed(parts)).index(anchor)
-                return "/".join(parts[index:])
-        # Otherwise emit just the basename under assets/.
-        return f"assets/{p.name}"
+        return _rel_from_workspace_fn(path)

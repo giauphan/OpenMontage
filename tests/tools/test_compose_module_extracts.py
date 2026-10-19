@@ -31,6 +31,15 @@ from tools.video._compose.ffmpeg_commands import (
     resolve_subtitle_style,
     build_subtitle_style,
 )
+from tools.video._hyperframes.template import (
+    format_float,
+    escape_text,
+    escape_attr,
+    rel_from_workspace,
+    compute_total_duration,
+    cut_to_html,
+    generate_index_html,
+)
 
 
 class TestAssetResolutionExtract:
@@ -252,3 +261,85 @@ class TestFFmpegCommandsExtract:
         assert "FontName=Roboto" in style_str
         assert "FontSize=32" in style_str
         assert "Bold=0" in style_str
+
+
+class TestHyperFramesTemplateExtract:
+    """Test HyperFrames HTML generation and formatting pure functions."""
+
+    def test_format_float(self):
+        assert format_float(1.0) == "1"
+        assert format_float(1.250) == "1.25"
+        assert format_float(None) == "0"
+        assert format_float(0.0) == "0"
+        assert format_float(2.3456) == "2.346"
+
+    def test_escape_text(self):
+        assert escape_text("<hello & world>") == "&lt;hello &amp; world&gt;"
+        assert escape_text("") == ""
+        assert escape_text(None) == ""
+
+    def test_escape_attr(self):
+        assert escape_attr('title="test & cool"') == 'title=&quot;test &amp; cool&quot;'
+        assert escape_attr("") == ""
+        assert escape_attr(None) == ""
+
+    def test_rel_from_workspace(self):
+        assert rel_from_workspace("assets/foo.png") == "assets/foo.png"
+        assert rel_from_workspace("/home/user/project/assets/bar.png") == "assets/bar.png"
+        assert rel_from_workspace("/tmp/other/image.jpg") == "assets/image.jpg"
+        assert rel_from_workspace("") == ""
+
+    def test_compute_total_duration(self):
+        assert compute_total_duration([{"out_seconds": 2.5}, {"out_seconds": 6.0}]) == 6.0
+        assert compute_total_duration([]) == 0.0
+
+    def test_cut_to_html_text_card(self):
+        cut = {"type": "text_card", "text": "Intro", "in_seconds": 0.0, "out_seconds": 2.0}
+        html, tween = cut_to_html(0, cut, 1920, 1080, {".png"}, {".mp4"})
+        assert 'class="clip text-card"' in html
+        assert '<h1>Intro</h1>' in html
+        assert tween is not None
+        assert "tl.from" in tween
+
+    def test_cut_to_html_image_and_video(self):
+        # Image
+        img_cut = {"source": "assets/photo.png", "in_seconds": 2.0, "out_seconds": 5.0}
+        html_img, tween_img = cut_to_html(1, img_cut, 1920, 1080, {".png"}, {".mp4"})
+        assert '<img id="cut-1"' in html_img
+        assert 'class="clip image-clip"' in html_img
+        assert tween_img is not None
+
+        # Video
+        vid_cut = {"source": "assets/clip.mp4", "in_seconds": 5.0, "out_seconds": 8.0}
+        html_vid, tween_vid = cut_to_html(2, vid_cut, 1920, 1080, {".png"}, {".mp4"})
+        assert '<video id="cut-2"' in html_vid
+        assert 'class="clip video-clip"' in html_vid
+        assert tween_vid is None
+
+    def test_generate_index_html(self):
+        cuts = [
+            {"type": "text_card", "text": "Hello", "in_seconds": 0.0, "out_seconds": 3.0}
+        ]
+        audio_refs = {
+            "narration": [{"src": "assets/narration.mp3", "start_seconds": 0.0, "end_seconds": 3.0}],
+            "music": {"src": "assets/bgm.mp3", "volume": 0.5},
+        }
+        css_vars = {"--color-bg": "#000", "--color-fg": "#fff"}
+        html = generate_index_html(
+            cuts=cuts,
+            audio_refs=audio_refs,
+            width=1920,
+            height=1080,
+            total_duration=3.0,
+            css_vars=css_vars,
+            title="Test Video",
+            image_extensions={".png"},
+            video_extensions={".mp4"},
+        )
+        assert "<!DOCTYPE html>" in html
+        assert "<title>Test Video</title>" in html
+        assert "--color-bg: #000;" in html
+        assert '<audio id="nar-0"' in html
+        assert '<audio id="music"' in html
+        assert 'window.__timelines["root"] = tl;' in html
+
