@@ -60,6 +60,45 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
     if transcript.get("language") not in ("vi", "vi-VN", "vie"):
         raise RuntimeError(f"ASR did not identify Vietnamese speech for {audio_path}")
 
+    try:
+        from scripts.generate_vn_subtitles import get_audio_duration
+        audio_dur = get_audio_duration(audio_path)
+    except Exception:
+        audio_dur = None
+
+    sanitized_words = []
+    previous_end = 0.0
+    for w in words:
+        if not isinstance(w, dict) or not isinstance(w.get("word"), str) or not w["word"].strip():
+            continue
+        start = w.get("start")
+        end = w.get("end")
+        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+            continue
+        start = float(start)
+        end = float(end)
+        if audio_dur is not None and start >= audio_dur:
+            continue
+        if start < previous_end:
+            start = previous_end
+        if end <= start:
+            end = start + 0.05
+        if audio_dur is not None and end > audio_dur:
+            end = audio_dur
+            if end <= start:
+                start = max(0.0, end - 0.05)
+        start = round(start, 3)
+        end = round(end, 3)
+        if end > start and start >= previous_end:
+            sanitized_words.append({"word": w["word"], "start": start, "end": end})
+            previous_end = end
+
+    if not sanitized_words:
+        raise RuntimeError(f"ASR returned no valid word timings for {audio_path}")
+
+    transcript["word_timestamps"] = sanitized_words
+    words = sanitized_words
+
     transcript_path.write_text(json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8")
     transcript_text_path.write_text(" ".join(word["word"].strip() for word in words), encoding="utf-8")
     command = [

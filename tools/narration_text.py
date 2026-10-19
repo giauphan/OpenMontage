@@ -226,8 +226,19 @@ def check_vietnamese_prose(text: str) -> list[str]:
     ambiguous_eng = {"in", "to", "a", "on", "an", "no", "so", "he", "me", "my", "we", "or", "as", "at", "be", "by", "do", "go", "if", "is", "it", "of", "up", "us"}
     definite_eng_stops = [w for w in words if w in _ENGLISH_STOP_WORDS and w not in ambiguous_eng and w not in _VIET_NO_DIAC]
     
-    if len(definite_eng_stops) >= 2 or (len(words) <= 7 and len(definite_eng_stops) >= 1):
-        return [f"text contains English sentences or stop words ({', '.join(definite_eng_stops[:3])})"]
+    distinct_stops = sorted(set(definite_eng_stops))
+    if len(words) <= 7:
+        if len(definite_eng_stops) >= 1:
+            return [f"text contains English sentences or stop words ({', '.join(distinct_stops[:3])})"]
+    elif len(words) <= 30:
+        if len(distinct_stops) >= 2:
+            return [f"text contains English sentences or stop words ({', '.join(distinct_stops[:3])})"]
+    else:
+        # For full narration paragraphs / scripts (>30 words), require at least 3 distinct English stop words
+        # or multiple stop words making up a non-trivial count, so that a brand name containing
+        # a single preposition (e.g., "Train with Pasta") repeated across scenes doesn't fail.
+        if len(distinct_stops) >= 3 or (len(distinct_stops) >= 2 and len(definite_eng_stops) >= 4):
+            return [f"text contains English sentences or stop words ({', '.join(distinct_stops[:3])})"]
 
     # Count Vietnamese words vs non-Vietnamese words
     has_vietnamese_diacritic = any(ch in _VIETNAMESE_DIACRITICS for ch in clean_text)

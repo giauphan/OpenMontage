@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -102,30 +103,9 @@ def run_produce(args: argparse.Namespace) -> None:
     if diagnostics:
         logger.warning(f"Encountered {len(diagnostics)} invalid items during ingestion.")
 
-    logger.info("Scoring and ranking...")
-    scorer = NewsCandidateScorer()
-    ranked = scorer.rank_candidates(candidates, limit=max(10, count * 3))
-
-    if not ranked:
-        logger.error("No valid candidates found.")
-        sys.exit(1)
-
-    if len(ranked) < count:
-        logger.error(f"Need {count} distinct candidates but only {len(ranked)} available.")
-        sys.exit(1)
-
-    if args.dry_run:
-        logger.info("[DRY RUN] Skipping Codex CLI and checkpoint generation.")
-        print(json.dumps(ranked[:count], indent=2))
-        return
-
-    logger.info("Running bounded Codex selection...")
-    selector = NewsSelector()
-
-    project_ids: List[str] = []
     used_ids: set[str] = set()
 
-    # Pre-populate used_ids with already scheduled projects and existing validated projects
+    # Pre-populate used_ids with already scheduled projects and completed validated/rendered projects
     sched_path = Path("config/publish_schedule.json")
     if sched_path.is_file():
         try:
@@ -140,8 +120,37 @@ def run_produce(args: argparse.Namespace) -> None:
     for p_dir in (Path("projects"), Path("projects_news")):
         if p_dir.is_dir():
             for p in p_dir.iterdir():
-                if p.is_dir() and ((p / "validation_status.json").is_file() or (p / "renders").is_dir()):
-                    used_ids.add(p.name)
+                if p.is_dir():
+                    has_video = (p / "renders").is_dir() and any((p / "renders").glob("*.mp4"))
+                    if (p / "validation_status.json").is_file() or has_video:
+                        used_ids.add(p.name)
+
+    # Filter out already used candidates before ranking so we do not artificially truncate the usable pool
+    available_candidates = [c for c in candidates if c.get("candidate_id") not in used_ids]
+    candidate_pool = available_candidates if len(available_candidates) >= count else candidates
+
+    logger.info("Scoring and ranking...")
+    scorer = NewsCandidateScorer()
+    ranked = scorer.rank_candidates(candidate_pool, limit=max(30, count * 4))
+
+    min_required = min(count, int(os.environ.get("MIN_PRODUCE_COUNT", 3)))
+    if not ranked:
+        logger.error("No valid candidates found.")
+        sys.exit(1)
+
+    if len(ranked) < min_required:
+        logger.error(f"Need at least {min_required} distinct candidates but only {len(ranked)} available.")
+        sys.exit(1)
+
+    if args.dry_run:
+        logger.info("[DRY RUN] Skipping Codex CLI and checkpoint generation.")
+        print(json.dumps(ranked[:count], indent=2))
+        return
+
+    logger.info("Running bounded Codex selection...")
+    selector = NewsSelector()
+
+    project_ids: List[str] = []
 
     max_attempts = max(count * 3, len(ranked))
     attempts = 0
