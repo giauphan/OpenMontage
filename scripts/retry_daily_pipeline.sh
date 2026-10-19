@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCHEDULE="${SCHEDULE:-$ROOT/config/publish_schedule.json}"
-LOCK_FILE="${LOCK_FILE:-$ROOT/logs/strict_docker_publish.lock}"
+LOCK_FILE="${LOCK_FILE:-$ROOT/.strict_docker_publish.lock}"
 PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3)}"
