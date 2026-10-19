@@ -122,6 +122,7 @@ PROJECT_ID=candidate
 PROJECT_DIR="$ROOT/projects/$PROJECT_ID"
 DIRECTORS_LOG="$ROOT/logs/directors.log"
 START_TS=2000000000
+DIRECTOR_SESSION_START_NS={cutoff}
 DIRECTOR_ATTEMPT_START_NS={cutoff}
 '''
     result = run_shell(tmp_path, SOURCE[start:end] + "\nvalidate_current_director_artifacts", setup)

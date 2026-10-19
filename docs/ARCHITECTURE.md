@@ -471,6 +471,23 @@ Consumed via `npx hyperframes` (no monorepo checkout needed). Runtime floor: Nod
 
 `video_compose` reads `edit_decisions.render_runtime` and dispatches via `_render_via_hyperframes`, `_remotion_render`, or `_render_via_ffmpeg`. Silent runtime swaps are forbidden — the tool returns a structured blocker when the chosen runtime is unavailable. See `AGENT_GUIDE.md` → "Composition Runtimes (Inside video_compose)" and `skills/core/hyperframes.md` for the full decision matrix.
 
+### Internal Modularization & Helper Boundaries
+
+To maintain high maintainability without breaking dynamic tool discovery or public contracts, complex tools use private helper packages:
+
+- `tools/video/_compose/`: Pure domain helpers for `VideoCompose`:
+  - `asset_resolution.py`: Pure functions for resolving asset paths, mapping cuts to cinematic scenes, and building asset lookups.
+  - `validation.py`: Pre-compose validation, transcript vs script alignment checks, and text tokenization.
+  - `runtime_policy.py`: Approved `render_runtime` governance, Atelier mode detection, runtime swap detection, and availability verification.
+  - `ffmpeg_commands.py`: Pure command construction for FFmpeg audio filters (`atempo`), probe parsing, and ASS subtitle styles.
+- `tools/video/_hyperframes/`: Pure domain helpers for `HyperFramesCompose`:
+  - `template.py`: Pure HTML escaping, number formatting, duration calculation, and HyperFrames-contract-compliant `index.html` generation.
+
+**Architectural Fitness Invariants:**
+1. **Forbidden Reverse Imports:** Internal helper packages (`_compose`, `_hyperframes`) must never import their parent facade tools (`video_compose`, `hyperframes_compose`). Enforced by automated tests in `tests/contracts/test_architecture_fitness.py`.
+2. **Tool Boundary Isolation:** Internal helper packages must never declare concrete `BaseTool` subclasses, preserving strict tool parity in `ToolRegistry` (exact 109 tools discovered).
+3. **Fail-Closed Runtime Selection:** Silent engine fallbacks remain strictly prohibited.
+
 ---
 
 ## Test Architecture

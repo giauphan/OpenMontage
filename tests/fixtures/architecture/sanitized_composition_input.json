@@ -1,0 +1,35 @@
+{
+  "operation": "render",
+  "output_path": "projects/demo/renders/final.mp4",
+  "edit_decisions": {
+    "render_runtime": "ffmpeg",
+    "timeline": {
+      "fps": 30,
+      "width": 1920,
+      "height": 1080
+    },
+    "cuts": [
+      {
+        "id": "cut_01",
+        "type": "video",
+        "source": "asset_01",
+        "start": 0.0,
+        "duration": 4.0
+      }
+    ]
+  },
+  "asset_manifest": {
+    "assets": [
+      {
+        "id": "asset_01",
+        "type": "video",
+        "path": "projects/demo/assets/video/scene1.mp4"
+      }
+    ]
+  },
+  "proposal_packet": {
+    "production_plan": {
+      "render_runtime": "ffmpeg"
+    }
+  }
+}

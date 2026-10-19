@@ -158,6 +158,7 @@ CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
 export CODEX_MODEL
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-3}"
+GENERATION_RETRY_DELAY_SECONDS="${GENERATION_RETRY_DELAY_SECONDS:-30}"
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 export EXPECTED_SUCCESS_COUNT
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
@@ -425,8 +426,10 @@ else
     fi
     log "generation attempt $GENERATION_ATTEMPT failed (exit=$GEN_STATUS projects=${#PROJECT_IDS[@]})"
     if [ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]; then
-      log "pausing 30s before generation retry attempt $((GENERATION_ATTEMPT + 1))..."
-      sleep 30
+      if [ "$GENERATION_RETRY_DELAY_SECONDS" -gt 0 ]; then
+        log "pausing ${GENERATION_RETRY_DELAY_SECONDS}s before generation retry attempt $((GENERATION_ATTEMPT + 1))..."
+        sleep "$GENERATION_RETRY_DELAY_SECONDS"
+      fi
     fi
   done
 fi

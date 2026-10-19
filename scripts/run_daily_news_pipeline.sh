@@ -504,15 +504,16 @@ DIRECTOR_ATTEMPT=1
 # Templated mode materializes in the block above; no generative retry loop.
 validate_current_director_artifacts() {
   local output status
+  local cutoff_ns="${DIRECTOR_SESSION_START_NS:-${DIRECTOR_ATTEMPT_START_NS:-0}}"
   output=$("$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" \
-    --min-mtime-ns "$DIRECTOR_SESSION_START_NS" --require-compositions 2>&1)
+    --min-mtime-ns "$cutoff_ns" --require-compositions 2>&1)
   status=$?
   if [ "$status" -eq 0 ]; then
     if ! "$PY" -c 'import pathlib,sys
 root = pathlib.Path(sys.argv[1]); cutoff = int(sys.argv[2])
 paths = [root / name / "index.html" for name in ("hyperframes", "hyperframes_reels")]
 raise SystemExit(0 if all(p.is_file() and p.stat().st_mtime_ns >= cutoff for p in paths) else 1)' \
-        "$PROJECT_DIR" "$DIRECTOR_SESSION_START_NS"; then
+        "$PROJECT_DIR" "$cutoff_ns"; then
       DIRECTOR_VALIDATION_ERRORS="Both compositions must be written by the current director session"
       printf '%s\n' "$DIRECTOR_VALIDATION_ERRORS" >> "$DIRECTORS_LOG"
       return 1
