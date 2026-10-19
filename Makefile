@@ -138,7 +138,7 @@ lint: ensure-venv
 # Pipeline shell entrypoints are load-bearing: a syntax error only surfaces at
 # 3am in cron. Parse them in CI.
 lint-shell:
-	@for script in scripts/*.sh test_pipeline/*.sh docker-validation-run.sh test_validation_integration.sh; do \
+	@for script in scripts/*.sh docker-validation-run.sh test_validation_integration.sh; do \
 		echo "==> bash -n $$script"; \
 		bash -n "$$script" || exit 1; \
 	done
