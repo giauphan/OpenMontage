@@ -21,9 +21,15 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
+GENERATED_INVENTORIES = {
+    "architecture-inventory.json",
+    "contract-inventory.json",
+    "reachability-inventory.json",
+}
+
 
 def get_git_tracked_files() -> List[str]:
-    """Get list of files tracked by git."""
+    """Get list of files tracked by git, excluding generated inventory files."""
     res = subprocess.run(
         ["git", "ls-files"],
         cwd=ROOT_DIR,
@@ -31,7 +37,11 @@ def get_git_tracked_files() -> List[str]:
         text=True,
         check=True,
     )
-    return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    return [
+        line.strip()
+        for line in res.stdout.splitlines()
+        if line.strip() and line.strip() not in GENERATED_INVENTORIES
+    ]
 
 
 def calculate_complexity(node: ast.AST) -> int:
@@ -195,7 +205,9 @@ def inventory_tools_and_registry() -> Dict[str, Any]:
                 "module": module_name,
                 "class_name": class_name,
                 "dependencies": getattr(tool, "dependencies", []),
-                "supports": getattr(tool, "supports", []),
+                "supports": getattr(tool, "supports", {}) if isinstance(getattr(tool, "supports", {}), dict) else {},
+                "input_schema": getattr(tool, "input_schema", {}),
+                "output_schema": getattr(tool, "output_schema", {}),
                 "fallback_tools": getattr(tool, "fallback_tools", []),
                 "agent_skills": getattr(tool, "agent_skills", []),
                 "render_engines": info.get("render_engines", []),
@@ -274,6 +286,13 @@ def build_reachability_report(
         if isinstance(t_meta, dict) and "module" in t_meta:
             tool_modules.add(t_meta["module"])
 
+    # Collect tool names referenced across pipelines
+    pipeline_tool_refs = set()
+    for p_info in pipelines.values():
+        if isinstance(p_info, dict):
+            for t in p_info.get("tools_referenced", []):
+                pipeline_tool_refs.add(t)
+
     # Collect string mentions in scripts, yaml, md
     content_corpus = []
     for f in tracked_files:
@@ -285,41 +304,63 @@ def build_reachability_report(
 
     reachability = {}
     for f in tracked_files:
-        # Default classification
-        status = "ACTIVE"
+        status = "UNKNOWN"
         reasons = []
 
         # If it's a test
         if f.startswith("tests/"):
+            status = "ACTIVE"
             reasons.append("test file")
-        # If it's a doc or schema
-        elif f.startswith(("docs/", "schemas/", "pipeline_defs/", "styles/", "skills/")):
-            reasons.append("pipeline/schema/doc/skill")
+        # If it's a doc, workflow, schema, skill, or core configuration
+        elif f.startswith((".agents/", ".github/", "docs/", "schemas/", "pipeline_defs/", "styles/")) or f in (
+            "README.md",
+            "AGENTS.md",
+            "AGENT_GUIDE.md",
+            "CLAUDE.md",
+            "package.json",
+            "package-lock.json",
+            "pyproject.toml",
+            "requirements.txt",
+            "Dockerfile",
+            "docker-compose.yml",
+            ".gitignore",
+            "Makefile",
+            "tsconfig.json",
+        ):
+            status = "ACTIVE"
+            reasons.append("project configuration / documentation / workflow / skill")
         elif f.startswith("remotion-composer/"):
+            status = "ACTIVE"
             reasons.append("remotion-composer component/asset")
         elif f.startswith("backlot/"):
+            status = "ACTIVE"
             reasons.append("backlot board component/asset")
         elif f.endswith(".py"):
             mod_path = f[:-3].replace("/", ".")
+            stem = Path(f).stem
             if mod_path in all_imports:
+                status = "ACTIVE"
                 reasons.append("statically imported")
-            elif mod_path in tool_modules or f.startswith("tools/"):
-                reasons.append("tool module or in tools package")
-            elif f.startswith("lib/"):
-                reasons.append("lib shared infrastructure")
-            elif f.startswith("scripts/"):
-                reasons.append("script entrypoint")
+            elif mod_path in tool_modules:
+                status = "ACTIVE"
+                reasons.append("registered tool module in ToolRegistry")
+            elif stem in pipeline_tool_refs:
+                status = "ACTIVE"
+                reasons.append("referenced in pipeline definition")
+            elif any(f in corpus_text or stem in corpus_text for c_file, corpus_text in content_corpus if c_file != f):
+                status = "ACTIVE"
+                reasons.append("referenced in config/docs/scripts")
             else:
-                # Check string mentions
-                stem = Path(f).stem
-                mentioned = any(stem in corpus_text for _, corpus_text in content_corpus)
-                if mentioned:
-                    reasons.append("referenced by string in config/docs/scripts")
-                else:
-                    status = "UNKNOWN"
-                    reasons.append("no direct static import or string mention found; keep by default")
+                status = "UNKNOWN"
+                reasons.append("unresolved python source file without static import or recorded reference")
         else:
-            reasons.append("static asset or configuration")
+            stem = Path(f).name
+            if any(f in corpus_text or stem in corpus_text for c_file, corpus_text in content_corpus if c_file != f):
+                status = "ACTIVE"
+                reasons.append("referenced static asset or configuration")
+            else:
+                status = "UNKNOWN"
+                reasons.append("static asset or configuration without recorded reference")
 
         reachability[f] = {
             "status": status,
@@ -408,7 +449,7 @@ def main():
     # Write output files
     arch_output = {
         "metadata": {
-            "commit_head": git_head,
+            "scanned_from_commit": git_head,
             "tracked_files_count": len(tracked_files),
             "python_version": sys.version,
         },
@@ -418,7 +459,7 @@ def main():
 
     contract_output = {
         "metadata": {
-            "commit_head": git_head,
+            "scanned_from_commit": git_head,
             "tool_count": len(tools_data),
             "pipeline_count": len(pipelines_data),
         },
@@ -428,7 +469,7 @@ def main():
 
     reachability_output = {
         "metadata": {
-            "commit_head": git_head,
+            "scanned_from_commit": git_head,
             "total_files": len(reachability_data),
             "unknown_count": sum(1 for v in reachability_data.values() if v["status"] == "UNKNOWN"),
             "active_count": sum(1 for v in reachability_data.values() if v["status"] == "ACTIVE"),

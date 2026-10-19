@@ -17,8 +17,36 @@ class TestToolRegistryParity:
     def test_discovery_baseline(self):
         """Registry must discover exactly 109 tools without unhandled exceptions."""
         reg = ToolRegistry()
-        reg.discover()
+        discovered = reg.discover()
+        assert len(discovered) == len(set(discovered)), (
+            f"Duplicate tool names detected during discovery before registration: "
+            f"{len(discovered)} != {len(set(discovered))}"
+        )
         assert len(reg._tools) == 109, f"Expected exactly 109 tools, found {len(reg._tools)}"
+        assert len(discovered) == 109, f"Expected exactly 109 discovered names, found {len(discovered)}"
+
+        # Compare discovered tools and public metadata against pinned baseline
+        import json
+        from pathlib import Path
+
+        inventory_path = Path(__file__).resolve().parent.parent.parent / "contract-inventory.json"
+        if inventory_path.is_file():
+            with open(inventory_path, "r", encoding="utf-8") as f:
+                baseline = json.load(f)
+            baseline_tools = baseline.get("tools", {})
+            assert set(reg._tools.keys()) == set(baseline_tools.keys()), (
+                f"Discovered tools mismatch with pinned baseline: "
+                f"added={set(reg._tools.keys()) - set(baseline_tools.keys())}, "
+                f"removed={set(baseline_tools.keys()) - set(reg._tools.keys())}"
+            )
+            for name, tool in reg._tools.items():
+                expected = baseline_tools[name]
+                assert tool.capability == expected["capability"], (
+                    f"Capability mismatch for {name}: {tool.capability} != {expected['capability']}"
+                )
+                assert tool.provider == expected["provider"], (
+                    f"Provider mismatch for {name}: {tool.provider} != {expected['provider']}"
+                )
 
     def test_all_tools_inherit_base_tool(self):
         """Every tool discovered must be a concrete BaseTool subclass."""

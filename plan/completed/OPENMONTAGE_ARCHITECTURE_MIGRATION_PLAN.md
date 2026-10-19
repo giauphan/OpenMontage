@@ -1,6 +1,6 @@
 # OpenMontage — Architecture Migration & Maintainability Remediation Plan
 
-> **Status:** COMPLETED & VERIFIED (Phases 0-6 implemented, tested, and passing)  
+> **Status:** COMPLETED (Phases 0-6 implemented; archived in repository)  
 > **Target repository:** `giauphan/OpenMontage`  
 > **Archived repository destination:** `plan/completed/OPENMONTAGE_ARCHITECTURE_MIGRATION_PLAN.md`  
 > **Prepared:** 2026-10-19  

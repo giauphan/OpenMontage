@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "commit_head": "a40e5a1db76a2d347bd5029bf81f13ad708888e6",
-    "tracked_files_count": 2466,
+    "scanned_from_commit": "a1f653b6ba8a55c7d303019e35b91016472f3d5c",
+    "tracked_files_count": 2463,
     "python_version": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]"
   },
   "hotspots": [
@@ -23563,12 +23563,6 @@
       "bytes": 7212,
       "language": "markdown"
     },
-    "architecture-inventory.json": {
-      "physical_loc": 60442,
-      "logical_loc": 60442,
-      "bytes": 1508968,
-      "language": "json"
-    },
     "assets/logo.png": {
       "physical_loc": 2393,
       "logical_loc": 2292,
@@ -23982,12 +23976,6 @@
       "logical_loc": 35,
       "bytes": 1015,
       "language": "yaml"
-    },
-    "contract-inventory.json": {
-      "physical_loc": 2607,
-      "logical_loc": 2607,
-      "bytes": 68009,
-      "language": "json"
     },
     "deploy/openmontage.cron": {
       "physical_loc": 65,
@@ -28345,14 +28333,8 @@
     "plan/completed/OPENMONTAGE_ARCHITECTURE_MIGRATION_PLAN.md": {
       "physical_loc": 514,
       "logical_loc": 385,
-      "bytes": 39623,
+      "bytes": 39601,
       "language": "markdown"
-    },
-    "reachability-inventory.json": {
-      "physical_loc": 14686,
-      "logical_loc": 14686,
-      "bytes": 398937,
-      "language": "json"
     },
     "remotion-composer/SCENE_TYPES.md": {
       "physical_loc": 65,
@@ -29001,67 +28983,67 @@
       "language": "python"
     },
     "scripts/architecture_inventory.py": {
-      "physical_loc": 463,
-      "logical_loc": 381,
-      "bytes": 16611,
+      "physical_loc": 504,
+      "logical_loc": 421,
+      "bytes": 18189,
       "classes": [],
       "functions": [
         {
           "name": "get_git_tracked_files",
-          "lineno": 25,
-          "loc": 10,
-          "complexity": 1
+          "lineno": 31,
+          "loc": 14,
+          "complexity": 2
         },
         {
           "name": "calculate_complexity",
-          "lineno": 37,
+          "lineno": 47,
           "loc": 21,
           "complexity": 4
         },
         {
           "name": "analyze_python_file",
-          "lineno": 60,
+          "lineno": 70,
           "loc": 67,
           "complexity": 11
         },
         {
           "name": "analyze_other_file",
-          "lineno": 129,
+          "lineno": 139,
           "loc": 18,
           "complexity": 2
         },
         {
           "name": "extract_imports",
-          "lineno": 149,
+          "lineno": 159,
           "loc": 16,
           "complexity": 7
         },
         {
           "name": "inventory_tools_and_registry",
-          "lineno": 167,
-          "loc": 39,
+          "lineno": 177,
+          "loc": 41,
           "complexity": 6
         },
         {
           "name": "inventory_pipelines",
-          "lineno": 208,
+          "lineno": 220,
           "loc": 44,
           "complexity": 18
         },
         {
           "name": "build_reachability_report",
-          "lineno": 254,
-          "loc": 76,
-          "complexity": 20
+          "lineno": 266,
+          "loc": 105,
+          "complexity": 25
         },
         {
           "name": "main",
-          "lineno": 332,
+          "lineno": 373,
           "loc": 128,
           "complexity": 14
         }
       ],
-      "complexity": 76,
+      "complexity": 82,
       "language": "python"
     },
     "scripts/atelier_snapshots.py": {
@@ -33795,7 +33777,7 @@
     "tests/contracts/test_architecture_fitness.py": {
       "physical_loc": 131,
       "logical_loc": 114,
-      "bytes": 6265,
+      "bytes": 6341,
       "classes": [
         {
           "name": "TestArchitectureFitness",
@@ -33806,13 +33788,13 @@
               "name": "test_compose_helpers_do_not_import_facade",
               "lineno": 27,
               "loc": 22,
-              "complexity": 12
+              "complexity": 13
             },
             {
               "name": "test_hyperframes_helpers_do_not_import_facade",
               "lineno": 50,
               "loc": 22,
-              "complexity": 12
+              "complexity": 13
             },
             {
               "name": "test_internal_helpers_do_not_subclass_basetool",
@@ -33833,11 +33815,11 @@
               "complexity": 5
             }
           ],
-          "complexity": 38
+          "complexity": 40
         }
       ],
       "functions": [],
-      "complexity": 38,
+      "complexity": 40,
       "language": "python"
     },
     "tests/contracts/test_backlot_contract.py": {
@@ -43307,51 +43289,51 @@
       "language": "python"
     },
     "tests/contracts/test_tool_registry_parity.py": {
-      "physical_loc": 68,
-      "logical_loc": 54,
-      "bytes": 2720,
+      "physical_loc": 97,
+      "logical_loc": 80,
+      "bytes": 4360,
       "classes": [
         {
           "name": "TestToolRegistryParity",
           "lineno": 14,
-          "loc": 55,
+          "loc": 84,
           "methods": [
             {
               "name": "test_discovery_baseline",
               "lineno": 17,
-              "loc": 5,
-              "complexity": 2
+              "loc": 33,
+              "complexity": 10
             },
             {
               "name": "test_all_tools_inherit_base_tool",
-              "lineno": 23,
+              "lineno": 51,
               "loc": 7,
               "complexity": 4
             },
             {
               "name": "test_core_capabilities_exist",
-              "lineno": 31,
+              "lineno": 59,
               "loc": 18,
               "complexity": 6
             },
             {
               "name": "test_provider_menu_summary_structure",
-              "lineno": 50,
+              "lineno": 78,
               "loc": 9,
               "complexity": 5
             },
             {
               "name": "test_no_private_helper_tools_registered",
-              "lineno": 60,
-              "loc": 9,
+              "lineno": 88,
+              "loc": 10,
               "complexity": 4
             }
           ],
-          "complexity": 17
+          "complexity": 25
         }
       ],
       "functions": [],
-      "complexity": 17,
+      "complexity": 25,
       "language": "python"
     },
     "tests/contracts/test_utf8_file_io.py": {
