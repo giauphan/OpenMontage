@@ -24,6 +24,10 @@ def test_language_heuristics():
     assert not check_vietnamese_prose("Phần mềm mới tăng 60 phần trăm, một phần nhờ AI.")
     assert not check_vietnamese_prose("CHOMPI là một bộ lấy mẫu độc đáo được thiết kế để tạo âm nhạc thú vị.")
     assert not check_vietnamese_prose("Dùng API, Docker và GPU để tăng tốc AI.")
+    assert not check_vietnamese_prose(
+        "Công cụ Train with Pasta vừa gây bão trên Product Hunt khi hứa hẹn đơn giản hóa việc "
+        "huấn luyện trí tuệ nhân tạo. Train with Pasta mang tới hướng tiếp cận nhanh chóng cho cộng đồng."
+    )
 
     # Acceptance Criteria 1 & 2: Observed English headlines and mixed sentences
     chompi_err = check_vietnamese_prose("Tin tức công nghệ AI: CHOMPI is a magical sampler designed to make music fun.")
