@@ -1,0 +1,133 @@
+{
+  "version": "1.0",
+  "topic": "DemoNode X: Thiết Bị AI Cục Bộ Mới",
+  "research_date": "2026-10-20",
+  "landscape": {
+    "existing_content": [
+      {
+        "title": "Tổng quan AI phần cứng cá nhân",
+        "url": "https://example.com/test/content-1",
+        "source": "blog",
+        "angle": "overview",
+        "what_it_covers": "Giới thiệu xu hướng máy tính AI cá nhân cục bộ"
+      },
+      {
+        "title": "So sánh điện toán đám mây và biên",
+        "url": "https://example.com/test/content-2",
+        "source": "tech_news",
+        "angle": "comparison",
+        "what_it_covers": "Phân tích độ trễ và chi phí hạ tầng"
+      },
+      {
+        "title": "Kiến trúc NPU và suy luận cục bộ",
+        "url": "https://example.com/test/content-3",
+        "source": "whitepaper",
+        "angle": "technical",
+        "what_it_covers": "Chi tiết vi kiến trúc bộ xử lý thần kinh"
+      }
+    ],
+    "saturated_angles": [
+      "Tin đồn chung chung về AI"
+    ],
+    "underserved_gaps": [
+      "Đo đạc hiệu năng thực tế trên thiết bị phần cứng nhỏ gọn"
+    ]
+  },
+  "data_points": [
+    {
+      "claim": "DemoNode X xử lý suy luận mô hình ngôn ngữ hoàn toàn ngoại tuyến không cần internet",
+      "source_url": "https://example.com/test/demonode-spec",
+      "source_name": "DemoNode Technical Specifications (Synthetic)",
+      "credibility": "primary_source",
+      "usable_as": "hook"
+    },
+    {
+      "claim": "Thiết bị tích hợp NPU chuyên dụng với băng thông bộ nhớ đồng nhất phục vụ suy luận",
+      "source_url": "https://example.com/test/demonode-arch",
+      "source_name": "DemoNode Architecture Whitepaper (Synthetic)",
+      "credibility": "primary_source",
+      "usable_as": "details"
+    },
+    {
+      "claim": "Mô hình vận hành cục bộ loại bỏ hoàn toàn chi phí thuê bao API điện toán đám mây định kỳ",
+      "source_url": "https://example.com/test/demonode-cost",
+      "source_name": "DemoNode Financial Analysis (Synthetic)",
+      "credibility": "primary_source",
+      "usable_as": "impact"
+    }
+  ],
+  "audience_insights": {
+    "common_questions": [
+      "DemoNode X có chạy được khi mất kết nối mạng không?",
+      "Tốc độ phản hồi của NPU có đủ nhanh cho công việc hàng ngày?",
+      "Dữ liệu cá nhân có được lưu trữ an toàn trên máy không?"
+    ],
+    "misconceptions": [
+      {
+        "myth": "AI luôn luôn bắt buộc phải gửi dữ liệu lên máy chủ đám mây",
+        "reality": "NPU thế hệ mới cho phép chạy mô hình ngôn ngữ lớn trực tiếp trên thiết bị cá nhân"
+      }
+    ],
+    "knowledge_level": "Người dùng đam mê công nghệ quan tâm đến quyền riêng tư và chi phí vận hành AI"
+  },
+  "angles_discovered": [
+    {
+      "name": "Kỷ nguyên AI cá nhân ngoại tuyến",
+      "hook": "Tại sao máy tính AI cục bộ đang thay đổi thói quen sử dụng công nghệ?",
+      "type": "trending",
+      "why_now": "Nhu cầu bảo vệ dữ liệu cá nhân và giảm thiểu chi phí thuê bao đám mây",
+      "grounded_in": ["claim-1"]
+    },
+    {
+      "name": "Hiệu năng NPU biên trên bàn làm việc",
+      "hook": "Bên trong kiến trúc xử lý của thiết bị suy luận thế hệ mới",
+      "type": "data_driven",
+      "why_now": "Đột phá về hiệu suất năng lượng trên phần cứng nhỏ gọn",
+      "grounded_in": ["claim-2"]
+    },
+    {
+      "name": "Bài toán kinh tế: Đám mây vs Cục bộ",
+      "hook": "Đầu tư một lần hay trả phí dịch vụ AI hàng tháng?",
+      "type": "narrative",
+      "why_now": "Chi phí thuê bao các dịch vụ AI tích lũy ngày càng cao",
+      "grounded_in": ["claim-3"]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://example.com/test/source-1",
+      "title": "DemoNode Technical Specifications (Synthetic)",
+      "used_for": "hardware_specs",
+      "reliability": "primary"
+    },
+    {
+      "url": "https://example.com/test/source-2",
+      "title": "DemoNode Architecture Whitepaper (Synthetic)",
+      "used_for": "npu_architecture",
+      "reliability": "primary"
+    },
+    {
+      "url": "https://example.com/test/source-3",
+      "title": "Edge AI Market Report (Synthetic)",
+      "used_for": "market_context",
+      "reliability": "secondary"
+    },
+    {
+      "url": "https://example.com/test/source-4",
+      "title": "Local LLM Benchmarking Study (Synthetic)",
+      "used_for": "performance_metrics",
+      "reliability": "primary"
+    },
+    {
+      "url": "https://example.com/test/source-5",
+      "title": "Cloud vs Edge TCO Model (Synthetic)",
+      "used_for": "cost_comparison",
+      "reliability": "secondary"
+    }
+  ],
+  "research_summary": "DemoNode X đại diện cho bước chuyển dịch quan trọng sang AI cục bộ hoàn toàn, giúp người dùng làm chủ dữ liệu và tối ưu chi phí.",
+  "metadata": {
+    "test_fixture": true,
+    "classification": "SYNTHETIC_NOT_FOR_PUBLICATION"
+  }
+}

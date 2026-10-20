@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1714" />
+      <stop offset="100%" stop-color="#040908" />
+    </linearGradient>
+    <linearGradient id="metalGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a3f37" />
+      <stop offset="50%" stop-color="#162420" />
+      <stop offset="100%" stop-color="#0f1916" />
+    </linearGradient>
+    <linearGradient id="emeraldGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#06d6a0" />
+      <stop offset="50%" stop-color="#48ffd1" />
+      <stop offset="100%" stop-color="#06d6a0" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="960" height="640" rx="28" fill="url(#bgGrad)" stroke="#1d3b32" stroke-width="2" />
+
+  <!-- Grid Accents -->
+  <g opacity="0.15" stroke="#06d6a0" stroke-width="1">
+    <line x1="80" y1="80" x2="880" y2="80" />
+    <line x1="80" y1="200" x2="880" y2="200" />
+    <line x1="80" y1="320" x2="880" y2="320" />
+    <line x1="80" y1="440" x2="880" y2="440" />
+    <line x1="80" y1="560" x2="880" y2="560" />
+    <line x1="200" y1="80" x2="200" y2="560" />
+    <line x1="480" y1="80" x2="480" y2="560" />
+    <line x1="760" y1="80" x2="760" y2="560" />
+  </g>
+
+  <!-- Device Shadow -->
+  <ellipse cx="480" cy="510" rx="360" ry="40" fill="#000" opacity="0.6" filter="blur(20px)" />
+
+  <!-- DemoNode X Chassis Isometric/Perspective Body -->
+  <rect x="180" y="160" width="600" height="320" rx="24" fill="url(#metalGrad)" stroke="#2f5447" stroke-width="3" />
+
+  <!-- Heat Sink Fins (Top Vent) -->
+  <g stroke="#101d19" stroke-width="4" opacity="0.9">
+    <line x1="240" y1="190" x2="720" y2="190" />
+    <line x1="240" y1="205" x2="720" y2="205" />
+    <line x1="240" y1="220" x2="720" y2="220" />
+  </g>
+
+  <!-- Central Neural Ring (Glowing Core) -->
+  <circle cx="480" cy="330" r="76" fill="#061f18" stroke="#06d6a0" stroke-width="4" filter="url(#glow)" />
+  <circle cx="480" cy="330" r="54" fill="#0b2e24" stroke="#48ffd1" stroke-width="2" />
+  <circle cx="480" cy="330" r="28" fill="#48ffd1" opacity="0.85" filter="url(#glow)" />
+
+  <!-- Neural Core Waves -->
+  <path d="M 430 330 Q 455 300 480 330 T 530 330" fill="none" stroke="#fff" stroke-width="3" opacity="0.8" />
+  <path d="M 440 340 Q 465 315 480 340 T 520 340" fill="none" stroke="#06d6a0" stroke-width="2" opacity="0.9" />
+
+  <!-- Front I/O Ports -->
+  <rect x="230" y="420" width="36" height="12" rx="3" fill="#080e0c" stroke="#223a31" stroke-width="1.5" />
+  <rect x="280" y="420" width="36" height="12" rx="3" fill="#080e0c" stroke="#223a31" stroke-width="1.5" />
+  <circle cx="720" cy="426" r="8" fill="#06d6a0" filter="url(#glow)" />
+
+  <!-- Branding Badge -->
+  <text x="230" y="300" font-family="'BeVietnamPro',Inter,sans-serif" font-size="28" font-weight="900" fill="#ffffff" letter-spacing="3">DEMONODE X</text>
+  <text x="230" y="330" font-family="'BeVietnamPro',Inter,sans-serif" font-size="14" font-weight="700" fill="#06d6a0" letter-spacing="4">PERSONAL AI WORKSTATION</text>
+  <text x="230" y="355" font-family="'BeVietnamPro',Inter,sans-serif" font-size="12" font-weight="500" fill="#75998d">100% OFFLINE • ZERO CLOUD TELEMETRY</text>
+
+  <!-- Spec Badges on Right -->
+  <rect x="620" y="270" width="120" height="38" rx="8" fill="rgba(6,214,160,0.12)" stroke="#06d6a0" stroke-width="1.5" />
+  <text x="680" y="294" font-family="'BeVietnamPro',Inter,sans-serif" font-size="14" font-weight="800" fill="#06d6a0" text-anchor="middle">45 TOPS NPU</text>
+
+  <rect x="620" y="320" width="120" height="38" rx="8" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" />
+  <text x="680" y="344" font-family="'BeVietnamPro',Inter,sans-serif" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">UNIFIED RAM</text>
+
+  <!-- Bottom Accent Strip -->
+  <rect x="180" y="474" width="600" height="6" fill="url(#emeraldGlow)" filter="url(#glow)" />
+</svg>

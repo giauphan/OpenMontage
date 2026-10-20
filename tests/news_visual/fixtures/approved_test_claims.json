@@ -1,0 +1,30 @@
+{
+  "test_fixture": true,
+  "classification": "SYNTHETIC_NOT_FOR_PUBLICATION",
+  "claims": [
+    {
+      "id": "claim-01",
+      "section_id": "intro",
+      "claim": "DemoNode X vận hành mô hình ngôn ngữ lớn cục bộ hoàn toàn ngoại tuyến",
+      "classification": "reported_fact",
+      "consequential": true,
+      "authority_attested": true,
+      "review_status": "approved",
+      "reviewer": "test_reviewer_editorial",
+      "reviewed_at": "2026-10-20T10:00:00+00:00",
+      "sources": ["source-test-01"]
+    },
+    {
+      "id": "claim-02",
+      "section_id": "details",
+      "claim": "Thiết bị tích hợp NPU thế hệ mới hỗ trợ băng thông bộ nhớ đồng nhất",
+      "classification": "reported_fact",
+      "consequential": true,
+      "authority_attested": true,
+      "review_status": "approved",
+      "reviewer": "test_reviewer_editorial",
+      "reviewed_at": "2026-10-20T10:00:00+00:00",
+      "sources": ["source-test-02"]
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640">
+  <defs>
+    <linearGradient id="bgGrad3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e111a" />
+      <stop offset="100%" stop-color="#06070a" />
+    </linearGradient>
+    <linearGradient id="redGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d1519" />
+      <stop offset="100%" stop-color="#180b0d" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d2820" />
+      <stop offset="100%" stop-color="#051410" />
+    </linearGradient>
+  </defs>
+
+  <rect width="960" height="640" rx="28" fill="url(#bgGrad3)" stroke="#1a2030" stroke-width="2" />
+
+  <!-- Section Title -->
+  <text x="480" y="65" font-family="'BeVietnamPro',Inter,sans-serif" font-size="26" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="2">SO SÁNH: CLOUD AI vs LOCAL AI</text>
+  <text x="480" y="95" font-family="'BeVietnamPro',Inter,sans-serif" font-size="14" font-weight="600" fill="#94a3b8" text-anchor="middle">Sự khác biệt cốt lõi về bảo mật, chi phí và độ trễ</text>
+
+  <!-- Left Column: Cloud AI (Red / Warning Tone) -->
+  <rect x="60" y="130" width="400" height="450" rx="20" fill="url(#redGrad)" stroke="#ef4444" stroke-width="1.8" />
+  <rect x="60" y="130" width="400" height="56" rx="20" fill="#3b1419" />
+  <text x="260" y="165" font-family="'BeVietnamPro',Inter,sans-serif" font-size="18" font-weight="900" fill="#fca5a5" text-anchor="middle">ĐIỆN TOÁN ĐÁM MÂY (CLOUD AI)</text>
+
+  <g transform="translate(90, 215)" font-family="'BeVietnamPro',Inter,sans-serif">
+    <!-- Item 1 -->
+    <circle cx="16" cy="16" r="14" fill="#581c24" stroke="#f87171" stroke-width="1.5" />
+    <text x="16" y="21" font-size="14" font-weight="900" fill="#fca5a5" text-anchor="middle">✕</text>
+    <text x="44" y="14" font-size="15" font-weight="800" fill="#ffffff">Dữ liệu gửi ra bên ngoài</text>
+    <text x="44" y="32" font-size="13" font-weight="500" fill="#fca5a5">Nguy cơ rò rỉ thông tin cá nhân</text>
+
+    <!-- Item 2 -->
+    <g transform="translate(0, 68)">
+      <circle cx="16" cy="16" r="14" fill="#581c24" stroke="#f87171" stroke-width="1.5" />
+      <text x="16" y="21" font-size="14" font-weight="900" fill="#fca5a5" text-anchor="middle">✕</text>
+      <text x="44" y="14" font-size="15" font-weight="800" fill="#ffffff">Độ trễ mạng phụ thuộc Internet</text>
+      <text x="44" y="32" font-size="13" font-weight="500" fill="#fca5a5">Mất mạng là ngưng toàn bộ công việc</text>
+    </g>
+
+    <!-- Item 3 -->
+    <g transform="translate(0, 136)">
+      <circle cx="16" cy="16" r="14" fill="#581c24" stroke="#f87171" stroke-width="1.5" />
+      <text x="16" y="21" font-size="14" font-weight="900" fill="#fca5a5" text-anchor="middle">✕</text>
+      <text x="44" y="14" font-size="15" font-weight="800" fill="#ffffff">Phí thuê bao hàng tháng</text>
+      <text x="44" y="32" font-size="13" font-weight="500" fill="#fca5a5">Chi phí API tăng dần theo thời gian</text>
+    </g>
+  </g>
+
+  <!-- Right Column: Local AI DemoNode X (Green / Emerald Tone) -->
+  <rect x="500" y="130" width="400" height="450" rx="20" fill="url(#greenGrad)" stroke="#06d6a0" stroke-width="2.5" />
+  <rect x="500" y="130" width="400" height="56" rx="20" fill="#063d2e" />
+  <text x="700" y="165" font-family="'BeVietnamPro',Inter,sans-serif" font-size="18" font-weight="900" fill="#48ffd1" text-anchor="middle">DEMONODE X (CỤC BỘ / LOCAL)</text>
+
+  <g transform="translate(530, 215)" font-family="'BeVietnamPro',Inter,sans-serif">
+    <!-- Item 1 -->
+    <circle cx="16" cy="16" r="14" fill="#064e3b" stroke="#06d6a0" stroke-width="1.5" />
+    <text x="16" y="21" font-size="14" font-weight="900" fill="#a7f3d0" text-anchor="middle">✓</text>
+    <text x="44" y="14" font-size="15" font-weight="800" fill="#ffffff">100% Khép kín &amp; Bảo mật</text>
+    <text x="44" y="32" font-size="13" font-weight="500" fill="#a7f3d0">Dữ liệu ở lại ngay trên ổ cứng máy</text>
+
+    <!-- Item 2 -->
+    <g transform="translate(0, 68)">
+      <circle cx="16" cy="16" r="14" fill="#064e3b" stroke="#06d6a0" stroke-width="1.5" />
+      <text x="16" y="21" font-size="14" font-weight="900" fill="#a7f3d0" text-anchor="middle">✓</text>
+      <text x="44" y="14" font-size="15" font-weight="800" fill="#ffffff">0ms Độ trễ mạng (Ngoại tuyến)</text>
+      <text x="44" y="32" font-size="13" font-weight="500" fill="#a7f3d0">Chạy mượt mà không cần kết nối mạng</text>
+    </g>
+
+    <!-- Item 3 -->
+    <g transform="translate(0, 136)">
+      <circle cx="16" cy="16" r="14" fill="#064e3b" stroke="#06d6a0" stroke-width="1.5" />
+      <text x="16" y="21" font-size="14" font-weight="900" fill="#a7f3d0" text-anchor="middle">✓</text>
+      <text x="44" y="14" font-size="15" font-weight="800" fill="#ffffff">Sở hữu trọn đời - 0đ Thuê bao</text>
+      <text x="44" y="32" font-size="13" font-weight="500" fill="#a7f3d0">Đầu tư một lần, sử dụng vĩnh viễn</text>
+    </g>
+  </g>
+</svg>

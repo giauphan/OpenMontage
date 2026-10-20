@@ -123,6 +123,8 @@ venv/
 !package-lock.json
 !schemas/**/*.json
 !templates/news/**/*.json
+!tests/**/*.json
+!artifacts/**/*.json
 !config/publish_platforms.json
 !config/publish_platforms.example.json
 !config/publish_platforms.json.example

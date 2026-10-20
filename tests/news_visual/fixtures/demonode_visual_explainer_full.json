@@ -1,0 +1,82 @@
+{
+  "template": "news-explainer",
+  "template_version": "1.0.0",
+  "variant": "full",
+  "kicker": "CÔNG NGHỆ AI",
+  "title": "Máy Tính AI Cục Bộ DemoNode X",
+  "duration": 45,
+  "narration": "Chào mừng bạn đến với kỷ nguyên AI cá nhân. DemoNode X vận hành mô hình lớn hoàn toàn ngoại tuyến. Kiến trúc NPU 45 TOPS mang lại tốc độ cực nhanh mà không gửi dữ liệu ra bên ngoài. Khép kín 100%, bảo mật tuyệt đối cho mọi dự án.",
+  "caption_lines": [
+    {
+      "text": "Chào mừng bạn đến với kỷ nguyên AI cá nhân cục bộ",
+      "start": 0.5,
+      "end": 7.5
+    },
+    {
+      "text": "DemoNode X vận hành mô hình lớn hoàn toàn ngoại tuyến",
+      "start": 8.5,
+      "end": 21.5
+    },
+    {
+      "text": "Kiến trúc NPU 45 TOPS và Unified Memory tốc độ cao",
+      "start": 22.5,
+      "end": 35.5
+    },
+    {
+      "text": "Khép kín 100%, bảo mật tuyệt đối cho mọi dữ liệu",
+      "start": 36.5,
+      "end": 44.5
+    }
+  ],
+  "slots": {
+    "hook": {
+      "heading": "DemoNode X Đột Phá",
+      "text": "Vận hành mô hình AI lớn hoàn toàn ngoại tuyến tại bàn làm việc.",
+      "start": 0,
+      "end": 8,
+      "visual": {
+        "kind": "illustration",
+        "src": "assets/visuals/demonode_device.svg",
+        "layout": "hero_center",
+        "source_label": "DemoNode Hardware Design"
+      }
+    },
+    "capability": {
+      "heading": "Kiến Trúc NPU",
+      "label": "DemoNode NPU v1",
+      "text": "Động cơ ma trận Tensor 45 TOPS với Unified Memory tốc độ cao.",
+      "start": 8,
+      "end": 22,
+      "visual": {
+        "kind": "svg_diagram",
+        "src": "assets/visuals/npu_architecture.svg",
+        "layout": "hero_center",
+        "source_label": "Kiến Trúc Bộ Nhớ Đồng Nhất NPU"
+      }
+    },
+    "steps": {
+      "heading": "So Sánh Thực Tế",
+      "text": "0ms độ trễ mạng, xóa bỏ hoàn toàn phí thuê bao định kỳ đám mây.",
+      "start": 22,
+      "end": 36,
+      "visual": {
+        "kind": "svg_diagram",
+        "src": "assets/visuals/local_vs_cloud.svg",
+        "layout": "hero_center",
+        "source_label": "So Sánh Local vs Cloud AI"
+      }
+    },
+    "limitations": {
+      "heading": "Phạm Vi Ứng Dụng",
+      "text": "Tối ưu cho mô hình ngôn ngữ từ 7B đến 32B tham số ngoại tuyến.",
+      "start": 36,
+      "end": 45,
+      "visual": {
+        "kind": "illustration",
+        "src": "assets/visuals/demonode_device.svg",
+        "layout": "hero_center",
+        "source_label": "Khả năng suy luận cục bộ"
+      }
+    }
+  }
+}

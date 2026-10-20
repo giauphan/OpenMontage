@@ -15,15 +15,18 @@ hyperframes_reels/index.html: Identical structure but shortened to <=60s for Ins
 Content & Quality for both:
 - NO visible "Montage" or "OpenMontage" branding anywhere.
 - Grounding: Base the narration and on-screen text 100% on the factual technology news in {{PROJECT_DIR}}/artifacts/research_brief.json. Do not invent unrelated numbers or generic filler.
-- Visual scene diversity & styling (MANDATORY — QA strictly rejects plain/solid text slides as "placeholder scaffold"):
-  * Never use a plain solid color background. Use rich dark gradients on #stage (e.g. `background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif;`).
-  * Wrap each scene's content in a glassmorphic card container (e.g. `background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 28px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(56, 189, 248, 0.15); backdrop-filter: blur(12px); padding: 50px 40px;`).
+- Visual scene diversity, visual intent & styling (MANDATORY):
+  * Content-first visual intent: Every narrative beat must declare a clear visual_intent and evidence_class (e.g. authentic_photo, svg_diagram, contextual_icon, or typographic_focus).
+  * For major technical concepts, hardware, or architecture, author an actual SVG diagram or bind an approved staged source image from `assets/visuals/` — do NOT rely on text-only cards. A text-only card requires explicit editorial rationale.
+  * Never fabricate arbitrary unverified asset paths. In visual mode, consume staged local files from `assets/visuals/` or inline deterministic SVG layers.
+  * Scene-specific art direction: Distinct scenes must have distinct, context-relevant visual treatment (e.g. technical diagram layout, flow arrows, or authentic device imagery). Do not wrap every scene in an identical glassmorphic text box on a uniform gradient.
+  * Wrap text callouts in readable, high-contrast containers with dynamic bounds (`width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box;`).
   * Include distinct graphic elements across scenes:
-    - Scene 1: Category badge with glowing border (`#38bdf8`) + bold headline title.
-    - Scene 2: Background context plate with problem definition and market challenges.
-    - Scene 3: Key data/stats plate with large numeric callouts (e.g. `font-size: 72px; color: #38bdf8; font-weight: 800;`) and metric badges.
-    - Scene 4: Deep-dive architecture / mechanism card with bullet highlights or technical step cards.
-    - Scene 5: Future impact / key takeaway card with glowing callout border and call to action.
+    - Scene 1: Authentic product photo or clear illustrative hardware icon + bold headline title.
+    - Scene 2: Problem context diagram or workflow illustration (e.g. Cloud vs Local edge data flow).
+    - Scene 3: Technical architecture / NPU diagram or approved benchmark data callouts with sourced metrics.
+    - Scene 4: Security / privacy shield or local memory architecture diagram with technical flow arrows.
+    - Scene 5: Key takeaway visual, conclusion badge, and concise call to action.
 - High-contrast typography: All headings, body text, badges, and metrics MUST use bright, highly readable colors on dark backgrounds (e.g. #ffffff for titles, #f8fafc for body text, #38bdf8 cyan or #fbbf24 amber for highlights). NEVER use black or dark grey text (#000, #1e293b, #333) on dark cards or backgrounds. All text must be clearly legible when rendered to video.
 - CSS sizing must load fit-content; never use fixed width/height container constraints that silently clip dynamic text. Use CSS: `width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box; display: inline-block; padding: 10px 20px;`
 - High-contrast visual plates ensuring the final composition meets strict 0.5000% edge-density QA gates.

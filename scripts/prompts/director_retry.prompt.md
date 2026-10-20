@@ -6,6 +6,7 @@ Repair only these artifacts:
 - {{PROJECT_DIR}}/artifacts/script_vi.json
 - {{PROJECT_DIR}}/hyperframes/index.html
 - {{PROJECT_DIR}}/hyperframes_reels/index.html
+- {{PROJECT_DIR}}/artifacts/news_visual_plan.json (when visual planning is active)
 
 Preserve valid content. Fix missing schema keys, malformed JSON, missing portrait roots, missing scene/timeline registration, broken relative assets, invalid Reels duration, Vietnamese text defects (NEVER truncate or cut off text mid-sentence), short duration (script must have 180-240 spoken words across 5 scenes: intro, context, details, impact, conclusion totaling 60-75s, minimum 60s), low-contrast text (must be bright #fff/#f8fafc on dark cards), scene transition gaps (no empty frames), repetitive layouts, and forbidden visible branding. Visual styling is mandatory: never use a solid plain background (#stage must use rich dark radial gradients), and wrap scene content in glassmorphic cards with glowing borders (#38bdf8), large metric callouts, and category badges. Ensure every scene's GSAP entrance and opacity transition matches script_vi.json section start_seconds so visual transitions are strictly aligned with narration audio. Keep ticker/status bars from overlapping footer metadata or text. Keep output self-contained and compatible with the existing HyperFrames renderer. Do not change providers, models, runtimes, or source material.
 

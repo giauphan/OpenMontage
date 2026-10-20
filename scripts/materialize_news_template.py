@@ -21,6 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from lib.news_visual.hyperframes_adapter import build_media_layer_elements
+from lib.news_visual.scene_layouts import render_scene_visual_html, visual_layout_css
+
 CATALOG_PATH = ROOT / "templates" / "news" / "catalog.json"
 TEMPLATES_DIR = ROOT / "templates" / "news" / "packages"
 
@@ -112,6 +115,24 @@ def _caption_elements(captions: list[dict[str, Any]], track_index: int) -> tuple
         )
 
     return "\n".join(html_parts), "\n".join(tl_parts)
+
+
+def _extract_slot_visuals(slots: dict[str, Any], total: float) -> tuple[str, str]:
+    visual_htmls = []
+    visual_tls = []
+    for slot_name, slot_obj in slots.items():
+        if isinstance(slot_obj, dict) and "visual" in slot_obj:
+            v_spec = slot_obj["visual"]
+            v_start = float(slot_obj.get("start", 0))
+            v_end = float(slot_obj.get("end", total))
+            v_dur = max(0.5, v_end - v_start)
+            v_html = render_scene_visual_html(slot_name, v_spec, v_start, v_dur)
+            if v_html:
+                visual_htmls.append(v_html)
+                visual_tls.append(
+                    f"      tl.from('#visual-{slot_name} .visual-media-wrapper', {{ opacity: 0, scale: 0.95, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(v_start)});"
+                )
+    return "\n".join(visual_htmls), "\n".join(visual_tls)
 
 
 def _scene_timing(content: dict[str, Any], total: float, variant: str) -> dict[str, tuple[float, float]]:
@@ -207,10 +228,15 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
 
     scene3_html = ""
     scene3_tl = ""
+    ctx_v = " has-visual" if ctx.get("visual") else ""
+    tkw_v = " has-visual" if tkw.get("visual") else ""
+    hook_v = " has-visual" if hook.get("visual") else ""
+    stmt_v = " has-visual" if stmt.get("visual") else ""
+
     if is_full and e_ctx_text:
         s3_start, s3_dur = timing["context"]
         scene3_html = (
-            f"    <section id=\"scene-context\" class=\"clip\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"3\">\n"
+            f"    <section id=\"scene-context\" class=\"clip{ctx_v}\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"3\">\n"
             f"      <div class=\"scene-inner\">\n"
             f"        <span class=\"scene-heading\">{e_ctx_head}</span>\n"
             f"        <p class=\"scene-text\">{e_ctx_text}</p>\n"
@@ -222,7 +248,7 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         )
 
     scene4_html = (
-        f"    <section id=\"scene-takeaway\" class=\"clip\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"{4 if is_full else 3}\">\n"
+        f"    <section id=\"scene-takeaway\" class=\"clip{tkw_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"{4 if is_full else 3}\">\n"
         f"      <div class=\"scene-inner\">\n"
         f"        <span class=\"kicker\" style=\"font-size:22px\">{e_tkw_head}</span>\n"
         f"        <p class=\"scene-text\">{e_tkw_text}</p>\n"
@@ -233,6 +259,9 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
     scene4_tl = (
         f"      tl.from('#scene-takeaway .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s4_start + 0.1)});\n"
     )
+
+    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
+    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
 
     font_size_title = "56px" if is_full else "48px"
     font_size_text = "34px" if is_full else "30px"
@@ -253,7 +282,9 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         f".scene-heading {{ font-size:28px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);margin-bottom:36px; }}\n"
         f".statement {{ font-size:40px;font-weight:300;line-height:1.5;color:#fff;max-width:860px;margin:0 auto 32px;font-style:italic;border-left:3px solid var(--accent);padding-left:32px;text-align:left; }}\n"
         f".attribution {{ font-size:24px;font-weight:600;color:#aaa;margin:0;max-width:860px;text-align:left; }}\n"
-        f".caption {{ position:absolute;bottom:64px;left:60px;right:60px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:16px 0; }}\n"
+        f".caption {{ position:absolute;top:auto !important;bottom:96px !important;left:60px;right:60px;height:auto !important;min-height:56px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:14px 28px;background:rgba(0,0,0,0.75);border-radius:14px;backdrop-filter:blur(8px);z-index:100; }}\n"
+        f"{media_css}\n"
+        f"{visual_layout_css()}\n"
         f"</style>"
     )
 
@@ -267,6 +298,8 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         f"{attr_tl}"
         f"{scene3_tl}"
         f"{scene4_tl}"
+        f"{media_tl}\n"
+        f"{slot_v_tl}\n"
         f"{cap_tl}"
         "  window.__timelines.main = tl;\n"
         "})();\n"
@@ -292,14 +325,16 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         "    <div class=\"bg-fill\"></div>\n"
         f"    <audio id=\"narration\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"{audio_src}\"></audio>\n"
         f"    <audio id=\"music-bg\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"assets/music-bg.mp3\"></audio>\n"
-        f"    <section id=\"scene-hook\" class=\"clip\" data-start=\"{_fmt_time(s1_start)}\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"1\">\n"
+        f"{media_html}\n"
+        f"{slot_v_html}\n"
+        f"    <section id=\"scene-hook\" class=\"clip{hook_v}\" data-start=\"{_fmt_time(s1_start)}\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
         f"        <span class=\"kicker\">{e_kicker}</span>\n"
         f"        <h1 class=\"title\">{e_title}</h1>\n"
         f"        <p class=\"scene-text\">{e_hook_text}</p>\n"
         "      </div>\n"
         "    </section>\n"
-        f"    <section id=\"scene-statement\" class=\"clip\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"2\">\n"
+        f"    <section id=\"scene-statement\" class=\"clip{stmt_v}\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
         f"        <span class=\"scene-heading\">{e_stmt_head}</span>\n"
         f"        <blockquote class=\"statement\">{e_stmt_text}</blockquote>\n"
@@ -368,11 +403,16 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         f"      tl.from('#metric-value', {{ opacity: 0, scale: 0.82, duration: 0.8, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.5)});\n"
     )
 
+    hook_v = " has-visual" if hook.get("visual") else ""
+    metric_v = " has-visual" if metric.get("visual") else ""
+    comp_v = " has-visual" if comp.get("visual") else ""
+    caveat_v = " has-visual" if caveat.get("visual") else ""
+
     caveat_html = ""
     caveat_tl = ""
     if include_caveat:
         caveat_html = (
-            f"    <section id=\"scene-caveat\" class=\"clip\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
+            f"    <section id=\"scene-caveat\" class=\"clip{caveat_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
             "      <div class=\"scene-inner\">\n"
             f"        <span class=\"kicker\">{e_caveat_head}</span>\n"
             f"        <p class=\"scene-text\">{e_caveat_text}</p>\n"
@@ -382,6 +422,9 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         caveat_tl = (
             f"      tl.from('#scene-caveat .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s4_start + 0.1)});\n"
         )
+
+    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
+    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
 
     css = (
         "<style>\n"
@@ -401,7 +444,9 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         ".comparison-card { width:100%; max-width:860px; text-align:left; padding:42px 48px; border-left:4px solid var(--accent); background:rgba(255,255,255,.04); }\n"
         ".comparison-label { font-size:26px; color:#91b8f4; margin-bottom:16px; }\n"
         ".comparison-text { font-size:36px; line-height:1.45; color:#fff; margin:0; }\n"
-        ".caption { position:absolute;bottom:64px;left:60px;right:60px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:16px 0; }\n"
+        ".caption { position:absolute;top:auto !important;bottom:96px !important;left:60px;right:60px;height:auto !important;min-height:56px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:14px 28px;background:rgba(0,0,0,0.75);border-radius:14px;backdrop-filter:blur(8px);z-index:100; }\n"
+        f"{media_css}\n"
+        f"{visual_layout_css()}\n"
         "</style>"
     )
 
@@ -415,6 +460,8 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         f"{metric_tl}"
         f"  tl.from('#scene-comparison .scene-inner', {{ opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }}, {_fmt_time(s3_start + 0.1)});\n"
         f"{caveat_tl}"
+        f"{media_tl}\n"
+        f"{slot_v_tl}\n"
         f"{cap_tl}"
         "  window.__timelines.main = tl;\n"
         "})();\n"
@@ -438,14 +485,16 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         "    <div class=\"bg-fill\"></div>\n"
         f"    <audio id=\"narration\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"{audio_src}\"></audio>\n"
         f"    <audio id=\"music-bg\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"assets/music-bg.mp3\"></audio>\n"
-        f"    <section id=\"scene-hook\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"1\">\n"
+        f"{media_html}\n"
+        f"{slot_v_html}\n"
+        f"    <section id=\"scene-hook\" class=\"clip{hook_v}\" data-start=\"0\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
         f"        <span class=\"kicker\">{e_kicker}</span>\n"
         f"        <h1 class=\"title\">{e_title}</h1>\n"
         f"        <p class=\"scene-text\">{e_hook_text}</p>\n"
         "      </div>\n"
         "    </section>\n"
-        f"    <section id=\"scene-metric\" class=\"clip\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"2\">\n"
+        f"    <section id=\"scene-metric\" class=\"clip{metric_v}\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
         "        <div class=\"metric-card\">\n"
         f"          <p id=\"metric-value\" class=\"metric-value\">{e_metric_value}</p>\n"
@@ -455,7 +504,7 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         "        </div>\n"
         "      </div>\n"
         "    </section>\n"
-        f"    <section id=\"scene-comparison\" class=\"clip\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"3\">\n"
+        f"    <section id=\"scene-comparison\" class=\"clip{comp_v}\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"3\">\n"
         "      <div class=\"scene-inner\">\n"
         f"        <span class=\"kicker\">{e_comp_label}</span>\n"
         f"        <p class=\"scene-text\">{e_comp_text}</p>\n"
@@ -520,6 +569,13 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
     s4_start = 36.0
     s4_dur = 9.0
 
+    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
+    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
+    hook_v = " has-visual" if hook.get("visual") else ""
+    cap_v = " has-visual" if cap.get("visual") else ""
+    steps_v = " has-visual" if steps.get("visual") else ""
+    lim_v = " has-visual" if lim.get("visual") else ""
+
     css = (
         "<style>\n"
         ":root { --accent: #06d6a0; }\n"
@@ -535,10 +591,12 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         f".capability-card {{ width:100%;max-width:{'820px' if is_full else '780px'};padding:40px 48px;border:1px solid rgba(6,214,160,.3);border-radius:14px;background:rgba(6,214,160,.07); }}\n"
         f".capability-label {{ display:block;font-size:26px;font-weight:700;color:var(--accent);margin-bottom:14px; }}\n"
         f".capability-text {{ font-size:{'36px' if is_full else '32px'};line-height:1.45;color:#fff;margin:0; }}\n"
-        f".caption {{ position:absolute;bottom:64px;left:60px;right:60px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:16px 0; }}\n"
+        f".caption {{ position:absolute;top:auto !important;bottom:96px !important;left:60px;right:60px;height:auto !important;min-height:56px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:14px 28px;background:rgba(0,0,0,0.75);border-radius:14px;backdrop-filter:blur(8px);z-index:100; }}\n"
         ".limitation-box { width:100%;max-width:820px;padding:42px 48px;border:1px solid rgba(255,255,255,.12);border-left:4px solid var(--accent);border-radius:12px;background:rgba(255,255,255,.03);text-align:left; }\n"
         ".limitation-box p { font-size:28px;line-height:1.5;color:#c8d8d4;margin:0; }\n"
         ".steps-box { width:100%;max-width:820px; }\n"
+        f"{media_css}\n"
+        f"{visual_layout_css()}\n"
         "</style>"
     )
 
@@ -546,7 +604,7 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
     lim_tl = ""
     if include_lim:
         lim_section = (
-            f"    <section id=\"scene-limitations\" class=\"clip\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
+            f"    <section id=\"scene-limitations\" class=\"clip{lim_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
             "      <div class=\"scene-inner\">\n"
             f"        <span class=\"kicker\">{e_lim_head}</span>\n"
             f"        <div class=\"limitation-box\"><p>{e_lim_text}</p></div>\n"
@@ -567,6 +625,8 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         f"  tl.from('.capability-card', {{ opacity: 0, scale: 0.9, duration: 0.8, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.5)});\n"
         f"  tl.from('#scene-steps .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s3_start + 0.1)});\n"
         f"{lim_tl}"
+        f"{media_tl}\n"
+        f"{slot_v_tl}\n"
         f"{cap_tl}"
         "  window.__timelines.main = tl;\n"
         "})();\n"
@@ -588,14 +648,16 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         "    <div class=\"bg-fill\"></div>\n"
         f"    <audio id=\"narration\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"{audio_src}\"></audio>\n"
         f"    <audio id=\"music-bg\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"assets/music-bg.mp3\"></audio>\n"
-        f"    <section id=\"scene-hook\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"1\">\n"
+        f"{media_html}\n"
+        f"{slot_v_html}\n"
+        f"    <section id=\"scene-hook\" class=\"clip{hook_v}\" data-start=\"0\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
         f"        <span class=\"kicker\">{e_kicker}</span>\n"
         f"        <h1 class=\"title\">{e_title}</h1>\n"
         f"        <p class=\"scene-text\">{e_hook_text}</p>\n"
         "      </div>\n"
         "    </section>\n"
-        f"    <section id=\"scene-capability\" class=\"clip\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"2\">\n"
+        f"    <section id=\"scene-capability\" class=\"clip{cap_v}\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"3\">\n"
         "      <div class=\"scene-inner\">\n"
         "        <div class=\"capability-card\">\n"
         f"          <span class=\"capability-label\">{e_cap_label}</span>\n"
@@ -603,7 +665,7 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         "        </div>\n"
         "      </div>\n"
         "    </section>\n"
-        f"    <section id=\"scene-steps\" class=\"clip\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"3\">\n"
+        f"    <section id=\"scene-steps\" class=\"clip{steps_v}\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"4\">\n"
         "      <div class=\"scene-inner\">\n"
         "        <span class=\"kicker\">CÁC BƯỚC</span>\n"
         f"        <p class=\"scene-text\">{e_steps_text}</p>\n"

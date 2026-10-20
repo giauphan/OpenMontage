@@ -1,0 +1,66 @@
+{
+  "template": "news-explainer",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "kicker": "CÔNG NGHỆ AI",
+  "title": "Máy Tính AI Cục Bộ DemoNode X",
+  "duration": 40,
+  "narration": "Chào mừng bạn đến với kỷ nguyên AI cá nhân. DemoNode X vận hành các mô hình ngôn ngữ lớn hoàn toàn ngoại tuyến với NPU 45 TOPS.",
+  "narration_short": "DemoNode X: Máy tính AI cục bộ bảo mật, 0ms độ trễ.",
+  "caption_lines": [
+    {
+      "text": "DemoNode X: Máy tính AI cá nhân cục bộ",
+      "start": 0.5,
+      "end": 9.5
+    },
+    {
+      "text": "Kiến trúc NPU 45 TOPS với bộ nhớ hợp nhất",
+      "start": 10.5,
+      "end": 27.5
+    },
+    {
+      "text": "Bảo mật tuyệt đối, 0ms độ trễ, không phí thuê bao",
+      "start": 28.5,
+      "end": 39.5
+    }
+  ],
+  "slots": {
+    "hook": {
+      "heading": "DemoNode X Đột Phá",
+      "text": "Vận hành mô hình AI lớn hoàn toàn ngoại tuyến tại bàn làm việc.",
+      "start": 0,
+      "end": 10,
+      "visual": {
+        "kind": "illustration",
+        "src": "assets/visuals/demonode_device.svg",
+        "layout": "hero_center",
+        "source_label": "DemoNode Hardware Design"
+      }
+    },
+    "capability": {
+      "heading": "Kiến Trúc NPU",
+      "label": "DemoNode NPU v1",
+      "text": "Động cơ ma trận Tensor 45 TOPS với Unified Memory tốc độ cao.",
+      "start": 10,
+      "end": 28,
+      "visual": {
+        "kind": "svg_diagram",
+        "src": "assets/visuals/npu_architecture.svg",
+        "layout": "hero_center",
+        "source_label": "Kiến Trúc Bộ Nhớ Đồng Nhất NPU"
+      }
+    },
+    "steps": {
+      "heading": "Lợi Ích Cốt Lõi",
+      "text": "Khép kín dữ liệu 100%, không độ trễ, xóa bỏ phí thuê bao đám mây.",
+      "start": 28,
+      "end": 40,
+      "visual": {
+        "kind": "svg_diagram",
+        "src": "assets/visuals/local_vs_cloud.svg",
+        "layout": "hero_center",
+        "source_label": "So Sánh Local vs Cloud AI"
+      }
+    }
+  }
+}

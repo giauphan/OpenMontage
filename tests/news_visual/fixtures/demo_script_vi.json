@@ -1,0 +1,61 @@
+{
+  "version": "1.0",
+  "title": "DemoNode X: Máy Tính AI Cục Bộ Đột Phá",
+  "total_duration_seconds": 68.0,
+  "sections": [
+    {
+      "id": "intro",
+      "section_id": "intro",
+      "text": "Chào mừng bạn đến với kỷ nguyên trí tuệ nhân tạo cá nhân cùng DemoNode X. Thiết bị nhỏ gọn này cho phép bạn vận hành các mô hình ngôn ngữ lớn hoàn toàn ngoại tuyến ngay tại bàn làm việc.",
+      "text_vi": "Chào mừng bạn đến với kỷ nguyên trí tuệ nhân tạo cá nhân cùng DemoNode X. Thiết bị nhỏ gọn này cho phép bạn vận hành các mô hình ngôn ngữ lớn hoàn toàn ngoại tuyến ngay tại bàn làm việc.",
+      "start_seconds": 0.0,
+      "end_seconds": 12.0,
+      "duration_seconds": 12.0,
+      "scene_type": "title"
+    },
+    {
+      "id": "context",
+      "section_id": "context",
+      "text": "Trước đây hầu hết các giải pháp AI đều phụ thuộc chặt chẽ vào máy chủ điện toán đám mây. Điều này dẫn tới nguy cơ gián đoạn đường truyền cùng nỗi lo về việc dữ liệu cá nhân bị gửi ra bên ngoài.",
+      "text_vi": "Trước đây hầu hết các giải pháp AI đều phụ thuộc chặt chẽ vào máy chủ điện toán đám mây. Điều này dẫn tới nguy cơ gián đoạn đường truyền cùng nỗi lo về việc dữ liệu cá nhân bị gửi ra bên ngoài.",
+      "start_seconds": 12.0,
+      "end_seconds": 26.0,
+      "duration_seconds": 14.0,
+      "scene_type": "context"
+    },
+    {
+      "id": "details",
+      "section_id": "details",
+      "text": "Trái tim của máy là bộ xử lý thần kinh NPU thế hệ mới với băng thông bộ nhớ đồng nhất cực nhanh. Các tác vụ suy luận và tạo văn bản diễn ra mượt mà và bảo mật tuyệt đối trên phần cứng.",
+      "text_vi": "Trái tim của máy là bộ xử lý thần kinh NPU thế hệ mới với băng thông bộ nhớ đồng nhất cực nhanh. Các tác vụ suy luận và tạo văn bản diễn ra mượt mà và bảo mật tuyệt đối trên phần cứng.",
+      "start_seconds": 26.0,
+      "end_seconds": 42.0,
+      "duration_seconds": 16.0,
+      "scene_type": "details"
+    },
+    {
+      "id": "impact",
+      "section_id": "impact",
+      "text": "Với khả năng vận hành hoàn toàn độc lập, bạn sẽ cắt giảm toàn bộ các khoản phí thuê bao đám mây định kỳ hàng tháng. Dữ liệu nhạy cảm của doanh nghiệp và cá nhân luôn được lưu trữ an toàn.",
+      "text_vi": "Với khả năng vận hành hoàn toàn độc lập, bạn sẽ cắt giảm toàn bộ các khoản phí thuê bao đám mây định kỳ hàng tháng. Dữ liệu nhạy cảm của doanh nghiệp và cá nhân luôn được lưu trữ an toàn.",
+      "start_seconds": 42.0,
+      "end_seconds": 56.0,
+      "duration_seconds": 14.0,
+      "scene_type": "impact"
+    },
+    {
+      "id": "conclusion",
+      "section_id": "conclusion",
+      "text": "DemoNode X mở ra hướng đi bền vững cho các chuyên gia công nghệ và lập trình viên hiện đại. Hãy sẵn sàng trải nghiệm sức mạnh điện toán biên độc lập và theo dõi kênh để cập nhật công nghệ mới nhất.",
+      "text_vi": "DemoNode X mở ra hướng đi bền vững cho các chuyên gia công nghệ và lập trình viên hiện đại. Hãy sẵn sàng trải nghiệm sức mạnh điện toán biên độc lập và theo dõi kênh để cập nhật công nghệ mới nhất.",
+      "start_seconds": 56.0,
+      "end_seconds": 68.0,
+      "duration_seconds": 12.0,
+      "scene_type": "conclusion"
+    }
+  ],
+  "metadata": {
+    "test_fixture": true,
+    "classification": "SYNTHETIC_NOT_FOR_PUBLICATION"
+  }
+}

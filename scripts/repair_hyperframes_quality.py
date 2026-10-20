@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html as html_lib
 import json
+import os
 from html.parser import HTMLParser
 import re
 import shutil
@@ -245,14 +246,77 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         html = html.replace("</style>", wrap_css_rule, 1)
 
     if "/* Visual Quality Enhancement */" not in html and "</style>" in html:
-        enhancement_css = """
-/* Visual Quality Enhancement */
+        visual_mode = os.environ.get("NEWS_VISUAL_MODE", "0") in ("1", "true", "True")
+        if visual_mode:
+            enhancement_css = """
+/* Visual Quality Enhancement (Context-Aware Visual Mode) */
 #stage {
-    background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%) !important;
-    font-family: 'BeVietnamPro', sans-serif !important;
+    font-family: 'BeVietnamPro', sans-serif;
 }
 .scene {
-    background: transparent !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 80px 48px 300px 48px;
+    box-sizing: border-box;
+}
+/* Ensure visual media elements are properly layered and never clipped */
+.scene img, .scene video, .scene svg, .scene-media {
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    z-index: 1;
+}
+/* Scoped default card styling without overriding specific scene elements or diagrams */
+.card-default {
+    background: rgba(30, 41, 59, 0.82);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 28px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18);
+    backdrop-filter: blur(14px);
+    box-sizing: border-box;
+    width: 960px;
+    max-width: 90vw;
+    margin: 16px auto;
+    padding: 32px 40px;
+}
+/* High-contrast typography */
+h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {
+    color: #ffffff;
+    font-weight: 800;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9);
+}
+p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class*="highlight"]) {
+    color: #f8fafc;
+    font-weight: 500;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+.brand-name, .badge, .category, .tag, [class*="badge"], [class*="tag"] {
+    color: #38bdf8;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    border-radius: 9999px;
+    padding: 8px 24px;
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+}
+.highlight-text, .accent, [class*="highlight"], [class*="accent"], [class*="metric"], [class*="stat"] {
+    color: #38bdf8;
+    font-weight: 700;
+    text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+}
+</style>"""
+        else:
+            enhancement_css = """
+/* Visual Quality Enhancement */
+#stage {
+    background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%);
+    font-family: 'BeVietnamPro', sans-serif !important;
+}
+.scene:not([class*="scene-"]):not([style*="background"]) {
+    background: transparent;
+}
+.scene {
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
@@ -260,7 +324,7 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
     padding: 80px 48px 300px 48px !important;
     box-sizing: border-box !important;
 }
-.scene > div:not(.om-asr-caption), .card, .container, [class*="card"], [class*="container"], [class*="box"], [class*="plate"] {
+.scene > div:not(.om-asr-caption):not([class*="diagram"]):not([class*="visual"]), .card, .container, [class*="card"], [class*="container"], [class*="box"], [class*="plate"] {
     background: rgba(30, 41, 59, 0.82) !important;
     border: 1px solid rgba(56, 189, 248, 0.4) !important;
     border-radius: 28px !important;

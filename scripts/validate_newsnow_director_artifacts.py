@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -286,6 +287,10 @@ def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
     # templated project (provenance or template selection present) must be
     # materialized from an approved package, never filled with generic HTML.
     if _detect_templated(project_dir):
+        return False
+    # Under visual enrichment mode (NEWS_VISUAL_MODE=1), generic text fallback
+    # is ineligible; missing visual assets fail closed with diagnostics.
+    if os.environ.get("NEWS_VISUAL_MODE", "0") in ("1", "true", "True"):
         return False
     brief_path = project_dir / "artifacts" / "research_brief.json"
     if not brief_path.is_file():

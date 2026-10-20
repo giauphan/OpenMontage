@@ -1,0 +1,45 @@
+{
+  "test_fixture": true,
+  "classification": "SYNTHETIC_NOT_FOR_PUBLICATION",
+  "claims": [
+    {
+      "id": "claim-unapproved-01",
+      "section_id": "context",
+      "claim": "78% người dùng từ bỏ thiết bị AI đeo người",
+      "classification": "reported_fact",
+      "consequential": true,
+      "authority_attested": false,
+      "review_status": "rejected",
+      "reviewer": "test_factchecker",
+      "reviewed_at": "2026-10-20T10:00:00+00:00",
+      "rejection_reason": "Thiếu dữ liệu phương pháp luận và nguồn gốc khảo sát nguyên bản",
+      "sources": ["source-unverified-01"]
+    },
+    {
+      "id": "claim-unapproved-02",
+      "section_id": "details",
+      "claim": "Tốc độ xử lý đạt 25-35 tokens mỗi giây",
+      "classification": "reported_fact",
+      "consequential": true,
+      "authority_attested": false,
+      "review_status": "pending",
+      "reviewer": null,
+      "reviewed_at": null,
+      "rejection_reason": "Chưa có kết quả benchmark phần cứng độc lập được kiểm chứng",
+      "sources": []
+    },
+    {
+      "id": "claim-unapproved-03",
+      "section_id": "impact",
+      "claim": "Thiết bị bảo mật tuyệt đối 100% không thể bị xâm nhập",
+      "classification": "reported_fact",
+      "consequential": true,
+      "authority_attested": false,
+      "review_status": "rejected",
+      "reviewer": "test_security_auditor",
+      "reviewed_at": "2026-10-20T10:00:00+00:00",
+      "rejection_reason": "Tuyên bố tuyệt đối vô căn cứ vi phạm tiêu chuẩn biên tập",
+      "sources": []
+    }
+  ]
+}

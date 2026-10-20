@@ -47,6 +47,21 @@
           "attribution": { "type": "string", "description": "Speaker/attribution. Proper names allowed." },
           "source_url": { "type": "string", "description": "Reference URL (not displayed as UI text unless labelled a source)." },
           "label": { "type": "string", "description": "Short badge/label inside the slot." },
+          "visual": {
+            "type": "object",
+            "description": "Optional slot visual binding (authentic photo, SVG diagram, or contextual icon).",
+            "properties": {
+              "kind": { "type": "string", "enum": ["authentic_photo", "svg_diagram", "contextual_icon", "source_chart", "illustration"] },
+              "asset_id": { "type": "string" },
+              "src": { "type": "string" },
+              "layout": { "type": "string" },
+              "background_id": { "type": "string" },
+              "source_label": { "type": "string" },
+              "motion_preset": { "type": "string" },
+              "claim_ids": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          },
           "start": { "type": "number", "minimum": 0 },
           "end": { "type": "number", "minimum": 0 }
         },
@@ -60,7 +75,7 @@
         "type": "object",
         "required": ["src", "start", "end"],
         "properties": {
-          "src": { "type": "string", "pattern": "^assets/[^/]+\\.(mp4|webm|mp3)$" },
+          "src": { "type": "string", "pattern": "^assets/[^/]+\\.(mp4|webm|mp3|png|jpg|jpeg|webp|svg)$" },
           "start": { "type": "number", "minimum": 0 },
           "end": { "type": "number", "minimum": 0 },
           "volume": { "type": "number", "minimum": 0, "maximum": 1 }

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/news/news_visual_assets",
+  "title": "News Visual Assets Manifest",
+  "description": "Immutable ledger of frozen local visual media files with rights and checksums.",
+  "type": "object",
+  "required": ["version", "script_sha256", "visual_plan_sha256", "assets"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "script_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "visual_plan_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "asset_id",
+          "beat_ids",
+          "kind",
+          "file",
+          "sha256",
+          "mime",
+          "width",
+          "height",
+          "origin",
+          "rights_status",
+          "claim_ids"
+        ],
+        "properties": {
+          "asset_id": { "type": "string", "minLength": 1 },
+          "beat_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "authentic_photo",
+              "source_screenshot",
+              "svg_diagram",
+              "contextual_icon",
+              "illustration",
+              "chart"
+            ]
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^assets/visuals/[^/]+\\.(png|jpg|jpeg|webp|svg|mp4|webm)$"
+          },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "mime": {
+            "type": "string",
+            "enum": [
+              "image/svg+xml",
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "video/mp4",
+              "video/webm"
+            ]
+          },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "origin": { "type": "string", "minLength": 1 },
+          "rights_status": {
+            "type": "string",
+            "enum": [
+              "cleared_for_use",
+              "public_domain",
+              "cc_by_sa_attributed",
+              "fair_use_reviewed",
+              "in_house_illustration"
+            ]
+          },
+          "credit": { "type": ["string", "null"] },
+          "source_url": { "type": "string", "format": "uri" },
+          "claim_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

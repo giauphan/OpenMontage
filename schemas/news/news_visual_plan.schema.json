@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/news/news_visual_plan",
+  "title": "News Visual Plan Artifact",
+  "description": "Deterministic storyboard mapping script sections and evidence claims to visual requirements.",
+  "type": "object",
+  "required": ["version", "project_id", "script_sha256", "enabled", "beats"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "script_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "enabled": { "type": "boolean" },
+    "beats": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "script_section_id",
+          "start_seconds",
+          "end_seconds",
+          "story_function",
+          "visual_kind",
+          "evidence_class",
+          "claim_ids",
+          "asset_ids",
+          "layout"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^vb-[0-9a-zA-Z_-]+$" },
+          "script_section_id": { "type": "string", "minLength": 1 },
+          "start_seconds": { "type": "number", "minimum": 0 },
+          "end_seconds": { "type": "number", "minimum": 0 },
+          "story_function": { "type": "string", "minLength": 1 },
+          "visual_kind": {
+            "type": "string",
+            "enum": [
+              "authentic_photo",
+              "svg_diagram",
+              "contextual_icon",
+              "source_chart",
+              "typographic_focus",
+              "illustration"
+            ]
+          },
+          "evidence_class": {
+            "type": "string",
+            "enum": [
+              "authentic_photo",
+              "approved_source_visual",
+              "approved_data_chart",
+              "illustration",
+              "conceptual_diagram",
+              "none"
+            ]
+          },
+          "claim_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "asset_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "hero_center",
+              "diagram_left_copy_right",
+              "split_comparison",
+              "metric_grid",
+              "device_showcase",
+              "card_minimal",
+              "diagram_fullscreen",
+              "accent_badge_headline"
+            ]
+          },
+          "background_preset": { "type": "string" },
+          "motion_preset": { "type": "string" },
+          "fallback_policy": {
+            "type": "string",
+            "enum": [
+              "use_builtin_verified_icon_diagram",
+              "typographic_card",
+              "block"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,156 @@
+{
+  "report_version": "1.0",
+  "generated_at": "2026-10-20T13:05:00Z",
+  "base_sha": "976847ffb000c9407d118d4a0342b8bbeb329a27",
+  "runtime_environment": {
+    "python": "3.10.12",
+    "node": "v24.15.0",
+    "hyperframes": "0.7.111",
+    "ffmpeg": "4.4.2-0ubuntu0.22.04.1",
+    "os": "Linux aarch64"
+  },
+  "original_incident": {
+    "status": "ORIGINAL_INCIDENT_CAUSALITY_UNVERIFIED",
+    "notes": "Original OWN1 production artifacts and run logs were not present in local workspace; code-matched defects verified and reproduced with synthetic offline fixtures marked NOT_FOR_PUBLICATION."
+  },
+  "phases": {
+    "phase_0": {
+      "status": "COMPLETED",
+      "summary": "Read-only X-ray, R1-R13 ledger compiled, synthetic fixtures created, T01-T14 tests written, RED baseline verified."
+    },
+    "phase_1": {
+      "status": "COMPLETED",
+      "summary": "Visual policy flag NEWS_VISUAL_MODE=0|1 added; director prompt contracts separated; CSS patcher updated to preserve scene backgrounds."
+    },
+    "phase_2": {
+      "status": "COMPLETED",
+      "summary": "Typed storyboard schemas added; lib.news_visual asset resolver, plan contract, and source binding implemented; path traversal safety enforced."
+    },
+    "phase_3": {
+      "status": "COMPLETED",
+      "summary": "HyperFrames adapter and scene layouts implemented; template schemas and materialize_news_template updated to render media and visual slots."
+    },
+    "phase_4": {
+      "status": "COMPLETED",
+      "summary": "tools.news.template_provenance updated to hash and verify on-disk visual assets, visual plan, and asset manifest."
+    },
+    "phase_5": {
+      "status": "COMPLETED",
+      "summary": "Content-aware visual QA module lib.news_visual.qa, schema, and validate_news_visuals.py CLI added; caption safe rail collisions detected."
+    },
+    "phase_6": {
+      "status": "COMPLETED",
+      "summary": "HyperFrames registered timeline seek determinism verified; real 1080x1920 MP4 rendered with audio; rollback safeguards confirmed."
+    },
+    "phase_7": {
+      "status": "COMPLETED",
+      "summary": "All T01-T14 tests verified GREEN; full regression suite passing; fail-closed release gates confirmed."
+    }
+  },
+  "test_matrix": {
+    "T01": {
+      "name": "test_css_scene_preservation",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R6"]
+    },
+    "T02": {
+      "name": "test_template_media_binding",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R4", "R5"],
+      "subtests": [
+        "test_t02_schema_accepts_raster_and_svg_images",
+        "test_t02_materializer_ignores_media_in_rendered_html",
+        "test_t02_materializer_caption_docking_and_has_visual",
+        "test_t02_svg_visual_assets_valid_xml_and_text_boundaries"
+      ]
+    },
+    "T03": {
+      "name": "test_visual_asset_resolution_schemas",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R3", "R8"]
+    },
+    "T04": {
+      "name": "test_visual_asset_path_safety",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R8"]
+    },
+    "T05": {
+      "name": "test_visual_provenance_integrity",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R10"]
+    },
+    "T06": {
+      "name": "test_claim_to_visual_release_gate",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R9"]
+    },
+    "T07": {
+      "name": "test_visual_qa_text_only_detection",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R7"]
+    },
+    "T08": {
+      "name": "test_safe_zone_caption_collision",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R7", "R8"]
+    },
+    "T09": {
+      "name": "test_hyperframes_seek_determinism_and_render",
+      "baseline": "BASELINE_SKIPPED_CLI_STUB",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R4", "R7"]
+    },
+    "T10": {
+      "name": "test_director_mode_contract",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R1", "R13"]
+    },
+    "T11": {
+      "name": "test_asset_resolver_fault_handling",
+      "baseline": "REPRODUCED_RED",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R8"]
+    },
+    "T12": {
+      "name": "test_publish_safety_fail_closed",
+      "baseline": "PASSED_INVARIANT",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R9", "R12"]
+    },
+    "T13": {
+      "name": "test_legacy_flag_off_backward_compatibility",
+      "baseline": "PASSED_INVARIANT",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R2", "R11"]
+    },
+    "T14": {
+      "name": "test_catalog_packages_review_status",
+      "baseline": "PASSED_INVARIANT",
+      "result": "PASSED_GREEN",
+      "findings_addressed": ["R10"]
+    }
+  },
+  "mock_boundaries": {
+    "permitted_mocks": [
+      "Offline synthetic test fixtures (marked NOT_FOR_PUBLICATION) in tests/news_visual/fixtures/",
+      "Synthetic audio sine waves/silence for isolated testing of audio pipeline without external cloud TTS API keys",
+      "Controlled mock reviews for invariant assertions on unapproved factual claims"
+    ],
+    "strictly_non_mocked": [
+      "HyperFrames real CLI snapshot and render execution via chrome-headless-shell and ffmpeg",
+      "Actual materialize_news_template.py HTML and GSAP timeline composition",
+      "Actual repair_hyperframes_quality.py CSS parsing and safety patching",
+      "Actual template_provenance.py SHA256 disk verification",
+      "Actual lib.news_visual.qa and scripts/validate_news_visuals.py validation logic"
+    ]
+  }
+}

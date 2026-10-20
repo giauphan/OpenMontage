@@ -59,6 +59,14 @@ def _sha256(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def load_catalog() -> dict[str, Any]:
     if not CATALOG_PATH.is_file():
         raise FileNotFoundError(f"template catalog not found: {CATALOG_PATH}")
@@ -215,6 +223,57 @@ def verify_project_provenance(
     if recorded_comp_hash and recorded_comp_hash != expected_comp_hash:
         reasons.append("composition_source_sha256 mismatch (stale or tampered)")
 
+    # Visual assets integrity check
+    recorded_visuals = prov.get("visual_assets")
+    if recorded_visuals is not None:
+        for entry in recorded_visuals:
+            asset_rel = entry.get("path")
+            expected_hash = entry.get("sha256")
+            if not asset_rel:
+                continue
+            asset_path = Path(project_dir) / asset_rel
+            if not asset_path.is_file():
+                reasons.append(f"visual asset {asset_rel} missing")
+            else:
+                actual_hash = _sha256_file(asset_path)
+                if actual_hash != expected_hash:
+                    reasons.append(f"visual asset {asset_rel} hash mismatch (tampered or corrupted)")
+
+        visuals_dir = Path(project_dir) / "assets" / "visuals"
+        if visuals_dir.is_dir():
+            recorded_paths = {entry.get("path") for entry in recorded_visuals if entry.get("path")}
+            for p in sorted(visuals_dir.rglob("*")):
+                if p.is_file():
+                    rel = str(p.relative_to(project_dir))
+                    if rel not in recorded_paths:
+                        reasons.append(f"untracked visual asset found on disk: {rel}")
+
+    recorded_vp_hash = prov.get("visual_plan_sha256")
+    if recorded_vp_hash:
+        vp_found = False
+        for cand in ("artifacts/news_visual_plan.json", "news_visual_plan.json"):
+            vp = Path(project_dir) / cand
+            if vp.is_file():
+                vp_found = True
+                if _sha256_file(vp) != recorded_vp_hash:
+                    reasons.append(f"visual plan {cand} hash mismatch (tampered or stale)")
+                break
+        if not vp_found:
+            reasons.append("visual plan file missing but hash recorded")
+
+    recorded_vmp_hash = prov.get("visual_assets_manifest_sha256")
+    if recorded_vmp_hash:
+        vmp_found = False
+        for cand in ("assets/visuals/manifest.json", "artifacts/news_visual_assets.json"):
+            vmp = Path(project_dir) / cand
+            if vmp.is_file():
+                vmp_found = True
+                if _sha256_file(vmp) != recorded_vmp_hash:
+                    reasons.append(f"visual manifest {cand} hash mismatch (tampered or stale)")
+                break
+        if not vmp_found:
+            reasons.append("visual manifest file missing but hash recorded")
+
     cap_ok, cap_reasons = caption_display_verified(full_html, reels_html)
     reasons.extend(cap_reasons)
     if not cap_ok:
@@ -241,6 +300,33 @@ def record_provenance(
 ) -> dict[str, Any]:
     """Write a fresh, self-consistent provenance record and return it."""
     cap_ok, _ = caption_display_verified(full_html, reels_html)
+
+    # Collect visual assets if assets/visuals exists
+    visuals_dir = Path(project_dir) / "assets" / "visuals"
+    visual_assets: list[dict[str, str]] = []
+    if visuals_dir.is_dir():
+        for p in sorted(visuals_dir.rglob("*")):
+            if p.is_file():
+                rel = str(p.relative_to(project_dir))
+                visual_assets.append({
+                    "path": rel,
+                    "sha256": _sha256_file(p),
+                })
+
+    visual_plan_sha256: str | None = None
+    for cand in ("artifacts/news_visual_plan.json", "news_visual_plan.json"):
+        vp = Path(project_dir) / cand
+        if vp.is_file():
+            visual_plan_sha256 = _sha256_file(vp)
+            break
+
+    visual_assets_manifest_sha256: str | None = None
+    for cand in ("assets/visuals/manifest.json", "artifacts/news_visual_assets.json"):
+        vmp = Path(project_dir) / cand
+        if vmp.is_file():
+            visual_assets_manifest_sha256 = _sha256_file(vmp)
+            break
+
     provenance = {
         "template_id": template_id,
         "template_version": template_version,
@@ -250,6 +336,9 @@ def record_provenance(
         "composition_source_sha256": composition_source_sha256(full_html, reels_html),
         "variant": variant,
         "caption_display_verified": cap_ok,
+        "visual_assets": visual_assets if visual_assets else None,
+        "visual_plan_sha256": visual_plan_sha256,
+        "visual_assets_manifest_sha256": visual_assets_manifest_sha256,
     }
     path = Path(project_dir) / PROVENANCE_FILE
     path.parent.mkdir(parents=True, exist_ok=True)

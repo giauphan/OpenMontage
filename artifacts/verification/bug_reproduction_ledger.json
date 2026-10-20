@@ -1,0 +1,139 @@
+{
+  "version": "1.0",
+  "audit_timestamp": "2026-10-20T12:35:00Z",
+  "base_sha": "976847ffb000c9407d118d4a0342b8bbeb329a27",
+  "original_incident_status": "ORIGINAL_INCIDENT_CAUSALITY_UNVERIFIED",
+  "notes": "Original OWN1 production artifacts/logs are not present in this workspace; code-matched defects are confirmed via direct repository inspection and reproduced with synthetic offline test fixtures.",
+  "findings": [
+    {
+      "id": "R1",
+      "priority": "P0",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/prompts/director_generate.prompt.md:18-29",
+      "observed_evidence": "Director generation prompt explicitly mandates radial gradient on #stage and wrapping each scene in glassmorphic cards with glowing borders (#38bdf8), large text callouts and badges. No structured scene-to-asset/image/diagram/icon binding exists in prompt instructions.",
+      "expected_invariant": "Director prompt must instruct and require content-grounded visual planning (authentic photos, SVG diagrams, contextual icons) rather than mandating text-only card aesthetics.",
+      "test_file": "tests/news_visual/test_director_mode_contract.py"
+    },
+    {
+      "id": "R2",
+      "priority": "P0",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/run_daily_news_pipeline.sh:81",
+      "observed_evidence": "NEWS_TEMPLATE_MODE default is set to '0' (free-form direct HTML generation). Direct HTML path is the active default route in production cron/pipeline executions.",
+      "expected_invariant": "Pipeline must support both direct HTML and deterministic templated routes, with NEWS_VISUAL_MODE controlling visual enrichment safely.",
+      "test_file": "tests/news_visual/test_legacy_flag_off.py"
+    },
+    {
+      "id": "R3",
+      "priority": "P0",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/prompts/director_system.prompt.md:9-12; scripts/prompts/director_retry.prompt.md:5-8",
+      "observed_evidence": "Director system and retry prompts strictly limit authoring to exactly 3 files: script_vi.json, hyperframes/index.html, and hyperframes_reels/index.html. No frozen visual plan or asset manifest can be emitted or consumed by the director.",
+      "expected_invariant": "Visual planning and asset staging must exist as an explicit contract/stage, decoupling script, evidence, asset resolution, and composition authoring.",
+      "test_file": "tests/news_visual/test_director_mode_contract.py"
+    },
+    {
+      "id": "R4",
+      "priority": "P0",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/materialize_news_template.py:145-350 (_build_debate_html, _build_evidence_html, _build_explainer_html)",
+      "observed_evidence": "Template materializer builds only static text/heading elements inside a single package-wide .bg-fill container. It completely ignores content.get('media') and has no mapping for per-slot images, icons, or SVG diagrams.",
+      "expected_invariant": "Template materializer must consume per-slot visual specifications and media bindings, producing real <img>, <video>, or SVG elements at correct timeline timestamps in full and Reels.",
+      "test_file": "tests/news_visual/test_template_media_binding.py"
+    },
+    {
+      "id": "R5",
+      "priority": "P0",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "templates/news/_schemas/base.schema.json:57-70; packages/*/content.schema.json",
+      "observed_evidence": "Optional 'media' property in template schemas only permits regex pattern '^assets/[^/]+\\.(mp4|webm|mp3)$'. Raster images (png/jpg/webp) and SVG are rejected by the schema. Slot schemas lack a visual slot block.",
+      "expected_invariant": "Content schemas must support optional visual blocks per slot and allow png, jpg, jpeg, webp, and svg assets alongside video/audio.",
+      "test_file": "tests/news_visual/test_template_media_binding.py"
+    },
+    {
+      "id": "R6",
+      "priority": "P1",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/repair_hyperframes_quality.py:248-300",
+      "observed_evidence": "Patcher injects /* Visual Quality Enhancement */ CSS with !important rules forcing #stage to radial gradient (#1e1b4b), .scene to transparent, and .card to rgba(30, 41, 59, 0.82), flattening any scene-specific background or imagery.",
+      "expected_invariant": "Patcher must preserve scene-specific distinct backgrounds, images, and visual elements, avoiding sweeping !important overrides.",
+      "test_file": "tests/news_visual/test_css_scene_preservation.py"
+    },
+    {
+      "id": "R7",
+      "priority": "P1",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/validate_render_quality.py:262-317",
+      "observed_evidence": "Render quality validation checks black frames, silence, static frames, and edge density. Moving text cards and glowing borders easily satisfy these checks without any real image, diagram, or contextual visual present.",
+      "expected_invariant": "A dedicated content-aware visual QA gate must verify that planned contextual visuals are actually bound in the DOM and visible in rendered video frames.",
+      "test_file": "tests/news_visual/test_visual_qa_false_positives.py"
+    },
+    {
+      "id": "R8",
+      "priority": "P1",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/repair_hyperframes_quality.py:42-100",
+      "observed_evidence": "repair_missing_composition_assets() only inspects <img src> and CSS url(...). It does not validate <video src>, <source src>, poster attributes, SVG elements, or cross-check against an expected visual asset manifest.",
+      "expected_invariant": "Visual asset validation must preflight all media references against an authorized frozen asset manifest and verify file existence, permissions, and integrity.",
+      "test_file": "tests/news_visual/test_visual_asset_resolution.py"
+    },
+    {
+      "id": "R9",
+      "priority": "P1",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "lib/news_research_bridge.py:22-60; schemas/artifacts/research_brief.schema.json",
+      "observed_evidence": "Research brief only bridges text claims, sources, and audience questions; it does not carry approved visual binaries, licenses, or rights clearance records for images.",
+      "expected_invariant": "Factual visual assets must be linked to verified claims with cleared rights and explicit attribution before entering composition.",
+      "test_file": "tests/news_visual/test_claim_to_visual_release_gate.py"
+    },
+    {
+      "id": "R10",
+      "priority": "P1",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "tools/news/template_provenance.py:75-257",
+      "observed_evidence": "template_provenance only hashes content_instance.json, full_html, and reels_html. Local media asset bytes on disk are not hashed or verified in provenance records.",
+      "expected_invariant": "Provenance records must include visual plan and asset manifest digests, verifying on-disk visual asset byte integrity before render and release.",
+      "test_file": "tests/news_visual/test_visual_provenance_integrity.py"
+    },
+    {
+      "id": "R11",
+      "priority": "P1",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/validate_newsnow_director_artifacts.py:283-450",
+      "observed_evidence": "_synthesize_director_artifacts_from_brief generates fallback text-only card compositions when artifacts are missing on the direct route, creating low-richness outputs without diagnostic blockage.",
+      "expected_invariant": "Under visual enrichment mode (NEWS_VISUAL_MODE=1), missing visual artifacts must fail closed with diagnostics rather than silently falling back to generic text cards.",
+      "test_file": "tests/news_visual/test_legacy_flag_off.py"
+    },
+    {
+      "id": "R12",
+      "priority": "P2",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/run_daily_news_pipeline.sh:692-786 (materialize_hyperframes_assets)",
+      "observed_evidence": "materialize_hyperframes_assets() only copies narration.mp3, music-bg.mp3, fonts, and captions into hyperframes/assets and hyperframes_reels/assets. It contains no mechanism to stage contextual images, icons, or diagrams.",
+      "expected_invariant": "Pipeline asset staging must copy and verify authorized visual assets into both composition asset directories.",
+      "test_file": "tests/news_visual/test_visual_asset_resolution.py"
+    },
+    {
+      "id": "R13",
+      "priority": "P0",
+      "status": "confirmed_by_code",
+      "confidence": "high",
+      "location": "scripts/run_daily_news_pipeline.sh:301-308 vs :437-477",
+      "observed_evidence": "When NEWS_TEMPLATE_MODE=1, run_daily_news_pipeline.sh still loads director_generate.prompt.md (which instructs direct HTML creation), yet line 437 strictly demands template_selection.json and template_content.json, causing immediate fatal failure.",
+      "expected_invariant": "When NEWS_TEMPLATE_MODE=1, prompt and validation contracts must branch to request and validate template_selection.json and template_content.json.",
+      "test_file": "tests/news_visual/test_director_mode_contract.py"
+    }
+  ]
+}

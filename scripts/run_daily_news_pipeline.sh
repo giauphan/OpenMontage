@@ -79,6 +79,11 @@ export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 # from the approved package (no free-form HTML, no repair/sed mutation).
 # Development-only; production activation is a separate explicit approval.
 NEWS_TEMPLATE_MODE="${NEWS_TEMPLATE_MODE:-0}"
+# Context-aware news visual pipeline: when 1, the pipeline executes the
+# two-pass visual storyboard + local asset resolver + contextual QA.
+# Default is 0 (disabled) for backward compatibility.
+NEWS_VISUAL_MODE="${NEWS_VISUAL_MODE:-0}"
+export NEWS_VISUAL_MODE
 
 FFPROBE_BIN="$(command -v ffprobe || true)"
 FFMPEG_BIN="$(command -v ffmpeg || true)"
@@ -298,14 +303,25 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
   PROMPT_STR=""
   DIRECTOR_SYSTEM_NOTE=""
 else
-  PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
-    echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
-    exit 1
-  }
-  DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
-    echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
-    exit 1
-  }
+  if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
+    PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director generation prompt" >> "$DIRECTORS_LOG"
+      exit 1
+    }
+    DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_templated_system.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director system prompt" >> "$DIRECTORS_LOG"
+      exit 1
+    }
+  else
+    PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
+      exit 1
+    }
+    DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
+      exit 1
+    }
+  fi
 fi
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
 DIRECTOR_REELS_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes_reels/index.html"
@@ -608,6 +624,16 @@ if [ "$DIRECTOR_EXIT" -eq 0 ]; then
     >> "$ROOT/logs/directors_${PROJECT_ID}.log"
   "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-success --stage "directors" --project-id "$PROJECT_ID" \
     --message "Director artifacts generated and validated" || true
+
+  if [ "$NEWS_VISUAL_MODE" = "1" ]; then
+    echo "[$(date -u +%FT%TZ)] preparing news visuals project=$PROJECT_ID" >> "$ROOT/logs/directors_${PROJECT_ID}.log"
+    if ! "$PY" "$ROOT/scripts/prepare_news_visuals.py" "$PROJECT_DIR" >> "$ROOT/logs/directors_${PROJECT_ID}.log" 2>&1; then
+      echo "[$(date -u +%FT%TZ)] ERROR: prepare_news_visuals failed for project $PROJECT_ID" >&2
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_visuals" --project-id "$PROJECT_ID" \
+        --error-type "NEWS_VISUALS_PREPARATION_FAILED" --message "Visual plan and asset resolution failed" || true
+      continue
+    fi
+  fi
   # Hard gate: both compositions must exist at canonical paths before render.
   HYPER_FULL="$PROJECT_DIR/hyperframes/index.html"
   HYPER_REELS="$PROJECT_DIR/hyperframes_reels/index.html"
@@ -884,6 +910,18 @@ if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
   "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
     "Base render quality validation failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
+fi
+
+if [ "$NEWS_VISUAL_MODE" = "1" ]; then
+  echo "[$(date -u +%FT%TZ)] Running Content-Aware Visual QA for $PROJECT_ID..."
+  if ! "$PY" "$ROOT/scripts/validate_news_visuals.py" --project-dir "$PROJECT_DIR" --mode strict; then
+    echo "[$(date -u +%FT%TZ)] ERROR: Content-Aware Visual QA failed for $PROJECT_ID" >&2
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "visual_qa" --project-id "$PROJECT_ID" \
+      --error-type "VISUAL_QA_FAILED" --message "Content-Aware Visual QA failed" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "Content-Aware Visual QA failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
+  fi
 fi
 
 # Check if videos exist

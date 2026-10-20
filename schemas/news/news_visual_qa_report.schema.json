@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/news/news_visual_qa_report",
+  "title": "News Visual QA Report",
+  "description": "Report of deterministic and content-aware visual quality assessment.",
+  "type": "object",
+  "required": [
+    "version",
+    "project_id",
+    "passed",
+    "mode",
+    "scorecard",
+    "failure_categories",
+    "findings"
+  ],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "passed": { "type": "boolean" },
+    "mode": { "type": "string", "enum": ["flag_off", "strict", "advisory"] },
+    "scorecard": {
+      "type": "object",
+      "required": [
+        "missing_required_asset_count",
+        "unapproved_factual_visual_count",
+        "visual_beat_binding_coverage_pct",
+        "visual_beat_visible_in_render_coverage_pct",
+        "caption_overlap_blockers",
+        "credit_overlap_blockers"
+      ],
+      "properties": {
+        "missing_required_asset_count": { "type": "integer", "minimum": 0 },
+        "unapproved_factual_visual_count": { "type": "integer", "minimum": 0 },
+        "visual_beat_binding_coverage_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "visual_beat_visible_in_render_coverage_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "caption_overlap_blockers": { "type": "integer", "minimum": 0 },
+        "credit_overlap_blockers": { "type": "integer", "minimum": 0 },
+        "repetitive_layout_flag": { "type": "boolean" }
+      }
+    },
+    "failure_categories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "NO_VISUAL_PLAN",
+          "VISUAL_SOURCE_UNAPPROVED",
+          "ASSET_UNRESOLVED",
+          "VISUAL_NOT_RENDERED",
+          "BACKGROUND_MISMATCH",
+          "CAPTION_COLLISION",
+          "UNSUPPORTED_CLAIM",
+          "TEMPLATE_PROVENANCE_MISMATCH"
+        ]
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "category", "message"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocker", "warning", "info"] },
+          "category": { "type": "string" },
+          "message": { "type": "string" },
+          "beat_id": { "type": "string" },
+          "asset_id": { "type": "string" }
+        }
+      }
+    }
+  }
+}
