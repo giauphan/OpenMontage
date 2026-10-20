@@ -44,6 +44,8 @@ TODAY=$(TZ="$PUBLISH_TZ" date +%F)
 SCHEDULED_COUNT=$(jq --arg d "$NEXT_DATE" '
   [.active_projects[]? | select(type == "object" and (.publish_date // "") == $d)] | length
 ' "$SCHEDULE" 2>/dev/null || echo 0)
+SCHEDULED_COUNT="${SCHEDULED_COUNT:-0}"
+[[ "$SCHEDULED_COUNT" =~ ^[0-9]+$ ]] || SCHEDULED_COUNT=0
 
 log "Schedule check for $NEXT_DATE (tomorrow in $PUBLISH_TZ): $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects scheduled."
 

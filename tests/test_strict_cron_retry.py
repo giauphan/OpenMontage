@@ -26,6 +26,7 @@ def create_fixture(tmp_path: Path, validation_script: str) -> tuple[Path, Path, 
         directory.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts / "run_strict_docker_publish.sh")
+    shutil.copy2(ROOT / "scripts" / "retry_daily_pipeline.sh", scripts / "retry_daily_pipeline.sh")
     for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
         destination = tmp_path / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -596,6 +597,147 @@ def test_more_validated_projects_than_available_slots_queues_available_count(tmp
     newly_queued = [p for p in tomorrow_entries if p["project_id"] not in ("pre_01", "pre_02")]
     assert len(newly_queued) == 1
     assert newly_queued[0]["publish_time"] == "03:00"
+
+
+def test_retry_daily_pipeline_noop_when_satisfied(tmp_path: Path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    schedule["active_projects"] = [
+        {"project_id": f"p_{i}", "publish_date": tomorrow, "publish_time": f"0{i}:00"}
+        for i in range(1, 4)
+    ]
+    schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+
+    write_executable(scripts / "run_strict_docker_publish.sh", "#!/usr/bin/env bash\necho CALLED > call.txt; exit 1\n")
+
+    res = subprocess.run(
+        ["bash", str(scripts / "retry_daily_pipeline.sh")],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC"},
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0
+    assert not (tmp_path / "call.txt").exists()
+    assert "No retry needed" in res.stdout
+
+
+def test_retry_daily_pipeline_skips_when_lock_held(tmp_path: Path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    lock_file = tmp_path / ".strict_docker_publish.lock"
+    lock_file.write_text("", encoding="utf-8")
+
+    fd = os.open(str(lock_file), os.O_RDWR)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        res = subprocess.run(
+            ["bash", str(scripts / "retry_daily_pipeline.sh")],
+            cwd=tmp_path,
+            env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC"},
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0
+        assert "lock held" in res.stdout
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def test_retry_daily_pipeline_triggers_when_incomplete(tmp_path: Path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    schedule["active_projects"] = [
+        {"project_id": "p_1", "publish_date": tomorrow, "publish_time": "01:00"},
+        {"project_id": "p_2", "publish_date": tomorrow, "publish_time": "02:00"},
+    ]
+    schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+
+    write_executable(
+        scripts / "run_strict_docker_publish.sh",
+        "#!/usr/bin/env bash\necho EXPECTED=$EXPECTED_SUCCESS_COUNT > trigger.log\nexit 0\n",
+    )
+
+    res = subprocess.run(
+        ["bash", str(scripts / "retry_daily_pipeline.sh")],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC"},
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0
+    assert (tmp_path / "trigger.log").is_file()
+    assert (tmp_path / "trigger.log").read_text(encoding="utf-8").strip() == "EXPECTED=1"
+
+
+def test_generation_accumulates_candidates_across_attempts(tmp_path: Path):
+    """When attempt 1 yields 1 valid project and attempt 2 yields 1 more, all are accumulated and queued."""
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    (scripts / "codex_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    occupy_today_slots(config)
+
+    write_executable(
+        scripts / "run_daily_news_pipeline.sh",
+        """#!/usr/bin/env bash
+set -eu
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+COUNT_FILE="$ROOT/gen_count"
+count=0
+[ ! -f "$COUNT_FILE" ] || count=$(cat "$COUNT_FILE")
+count=$((count + 1))
+printf '%s' "$count" > "$COUNT_FILE"
+
+pid="cand_att${count}"
+mkdir -p "$ROOT/projects/$pid/renders"
+printf '{"id":"%s","title":"T","description":"D","yt_shorts":"renders/final_reels_vi_9x16.mp4","ig_reels":"renders/final_reels_vi_9x16.mp4","fb_video":"renders/final_full_vi_9x16.mp4"}' "$pid" > "$ROOT/projects/$pid/publish_metadata.json"
+printf video > "$ROOT/projects/$pid/renders/final_full_vi_9x16.mp4"
+printf video > "$ROOT/projects/$pid/renders/final_reels_vi_9x16.mp4"
+printf '{"strict_quality_pass": true}' > "$ROOT/projects/$pid/validation_status.json"
+PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c 'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))' "$ROOT/projects/$pid"
+echo "PROJECT_ID=$pid"
+
+if [ "$count" -eq 1 ]; then
+  exit 2
+else
+  exit 0
+fi
+""",
+    )
+
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule_path = config / "publish_schedule.json"
+
+    res = subprocess.run(
+        ["bash", str(scripts / "run_strict_docker_publish.sh")],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{binaries}:{os.environ['PATH']}",
+            "PUBLISH_TZ": "UTC",
+            "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+            "DAILY_GENERATION_RETRIES": "3",
+            "EXPECTED_SUCCESS_COUNT": "2",
+            "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+            "GENERATION_RETRY_DELAY_SECONDS": "0",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 0, f"Expected success, got:\n{res.stdout}\n{res.stderr}"
+
+    updated = json.loads(schedule_path.read_text(encoding="utf-8"))
+    tomorrow_pids = [
+        p["project_id"] for p in updated.get("active_projects", [])
+        if p.get("publish_date") == tomorrow
+    ]
+    assert "cand_att1" in tomorrow_pids
+    assert "cand_att2" in tomorrow_pids
+    assert len(tomorrow_pids) == 2
+
 
 
 
