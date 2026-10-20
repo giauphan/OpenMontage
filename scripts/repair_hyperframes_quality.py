@@ -165,18 +165,20 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             root_open = re.search(r"<div\b[^>]*>", html)
     if root_open:
         tag = root_open.group(0)
+        tag_match = re.match(r"<([a-zA-Z0-9]+)", tag)
+        tag_prefix = f"<{tag_match.group(1)}" if tag_match else "<div"
         new_tag = tag
         if "data-composition-id" not in new_tag:
-            new_tag = new_tag.replace("<div", '<div data-composition-id="main"', 1)
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-composition-id="main"', 1)
         if "data-width" not in new_tag:
-            new_tag = new_tag.replace("<div", '<div data-width="1080"', 1)
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-width="1080"', 1)
         if "data-height" not in new_tag:
-            new_tag = new_tag.replace("<div", '<div data-height="1920"', 1)
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-height="1920"', 1)
         if "data-duration" not in new_tag:
             initial_dur = max_end if max_end > 0 else narration_duration
-            new_tag = new_tag.replace("<div", f'<div data-duration="{initial_dur:.3f}"', 1)
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-duration="{initial_dur:.3f}"', 1)
         if "data-start" not in new_tag:
-            new_tag = new_tag.replace("<div", '<div data-start="0"', 1)
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-start="0"', 1)
         if new_tag != tag:
             html = html[:root_open.start()] + new_tag + html[root_open.end():]
 

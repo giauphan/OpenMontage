@@ -420,7 +420,7 @@ else
         fi
       fi
     done
-    if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge 1 ]; } && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
+    if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "${EXPECTED_SUCCESS_COUNT:-3}" ]; } && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
       log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT validated project(s) (exit=$GEN_STATUS)"
       break
     fi

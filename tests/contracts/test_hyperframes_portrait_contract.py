@@ -467,3 +467,31 @@ def test_standalone_gsap_tween_fails_with_actionable_error(tmp_path):
     index = write_composition(tmp_path, html)
     with pytest.raises(ValueError, match="standalone gsap animation.*registered to the paused HyperFrames timeline"):
         repair.patch_html(index)
+
+
+def test_repair_adds_root_attributes_to_main_tag(tmp_path):
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=1080, height=1920">
+    <style>
+        #stage { width: 1080px; height: 1920px; overflow: hidden; }
+        :root { --font-heading: 'BeVietnamPro', Arial, sans-serif; --font-body: 'BeVietnamPro', Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <main id="stage" data-composition-id="main">
+        <div id="scene-0" class="scene" data-start="0.000" data-duration="15.5"></div>
+    </main>
+</body>
+</html>"""
+    comp = write_composition(tmp_path, html)
+    repair.patch_html(comp, 15.5)
+    patched = comp.read_text(encoding="utf-8")
+    assert '<main' in patched
+    assert 'id="stage"' in patched
+    assert 'data-width="1080"' in patched
+    assert 'data-height="1920"' in patched
+    assert 'data-duration="15.500"' in patched
+    assert 'data-start="0"' in patched
+
