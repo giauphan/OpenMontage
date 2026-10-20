@@ -81,8 +81,8 @@ export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
 NEWS_TEMPLATE_MODE="${NEWS_TEMPLATE_MODE:-0}"
 # Context-aware news visual pipeline: when 1, the pipeline executes the
 # two-pass visual storyboard + local asset resolver + contextual QA.
-# Default is 0 (disabled) for backward compatibility.
-NEWS_VISUAL_MODE="${NEWS_VISUAL_MODE:-0}"
+# Default is 1 (enabled) for live production. Roll back anytime with NEWS_VISUAL_MODE=0.
+NEWS_VISUAL_MODE="${NEWS_VISUAL_MODE:-1}"
 export NEWS_VISUAL_MODE
 
 FFPROBE_BIN="$(command -v ffprobe || true)"

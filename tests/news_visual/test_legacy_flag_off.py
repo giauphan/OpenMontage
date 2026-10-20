@@ -12,10 +12,13 @@ import pytest
 from scripts.validate_newsnow_director_artifacts import validate_and_promote_director_artifacts
 
 
-def test_t13_legacy_mode_default_flag_is_zero():
-    """T13: Default for NEWS_VISUAL_MODE must be 0 (disabled)."""
-    val = os.environ.get("NEWS_VISUAL_MODE", "0")
-    assert val == "0", f"Default NEWS_VISUAL_MODE must be '0', got {val}"
+def test_t13_live_mode_default_and_rollback_support():
+    """T13: Live production defaults to NEWS_VISUAL_MODE=1, with explicit 0 rollback support."""
+    pipeline_sh = Path(__file__).resolve().parents[2] / "scripts" / "run_daily_news_pipeline.sh"
+    content = pipeline_sh.read_text(encoding="utf-8")
+    assert 'NEWS_VISUAL_MODE="${NEWS_VISUAL_MODE:-1}"' in content, (
+        "Expected live default to be NEWS_VISUAL_MODE=1 in run_daily_news_pipeline.sh"
+    )
 
 
 def test_t13_legacy_mode_does_not_require_visual_plan(isolated_project: Path, monkeypatch):

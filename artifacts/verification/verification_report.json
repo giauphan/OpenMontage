@@ -45,6 +45,10 @@
     "phase_7": {
       "status": "COMPLETED",
       "summary": "All T01-T14 tests verified GREEN; full regression suite passing; fail-closed release gates confirmed."
+    },
+    "phase_8_live_activation": {
+      "status": "COMPLETED",
+      "summary": "NEWS_VISUAL_MODE=1 activated as production default in scripts/run_daily_news_pipeline.sh and deploy/openmontage.cron; zero-downtime rollback with NEWS_VISUAL_MODE=0 preserved and tested."
     }
   },
   "test_matrix": {

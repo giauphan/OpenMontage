@@ -170,7 +170,8 @@ A non-mocked render of a 45.0-second HyperFrames composition was executed using 
 
 ## 7. Safety, Rollback & Compatibility
 
-- **Default Off:** `NEWS_VISUAL_MODE=0` remains the default environment configuration in `scripts/run_daily_news_pipeline.sh`.
+- **Live Default Activated:** `NEWS_VISUAL_MODE="${NEWS_VISUAL_MODE:-1}"` is enabled by default in `scripts/run_daily_news_pipeline.sh` and set in `deploy/openmontage.cron`.
+- **Zero-Downtime Rollback:** Running with `NEWS_VISUAL_MODE=0` immediately restores legacy director and text fallback paths without requiring code modification.
 - **Fail-Closed Unapproved Claims:** Factual claims lacking verified status (including the synthetic 78% figure, 25-35 tokens/s, or 100% security claims) are strictly blocked by `lib.news_visual.source_binding` and `lib.news_visual.qa`.
 - **No Remotion Swap:** HyperFrames remains the exclusive rendering engine for Daily News.
 - **Local Dev Only:** In strict compliance with `AGENTS.md` and `AGENT_GUIDE.md`, all implementation and test execution were performed in the local workspace.
