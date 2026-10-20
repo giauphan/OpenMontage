@@ -568,3 +568,34 @@ raise SystemExit(0)
     assert json.loads(heartbeat.read_text(encoding="utf-8"))["status"] == "completed"
 
 
+def test_more_validated_projects_than_available_slots_queues_available_count(tmp_path: Path):
+    """When more validated projects exist than empty slots, it must queue up to the available slots rather than fail."""
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    (scripts / "codex_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    occupy_today_slots(config)
+
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+    # Pre-occupy 2 of 3 tomorrow slots: 01:00 and 02:00
+    schedule["active_projects"].extend([
+        {"project_id": "pre_01", "publish_date": tomorrow, "publish_time": "01:00"},
+        {"project_id": "pre_02", "publish_date": tomorrow, "publish_time": "02:00"},
+    ])
+    schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+
+    # Pipeline generates 2 projects (cand_fail, cand_pass), but only 1 slot (03:00) is free
+    result = run_pipeline(tmp_path, scripts, binaries)
+
+    assert result.returncode == 0, f"Expected pipeline to succeed, got:\n{result.stdout}\n{result.stderr}"
+
+    updated = json.loads(schedule_path.read_text(encoding="utf-8"))
+    tomorrow_entries = [p for p in updated.get("active_projects", []) if p.get("publish_date") == tomorrow]
+    # Total tomorrow entries should now be exactly 3 (2 pre-occupied + 1 newly queued)
+    assert len(tomorrow_entries) == 3
+    newly_queued = [p for p in tomorrow_entries if p["project_id"] not in ("pre_01", "pre_02")]
+    assert len(newly_queued) == 1
+    assert newly_queued[0]["publish_time"] == "03:00"
+
+
+

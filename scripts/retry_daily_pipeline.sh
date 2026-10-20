@@ -53,5 +53,7 @@ if [ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]; then
 fi
 
 # 5. Requirement not met — trigger the strict pipeline.
-log "Next-day schedule has only $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects for $NEXT_DATE. Triggering run_strict_docker_publish.sh..."
+MISSING_COUNT=$((EXPECTED_SUCCESS_COUNT - SCHEDULED_COUNT))
+log "Next-day schedule has only $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects for $NEXT_DATE ($MISSING_COUNT needed). Triggering run_strict_docker_publish.sh..."
+export EXPECTED_SUCCESS_COUNT="$MISSING_COUNT"
 exec "$ROOT/scripts/run_strict_docker_publish.sh"

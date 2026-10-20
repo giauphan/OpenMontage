@@ -613,8 +613,15 @@ for SLOT in "${NEXT_CANDIDATE_SLOTS[@]}"; do
 done
 
 AVAILABLE_SLOT_COUNT=$((${#TODAY_SLOTS[@]} + ${#NEXT_SLOTS[@]}))
-[ "$AVAILABLE_SLOT_COUNT" -ge "${#VALIDATED_PIDS[@]}" ] \
-  || { write_state "queue" "failed"; fail "not enough unoccupied current/next-day publish slots ($AVAILABLE_SLOT_COUNT) for ${#VALIDATED_PIDS[@]} projects"; }
+if [ "$AVAILABLE_SLOT_COUNT" -lt "${#VALIDATED_PIDS[@]}" ]; then
+  if [ "$AVAILABLE_SLOT_COUNT" -gt 0 ]; then
+    log "NOTE: more validated projects (${#VALIDATED_PIDS[@]}) than available slots ($AVAILABLE_SLOT_COUNT); queuing the first $AVAILABLE_SLOT_COUNT validated project(s)"
+    VALIDATED_PIDS=("${VALIDATED_PIDS[@]:0:$AVAILABLE_SLOT_COUNT}")
+  else
+    write_state "queue" "failed"
+    fail "not enough unoccupied current/next-day publish slots ($AVAILABLE_SLOT_COUNT) for ${#VALIDATED_PIDS[@]} projects"
+  fi
+fi
 
 TMP_QUEUE=$(mktemp)
 cp "$SCHEDULE" "$TMP_QUEUE"
