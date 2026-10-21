@@ -123,7 +123,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         result = generate_captions(args.audio, args.output_dir)
-        print(f"Generated aligned Vietnamese captions: {result['srt']}")
+        print(f"Generated aligned captions: {result['srt']}")
         return 0
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
         print(f"Caption generation failed: {exc}", file=sys.stderr)

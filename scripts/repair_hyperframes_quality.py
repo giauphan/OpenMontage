@@ -594,14 +594,17 @@ def _validate_seek_safety(path: Path, html: str) -> None:
             raise ValueError(f"{path}: GSAP timeline is not registered for composition {composition_id!r}; regenerate with window.__timelines registration")
 
 
-def validate_dimensions(path: Path, html: str) -> list[str]:
-    """Reject any composition that does not declare a true portrait canvas."""
-    expected = (PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+def validate_dimensions(path: Path, html: str, locale: str = "vi-VN") -> list[str]:
+    """Reject any composition that does not declare the expected canvas dimensions."""
+    is_en = locale == "en-US"
+    is_landscape = is_en and path.parent.name == "hyperframes"
+    expected = (1920, 1080) if is_landscape else (PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
     found = declared_dimensions(html)
     if not found:
+        canvas_str = "1920x1080" if is_landscape else f"{PORTRAIT_WIDTH}x{PORTRAIT_HEIGHT}"
         return [
             f"{path}: cannot determine canvas dimensions; declare "
-            f"{PORTRAIT_WIDTH}x{PORTRAIT_HEIGHT} on the composition root, meta viewport, and #root CSS"
+            f"{canvas_str} on the composition root, meta viewport, and #root CSS"
         ]
 
     distinct = set(found.values())
@@ -611,9 +614,10 @@ def validate_dimensions(path: Path, html: str) -> list[str]:
 
     width, height = distinct.pop()
     if (width, height) != expected:
+        canvas_type = "landscape" if is_landscape else "portrait"
         sources = ", ".join(sorted(found))
         return [
-            f"{path}: expected {PORTRAIT_WIDTH}x{PORTRAIT_HEIGHT} portrait canvas, "
+            f"{path}: expected {expected[0]}x{expected[1]} {canvas_type} canvas, "
             f"got {width}x{height} (declared by {sources})"
         ]
     return []
@@ -622,7 +626,14 @@ def validate_dimensions(path: Path, html: str) -> list[str]:
 def validate_html(path: Path) -> list[str]:
     errors: list[str] = []
     html = path.read_text(encoding="utf-8")
-    errors.extend(validate_dimensions(path, html))
+    locale = "vi-VN"
+    try:
+        from lib.artifact_paths import resolve_project_locale
+        locale = resolve_project_locale(path.parent.parent)
+    except Exception:
+        pass
+
+    errors.extend(validate_dimensions(path, html, locale=locale))
     required_bindings = (
         "font-family: 'BeVietnamPro'",
         "--font-heading: 'BeVietnamPro', Arial, sans-serif;",
@@ -651,13 +662,6 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         errors.append(f"{path}: missing viewport clipping guard")
     # NFD-decomposed text and HTML entities still count as genuine Vietnamese
     # on-screen content; normalize before the glyph smoke check.
-    locale = "vi-VN"
-    try:
-        from lib.artifact_paths import resolve_project_locale
-        locale = resolve_project_locale(path.parent.parent)
-    except Exception:
-        pass
-
     visible_text = unicodedata.normalize("NFC", html_lib.unescape(html))
     if locale == "vi-VN" and VIETNAMESE_GLYPH_SENTINELS and not any(ch in visible_text for ch in VIETNAMESE_GLYPH_SENTINELS):
         errors.append(f"{path}: no Vietnamese diacritic text found for glyph smoke validation")
