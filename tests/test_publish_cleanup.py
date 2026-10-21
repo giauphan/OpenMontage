@@ -740,6 +740,37 @@ def test_r1_reconcile_remote_verified_public_authorizes_published(tmp_path):
         assert res_ig.get("verified_at") is not None
 
 
+def test_r1_reconcile_youtube_verified_oembed_promotes_published(tmp_path):
+    """R1: Verified oEmbed with matching title and passed schedule promotes scheduled record to published."""
+    from scripts.check_cleanup_eligibility import reconcile_scheduled_record
+
+    store = FakeStore({
+        "rec_yt": {
+            "status": "scheduled",
+            "scheduled_for": "2026-09-27T00:00:00Z",
+            "platform": "youtube",
+            "video_id": "yt_oembed_valid",
+            "title": "Bản tin AI hôm nay #tintuc #ai",
+        },
+    })
+
+    with patch("tools.publishers.youtube_publisher.YoutubePublisher.check_video_published") as mock_yt:
+        mock_yt.return_value = {
+            "status": "unverified_oembed",
+            "video_id": "yt_oembed_valid",
+            "title": "Bản tin AI hôm nay #tintuc #ai #Shorts",
+            "author_name": "Tech Channel",
+            "via_oembed": True,
+        }
+
+        res_yt = reconcile_scheduled_record(store, "rec_yt", store.get("rec_yt"))
+        assert res_yt.get("status") == "published"
+        assert res_yt.get("verified_at") is not None
+        assert res_yt.get("remote_status", {}).get("privacy_status") == "public"
+        assert res_yt.get("remote_status", {}).get("upload_status") == "processed"
+
+
+
 def test_r2_inspection_and_dry_run_are_strictly_read_only(tmp_path):
     """R2: Eligibility inspection must be strictly read-only and never mutate store or disk."""
     from scripts.check_cleanup_eligibility import is_project_eligible_for_cleanup

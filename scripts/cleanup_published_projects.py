@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import time
 from datetime import date
 from pathlib import Path
 
@@ -52,9 +54,120 @@ def candidate_dates(root: Path):
             yield directory, publish_date
 
 
-def sweep(*, apply: bool = False, store=None) -> int:
+def clear_project_trash(root: Path, *, apply: bool = False, store=None, min_age_minutes: int = 120) -> int:
+    """Clear failed generation recovery dirs and abandoned errored candidate trash.
+
+    Safety requirements:
+    1. Never touch directories modified within min_age_minutes (default 120m).
+    2. Never delete active projects in publish_schedule.json.
+    3. Never delete projects that have an active claim or scheduled/published record in PublishStore.
+    4. Only delete:
+       - Quarantined recovery dirs in projects/_failed_generation_recovered older than min_age_minutes.
+       - Abandoned candidate directories that failed validation (strict_quality_pass=False) or have no valid publish date/renders.
+    """
+    removed_count = 0
+    now_ts = time.time()
+    min_age_seconds = min_age_minutes * 60
+
+    # 1. Clean quarantined failed generations
+    recovered_root = root / "projects" / "_failed_generation_recovered"
+    if recovered_root.is_dir():
+        for item in sorted(recovered_root.iterdir()):
+            if not item.is_dir() or item.is_symlink():
+                continue
+            try:
+                mtime = item.stat().st_mtime
+                if now_ts - mtime >= min_age_seconds:
+                    if apply:
+                        shutil.rmtree(item)
+                        print(f"REMOVED_TRASH: _failed_generation_recovered/{item.name}")
+                    else:
+                        print(f"DRY_RUN_TRASH: would remove _failed_generation_recovered/{item.name}")
+                    removed_count += 1
+            except Exception as e:
+                print(f"ERROR: failed to inspect/remove trash {item.name}: {e}")
+
+    # 2. Clean abandoned errored candidate projects
+    config = root / "config" / "publish_schedule.json"
+    active_ids = set()
+    if config.exists():
+        try:
+            sched = json.loads(config.read_text(encoding="utf-8"))
+            for entry in sched.get("active_projects", []):
+                pid = entry.get("project_id") if isinstance(entry, dict) else entry
+                if pid:
+                    active_ids.add(str(pid))
+        except Exception:
+            pass
+
+    for location in ("projects", "projects_news"):
+        loc_dir = root / location
+        if not loc_dir.is_dir():
+            continue
+        for directory in sorted(loc_dir.glob("cand_*")):
+            if not directory.is_dir() or directory.is_symlink():
+                continue
+            pid = directory.name
+            if pid in active_ids:
+                continue
+
+            try:
+                mtime = directory.stat().st_mtime
+                if now_ts - mtime < min_age_seconds:
+                    # Modified recently; protect in-flight generation
+                    continue
+
+                # Check if project has an active claim or scheduled record in PublishStore
+                if store is not None and hasattr(store, "get"):
+                    meta_file = directory / "publish_metadata.json"
+                    if meta_file.is_file():
+                        try:
+                            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                            pdate = meta.get("publish_date") or meta.get("date")
+                            if pdate:
+                                from tools.publish_store import publish_key
+                                yt_rec = store.get(publish_key(pdate, pid, "youtube", "short"))
+                                if yt_rec and yt_rec.get("status") in ("scheduled", "published"):
+                                    continue
+                        except Exception:
+                            pass
+
+                # Verify if this is an errored/incomplete project
+                vstatus_file = directory / "validation_status.json"
+                is_failed_validation = False
+                if vstatus_file.is_file():
+                    try:
+                        v_data = json.loads(vstatus_file.read_text(encoding="utf-8"))
+                        last = v_data[-1] if isinstance(v_data, list) and v_data else v_data
+                        if isinstance(last, dict) and (last.get("status") != "PASS" or not last.get("strict_quality_pass")):
+                            is_failed_validation = True
+                    except Exception:
+                        is_failed_validation = True
+
+                has_renders = (directory / "renders" / "final_reels_vi_9x16.mp4").is_file()
+                has_meta = (directory / "publish_metadata.json").is_file()
+
+                # If validation failed, or if it has no metadata and no renders (abandoned early research)
+                if is_failed_validation or (not has_meta and not has_renders):
+                    if apply:
+                        shutil.rmtree(directory)
+                        print(f"REMOVED_TRASH: {location}/{pid} (errored/abandoned project)")
+                    else:
+                        print(f"DRY_RUN_TRASH: would remove {location}/{pid} (errored/abandoned project)")
+                    removed_count += 1
+            except Exception as e:
+                print(f"ERROR: inspecting candidate {pid}: {e}")
+
+    return removed_count
+
+
+def sweep(*, apply: bool = False, store=None, clear_trash: bool = True) -> int:
     """Delegate every mutation to the existing locked reconciliation/delete boundary."""
-    # Read inventory before constructing the store; malformed queue fails closed.
+    # 1. Clean trash (errored and quarantined recovery)
+    if clear_trash:
+        clear_project_trash(publisher.ROOT, apply=apply, store=store)
+
+    # 2. Reconcile and clean published projects
     candidates = list(candidate_dates(publisher.ROOT))
     if not candidates:
         print("No dated candidate directories found")
@@ -89,10 +202,15 @@ def sweep(*, apply: bool = False, store=None) -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--apply", action="store_true", help="Reconcile and remove only verified published projects")
+    mode.add_argument("--apply", action="store_true", help="Reconcile and remove only verified published projects and trash")
     mode.add_argument("--dry-run", action="store_true", help="Read-only inspection (default; no reconciliation)")
+    mode.add_argument("--clear-trash-only", action="store_true", help="Only clear errored projects and failed generation trash")
     args = parser.parse_args(argv)
     try:
+        if args.clear_trash_only:
+            count = clear_project_trash(publisher.ROOT, apply=True)
+            print(f"Cleared {count} trash items")
+            return 0
         return sweep(apply=args.apply)
     except Exception as exc:
         print(f"ERROR: sweep blocked ({type(exc).__name__}); no further cleanup attempted")

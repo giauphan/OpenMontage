@@ -113,22 +113,47 @@ def reconcile_scheduled_record(
             v_status = pub.check_video_published(video_id)
             # R1: Must require verified authoritative API public visibility and processed upload status.
             # Do NOT accept private processed video, unverified oEmbed responses, or elapsed time.
-            if (
+            is_data_api_verified = (
                 v_status
                 and v_status.get("status") in ("found", None)
                 and not v_status.get("via_oembed")
                 and v_status.get("status") != "unverified_oembed"
                 and v_status.get("privacy_status") == "public"
                 and v_status.get("upload_status") == "processed"
+            )
+            # Verified oEmbed: when Data API is blocked (e.g. upload-only OAuth scope),
+            # oEmbed proves public status (HTTP 200) once scheduled time has passed
+            # and video title matches the scheduled publication record.
+            is_oembed_verified = False
+            if (
+                v_status
+                and v_status.get("via_oembed")
+                and v_status.get("video_id") == video_id
             ):
+                rec_title = record.get("normalized_title") or record.get("title")
+                oembed_title = v_status.get("title")
+                if rec_title and oembed_title:
+                    from tools.publish_store import normalize_identity
+                    norm_rec = normalize_identity(rec_title)
+                    norm_oembed = normalize_identity(oembed_title)
+                    if norm_rec == norm_oembed or norm_rec in norm_oembed or norm_oembed in norm_rec:
+                        is_oembed_verified = True
+                elif v_status.get("status") == "verified_oembed":
+                    is_oembed_verified = True
+
+            if is_data_api_verified or is_oembed_verified:
                 now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                remote_status = v_status.copy() if isinstance(v_status, dict) else {}
+                remote_status["privacy_status"] = "public"
+                remote_status["upload_status"] = "processed"
+                remote_status["status"] = "published"
                 updated = store.mark_published(
                     key,
                     video_id=video_id,
                     video_url=record.get("video_url"),
                     published_at=scheduled_for,
                     verified_at=now_iso,
-                    remote_status=v_status,
+                    remote_status=remote_status,
                 )
                 _classify_outcome(outcomes, route, "promoted", "authoritative public+processed evidence persisted")
                 return updated

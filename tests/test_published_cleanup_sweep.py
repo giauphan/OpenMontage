@@ -209,3 +209,50 @@ def test_cli_defaults_to_inspection(monkeypatch):
     monkeypatch.setattr(cleanup, "sweep", sweep)
     assert cleanup.main([]) == 0
     sweep.assert_called_once_with(apply=False)
+
+
+def test_clear_project_trash_removes_quarantined_and_errored(sandbox):
+    import os
+    import time
+    root, config = sandbox
+
+    # 1. Quarantined dir older than min_age -> should be removed
+    recovered_dir = root / "projects" / "_failed_generation_recovered"
+    recovered_dir.mkdir(parents=True)
+    old_recovered = recovered_dir / "cand_old_recovered"
+    old_recovered.mkdir()
+    (old_recovered / "failed.txt").write_text("failed")
+    # Set mtime to 3 hours ago
+    past_ts = time.time() - 3600 * 3
+    os.utime(old_recovered, (past_ts, past_ts))
+
+    # 2. Errored un-quarantined candidate with failed validation older than min_age -> should be removed
+    cand_failed = root / "projects" / "cand_failed_validation"
+    cand_failed.mkdir()
+    (cand_failed / "validation_status.json").write_text(json.dumps([{"status": "FAIL", "strict_quality_pass": False}]))
+    os.utime(cand_failed, (past_ts, past_ts))
+
+    # 3. Active project -> must be preserved even if old
+    active_cand, _ = project(root)
+    assert active_cand.exists()
+    os.utime(active_cand, (past_ts, past_ts))
+
+    # 4. Recently modified candidate (< 2 hours) -> must be preserved (protect in-flight work)
+    cand_recent = root / "projects" / "cand_recent_work"
+    cand_recent.mkdir()
+    (cand_recent / "validation_status.json").write_text(json.dumps([{"status": "FAIL", "strict_quality_pass": False}]))
+
+    # Run dry-run trash clean
+    dry_count = cleanup.clear_project_trash(root, apply=False, min_age_minutes=120)
+    assert dry_count == 2
+    assert old_recovered.exists()
+    assert cand_failed.exists()
+
+    # Run apply trash clean
+    apply_count = cleanup.clear_project_trash(root, apply=True, min_age_minutes=120)
+    assert apply_count == 2
+    assert not old_recovered.exists()
+    assert not cand_failed.exists()
+    assert active_cand.exists()
+    assert cand_recent.exists()
+
