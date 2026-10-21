@@ -69,35 +69,7 @@ cat << 'EOF' > "$PROJECT_DIR/artifacts/research_brief.json"
 }
 EOF
 
-# 4. Write news_evidence.json
-cat << 'EOF' > "$PROJECT_DIR/artifacts/news_evidence.json"
-{
-  "version": "2.0",
-  "script_sha256": "us_pipeline_test_evidence_sha",
-  "claims": [
-    {
-      "section_id": "intro",
-      "claim": "OpenMontage activates autonomous high quality video generation natively in Docker for the US audience.",
-      "classification": "reported_fact",
-      "consequential": false,
-      "source_ids": ["s1"],
-      "reviewer": "Automated Quality Gate",
-      "reviewed_at": "2026-10-21T14:00:00Z",
-      "review_status": "approved"
-    }
-  ],
-  "sources": [
-    {
-      "source_id": "s1",
-      "title": "Autonomous AI Video Generation at Scale",
-      "url": "https://example.com/ai-video",
-      "published_at": "2026-10-21T12:00:00Z"
-    }
-  ]
-}
-EOF
-
-# 5. Write script_en_US.json
+# 4. Write script_en_US.json
 cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
 {
   "title": "AI Video Generation Pipeline Test",
@@ -119,6 +91,9 @@ cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
   ]
 }
 EOF
+
+# 5. Automatically bind valid news evidence and source files to script
+python3 "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"
 
 # 6. Write narration_en_US_text.txt
 cat << 'EOF' > "$PROJECT_DIR/artifacts/narration_en_US_text.txt"
