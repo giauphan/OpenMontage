@@ -74,7 +74,7 @@ cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
 {
   "version": "1.0",
   "title": "AI Video Generation Pipeline Test",
-  "total_duration_seconds": 12.0,
+  "total_duration_seconds": 18.0,
   "metadata": {
     "locale": "en-US"
   },
@@ -88,10 +88,17 @@ cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
     },
     {
       "id": "scene-2",
-      "label": "Native 1080x1920",
+      "label": "Deterministic Renders",
       "text": "Every frame is rendered deterministically with full audio and visual validation.",
       "start_seconds": 6.0,
       "end_seconds": 12.0
+    },
+    {
+      "id": "scene-3",
+      "label": "Reliable Delivery",
+      "text": "Automated pipelines ensure reliable production and seamless delivery across modern video platforms.",
+      "start_seconds": 12.0,
+      "end_seconds": 18.0
     }
   ]
 }
@@ -102,7 +109,7 @@ python3 "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"
 
 # 6. Write narration_en_US_text.txt
 cat << 'EOF' > "$PROJECT_DIR/artifacts/narration_en_US_text.txt"
-OpenMontage activates native video generation in Docker for the US market. Every frame is rendered deterministically with full audio and visual validation.
+OpenMontage activates native video generation in Docker for the US market. Every frame is rendered deterministically with full audio and visual validation. Automated pipelines ensure reliable production and seamless delivery across modern video platforms.
 EOF
 
 # 7. Copy music and audio assets if available
@@ -153,10 +160,10 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
   </style>
 </head>
 <body>
-  <div id="main" data-composition-id="main" data-start="0" data-duration="12" data-width="1920" data-height="1080">
+  <div id="main" data-composition-id="main" data-start="0" data-duration="18" data-width="1920" data-height="1080">
     <div class="bg-gradient"></div>
-    <audio id="narration" class="clip" data-start="0" data-duration="12" data-track-index="10" data-volume="1" src="assets/narration.mp3"></audio>
-    <audio id="music-bg" class="clip" data-start="0" data-duration="12" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
+    <audio id="narration" class="clip" data-start="0" data-duration="18" data-track-index="10" data-volume="1" src="assets/narration.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="18" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
 
     <section id="scene-1" class="clip" data-start="0" data-duration="6" data-track-index="1">
       <div class="scene-box">
@@ -173,6 +180,14 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
         <p class="body-copy">Every frame is rendered deterministically with full audio and visual validation.</p>
       </div>
     </section>
+
+    <section id="scene-3" class="clip" data-start="12" data-duration="6" data-track-index="3">
+      <div class="scene-box">
+        <span class="tag">RELIABLE PIPELINE</span>
+        <h1 class="headline">Continuous Delivery</h1>
+        <p class="body-copy">Automated pipelines ensure reliable production and seamless delivery across modern video platforms.</p>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -183,6 +198,9 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
       tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 5.6);
       tl.set('#scene-1 .scene-box', { opacity: 0 }, 6.0);
       tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 6.2);
+      tl.to('#scene-2 .scene-box', { opacity: 0, duration: 0.4 }, 11.6);
+      tl.set('#scene-2 .scene-box', { opacity: 0 }, 12.0);
+      tl.from('#scene-3 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 12.2);
       window.__timelines['main'] = tl;
     })();
   </script>
@@ -216,10 +234,10 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
   </style>
 </head>
 <body>
-  <div id="main" data-composition-id="main" data-start="0" data-duration="12" data-width="1080" data-height="1920">
+  <div id="main" data-composition-id="main" data-start="0" data-duration="18" data-width="1080" data-height="1920">
     <div class="bg-gradient"></div>
-    <audio id="narration" class="clip" data-start="0" data-duration="12" data-track-index="10" data-volume="1" src="assets/narration_reels.mp3"></audio>
-    <audio id="music-bg" class="clip" data-start="0" data-duration="12" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
+    <audio id="narration" class="clip" data-start="0" data-duration="18" data-track-index="10" data-volume="1" src="assets/narration_reels.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="18" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
 
     <section id="scene-1" class="clip" data-start="0" data-duration="6" data-track-index="1">
       <div class="scene-box">
@@ -236,6 +254,14 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
         <p class="body-copy">Every frame is rendered deterministically with full audio and visual validation.</p>
       </div>
     </section>
+
+    <section id="scene-3" class="clip" data-start="12" data-duration="6" data-track-index="3">
+      <div class="scene-box">
+        <span class="tag">RELIABLE PIPELINE</span>
+        <h1 class="headline">Continuous Delivery</h1>
+        <p class="body-copy">Automated pipelines ensure reliable production and seamless delivery across modern video platforms.</p>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -246,6 +272,9 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
       tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 5.6);
       tl.set('#scene-1 .scene-box', { opacity: 0 }, 6.0);
       tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 6.2);
+      tl.to('#scene-2 .scene-box', { opacity: 0, duration: 0.4 }, 11.6);
+      tl.set('#scene-2 .scene-box', { opacity: 0 }, 12.0);
+      tl.from('#scene-3 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 12.2);
       window.__timelines['main'] = tl;
     })();
   </script>
