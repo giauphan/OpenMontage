@@ -14,8 +14,40 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-BROWSER_PATH = Path("/home/ubuntu/.cache/ms-playwright/chromium_headless_shell-1228/chrome-linux/headless_shell")
-HYPERFRAMES_BIN = ROOT / "node_modules" / ".bin" / "hyperframes"
+
+
+def _resolve_browser_path() -> Path:
+    env_path = os.environ.get("HYPERFRAMES_BROWSER_PATH")
+    if env_path:
+        return Path(env_path)
+    user_cache = Path.home() / ".cache" / "ms-playwright"
+    shells = list(user_cache.glob("chromium_headless_shell-*/chrome-linux/headless_shell"))
+    if shells and shells[0].is_file():
+        return shells[0]
+    legacy = Path("/home/ubuntu/.cache/ms-playwright/chromium_headless_shell-1228/chrome-linux/headless_shell")
+    if legacy.is_file():
+        return legacy
+    return Path("/nonexistent/headless_shell")
+
+
+def _resolve_hyperframes_bin() -> Path:
+    env_bin = os.environ.get("HYPERFRAMES_BIN")
+    if env_bin:
+        return Path(env_bin)
+    which_bin = shutil.which("hyperframes")
+    if which_bin and Path(which_bin).is_file():
+        return Path(which_bin)
+    repo_bin = ROOT / "node_modules" / ".bin" / "hyperframes"
+    if repo_bin.is_file():
+        return repo_bin
+    return repo_bin
+
+
+BROWSER_PATH = _resolve_browser_path()
+HYPERFRAMES_BIN = _resolve_hyperframes_bin()
+
+_CAN_RENDER = HYPERFRAMES_BIN.is_file() and BROWSER_PATH.is_file()
+_PRE_RENDERED_SAMPLE = Path("/tmp/test_explainer_render/out.mp4").is_file()
 
 
 def _sha256_file(p: Path) -> str:
@@ -27,7 +59,7 @@ def _sha256_file(p: Path) -> str:
 
 
 @pytest.mark.skipif(
-    not HYPERFRAMES_BIN.is_file() or not BROWSER_PATH.is_file(),
+    not _CAN_RENDER,
     reason="HyperFrames and chrome-headless-shell required for real render test",
 )
 def test_t09_hyperframes_seek_determinism(tmp_path: Path):
@@ -99,10 +131,16 @@ def test_t09_hyperframes_seek_determinism(tmp_path: Path):
     assert hash_0 != hash_1, "Expected visual change between Scene 1 (2s) and Scene 2 (12s) snapshots"
 
 
+@pytest.mark.skipif(
+    not (_PRE_RENDERED_SAMPLE or _CAN_RENDER),
+    reason="HyperFrames and chrome-headless-shell (or pre-rendered sample) required for real render test",
+)
 def test_t09_real_render_mp4_integrity(tmp_path: Path):
     """T09: Verify real MP4 render stream has correct 1080x1920 geometry, audio, and valid pixels."""
     mp4_path = Path("/tmp/test_explainer_render/out.mp4")
     if not mp4_path.is_file():
+        if not _CAN_RENDER:
+            pytest.skip("HyperFrames and chrome-headless-shell required to render test sample")
         # Render a short sample to tmp_path to verify stream integrity self-contained
         from scripts.materialize_news_template import materialize
         fixture_path = ROOT / "tests" / "news_visual" / "fixtures" / "demonode_visual_explainer.json"

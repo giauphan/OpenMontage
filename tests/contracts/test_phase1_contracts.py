@@ -140,7 +140,7 @@ class TestPhase1ToolDiscovery:
 # ---- Contract: SubtitleGen produces valid output without FFmpeg ----
 
 class TestSubtitleGenUnit:
-    def test_srt_generation(self):
+    def test_srt_generation(self, tmp_path: Path):
         segments = [
             {
                 "text": "Hello world",
@@ -163,11 +163,12 @@ class TestSubtitleGenUnit:
                 ],
             },
         ]
+        out_file = tmp_path / "test_output.srt"
         tool = SubtitleGen()
         result = tool.execute({
             "segments": segments,
             "format": "srt",
-            "output_path": "test_output.srt",
+            "output_path": str(out_file),
         })
         assert result.success
         assert len(result.artifacts) == 1
@@ -175,10 +176,8 @@ class TestSubtitleGenUnit:
         content = Path(result.artifacts[0]).read_text()
         assert "-->" in content
         assert "Hello world" in content
-        # Cleanup
-        Path(result.artifacts[0]).unlink(missing_ok=True)
 
-    def test_vtt_generation(self):
+    def test_vtt_generation(self, tmp_path: Path):
         segments = [
             {
                 "text": "Test cue",
@@ -190,18 +189,18 @@ class TestSubtitleGenUnit:
                 ],
             },
         ]
+        out_file = tmp_path / "test_output.vtt"
         tool = SubtitleGen()
         result = tool.execute({
             "segments": segments,
             "format": "vtt",
-            "output_path": "test_output.vtt",
+            "output_path": str(out_file),
         })
         assert result.success
         content = Path(result.artifacts[0]).read_text()
         assert content.startswith("WEBVTT")
-        Path(result.artifacts[0]).unlink(missing_ok=True)
 
-    def test_json_generation(self):
+    def test_json_generation(self, tmp_path: Path):
         segments = [
             {
                 "text": "JSON test",
@@ -213,50 +212,50 @@ class TestSubtitleGenUnit:
                 ],
             },
         ]
+        out_file = tmp_path / "test_output.caption.json"
         tool = SubtitleGen()
         result = tool.execute({
             "segments": segments,
             "format": "json",
-            "output_path": "test_output.caption.json",
+            "output_path": str(out_file),
         })
         assert result.success
         data = json.loads(Path(result.artifacts[0]).read_text())
         assert "cues" in data
         assert len(data["cues"]) >= 1
-        Path(result.artifacts[0]).unlink(missing_ok=True)
 
-    def test_word_grouping_respects_max_words(self):
+    def test_word_grouping_respects_max_words(self, tmp_path: Path):
         words = [{"word": f"w{i}", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(20)]
         segments = [{"text": " ".join(w["word"] for w in words), "start": 0.0, "end": 10.0, "words": words}]
 
+        out_file = tmp_path / "test_grouping.caption.json"
         tool = SubtitleGen()
         result = tool.execute({
             "segments": segments,
             "format": "json",
             "max_words_per_cue": 4,
-            "output_path": "test_grouping.caption.json",
+            "output_path": str(out_file),
         })
         assert result.success
         data = json.loads(Path(result.artifacts[0]).read_text())
         for cue in data["cues"]:
             assert len(cue["words"]) <= 4
-        Path(result.artifacts[0]).unlink(missing_ok=True)
 
-    def test_segment_fallback_without_words(self):
+    def test_segment_fallback_without_words(self, tmp_path: Path):
         """Segments without word-level timestamps use segment-level timing."""
         segments = [
             {"text": "No word data", "start": 0.0, "end": 2.0},
         ]
+        out_file = tmp_path / "test_fallback.srt"
         tool = SubtitleGen()
         result = tool.execute({
             "segments": segments,
             "format": "srt",
-            "output_path": "test_fallback.srt",
+            "output_path": str(out_file),
         })
         assert result.success
         content = Path(result.artifacts[0]).read_text()
         assert "No word data" in content
-        Path(result.artifacts[0]).unlink(missing_ok=True)
 
 
 # ---- Contract: missing input file returns error, not crash ----
