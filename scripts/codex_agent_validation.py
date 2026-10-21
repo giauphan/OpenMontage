@@ -1164,7 +1164,14 @@ class CodexAgentValidator:
 
 
 
-        script_path = self.project_dir / "artifacts" / "script_vi.json"
+        if (self.project_dir / "artifacts" / "script_en_US.json").is_file():
+            script_path = self.project_dir / "artifacts" / "script_en_US.json"
+        elif (self.project_dir / "artifacts" / "script_vi.json").is_file():
+            script_path = self.project_dir / "artifacts" / "script_vi.json"
+        elif (self.project_dir / "artifacts" / "script.json").is_file():
+            script_path = self.project_dir / "artifacts" / "script.json"
+        else:
+            script_path = self.project_dir / "artifacts" / "script_en_US.json"
         comp_summary = "Composition: not found"
         comp_text = ""
         if comp_path.is_file():

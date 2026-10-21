@@ -1098,7 +1098,11 @@ if [ "$FEED_STALE" -eq 1 ]; then
 fi
 
 # Step 4: Create publish_metadata.json
-TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+if [ "$is_en" -eq 1 ]; then
+  TITLE=$(jq -r '.title // empty' artifacts/script_en_US.json 2>/dev/null || echo "")
+else
+  TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+fi
 if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 fi
@@ -1106,10 +1110,17 @@ if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
 fi
 
-# Ensure title contains required hashtags (#tintuc #congnghe #ai)
-if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
-  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
-  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+# Ensure title contains required hashtags (#ai #tech for en-US; #tintuc #congnghe #ai for vi-VN)
+if [ "$is_en" -eq 1 ]; then
+  if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  fi
+else
+  if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  fi
 fi
 # Safeguard: ensure it fits within 100 chars for YT Shorts
 if [ ${#TITLE} -gt 100 ]; then
