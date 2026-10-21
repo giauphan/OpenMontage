@@ -139,6 +139,16 @@ def resolve_narration_text_path(
     return artifacts / "narration_vi_text.txt"
 
 
+def resolve_render_paths(
+    project_dir: str | Path,
+    locale: str | None = None,
+) -> tuple[Path, Path]:
+    """Return tuple of (full_render_path, reels_render_path)."""
+    full = resolve_render_path(project_dir, format_type="full", locale=locale)
+    reels = resolve_render_path(project_dir, format_type="reels", locale=locale)
+    return full, reels
+
+
 def resolve_render_path(
     project_dir: str | Path,
     format_type: str = "short",

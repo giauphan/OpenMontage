@@ -73,7 +73,7 @@ fi
 
 export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 export PYTHONPATH="$ROOT"
-export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
+export PUBLISH_TZ="${PUBLISH_TZ:-America/New_York}"
 # Templated news path: when 1, projects must carry a template selection +
 # typed content instance and compositions are materialized deterministically
 # from the approved package (no free-form HTML, no repair/sed mutation).
@@ -719,8 +719,23 @@ materialize_hyperframes_assets() {
   local project_root="$1"
   local narration="$project_root/assets/narration.mp3"
   local reels_narration="$project_root/assets/narration_reels.mp3"
-  local narration_text="$project_root/artifacts/narration_vi_text.txt"
-  local script_json="$project_root/artifacts/script_vi.json"
+  local locale
+  locale="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$project_root')))" 2>/dev/null || echo "en-US")"
+  local is_en=1
+  if [ "$locale" = "vi-VN" ]; then is_en=0; fi
+
+  local narration_text
+  local script_json
+  local default_voice
+  if [ "$is_en" -eq 1 ]; then
+    narration_text="$project_root/artifacts/narration_en_US_text.txt"
+    script_json="$project_root/artifacts/script_en_US.json"
+    default_voice="${TTS_VOICE:-en-US-ChristopherNeural}"
+  else
+    narration_text="$project_root/artifacts/narration_vi_text.txt"
+    script_json="$project_root/artifacts/script_vi.json"
+    default_voice="vi-VN-HoaiMyNeural"
+  fi
   if [ ! -s "$script_json" ] && [ -s "$project_root/artifacts/script.json" ]; then script_json="$project_root/artifacts/script.json"; fi
   local script_spoken="$project_root/04_audio/script_spoken.md"
   local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
@@ -746,7 +761,11 @@ materialize_hyperframes_assets() {
     cp "$project_root/assets/voice/narration.mp3" "$narration"
   fi
   if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
-    jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .narration_vi // .text // .narration // empty] | join(" ") else (.text_vi // .narration_vi // .text // .narration // .script // empty) end' "$script_json" > "$narration_text"
+    if [ "$is_en" -eq 1 ]; then
+      jq -r 'if (.sections // null) then [.sections[]? | .narration // .text // empty] | join(" ") elif (.scenes // null) then [.scenes[]? | .narration // .text // empty] | join(" ") else (.narration // .text // .script // empty) end' "$script_json" > "$narration_text"
+    else
+      jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .narration_vi // .text // .narration // empty] | join(" ") else (.text_vi // .narration_vi // .text // .narration // .script // empty) end' "$script_json" > "$narration_text"
+    fi
   fi
   if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
     tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
@@ -760,8 +779,12 @@ materialize_hyperframes_assets() {
     narration_stale=1
   fi
   if [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
-    "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-    edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+    if [ "$is_en" -eq 1 ]; then
+      edge-tts --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
+    else
+      "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
+      edge-tts --voice "$default_voice" --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+    fi
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
 
@@ -876,11 +899,18 @@ else
   sed -i 's|\.\./assets/|assets/|g' "$FULL_COMP/index.html" "$REELS_COMP/index.html"
 fi
 
-rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+if [ "$is_en" -eq 1 ]; then
+  FULL_RENDER_PATH="renders/final_long_en_US_16x9.mp4"
+  REELS_RENDER_PATH="renders/final_short_en_US_9x16.mp4"
+else
+  FULL_RENDER_PATH="renders/final_full_vi_9x16.mp4"
+  REELS_RENDER_PATH="renders/final_reels_vi_9x16.mp4"
+fi
+rm -f "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"
 set +e
-"$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
+"$HYPERFRAMES_BIN" render "$FULL_COMP" --output "$FULL_RENDER_PATH"
 RENDER_FULL_EXIT=$?
-"$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
+"$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
 RENDER_REELS_EXIT=$?
 set -e
 if [ "$RENDER_FULL_EXIT" -ne 0 ] || [ "$RENDER_REELS_EXIT" -ne 0 ]; then
@@ -926,7 +956,7 @@ fi
 
 # Check if videos exist
 RENDER_MISSING=0
-for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
+for render in "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"; do
   if [ ! -s "$render" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render for $PROJECT_ID" >&2
     RENDER_MISSING=1
@@ -939,7 +969,7 @@ if [ $RENDER_MISSING -ne 0 ]; then
 fi
 
 # Step 2: Create publish_metadata.json first (needed for Codex validation)
-TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+TITLE=$(jq -r '.title // empty' "$script_json" 2>/dev/null || echo "")
 if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 fi
@@ -948,21 +978,30 @@ if [ -z "$TITLE" ]; then
 fi
 
 # Ensure title contains required hashtags
-if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
-  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
-  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+if [ "$is_en" -eq 1 ]; then
+  if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  fi
+else
+  if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  fi
 fi
 
 # Create publish_metadata.json for validation
-if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" ]; then
+if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$FULL_RENDER_PATH" ]; then
   jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
-  --arg desc "$(jq -r '.description // ""' artifacts/script_vi.json 2>/dev/null || echo "")" \
-  --arg yt_shorts "renders/final_reels_vi_9x16.mp4" \
-  --arg tiktok "renders/final_full_vi_9x16.mp4" \
-  --arg fb_video "renders/final_full_vi_9x16.mp4" \
-  --arg ig_reels "renders/final_reels_vi_9x16.mp4" \
+  --arg desc "$(jq -r '.description // ""' "$script_json" 2>/dev/null || echo "")" \
+  --arg yt_shorts "$REELS_RENDER_PATH" \
+  --arg tiktok "$FULL_RENDER_PATH" \
+  --arg fb_video "$FULL_RENDER_PATH" \
+  --arg ig_reels "$REELS_RENDER_PATH" \
+  --arg locale "$locale" \
+  --arg format "short" \
   --argjson feed_stale "$FEED_STALE" \
   '{
     id: $id,
@@ -973,6 +1012,8 @@ if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/r
     tiktok: $tiktok,
     fb_video: $fb_video,
     ig_reels: $ig_reels,
+    locale: $locale,
+    format: $format,
     feed_stale: $feed_stale
   }' > "$PROJECT_DIR/publish_metadata.json"
 else
@@ -1079,10 +1120,17 @@ fi
 if [ -n "$CONCEPT_CTA" ]; then
   if [ -n "$DESCRIPTION" ]; then DESCRIPTION="$DESCRIPTION. $CONCEPT_CTA"; else DESCRIPTION="$CONCEPT_CTA"; fi
 fi
-if [ -z "$DESCRIPTION" ]; then
-  DESCRIPTION="Điểm tin công nghệ AI mới nhất."
+if [ "$is_en" -eq 1 ]; then
+  if [ -z "$DESCRIPTION" ]; then
+    DESCRIPTION="Latest AI technology and engineering breakdown."
+  fi
+  DESCRIPTION="$DESCRIPTION"$'\n\n'"#ai #tech #anthropic #claude"
+else
+  if [ -z "$DESCRIPTION" ]; then
+    DESCRIPTION="Điểm tin công nghệ AI mới nhất."
+  fi
+  DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai #vietnam"
 fi
-DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai #vietnam"
 
 # On the templated path, bind template provenance into the publish metadata so
 # downstream tooling can carry the deterministic composition + content hashes.
@@ -1101,6 +1149,10 @@ jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
   --arg description "$DESCRIPTION" \
+  --arg yt_shorts "$REELS_RENDER_PATH" \
+  --arg tiktok "$FULL_RENDER_PATH" \
+  --arg fb_video "$FULL_RENDER_PATH" \
+  --arg ig_reels "$REELS_RENDER_PATH" \
   --argjson feed_stale "$FEED_STALE" \
   --argjson template_prov "$TEMPLATE_PROV_JSON" \
   '{
@@ -1108,19 +1160,19 @@ jq -n \
     topic: $title,
     title: $title,
     description: $description,
-    yt_shorts: "renders/final_reels_vi_9x16.mp4",
-    tiktok: "renders/final_full_vi_9x16.mp4",
-    fb_video: "renders/final_full_vi_9x16.mp4",
-    ig_reels: "renders/final_reels_vi_9x16.mp4",
+    yt_shorts: $yt_shorts,
+    tiktok: $tiktok,
+    fb_video: $fb_video,
+    ig_reels: $ig_reels,
     feed_stale: $feed_stale
   } + (if ($template_prov|length) > 0 then $template_prov else {} end)' > publish_metadata.json
 
 # Step 4.5: Run copyright preflight (if files exist)
-if [ -f "renders/final_full_vi_9x16.mp4" ]; then
-  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_full_vi_9x16.mp4"
+if [ -f "$FULL_RENDER_PATH" ]; then
+  "$PY" "$ROOT/scripts/check_copyright.py" "$FULL_RENDER_PATH"
 fi
-if [ -f "renders/final_reels_vi_9x16.mp4" ]; then
-  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_reels_vi_9x16.mp4"
+if [ -f "$REELS_RENDER_PATH" ]; then
+  "$PY" "$ROOT/scripts/check_copyright.py" "$REELS_RENDER_PATH"
 fi
 
 SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))

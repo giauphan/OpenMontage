@@ -168,10 +168,17 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         "narration_reels.mp3" if platform in ("youtube", "instagram") else "narration.mp3",
         "narration.mp3",
     )
-    narration_text = project_dir / "artifacts" / "narration_vi_text.txt"
+    from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_narration_text_path
+    from lib.language_validation import get_language_validator
+    locale = resolve_project_locale(project_dir)
+    narration_text = resolve_narration_text_path(project_dir, locale=locale)
     if not narration_text.is_file():
         raise ValueError(f"missing narration text: {narration_text}")
-    language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
+    if is_english_locale(locale):
+        validator = get_language_validator(locale)
+        language_errors = validator.validate_prose(narration_text.read_text(encoding="utf-8"))
+    else:
+        language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
     if language_errors:
         raise ValueError("; ".join(language_errors))
     errors = validate_video(
@@ -185,6 +192,7 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         60.0 if platform in ("youtube", "instagram") else None,
         narration_text if narration_text.is_file() else None,
         strict=strict,
+        locale=locale,
     )
     if errors:
         raise ValueError("\n".join(errors))
@@ -220,14 +228,14 @@ def get_required_routes_for_project(
 
     has_ig = bool(meta and meta.get("ig_reels"))
     if not has_ig and pdir:
-        has_ig = (pdir / "renders" / "final_reels_vi_9x16.mp4").is_file()
+        has_ig = (pdir / "renders" / "final_short_en_US_9x16.mp4").is_file() or (pdir / "renders" / "final_reels_vi_9x16.mp4").is_file()
     if has_ig or not meta:
         routes.append(("instagram", "reels"))
 
     if facebook_enabled:
         has_fb = bool(meta and (meta.get("fb_video") or meta.get("fb_reels")))
         if not has_fb and pdir:
-            has_fb = (pdir / "renders" / "final_full_vi_9x16.mp4").is_file()
+            has_fb = (pdir / "renders" / "final_long_en_US_16x9.mp4").is_file() or (pdir / "renders" / "final_full_vi_9x16.mp4").is_file()
         if has_fb or not meta:
             routes.append(("facebook", "reels"))
 

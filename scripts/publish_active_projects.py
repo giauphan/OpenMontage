@@ -196,7 +196,7 @@ def write_audit_tombstone(
         hashes = dict(media_hashes) if media_hashes else {}
         if not hashes and project_dir.is_dir():
             from tools.publish_store import file_sha256
-            for render_name in ["final_reels_vi_9x16.mp4", "final_full_vi_9x16.mp4"]:
+            for render_name in ["final_short_en_US_9x16.mp4", "final_long_en_US_16x9.mp4", "final_reels_vi_9x16.mp4", "final_full_vi_9x16.mp4"]:
                 rf = project_dir / "renders" / render_name
                 if rf.is_file():
                     hashes[render_name] = file_sha256(rf)
@@ -421,7 +421,7 @@ def deactivate_project(
         media_hashes = {}
         if resolved_dir.is_dir():
             from tools.publish_store import file_sha256
-            for render_name in ["final_reels_vi_9x16.mp4", "final_full_vi_9x16.mp4"]:
+            for render_name in ["final_short_en_US_9x16.mp4", "final_long_en_US_16x9.mp4", "final_reels_vi_9x16.mp4", "final_full_vi_9x16.mp4"]:
                 rf = resolved_dir / "renders" / render_name
                 if rf.is_file():
                     media_hashes[render_name] = file_sha256(rf)

@@ -100,7 +100,7 @@ def main():
     ap.add_argument("project_dir")
     ap.add_argument("--target", type=float, default=None)
     ap.add_argument("--tolerance", type=float, default=3.0)
-    ap.add_argument("--voice", default="vi-VN-HoaiMyNeural")
+    ap.add_argument("--voice", default=None)
     ap.add_argument("--max-rate", default="+40%")
     ap.add_argument(
         "--reels-only",
@@ -126,7 +126,16 @@ def main():
     if not project.is_dir():
         raise SystemExit(f"ERROR: {project} is not a directory")
 
-    script_name = "script_vi_reels.json" if args.reels_only else "script_vi.json"
+    from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths
+    locale = resolve_project_locale(project)
+    voice = args.voice
+    if not voice:
+        voice = "en-US-ChristopherNeural" if is_english_locale(locale) else "vi-VN-HoaiMyNeural"
+
+    if is_english_locale(locale):
+        script_name = "script_en_US.json"
+    else:
+        script_name = "script_vi_reels.json" if args.reels_only else "script_vi.json"
     text = load_script_text(project, script_name)
     warn(f"narration text derived: {len(text)} chars, {len(text.split())} words")
     contam = find_contamination(text)
@@ -230,11 +239,16 @@ def main():
             warn("render stderr tail: " + (r.stderr or "")[-400:])
             raise SystemExit(f"ERROR: render failed for {comp}")
 
-    if args.reels_only:
-        render("hyperframes_reels", "final_reels_vi_9x16.mp4")
+    if is_english_locale(locale):
+        full_name, reels_name = resolve_render_paths(project, locale=locale)
     else:
-        render("hyperframes", "final_full_vi_9x16.mp4")
-        render("hyperframes_reels", "final_reels_vi_9x16.mp4")
+        full_name, reels_name = "final_full_vi_9x16.mp4", "final_reels_vi_9x16.mp4"
+
+    if args.reels_only:
+        render("hyperframes_reels", reels_name)
+    else:
+        render("hyperframes", full_name)
+        render("hyperframes_reels", reels_name)
 
     qa_command = [
         sys.executable,

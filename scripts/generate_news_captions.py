@@ -57,8 +57,9 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
     words = transcript.get("word_timestamps")
     if not isinstance(words, list) or not words:
         raise RuntimeError(f"ASR returned no word timings for {audio_path}")
-    if transcript.get("language") not in ("vi", "vi-VN", "vie"):
-        raise RuntimeError(f"ASR did not identify Vietnamese speech for {audio_path}")
+    valid_languages = ("en", "en-US", "eng", "vi", "vi-VN", "vie")
+    if transcript.get("language") not in valid_languages:
+        raise RuntimeError(f"ASR did not identify supported speech language (got '{transcript.get('language')}') for {audio_path}")
 
     try:
         from scripts.generate_vn_subtitles import get_audio_duration
