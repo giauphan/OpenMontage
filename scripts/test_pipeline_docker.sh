@@ -74,24 +74,24 @@ cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
 {
   "version": "1.0",
   "title": "AI Video Generation Pipeline Test",
-  "locale": "en-US",
   "total_duration_seconds": 12.0,
+  "metadata": {
+    "locale": "en-US"
+  },
   "sections": [
     {
       "id": "scene-1",
-      "heading": "Autonomous Pipeline",
+      "label": "Autonomous Pipeline",
       "text": "OpenMontage activates native video generation in Docker for the US market.",
       "start_seconds": 0.0,
-      "end_seconds": 6.0,
-      "duration": 6.0
+      "end_seconds": 6.0
     },
     {
       "id": "scene-2",
-      "heading": "Native 1080x1920",
+      "label": "Native 1080x1920",
       "text": "Every frame is rendered deterministically with full audio and visual validation.",
       "start_seconds": 6.0,
-      "end_seconds": 12.0,
-      "duration": 6.0
+      "end_seconds": 12.0
     }
   ]
 }
