@@ -13,7 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-def generate_captions(audio_path, output_dir, *, transcriber=None, converter=None):
+def generate_captions(audio_path, output_dir, *, transcriber=None, converter=None, locale=None):
     """Transcribe this exact audio file and convert only measured ASR timings."""
     audio_path = Path(audio_path)
     output_dir = Path(output_dir)
@@ -22,6 +22,18 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
     transcript_text_path = output_dir / "transcript.txt"
     srt_path = output_dir / "subtitles.srt"
     timings_path = output_dir / "word_timestamps.json"
+
+    if locale is None:
+        try:
+            from lib.artifact_paths import resolve_project_locale
+            for candidate in (output_dir.parent.parent, output_dir.parent):
+                if (candidate / "project.json").is_file():
+                    locale = resolve_project_locale(candidate)
+                    break
+        except Exception:
+            pass
+
+    asr_language = "en" if locale and locale.startswith("en") else "vi"
 
     if transcriber is None:
         from tools.analysis.transcriber import Transcriber
@@ -34,20 +46,20 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
         result = transcriber.execute({
             "input_path": str(audio_path),
             "model_size": "small",
-            "language": "vi",
+            "language": asr_language,
             "diarize": False,
             "output_dir": str(output_dir),
             "local_files_only": True,
         })
     except Exception as exc:
         raise RuntimeError(
-            f"Cached-only Vietnamese transcription failed for {audio_path}: {exc}. "
+            f"Cached-only transcription failed for {audio_path}: {exc}. "
             "Ensure faster-whisper model 'small' is already cached on the render "
             "host; this pipeline will not download it."
         ) from exc
     if not result.success:
         raise RuntimeError(
-            "Cached-only Vietnamese transcription failed for "
+            "Cached-only transcription failed for "
             f"{audio_path}: {result.error}. Ensure faster-whisper model 'small' "
             "is already cached on the render host; this pipeline will not download it."
         )
@@ -120,9 +132,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("audio", type=Path)
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument("--locale", default=None, help="Target project locale")
     args = parser.parse_args(argv)
     try:
-        result = generate_captions(args.audio, args.output_dir)
+        result = generate_captions(args.audio, args.output_dir, locale=args.locale)
         print(f"Generated aligned captions: {result['srt']}")
         return 0
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:

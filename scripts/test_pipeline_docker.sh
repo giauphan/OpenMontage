@@ -69,12 +69,12 @@ cat << 'EOF' > "$PROJECT_DIR/artifacts/research_brief.json"
 }
 EOF
 
-# 4. Write script_en_US.json
+# 4. Write script_en_US.json (>= 60s 1-minute minimum video)
 cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
 {
   "version": "1.0",
-  "title": "AI Video Generation Pipeline Test",
-  "total_duration_seconds": 18.0,
+  "title": "Autonomous AI Video Generation at Scale",
+  "total_duration_seconds": 62.0,
   "metadata": {
     "locale": "en-US"
   },
@@ -82,23 +82,44 @@ cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
     {
       "id": "scene-1",
       "label": "Autonomous Pipeline",
-      "text": "OpenMontage activates native video generation in Docker for the US market.",
+      "text": "OpenMontage activates native video generation in Docker for the US market. Modern content demands fast, reliable rendering with deterministic precision across every scene.",
       "start_seconds": 0.0,
-      "end_seconds": 6.0
+      "end_seconds": 10.0
     },
     {
       "id": "scene-2",
       "label": "Deterministic Renders",
-      "text": "Every frame is rendered deterministically with full audio and visual validation.",
-      "start_seconds": 6.0,
-      "end_seconds": 12.0
+      "text": "HyperFrames renders high-definition web animations straight into studio-quality video. Every visual beat, font glyph, and audio layer is validated frame by frame.",
+      "start_seconds": 10.0,
+      "end_seconds": 20.0
     },
     {
       "id": "scene-3",
-      "label": "Reliable Delivery",
-      "text": "Automated pipelines ensure reliable production and seamless delivery across modern video platforms.",
-      "start_seconds": 12.0,
-      "end_seconds": 18.0
+      "label": "Synchronized Audio",
+      "text": "Speech-to-text models align spoken narration with on-screen subtitle cues in real time. Accurate timing ensures perfect comprehension and seamless mobile viewer engagement.",
+      "start_seconds": 20.0,
+      "end_seconds": 31.0
+    },
+    {
+      "id": "scene-4",
+      "label": "Strict QA Gates",
+      "text": "Automated inspection gates test stream integrity, color contrast, and audio clarity. Black-frame detection and decode verification ensure broadcast-grade reliability.",
+      "start_seconds": 31.0,
+      "end_seconds": 41.5
+    },
+    {
+      "id": "scene-5",
+      "label": "Omnichannel Delivery",
+      "text": "From widescreen YouTube broadcasts to vertical Shorts and Reels, dual-format compositions adapt seamlessly. Creators reach audiences across every platform with zero manual re-editing.",
+      "start_seconds": 41.5,
+      "end_seconds": 52.0
+    },
+    {
+      "id": "scene-6",
+      "label": "Continuous Scalability",
+      "text": "Scalable containerized pipelines empower teams to produce authoritative video content autonomously. OpenMontage delivers stability, speed, and uncompromising quality.",
+      "start_seconds": 52.0,
+      "end_seconds": 62.0
     }
   ]
 }
@@ -107,23 +128,16 @@ EOF
 # 5. Automatically bind valid news evidence and source files to script
 python3 "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"
 
-# 6. Write narration_en_US_text.txt
+# 6. Write narration_en_US_text.txt (~62 seconds of spoken English)
 cat << 'EOF' > "$PROJECT_DIR/artifacts/narration_en_US_text.txt"
-OpenMontage activates native video generation in Docker for the US market. Every frame is rendered deterministically with full audio and visual validation. Automated pipelines ensure reliable production and seamless delivery across modern video platforms.
+OpenMontage activates native video generation in Docker for the US market. Modern content demands fast, reliable rendering with deterministic precision across every scene. HyperFrames renders high-definition web animations straight into studio-quality video. Every visual beat, font glyph, and audio layer is validated frame by frame. Speech-to-text models align spoken narration with on-screen subtitle cues in real time. Accurate timing ensures perfect comprehension and seamless mobile viewer engagement. Automated inspection gates test stream integrity, color contrast, and audio clarity. Black-frame detection and decode verification ensure broadcast-grade reliability. From widescreen YouTube broadcasts to vertical Shorts and Reels, dual-format compositions adapt seamlessly. Creators reach audiences across every platform with zero manual re-editing. Scalable containerized pipelines empower teams to produce authoritative video content autonomously. OpenMontage delivers stability, speed, and uncompromising quality.
 EOF
 
-# 7. Copy music and audio assets if available
+# 7. Prepare looped background music asset (90s for full playback)
 if [ -s "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3" ]; then
-  cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3" "$PROJECT_DIR/assets/music-bg.mp3"
-  cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3" "$PROJECT_DIR/hyperframes/assets/music-bg.mp3"
-  cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3" "$PROJECT_DIR/hyperframes_reels/assets/music-bg.mp3"
-fi
-
-if [ -s "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/narration.mp3" ]; then
-  cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/narration.mp3" "$PROJECT_DIR/assets/narration.mp3"
-  cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/narration.mp3" "$PROJECT_DIR/hyperframes/assets/narration.mp3"
-  cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/narration.mp3" "$PROJECT_DIR/hyperframes_reels/assets/narration.mp3"
-  cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/narration.mp3" "$PROJECT_DIR/hyperframes_reels/assets/narration_reels.mp3"
+  ffmpeg -y -stream_loop 8 -i "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3" -t 90 -c copy "$PROJECT_DIR/assets/music-bg.mp3" 2>/dev/null || cp "$ROOT/artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3" "$PROJECT_DIR/assets/music-bg.mp3"
+  cp "$PROJECT_DIR/assets/music-bg.mp3" "$PROJECT_DIR/hyperframes/assets/music-bg.mp3"
+  cp "$PROJECT_DIR/assets/music-bg.mp3" "$PROJECT_DIR/hyperframes_reels/assets/music-bg.mp3"
 fi
 
 # 8. Copy fonts if available
@@ -160,32 +174,56 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
   </style>
 </head>
 <body>
-  <div id="main" data-composition-id="main" data-start="0" data-duration="18" data-width="1920" data-height="1080">
+  <div id="main" data-composition-id="main" data-start="0" data-duration="62" data-width="1920" data-height="1080">
     <div class="bg-gradient"></div>
-    <audio id="narration" class="clip" data-start="0" data-duration="18" data-track-index="10" data-volume="1" src="assets/narration.mp3"></audio>
-    <audio id="music-bg" class="clip" data-start="0" data-duration="18" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
+    <audio id="narration" class="clip" data-start="0" data-duration="62" data-track-index="10" data-volume="1" src="assets/narration.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="62" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
 
-    <section id="scene-1" class="clip" data-start="0" data-duration="6" data-track-index="1">
+    <section id="scene-1" class="clip" data-start="0" data-duration="10" data-track-index="1">
       <div class="scene-box">
-        <span class="tag">AI PIPELINE</span>
-        <h1 class="headline">Autonomous Video Generation</h1>
+        <span class="tag">AI INFRASTRUCTURE</span>
+        <h1 class="headline">Autonomous Video Creation</h1>
         <p class="body-copy">OpenMontage activates native video generation in Docker for the US market.</p>
       </div>
     </section>
 
-    <section id="scene-2" class="clip" data-start="6" data-duration="6" data-track-index="2">
+    <section id="scene-2" class="clip" data-start="10" data-duration="10" data-track-index="2">
       <div class="scene-box">
-        <span class="tag">DOCKER VERIFIED</span>
-        <h1 class="headline">Deterministic Renders</h1>
-        <p class="body-copy">Every frame is rendered deterministically with full audio and visual validation.</p>
+        <span class="tag">DETERMINISTIC QUALITY</span>
+        <h1 class="headline">Pixel-Perfect Web Standards</h1>
+        <p class="body-copy">HyperFrames renders high-definition web animations straight into studio-quality video.</p>
       </div>
     </section>
 
-    <section id="scene-3" class="clip" data-start="12" data-duration="6" data-track-index="3">
+    <section id="scene-3" class="clip" data-start="20" data-duration="11" data-track-index="3">
       <div class="scene-box">
-        <span class="tag">RELIABLE PIPELINE</span>
-        <h1 class="headline">Continuous Delivery</h1>
-        <p class="body-copy">Automated pipelines ensure reliable production and seamless delivery across modern video platforms.</p>
+        <span class="tag">SYNCHRONIZED AUDIO</span>
+        <h1 class="headline">Intelligent Voice & Captions</h1>
+        <p class="body-copy">Speech-to-text models align spoken narration with on-screen subtitle cues in real time.</p>
+      </div>
+    </section>
+
+    <section id="scene-4" class="clip" data-start="31" data-duration="10.5" data-track-index="4">
+      <div class="scene-box">
+        <span class="tag">STRICT QA VALIDATION</span>
+        <h1 class="headline">Multi-Stage Quality Gates</h1>
+        <p class="body-copy">Automated inspection gates test stream integrity, color contrast, and audio clarity.</p>
+      </div>
+    </section>
+
+    <section id="scene-5" class="clip" data-start="41.5" data-duration="10.5" data-track-index="5">
+      <div class="scene-box">
+        <span class="tag">OMNICHANNEL DELIVERY</span>
+        <h1 class="headline">Landscape & Portrait Formats</h1>
+        <p class="body-copy">From widescreen YouTube broadcasts to vertical Shorts and Reels, compositions adapt seamlessly.</p>
+      </div>
+    </section>
+
+    <section id="scene-6" class="clip" data-start="52" data-duration="10" data-track-index="6">
+      <div class="scene-box">
+        <span class="tag">ENTERPRISE SCALE</span>
+        <h1 class="headline">Continuous Scalability</h1>
+        <p class="body-copy">Scalable containerized pipelines empower teams to produce authoritative video content autonomously.</p>
       </div>
     </section>
   </div>
@@ -195,12 +233,21 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.from('#scene-1 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 0.2);
-      tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 5.6);
-      tl.set('#scene-1 .scene-box', { opacity: 0 }, 6.0);
-      tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 6.2);
-      tl.to('#scene-2 .scene-box', { opacity: 0, duration: 0.4 }, 11.6);
-      tl.set('#scene-2 .scene-box', { opacity: 0 }, 12.0);
-      tl.from('#scene-3 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 12.2);
+      tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 9.6);
+      tl.set('#scene-1 .scene-box', { opacity: 0 }, 10.0);
+      tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 10.2);
+      tl.to('#scene-2 .scene-box', { opacity: 0, duration: 0.4 }, 19.6);
+      tl.set('#scene-2 .scene-box', { opacity: 0 }, 20.0);
+      tl.from('#scene-3 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 20.2);
+      tl.to('#scene-3 .scene-box', { opacity: 0, duration: 0.4 }, 30.6);
+      tl.set('#scene-3 .scene-box', { opacity: 0 }, 31.0);
+      tl.from('#scene-4 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 31.2);
+      tl.to('#scene-4 .scene-box', { opacity: 0, duration: 0.4 }, 41.1);
+      tl.set('#scene-4 .scene-box', { opacity: 0 }, 41.5);
+      tl.from('#scene-5 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 41.7);
+      tl.to('#scene-5 .scene-box', { opacity: 0, duration: 0.4 }, 51.6);
+      tl.set('#scene-5 .scene-box', { opacity: 0 }, 52.0);
+      tl.from('#scene-6 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 52.2);
       window.__timelines['main'] = tl;
     })();
   </script>
@@ -234,32 +281,56 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
   </style>
 </head>
 <body>
-  <div id="main" data-composition-id="main" data-start="0" data-duration="18" data-width="1080" data-height="1920">
+  <div id="main" data-composition-id="main" data-start="0" data-duration="62" data-width="1080" data-height="1920">
     <div class="bg-gradient"></div>
-    <audio id="narration" class="clip" data-start="0" data-duration="18" data-track-index="10" data-volume="1" src="assets/narration_reels.mp3"></audio>
-    <audio id="music-bg" class="clip" data-start="0" data-duration="18" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
+    <audio id="narration" class="clip" data-start="0" data-duration="62" data-track-index="10" data-volume="1" src="assets/narration_reels.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="62" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
 
-    <section id="scene-1" class="clip" data-start="0" data-duration="6" data-track-index="1">
+    <section id="scene-1" class="clip" data-start="0" data-duration="10" data-track-index="1">
       <div class="scene-box">
         <span class="tag">SHORTS / REELS</span>
-        <h1 class="headline">Autonomous Video Generation</h1>
+        <h1 class="headline">Autonomous Video Creation</h1>
         <p class="body-copy">OpenMontage activates native video generation in Docker for the US market.</p>
       </div>
     </section>
 
-    <section id="scene-2" class="clip" data-start="6" data-duration="6" data-track-index="2">
+    <section id="scene-2" class="clip" data-start="10" data-duration="10" data-track-index="2">
       <div class="scene-box">
-        <span class="tag">STABLE EXECUTION</span>
-        <h1 class="headline">Deterministic Renders</h1>
-        <p class="body-copy">Every frame is rendered deterministically with full audio and visual validation.</p>
+        <span class="tag">DETERMINISTIC QUALITY</span>
+        <h1 class="headline">Pixel-Perfect Web Standards</h1>
+        <p class="body-copy">HyperFrames renders high-definition web animations straight into studio-quality video.</p>
       </div>
     </section>
 
-    <section id="scene-3" class="clip" data-start="12" data-duration="6" data-track-index="3">
+    <section id="scene-3" class="clip" data-start="20" data-duration="11" data-track-index="3">
       <div class="scene-box">
-        <span class="tag">RELIABLE PIPELINE</span>
-        <h1 class="headline">Continuous Delivery</h1>
-        <p class="body-copy">Automated pipelines ensure reliable production and seamless delivery across modern video platforms.</p>
+        <span class="tag">SYNCHRONIZED AUDIO</span>
+        <h1 class="headline">Intelligent Voice & Captions</h1>
+        <p class="body-copy">Speech-to-text models align spoken narration with on-screen subtitle cues in real time.</p>
+      </div>
+    </section>
+
+    <section id="scene-4" class="clip" data-start="31" data-duration="10.5" data-track-index="4">
+      <div class="scene-box">
+        <span class="tag">STRICT QA VALIDATION</span>
+        <h1 class="headline">Multi-Stage Quality Gates</h1>
+        <p class="body-copy">Automated inspection gates test stream integrity, color contrast, and audio clarity.</p>
+      </div>
+    </section>
+
+    <section id="scene-5" class="clip" data-start="41.5" data-duration="10.5" data-track-index="5">
+      <div class="scene-box">
+        <span class="tag">OMNICHANNEL DELIVERY</span>
+        <h1 class="headline">Landscape & Portrait Formats</h1>
+        <p class="body-copy">From widescreen YouTube broadcasts to vertical Shorts and Reels, compositions adapt seamlessly.</p>
+      </div>
+    </section>
+
+    <section id="scene-6" class="clip" data-start="52" data-duration="10" data-track-index="6">
+      <div class="scene-box">
+        <span class="tag">ENTERPRISE SCALE</span>
+        <h1 class="headline">Continuous Scalability</h1>
+        <p class="body-copy">Scalable containerized pipelines empower teams to produce authoritative video content autonomously.</p>
       </div>
     </section>
   </div>
@@ -269,12 +340,21 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.from('#scene-1 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 0.2);
-      tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 5.6);
-      tl.set('#scene-1 .scene-box', { opacity: 0 }, 6.0);
-      tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 6.2);
-      tl.to('#scene-2 .scene-box', { opacity: 0, duration: 0.4 }, 11.6);
-      tl.set('#scene-2 .scene-box', { opacity: 0 }, 12.0);
-      tl.from('#scene-3 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 12.2);
+      tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 9.6);
+      tl.set('#scene-1 .scene-box', { opacity: 0 }, 10.0);
+      tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 10.2);
+      tl.to('#scene-2 .scene-box', { opacity: 0, duration: 0.4 }, 19.6);
+      tl.set('#scene-2 .scene-box', { opacity: 0 }, 20.0);
+      tl.from('#scene-3 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 20.2);
+      tl.to('#scene-3 .scene-box', { opacity: 0, duration: 0.4 }, 30.6);
+      tl.set('#scene-3 .scene-box', { opacity: 0 }, 31.0);
+      tl.from('#scene-4 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 31.2);
+      tl.to('#scene-4 .scene-box', { opacity: 0, duration: 0.4 }, 41.1);
+      tl.set('#scene-4 .scene-box', { opacity: 0 }, 41.5);
+      tl.from('#scene-5 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 41.7);
+      tl.to('#scene-5 .scene-box', { opacity: 0, duration: 0.4 }, 51.6);
+      tl.set('#scene-5 .scene-box', { opacity: 0 }, 52.0);
+      tl.from('#scene-6 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 52.2);
       window.__timelines['main'] = tl;
     })();
   </script>
@@ -313,8 +393,8 @@ echo "=========================================================="
 echo "🟢 DOCKER PIPELINE VIDEO GENERATION PASSED"
 echo "Short Render: $SHORT_RENDER"
 echo "  Resolution: $SHORT_RES (Expected: 1080x1920)"
-echo "  Duration:   ${SHORT_DUR}s"
+echo "  Duration:   ${SHORT_DUR}s (Capped <= 60s for Shorts/Reels)"
 echo "Long Render:  $LONG_RENDER"
 echo "  Resolution: $LONG_RES (Expected: 1920x1080)"
-echo "  Duration:   ${LONG_DUR}s"
+echo "  Duration:   ${LONG_DUR}s (>= 60s 1-Minute Full Video)"
 echo "=========================================================="

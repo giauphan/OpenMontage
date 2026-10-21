@@ -840,8 +840,8 @@ materialize_hyperframes_assets() {
   else
     cp "$narration" "$reels_narration"
   fi
-  "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" || return 1
-  "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" || return 1
+  "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" --locale "$locale" || return 1
+  "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" --locale "$locale" || return 1
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
     if [ "$composition" = "hyperframes_reels" ]; then
