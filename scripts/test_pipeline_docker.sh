@@ -143,7 +143,7 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
     :root { --accent: #2563eb; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #090d16; color: #f8fafc; font-family: 'BeVietnamPro', system-ui, sans-serif; }
-    #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #090d16; }
+    #main { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #090d16; }
     .bg-gradient { position: absolute; inset: 0; background: radial-gradient(circle at 50% 20%, #1e3a8a 0%, #090d16 80%); }
     .clip { position: absolute; inset: 0; }
     .scene-box { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 100px 60px; text-align: center; }
@@ -153,7 +153,7 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
   </style>
 </head>
 <body>
-  <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-duration="12">
+  <div id="main" data-composition-id="main" data-start="0" data-duration="12" data-width="1080" data-height="1920">
     <div class="bg-gradient"></div>
     <audio id="narration" class="clip" data-start="0" data-duration="12" data-track-index="10" data-volume="1" src="assets/narration.mp3"></audio>
     <audio id="music-bg" class="clip" data-start="0" data-duration="12" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
@@ -205,7 +205,7 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
     :root { --accent: #2563eb; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #090d16; color: #f8fafc; font-family: 'BeVietnamPro', system-ui, sans-serif; }
-    #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #090d16; }
+    #main { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #090d16; }
     .bg-gradient { position: absolute; inset: 0; background: radial-gradient(circle at 50% 20%, #1e3a8a 0%, #090d16 80%); }
     .clip { position: absolute; inset: 0; }
     .scene-box { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 100px 60px; text-align: center; }
@@ -215,7 +215,7 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
   </style>
 </head>
 <body>
-  <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-duration="12">
+  <div id="main" data-composition-id="main" data-start="0" data-duration="12" data-width="1080" data-height="1920">
     <div class="bg-gradient"></div>
     <audio id="narration" class="clip" data-start="0" data-duration="12" data-track-index="10" data-volume="1" src="assets/narration_reels.mp3"></audio>
     <audio id="music-bg" class="clip" data-start="0" data-duration="12" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
