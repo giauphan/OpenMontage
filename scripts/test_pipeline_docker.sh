@@ -285,6 +285,7 @@ EOF
 # 11. Run the daily news pipeline for this project
 echo "Running daily news pipeline for $PROJECT_ID..."
 export SKIP_DIRECTORS=1
+export CODEX_AGENT_VALIDATION_MOCK=1
 bash "$ROOT/scripts/run_daily_news_pipeline.sh" --project-ids "$PROJECT_ID"
 
 # 12. Verify rendered output files
