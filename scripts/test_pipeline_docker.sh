@@ -72,21 +72,26 @@ EOF
 # 4. Write script_en_US.json
 cat << 'EOF' > "$PROJECT_DIR/artifacts/script_en_US.json"
 {
+  "version": "1.0",
   "title": "AI Video Generation Pipeline Test",
   "locale": "en-US",
-  "duration_seconds": 12,
+  "total_duration_seconds": 12.0,
   "sections": [
     {
       "id": "scene-1",
       "heading": "Autonomous Pipeline",
       "text": "OpenMontage activates native video generation in Docker for the US market.",
-      "duration": 6
+      "start_seconds": 0.0,
+      "end_seconds": 6.0,
+      "duration": 6.0
     },
     {
       "id": "scene-2",
       "heading": "Native 1080x1920",
       "text": "Every frame is rendered deterministically with full audio and visual validation.",
-      "duration": 6
+      "start_seconds": 6.0,
+      "end_seconds": 12.0,
+      "duration": 6.0
     }
   ]
 }
@@ -248,6 +253,7 @@ EOF
 
 # 11. Run the daily news pipeline for this project
 echo "Running daily news pipeline for $PROJECT_ID..."
+export SKIP_DIRECTORS=1
 bash "$ROOT/scripts/run_daily_news_pipeline.sh" --project-ids "$PROJECT_ID"
 
 # 12. Verify rendered output files

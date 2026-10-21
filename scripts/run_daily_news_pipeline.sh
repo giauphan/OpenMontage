@@ -406,6 +406,10 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
   cp "$PROJECT_DIR/artifacts/director_reply.json" "$DIRECTORS_JSON"
   DIRECTOR_EXIT=0
   DIRECTOR_ARTIFACT_FALLBACK=1
+elif [ "${SKIP_DIRECTORS:-0}" = "1" ] && [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
+  echo '{"session_id":"skipped","is_error":false,"num_turns":0,"total_cost_usd":0}' > "$DIRECTORS_JSON"
+  DIRECTOR_EXIT=0
+  DIRECTOR_ARTIFACT_FALLBACK=1
 else
   if ! command -v timeout >/dev/null 2>&1; then
     echo "[$(date -u +%FT%TZ)] ERROR: timeout command is required for directors" >> "$DIRECTORS_LOG"
@@ -545,6 +549,12 @@ raise SystemExit(0 if all(p.is_file() and p.stat().st_mtime_ns >= cutoff for p i
 }
 
 if [ -n "$REHEARSAL_MANIFEST" ]; then
+  if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
+    DIRECTOR_EXIT=0
+  else
+    DIRECTOR_EXIT=6
+  fi
+elif [ "${SKIP_DIRECTORS:-0}" = "1" ]; then
   if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
     DIRECTOR_EXIT=0
   else
