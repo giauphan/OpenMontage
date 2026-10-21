@@ -651,8 +651,15 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
         errors.append(f"{path}: missing viewport clipping guard")
     # NFD-decomposed text and HTML entities still count as genuine Vietnamese
     # on-screen content; normalize before the glyph smoke check.
+    locale = "vi-VN"
+    try:
+        from lib.artifact_paths import resolve_project_locale
+        locale = resolve_project_locale(path.parent.parent)
+    except Exception:
+        pass
+
     visible_text = unicodedata.normalize("NFC", html_lib.unescape(html))
-    if VIETNAMESE_GLYPH_SENTINELS and not any(ch in visible_text for ch in VIETNAMESE_GLYPH_SENTINELS):
+    if locale == "vi-VN" and VIETNAMESE_GLYPH_SENTINELS and not any(ch in visible_text for ch in VIETNAMESE_GLYPH_SENTINELS):
         errors.append(f"{path}: no Vietnamese diacritic text found for glyph smoke validation")
     malformed = sorted(set(_MALFORMED_TEXT_PATTERN.findall(html)))
     if malformed:
