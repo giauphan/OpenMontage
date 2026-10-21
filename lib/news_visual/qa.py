@@ -10,6 +10,7 @@ Verifies:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -231,7 +232,7 @@ def run_news_visual_qa(
         try:
             m_data = json.loads(manifest_path.read_text(encoding="utf-8"))
             for a in m_data.get("assets", []):
-                aid = a.get("id")
+                aid = a.get("asset_id") or a.get("id")
                 if aid:
                     staged_assets[aid] = a
         except Exception:
@@ -253,7 +254,7 @@ def run_news_visual_qa(
                     failure_categories.append("ASSET_UNRESOLVED")
             else:
                 asset_info = staged_assets[aid]
-                local_path = asset_info.get("local_path") or asset_info.get("path")
+                local_path = asset_info.get("file") or asset_info.get("local_path") or asset_info.get("path")
                 if local_path:
                     full_p = project_dir / local_path
                     if not full_p.is_file():
@@ -267,6 +268,18 @@ def run_news_visual_qa(
                         })
                         if "ASSET_UNRESOLVED" not in failure_categories:
                             failure_categories.append("ASSET_UNRESOLVED")
+                    elif asset_info.get("sha256") and asset_info.get("sha256") != "dummy":
+                        actual_sha = hashlib.sha256(full_p.read_bytes()).hexdigest()
+                        if actual_sha != asset_info["sha256"]:
+                            findings.append({
+                                "severity": "blocker" if mode == "strict" else "warning",
+                                "category": "ASSET_TAMPERED",
+                                "message": f"Asset '{aid}' hash mismatch (tampered or corrupt): expected {asset_info['sha256']}, got {actual_sha}",
+                                "beat_id": beat.get("id"),
+                                "asset_id": aid,
+                            })
+                            if "ASSET_TAMPERED" not in failure_categories:
+                                failure_categories.append("ASSET_TAMPERED")
 
     # 4. Check HTML bindings and safe zones
     bound_beats = 0
@@ -302,8 +315,14 @@ def run_news_visual_qa(
 
             for beat in beats:
                 bid = beat.get("id")
-                # Look for beat ID or asset reference in HTML
-                if (bid and bid in html_content) or any(aid in html_content for aid in beat.get("asset_ids", [])):
+                sec_id = beat.get("script_section_id")
+                asset_keys = beat.get("asset_ids", [])
+                # Look for beat ID, section ID, or asset reference in HTML
+                if (
+                    (bid and bid in html_content)
+                    or any(aid in html_content for aid in asset_keys)
+                    or (sec_id and (f'id="{sec_id}"' in html_content or f'data-scene-id="{sec_id}"' in html_content or f'scene-{sec_id}' in html_content))
+                ):
                     bound_beats += 1
                 elif beat.get("visual_kind") == "typographic_focus":
                     bound_beats += 1
