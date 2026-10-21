@@ -127,13 +127,13 @@ for f in BeVietnamPro-Regular.ttf BeVietnamPro-Bold.ttf BeVietnamPro-ExtraBold.t
   fi
 done
 
-# 9. Write hyperframes/index.html
+# 9. Write hyperframes/index.html (16:9 landscape 1920x1080 for US full render)
 cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1080, height=1920" />
+  <meta name="viewport" content="width=1920, height=1080" />
   <title>AI Video Pipeline — OpenMontage</title>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
   <style>
@@ -143,17 +143,17 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
     :root { --accent: #2563eb; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #090d16; color: #f8fafc; font-family: 'BeVietnamPro', system-ui, sans-serif; }
-    #main { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #090d16; }
+    #main { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #090d16; }
     .bg-gradient { position: absolute; inset: 0; background: radial-gradient(circle at 50% 20%, #1e3a8a 0%, #090d16 80%); }
     .clip { position: absolute; inset: 0; }
-    .scene-box { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 100px 60px; text-align: center; }
+    .scene-box { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 80px 120px; text-align: center; }
     .tag { font-size: 28px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #60a5fa; margin-bottom: 24px; padding: 8px 24px; border: 2px solid #3b82f6; border-radius: 9999px; }
-    .headline { font-size: 64px; font-weight: 800; line-height: 1.15; color: #ffffff; max-width: 960px; margin: 0 0 32px; }
-    .body-copy { font-size: 36px; font-weight: 400; line-height: 1.5; color: #cbd5e1; max-width: 880px; margin: 0; }
+    .headline { font-size: 64px; font-weight: 800; line-height: 1.15; color: #ffffff; max-width: 1400px; margin: 0 0 32px; }
+    .body-copy { font-size: 36px; font-weight: 400; line-height: 1.5; color: #cbd5e1; max-width: 1200px; margin: 0; }
   </style>
 </head>
 <body>
-  <div id="main" data-composition-id="main" data-start="0" data-duration="12" data-width="1080" data-height="1920">
+  <div id="main" data-composition-id="main" data-start="0" data-duration="12" data-width="1920" data-height="1080">
     <div class="bg-gradient"></div>
     <audio id="narration" class="clip" data-start="0" data-duration="12" data-track-index="10" data-volume="1" src="assets/narration.mp3"></audio>
     <audio id="music-bg" class="clip" data-start="0" data-duration="12" data-track-index="0" data-volume="0.25" src="assets/music-bg.mp3"></audio>
@@ -283,6 +283,6 @@ echo "Short Render: $SHORT_RENDER"
 echo "  Resolution: $SHORT_RES (Expected: 1080x1920)"
 echo "  Duration:   ${SHORT_DUR}s"
 echo "Long Render:  $LONG_RENDER"
-echo "  Resolution: $LONG_RES (Expected: 1080x1920)"
+echo "  Resolution: $LONG_RES (Expected: 1920x1080)"
 echo "  Duration:   ${LONG_DUR}s"
 echo "=========================================================="
