@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 ROOT = Path(os.environ.get("OPENMONTAGE_ROOT") or Path(__file__).resolve().parents[1])
@@ -33,14 +33,14 @@ from tools.publishers.youtube_publisher import YoutubePublisher
 
 
 def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | None = None) -> dict:
-    """Build unified YouTube Shorts upload payload using compose_release_metadata."""
+    """Build unified YouTube upload payload using compose_release_metadata."""
     # Ensure id/title/desc exist for compose
     payload_meta = dict(topic_meta)
     if "id" not in payload_meta:
         payload_meta["id"] = payload_meta.get("project_id", "news_video")
     rel = compose_release_metadata(payload_meta)
     yt = rel.youtube_payload
-    return {
+    payload = {
         "video_path": str(video_path),
         "title": yt["title"],
         "description": yt["description"],
@@ -48,7 +48,24 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         "privacy_status": "private" if publish_at else "unlisted",
         "publish_at": publish_at,
         "category_id": "28",
+        "format": payload_meta.get("format", "short"),
+        "locale": payload_meta.get("locale", "vi-VN"),
     }
+    if "expected_channel_id" in payload_meta:
+        payload["expected_channel_id"] = payload_meta["expected_channel_id"]
+    if "contains_synthetic_media" in payload_meta:
+        payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
+    return payload
+
+
+def make_publish_datetime(d: date, time_str: str, tz: ZoneInfo) -> datetime:
+    """Create a timezone-aware datetime with robust DST gap and fold resolution."""
+    hh, mm = time_str.split(":", 1)
+    naive = datetime.combine(d, datetime.strptime(f"{hh}:{mm}", "%H:%M").time())
+    dt = naive.replace(tzinfo=tz)
+    # Disambiguate DST transitions by converting to UTC and back
+    utc = dt.astimezone(timezone.utc)
+    return utc.astimezone(tz)
 
 
 def ytv_publish_at(dt): return dt.astimezone(timezone.utc).isoformat().replace("+00:00","Z")
@@ -122,6 +139,11 @@ def main():
         dest="enabled_platforms_list",
         help="Enable a specific platform (e.g. ytb, ig, fb, tiktok). Can be repeated.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run shadow/dry-run schedule simulation without calling remote upload APIs",
+    )
     args = parser.parse_args()
 
     cli_held: list[str] = list(args.hold_platforms_list)
@@ -161,8 +183,7 @@ def main():
     failed = False
     for q in queue:
         proj = q["project_id"]
-        hh,mm = q["publish_time"].split(":",1)
-        publish_at = datetime.combine(today, datetime.strptime(f"{hh}:{mm}","%H:%M").time(), tz)
+        publish_at = make_publish_datetime(today, q["publish_time"], tz)
         if previous and publish_at - previous < MIN_GAP:
             print(f"failed {proj}: slot gap under 2h: {previous.isoformat()} -> {publish_at.isoformat()}")
             failed = True
@@ -279,6 +300,11 @@ def main():
                     template_id=template_id,
                 )
             if yt_claimed:
+                if getattr(args, "dry_run", False) or os.environ.get("SHADOW_ROLLOUT") == "1" or os.environ.get("DRY_RUN") == "1":
+                    store.mark_scheduled(yt_key, video_id=f"dry_run_{proj}", video_url=f"https://youtu.be/dry_run_{proj}", scheduled_for=scheduled_for)
+                    print(f"SHADOW/DRY-RUN: Simulated YouTube schedule for {proj} at {scheduled_for}")
+                    continue
+
                 max_yt_attempts = 3
                 for yt_attempt in range(1, max_yt_attempts + 1):
                     try:

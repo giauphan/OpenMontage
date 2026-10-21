@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "created_at": "2025-02-25T11:00:00Z",
+  "project_id": "canary-longform-en-us-02",
+  "title": "How Latent Diffusion Transformers Work: From Noise to High-Fidelity Video",
+  "pipeline_type": "explainer",
+  "locale": "en-US",
+  "audience_profile": "en-US"
+}

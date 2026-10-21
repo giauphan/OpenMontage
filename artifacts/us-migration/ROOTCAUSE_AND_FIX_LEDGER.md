@@ -1,0 +1,96 @@
+# Root Cause and Fix Ledger — OpenMontage US Migration
+
+This ledger documents each technical defect, design vulnerability, or compatibility gap identified during the US-first English migration (Phases P0 through P8), providing the exact pre-fix failure mode, root cause analysis, minimal patch applied, and deterministic post-fix verification.
+
+---
+
+## Defect 1: Truncated Subtitle Parsing in `scripts/validate_display_language.py`
+
+- **Symptom / Pre-fix Failure**:
+  Execution of `scripts/validate_display_language.py` resulted in a fatal Python parse error (`SyntaxError: unexpected EOF while parsing`) at line 157.
+- **Root Cause**:
+  The file had been truncated mid-function during previous development, leaving the subtitle validation loop unclosed and without language heuristic validation.
+- **File & Line**:
+  `scripts/validate_display_language.py:145-165`
+- **Minimal Fix**:
+  Completed the subtitle parse logic, added clean regex extraction for `.srt` subtitle lines, and integrated `get_language_validator(locale)` to dynamically enforce English purity on `en-US` and Vietnamese purity on `vi-VN`.
+- **Post-fix Verification**:
+  `scripts/validate_display_language.py` executed cleanly against test fixtures; covered by `tests/us_migration/test_us_migration_suite.py::TestEditorialAndCultureE01_E12::test_e09_caption_contains_vietnamese_labels_rejected` (PASS).
+
+---
+
+## Defect 2: Permissive Cross-Language Asset Fallback
+
+- **Symptom / Pre-fix Failure**:
+  If an `en-US` project had an ungenerated English script (`script_en_US.json`), earlier pipeline stages would quietly fall back to reading `script_vi.json` or `final_full_vi_9x16.mp4`, publishing Vietnamese media under an English title.
+- **Root Cause**:
+  Path resolution routines lacked locale awareness and fell back to hardcoded Vietnamese filenames when requested paths did not exist.
+- **File & Line**:
+  `lib/artifact_paths.py:45-80`
+- **Minimal Fix**:
+  Engineered `lib/artifact_paths.py` with strict locale resolution (`resolve_project_locale`, `resolve_script_path`, `resolve_render_paths`). Made the fallback contract fail-closed: requesting `script_en_US.json` when absent raises `FileNotFoundError` rather than substituting `script_vi.json`.
+- **Post-fix Verification**:
+  Verified by `tests/lib/test_artifact_paths.py::test_no_permissive_fallback_from_en_to_vi` and `tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p11_stale_vi_schedule_item_quarantined_not_published_as_english` (PASS).
+
+---
+
+## Defect 3: Monolithic Shorts-Only Assumption in Publishing Pipeline
+
+- **Symptom / Pre-fix Failure**:
+  Long-form (16:9 landscape) videos were either rejected by duration gates (>60s) or corrupted by forced `#Shorts` title appending and vertical aspect ratio checks.
+- **Root Cause**:
+  `tools/publishers/platform_routes.py` and `tools/publishers/youtube_publisher.py` hardcoded 9:16 vertical requirements and 60-second ceilings across all publishing routes.
+- **File & Line**:
+  `tools/publishers/platform_routes.py:180-245`, `tools/publishers/youtube_publisher.py:75-120`
+- **Minimal Fix**:
+  1. Added `format: "short" | "longform"` support to project metadata.
+  2. Implemented `ensure_horizontal` in `platform_routes.py` verifying 16:9 aspect ratio and >=60s duration for longform.
+  3. Conditioned `#Shorts` hashtag enforcement and `ensure_vertical` only on `format == "short"`.
+- **Post-fix Verification**:
+  Verified by `tests/us_migration/test_us_migration_suite.py::TestAudioCaptionMediaA01_A08::test_a08_longform_16x9_rejected_by_shorts_gate_but_accepted_by_horizontal` and `tests/tools/test_short_publish_route.py` (PASS).
+
+---
+
+## Defect 4: Unverified OAuth Channel Identity (Accidental Account Hijacking Risk)
+
+- **Symptom / Pre-fix Failure**:
+  If the host had an OAuth token granting access to an account other than the intended US channel (e.g., personal account, old channel), `YouTubePublisher.upload_video()` would upload media without checking whether the destination matched the owner's target channel ID.
+- **Root Cause**:
+  The publisher trusted the OAuth token implicitly and called `videos.insert()` directly without an identity verification preflight.
+- **File & Line**:
+  `tools/publishers/youtube_publisher.py:130-165`
+- **Minimal Fix**:
+  Introduced an mandatory identity preflight guard:
+  `channels.list(part="id", mine=True)` is queried, and the returned channel ID is compared against `expected_channel_id`. If `expected_channel_id` is supplied and does not match, the upload fails immediately with `RuntimeError` before transferring media.
+- **Post-fix Verification**:
+  Verified by `tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p02_channel_id_guard_blocks_mismatched_channel` (PASS).
+
+---
+
+## Defect 5: Vietnamese Diacritic and Vocabulary Leakage into English Media
+
+- **Symptom / Pre-fix Failure**:
+  English scripts and publish metadata generated by translation models could inadvertently contain Vietnamese words (e.g., "tin tức", "công nghệ", "đồng"), currency notations ("VND"), or tone-marked Latin characters (e.g., "á", "ế", "ơ").
+- **Root Cause**:
+  `check_vietnamese_prose` only checked if text contained sufficient Vietnamese diacritics; there was no inverse validator to enforce that English text must NOT contain foreign diacritics or localized Vietnamese phrases.
+- **File & Line**:
+  `lib/language_validation.py:50-135`
+- **Minimal Fix**:
+  Created `EnglishLanguageValidator` and `VietnameseLanguageValidator` adhering to the `LanguageStrategyValidator` abstract protocol. The English validator scans for Vietnamese diacritics, Vietnamese stop words, currency mismatches, and enforces US hashtag rules.
+- **Post-fix Verification**:
+  Verified by `tests/lib/test_language_validation.py` (5 tests passing) and `tests/us_migration/test_us_migration_suite.py::TestEditorialAndCultureE01_E12::test_e02_literal_vn_script_translation_rejected` (PASS).
+
+---
+
+## Defect 6: DST Spring-Forward and Fall-Back Publishing Collisions
+
+- **Symptom / Pre-fix Failure**:
+  Scheduling releases at 2:30 AM America/New_York on spring DST transition days produced nonexistent clock times, while fall transitions produced duplicate or ambiguous slot assignments.
+- **Root Cause**:
+  `schedule_today_native.py` used naive datetime arithmetic or relied on the Phoenix host's non-DST mountain standard time (`America/Phoenix`).
+- **File & Line**:
+  `scripts/schedule_today_native.py:45-95`
+- **Minimal Fix**:
+  Added `make_publish_datetime(target_date, hour, minute, tz_name="America/New_York")` using Python 3.10 `zoneinfo.ZoneInfo`. The function detects nonexistent spring gap hours and shifts to the first valid time, and uses `fold=0` for unambiguous fall-back hour handling.
+- **Post-fix Verification**:
+  Verified by `tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p07_dst_spring_gap_handled_unambiguously` and `test_p08_dst_fall_repeated_hour_handled_unambiguously` (PASS).

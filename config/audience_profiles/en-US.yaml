@@ -1,0 +1,58 @@
+profile_id: en-us-practical-ai-v1
+primary_market: US
+secondary_markets: [CA]
+spoken_language: en-US
+metadata_language: en-US
+viewer_profile:
+  primary_job: "Understand and test practical AI tools for daily work"
+  segments: [developers, knowledge_workers, small_business_owners]
+  banned_assumptions:
+    - "All US viewers share the same culture or socioeconomic preferences"
+    - "AI feature/price is globally available"
+content:
+  pillars: [ai_tools_tested, ai_agents_automation, tech_news_explained]
+  source_requirement: primary_dated_evidence
+  independent_claim_review: true
+  original_value_requirement: demonstration_or_substantive_analysis
+  cultural_rewrite: true
+  native_english_human_approval_initial_canary: true
+formats:
+  short:
+    output: "renders/final_short_en_US_9x16.mp4"
+    aspect: "9:16"
+    internal_pilot_max_seconds: 60
+  longform:
+    output: "renders/final_long_en_US_16x9.mp4"
+    aspect: "16:9"
+    suggested_minute_range: [6, 10]
+voice:
+  locale: en-US
+  provider_voice: "en-US-JennyNeural"
+  sample_pronunciation_first: true
+captions:
+  language: en-US
+  generate_from_final_audio: true
+  require_manual_critical_token_review: true
+visuals:
+  require_scene_claim_bindings: true
+  require_media_rights: true
+  require_real_frame_samples: true
+  reject_unrelated_generic_background: true
+  reject_fake_product_ui: true
+publishing:
+  only_platform: youtube
+  enabled: false
+  target_channel_id: "EXPECTED_CHANNEL_ID_PROTECTED"
+  allow_public_auto_upload: false
+  default_canary_visibility: private
+  application_timezone: America/New_York
+  min_hours_between_releases: 2
+  candidate_shorts_per_week: 4
+  candidate_longform_per_week: 1
+  kill_switch: true
+safety:
+  fail_closed: true
+  network_disabled_for_rehearsal: true
+  paid_calls_disabled_for_rehearsal: true
+  require_three_independent_rehearsals: true
+  keep_old_vi_queue_snapshot: true

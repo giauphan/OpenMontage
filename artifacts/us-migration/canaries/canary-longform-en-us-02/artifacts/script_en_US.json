@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "locale": "en-US",
+  "title": "How Latent Diffusion Transformers Work: From Noise to High-Fidelity Video",
+  "scenes": [
+    {
+      "id": "scene_01",
+      "duration": 4.0,
+      "section": "hook",
+      "narration": "Modern generative video discarded convolutional U-Nets in favor of Diffusion Transformers.",
+      "visual_prompt": "16:9 diagram showing transition from 2020 U-Net architectures to modern DiT models",
+      "claim_ids": [
+        "C001"
+      ]
+    },
+    {
+      "id": "scene_02",
+      "duration": 4.0,
+      "section": "point",
+      "narration": "Instead of downsampling feature maps, the model splits latent video representations into sequential patches.",
+      "visual_prompt": "Step-by-step visual of 3D latent grid patchification into token sequences",
+      "claim_ids": [
+        "C001"
+      ]
+    },
+    {
+      "id": "scene_03",
+      "duration": 4.0,
+      "section": "proof",
+      "narration": "Conditioning happens through adaptive layer norm zero, stabilizing training from the start.",
+      "visual_prompt": "Transformer block diagram detailing adaLN-Zero shift, scale, and gating",
+      "claim_ids": [
+        "C002"
+      ]
+    },
+    {
+      "id": "scene_04",
+      "duration": 4.0,
+      "section": "payoff",
+      "narration": "This architectural simplicity explains why modern video generators scale predictably with compute.",
+      "visual_prompt": "Scaling curves comparing FID versus Gflops across DiT model sizes",
+      "claim_ids": [
+        "C001",
+        "C002"
+      ]
+    }
+  ]
+}

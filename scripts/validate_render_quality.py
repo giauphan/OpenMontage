@@ -198,6 +198,7 @@ def validate_video(
     max_duration: float | None = None,
     narration_text: Path | None = None,
     strict: bool = False,
+    locale: str = "vi-VN",
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -210,7 +211,13 @@ def validate_video(
         if not narration_text.is_file():
             errors.append(f"{narration_text}: missing narration text")
         else:
-            language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
+            from lib.artifact_paths import is_english_locale
+            from lib.language_validation import get_language_validator
+            if is_english_locale(locale):
+                validator = get_language_validator(locale)
+                language_errors = validator.validate_prose(narration_text.read_text(encoding="utf-8"))
+            else:
+                language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
             errors.extend(f"{narration_text}: {error}" for error in language_errors)
             if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
                 errors.append(f"{narration}: narration audio is stale relative to text {narration_text}")
@@ -368,7 +375,18 @@ def main() -> int:
     )
     args = parser.parse_args()
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
-    narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
+    from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_narration_text_path
+    locale = resolve_project_locale(args.project_dir)
+    is_en = is_english_locale(locale)
+
+    if is_en:
+        full_render_name = "final_long_en_US_16x9.mp4"
+        reels_render_name = "final_short_en_US_9x16.mp4"
+        narration_text = resolve_narration_text_path(args.project_dir, locale=locale)
+    else:
+        full_render_name = FULL_RENDER
+        reels_render_name = REELS_RENDER
+        narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
 
     full_narration = resolve_narration(args.project_dir, "narration.mp3")
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
@@ -376,12 +394,13 @@ def main() -> int:
     full_min = args.full_min_duration if args.full_min_duration is not None else args.min_duration
     reels_min = args.reels_min_duration if args.reels_min_duration is not None else args.min_duration
 
+    full_dims = (1920, 1080) if is_en else PORTRAIT_DIMENSIONS
     renders = (
-        ("full", FULL_RENDER, full_narration, full_min, None),
-        ("reels", REELS_RENDER, reels_narration, reels_min, args.reels_max_duration),
+        ("full", full_render_name, full_narration, full_min, None, full_dims),
+        ("reels", reels_render_name, reels_narration, reels_min, args.reels_max_duration, PORTRAIT_DIMENSIONS),
     )
     errors: list[str] = []
-    for render_kind, render_name, narration, min_dur, max_duration in renders:
+    for render_kind, render_name, narration, min_dur, max_duration, dims in renders:
         if args.render and render_kind != args.render:
             continue
         errors.extend(
@@ -392,10 +411,11 @@ def main() -> int:
                 ffmpeg,
                 min_dur,
                 args.tolerance,
-                PORTRAIT_DIMENSIONS,
+                dims,
                 max_duration,
                 narration_text,
                 strict=args.strict,
+                locale=locale,
             )
         )
     allow_repair = not getattr(args, "no_auto_repair", False) and not os.environ.get("OPENMONTAGE_NO_AUTO_REPAIR")

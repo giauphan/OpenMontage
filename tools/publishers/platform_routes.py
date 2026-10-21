@@ -35,10 +35,13 @@ PLATFORM_ROUTES: dict[str, tuple[str, str, str]] = {
 
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
+HORIZONTAL_WIDTH = 1920
+HORIZONTAL_HEIGHT = 1080
 YOUTUBE_SHORT_MAX_SECONDS = 60.0
 YOUTUBE_TITLE_MAX_CHARS = 100
 YOUTUBE_SHORTS_HASHTAG = "#Shorts"
 DEFAULT_VIETNAMESE_TAGS = ["tintuc", "congnghe", "ai", "vietnam"]
+DEFAULT_ENGLISH_TAGS = ["ai", "tech", "software"]
 
 
 class ReleaseMetadata:
@@ -142,20 +145,23 @@ def validate_release_metadata(meta: dict) -> list[str]:
     title = str(meta.get("title", ""))
     desc = str(meta.get("description", ""))
 
+    locale = meta.get("locale") or ("en-US" if "en-us" in str(meta.get("audience_profile_id", "")).lower() else "vi-VN")
+
     if title:
-        from tools.narration_text import check_vietnamese_prose
-        # Verify title does not have unclosed shell syntax or invalid language
         from scripts.validate_publish_metadata import validate_text_field
         errors.extend(validate_text_field("title", title))
-        lang_errors = check_vietnamese_prose(title)
+        from lib.language_validation import get_language_validator
+        validator = get_language_validator(locale)
+        lang_errors = validator.validate_prose(title)
         if lang_errors:
             errors.extend(f"title language error: {err}" for err in lang_errors)
 
     if desc:
-        from tools.narration_text import check_vietnamese_prose
         from scripts.validate_publish_metadata import validate_text_field
         errors.extend(validate_text_field("description", desc))
-        desc_lang = check_vietnamese_prose(desc)
+        from lib.language_validation import get_language_validator
+        validator = get_language_validator(locale)
+        desc_lang = validator.validate_prose(desc)
         if desc_lang:
             errors.extend(f"description language error: {err}" for err in desc_lang)
 
@@ -171,10 +177,17 @@ def compose_release_metadata(data: dict) -> ReleaseMetadata:
     title = deduplicate_hashtags_in_text(str(data["title"]).strip())
     desc = deduplicate_hashtags_in_text(str(data["description"]).strip())
 
+    locale = data.get("locale") or ("en-US" if "en-us" in str(data.get("audience_profile_id", "")).lower() else "vi-VN")
+    from lib.artifact_paths import is_english_locale
+    is_en = is_english_locale(locale)
+    default_tags = DEFAULT_ENGLISH_TAGS if is_en else DEFAULT_VIETNAMESE_TAGS
+    default_short = "renders/final_short_en_US_9x16.mp4" if is_en else CUT_RENDER
+    default_full = "renders/final_long_en_US_16x9.mp4" if is_en else FULL_RENDER
+
     tags = data.get("tags")
     if tags is None or not isinstance(tags, list):
         # Derive tags from topic/title words if available, else standard fallback
-        tags = list(DEFAULT_VIETNAMESE_TAGS)
+        tags = list(default_tags)
     else:
         # Clean and deduplicate tags
         seen = set()
@@ -184,23 +197,23 @@ def compose_release_metadata(data: dict) -> ReleaseMetadata:
             if tag_clean and tag_clean not in seen:
                 seen.add(tag_clean)
                 clean_tags.append(tag_clean)
-        tags = clean_tags or list(DEFAULT_VIETNAMESE_TAGS)
+        tags = clean_tags or list(default_tags)
 
-    yt_shorts = data.get("yt_shorts") or CUT_RENDER
+    yt_shorts = data.get("yt_shorts") or default_short
     if isinstance(yt_shorts, dict):
-        yt_shorts = yt_shorts.get("path") or yt_shorts.get("file") or CUT_RENDER
+        yt_shorts = yt_shorts.get("path") or yt_shorts.get("file") or default_short
 
-    ig_reels = data.get("ig_reels") or CUT_RENDER
+    ig_reels = data.get("ig_reels") or default_short
     if isinstance(ig_reels, dict):
-        ig_reels = ig_reels.get("path") or ig_reels.get("file") or CUT_RENDER
+        ig_reels = ig_reels.get("path") or ig_reels.get("file") or default_short
 
-    fb_video = data.get("fb_video") or FULL_RENDER
+    fb_video = data.get("fb_video") or default_full
     if isinstance(fb_video, dict):
-        fb_video = fb_video.get("path") or fb_video.get("file") or FULL_RENDER
+        fb_video = fb_video.get("path") or fb_video.get("file") or default_full
 
-    tiktok = data.get("tiktok") or FULL_RENDER
+    tiktok = data.get("tiktok") or default_full
     if isinstance(tiktok, dict):
-        tiktok = tiktok.get("path") or tiktok.get("file") or FULL_RENDER
+        tiktok = tiktok.get("path") or tiktok.get("file") or default_full
 
     extra = {k: v for k, v in data.items() if k not in (
         "id", "title", "description", "yt_shorts", "ig_reels", "fb_video", "tiktok", "tags", "source_url"
@@ -302,4 +315,14 @@ def ensure_youtube_short(path: Path) -> None:
         raise ValueError(
             f"{path}: {duration:.3f}s exceeds the YouTube Shorts limit of "
             f"{YOUTUBE_SHORT_MAX_SECONDS:.0f} seconds"
+        )
+
+
+def ensure_horizontal(path: Path) -> None:
+    """Reject any asset that is not landscape / horizontal (e.g. 16:9) for long-form publishing."""
+    width, height = probe_dimensions(path)
+    if width <= height:
+        raise ValueError(
+            f"{path}: {width}x{height} is not horizontal; "
+            f"long-form videos must have landscape geometry (width > height, e.g. 16:9)"
         )

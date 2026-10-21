@@ -1,0 +1,27 @@
+{
+  "test_only": true,
+  "shell_executed": true,
+  "publication_enabled": false,
+  "n5_complete": true,
+  "egress_status": "DENIED (isolated loopback mock transport)",
+  "requested_project_ids": [
+    "rehearsal-en-us-bravo"
+  ],
+  "successful_project_ids": [
+    "rehearsal-en-us-bravo"
+  ],
+  "failed_project_ids": [],
+  "quarantined_project_ids": [],
+  "terminal_exit_status": 0,
+  "terminal_stage": "COMPLETE_STAGE_REHEARSAL_PASS",
+  "channel_guard": {
+    "verified": true,
+    "expected_channel_id_fingerprint": "MOCK_SHA256_MATCH",
+    "live_upload_executed": false
+  },
+  "side_effects": {
+    "network_calls": 0,
+    "paid_provider_invocations": 0,
+    "live_cron_mutations": 0
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "project_id": "canary-longform-en-us-02",
+  "locale": "en-US",
+  "created_at": "2025-02-25T11:05:00Z",
+  "claims": [
+    {
+      "claim_id": "C001",
+      "statement": "Diffusion Transformers (DiT) replace convolutional U-Net backbones with standard Transformer blocks operating on latent patches.",
+      "confidence": "verified",
+      "scope": {
+        "market": "Global Machine Learning Research",
+        "as_of": "2022-12-19"
+      },
+      "source": {
+        "canonical_url": "https://arxiv.org/abs/2212.09748",
+        "publisher": "arXiv / Peebles & Xie",
+        "published_at": "2022-12-19T00:00:00Z",
+        "retrieved_at": "2025-02-24T10:00:00Z"
+      },
+      "evidence_excerpt": "We propose a new class of diffusion models based on the Transformer architecture. We find that DiTs are scalable backbones.",
+      "limitations": [],
+      "script_spans": [
+        "Modern generative video discarded convolutional U-Nets in favor of Diffusion Transformers."
+      ],
+      "visual_scene_ids": [
+        "scene_01",
+        "scene_02"
+      ],
+      "verdict": "APPROVED"
+    },
+    {
+      "claim_id": "C002",
+      "statement": "DiT uses adaptive layer normalization (adaLN) to condition intermediate layers on diffusion timestep and guidance embeddings.",
+      "confidence": "verified",
+      "scope": {
+        "market": "Global Machine Learning Research",
+        "as_of": "2022-12-19"
+      },
+      "source": {
+        "canonical_url": "https://arxiv.org/abs/2212.09748",
+        "publisher": "arXiv / Peebles & Xie",
+        "published_at": "2022-12-19T00:00:00Z",
+        "retrieved_at": "2025-02-24T10:00:00Z"
+      },
+      "evidence_excerpt": "adaLN-Zero initializes scale and shift parameters with zeros, improving training stability.",
+      "limitations": [],
+      "script_spans": [
+        "Conditioning happens through adaptive layer norm zero, stabilizing training from the start."
+      ],
+      "visual_scene_ids": [
+        "scene_03",
+        "scene_04"
+      ],
+      "verdict": "APPROVED"
+    }
+  ]
+}

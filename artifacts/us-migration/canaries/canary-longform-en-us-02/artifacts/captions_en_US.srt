@@ -1,0 +1,15 @@
+1
+00:00:00,000 --> 00:00:04,000
+Modern generative video discarded convolutional U-Nets in favor of Diffusion Transformers.
+
+2
+00:00:04,000 --> 00:00:08,000
+Instead of downsampling feature maps, the model splits latent video representations into sequential patches.
+
+3
+00:00:08,000 --> 00:00:12,000
+Conditioning happens through adaptive layer norm zero, stabilizing training from the start.
+
+4
+00:00:12,000 --> 00:00:16,000
+This architectural simplicity explains why modern video generators scale predictably with compute.

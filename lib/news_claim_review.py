@@ -218,7 +218,15 @@ def prepare_claim_review(
     root_fd = os.open(project, _DIR_FLAGS)
     budget = [0]
     try:
-        script_path = project / "artifacts" / "script_vi.json"
+        if (project / "artifacts" / "script_en_US.json").is_file():
+            script_rel = "artifacts/script_en_US.json"
+        elif (project / "artifacts" / "script_vi.json").is_file():
+            script_rel = "artifacts/script_vi.json"
+        elif (project / "artifacts" / "script.json").is_file():
+            script_rel = "artifacts/script.json"
+        else:
+            script_rel = "artifacts/script_vi.json"
+        script_path = project / script_rel
         script_bytes = _read_real(script_path, project, root_fd, MAX_SCRIPT_BYTES, budget)
         script = _json(script_bytes, "canonical script")
         sections = script.get("sections") if isinstance(script, dict) else None
@@ -325,7 +333,7 @@ def prepare_claim_review(
 
         worksheet = {
             "version": "1.0", "status": "pending_editorial_review",
-            "rendition_scope": "full", "script_file": "artifacts/script_vi.json",
+            "rendition_scope": "full", "script_file": script_rel,
             "script_sha256": _sha(script_bytes), "sections": scaffold,
             "selected_captures": captures,
             "conflicts": [], "conflict_status": "unresolved",

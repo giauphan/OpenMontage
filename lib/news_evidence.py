@@ -102,7 +102,16 @@ def validate_news_evidence(
     if not root.is_dir():
         errors.append("project_dir must be an existing directory")
         return {"ok": False, "status": "failed", "errors": errors}
-    script = _safe_relative_file(root, "artifacts/script_vi.json", "script", errors)
+    if (root / "artifacts/script_en_US.json").is_file():
+        script_rel = "artifacts/script_en_US.json"
+    elif (root / "artifacts/script_vi.json").is_file():
+        script_rel = "artifacts/script_vi.json"
+    elif (root / "artifacts/script.json").is_file():
+        script_rel = "artifacts/script.json"
+    else:
+        script_rel = "artifacts/script_vi.json"
+
+    script = _safe_relative_file(root, script_rel, "script", errors)
     evidence_path = _safe_relative_file(root, EVIDENCE_RELATIVE_PATH.as_posix(), "evidence artifact", errors)
     if script is None or evidence_path is None:
         return {"ok": False, "status": "failed", "errors": errors}
@@ -112,18 +121,19 @@ def validate_news_evidence(
         evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return {"ok": False, "status": "failed", "errors": [f"cannot read/parse canonical JSON artifacts: {exc}"]}
+    script_name = Path(script_rel).name
     if not isinstance(script_json, dict):
-        errors.append("script_vi.json must be an object")
+        errors.append(f"{script_name} must be an object")
         script_sections: list[Any] = []
     else:
         script_sections = script_json.get("sections")
         if not isinstance(script_sections, list) or not script_sections:
-            errors.append("script_vi.json must contain a non-empty sections array")
+            errors.append(f"{script_name} must contain a non-empty sections array")
             script_sections = []
     if not isinstance(evidence, dict) or evidence.get("version") != "2.0":
         return {"ok": False, "status": "failed", "errors": errors + ["news_evidence.json must be a version 2.0 object"]}
     if evidence.get("script_sha256") != hashlib.sha256(script_bytes).hexdigest():
-        errors.append("script binding mismatch: script_sha256 must hash the complete current script_vi.json bytes")
+        errors.append(f"script binding mismatch: script_sha256 must hash the complete current {script_name} bytes")
     claims = evidence.get("claims")
     sources = evidence.get("sources")
     conflicts = evidence.get("contradictions")

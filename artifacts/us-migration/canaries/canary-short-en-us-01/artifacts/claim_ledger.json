@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "project_id": "canary-short-en-us-01",
+  "locale": "en-US",
+  "created_at": "2025-02-25T10:05:00Z",
+  "claims": [
+    {
+      "claim_id": "C001",
+      "statement": "Anthropic announced Claude 3.7 Sonnet featuring hybrid reasoning capabilities.",
+      "confidence": "verified",
+      "scope": {
+        "market": "Global / US-first",
+        "plan": "All tiers",
+        "as_of": "2025-02-24"
+      },
+      "source": {
+        "canonical_url": "https://www.anthropic.com/news/claude-3-7-sonnet",
+        "publisher": "Anthropic",
+        "published_at": "2025-02-24T14:00:00Z",
+        "retrieved_at": "2025-02-24T14:30:00Z"
+      },
+      "evidence_excerpt": "Today we're releasing Claude 3.7 Sonnet, our first hybrid reasoning model.",
+      "limitations": [],
+      "script_spans": [
+        "Ever wonder why AI models force you to choose between speed and deep reasoning?"
+      ],
+      "visual_scene_ids": [
+        "scene_01",
+        "scene_02"
+      ],
+      "verdict": "APPROVED"
+    },
+    {
+      "claim_id": "C002",
+      "statement": "Users can dynamically adjust thinking budgets between near-instant responses and extended reasoning.",
+      "confidence": "verified",
+      "scope": {
+        "market": "Global / US-first",
+        "plan": "API & Web",
+        "as_of": "2025-02-24"
+      },
+      "source": {
+        "canonical_url": "https://www.anthropic.com/news/claude-3-7-sonnet",
+        "publisher": "Anthropic",
+        "published_at": "2025-02-24T14:00:00Z",
+        "retrieved_at": "2025-02-24T14:30:00Z"
+      },
+      "evidence_excerpt": "Users can dial thinking time up or down depending on task complexity.",
+      "limitations": [
+        "Thinking budget requires API parameter or web interface toggle."
+      ],
+      "script_spans": [
+        "With hybrid reasoning, you set the thinking budget."
+      ],
+      "visual_scene_ids": [
+        "scene_03",
+        "scene_04"
+      ],
+      "verdict": "APPROVED"
+    }
+  ]
+}

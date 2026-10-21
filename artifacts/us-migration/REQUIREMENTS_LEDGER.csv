@@ -1,0 +1,39 @@
+Phase,Requirement_ID,Description,Source_Files,Test_Files,Evidence_File,Status
+P0,P0.1,Repository Baseline Audit and Git Cleanliness,"git status, git rev-parse",N/A,artifacts/us-migration/BASELINE_AND_CODE_MAP.md,PASS
+P0,P0.2,Baseline Test Suite Verification,scripts/run_daily_news_pipeline.sh,tests/contracts/test_daily_news_acceptance_loop.py,artifacts/us-migration/TEST_REPORT.md,PASS
+P0,P0.3,Publish Queue and Config Snapshot,config/publish_schedule.json,N/A,artifacts/us-migration/snapshots/publish_schedule.snapshot.json,PASS
+P1,P1.1,YouTube Studio Channel Rebrand Protocol,N/A,N/A,artifacts/us-migration/CHANNEL_STUDIO_REBRAND_CHECKLIST.md,PASS
+P1,P1.2,Channel ID Preservation and Safety Guard,tools/publishers/youtube_publisher.py,tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p02_channel_id_guard_blocks_mismatched_channel,artifacts/us-migration/CHANNEL_PREFLIGHT_AND_SCHEDULER.md,PASS
+P1,P1.3,Historical Vietnamese Video Manual Unlist Policy,N/A,N/A,artifacts/us-migration/CHANNEL_STUDIO_REBRAND_CHECKLIST.md,PASS
+P2,P2.1,Audience Profile Schema Specification,schemas/audience_profile.schema.json,tests/lib/test_audience_profile.py::test_load_en_us_profile,config/audience_profiles/en-US.yaml,PASS
+P2,P2.2,US-First and Legacy Vietnamese Profile Configurations,"config/audience_profiles/en-US.yaml, config/audience_profiles/vi-VN.yaml",tests/lib/test_audience_profile.py::test_load_vi_vn_legacy_profile,config/audience_profiles/en-US.yaml,PASS
+P2,P2.3,Immutable Audience Profile Loader,lib/audience_profile.py,tests/lib/test_audience_profile.py::test_invalid_profile_schema_fails_closed,lib/audience_profile.py,PASS
+P2,P2.4,Canonical Project Path Resolver,lib/artifact_paths.py,tests/lib/test_artifact_paths.py::test_resolve_script_path,lib/artifact_paths.py,PASS
+P2,P2.5,Fail-Closed Cross-Language Fallback Prevention,lib/artifact_paths.py,tests/lib/test_artifact_paths.py::test_no_permissive_fallback_from_en_to_vi,lib/artifact_paths.py,PASS
+P3,P3.1,Claim Ledger JSON Schema Specification,schemas/artifacts/claim_ledger.schema.json,tests/us_migration/test_us_migration_suite.py::TestEditorialAndCultureE01_E12::test_e01_verified_us_ai_tool_update,schemas/artifacts/claim_ledger.schema.json,PASS
+P3,P3.2,Eight Editorial and Quality Meta Skills,skills/meta/*.md,N/A,skills/meta/factcheck-and-claim-ledger.md,PASS
+P3,P3.3,English and Vietnamese Language Strategy Validators,lib/language_validation.py,tests/lib/test_language_validation.py,lib/language_validation.py,PASS
+P3,P3.4,Vietnamese Diacritic and Stop-Word Leak Detection,lib/language_validation.py,tests/lib/test_language_validation.py::test_english_rejects_vietnamese_diacritics,lib/language_validation.py,PASS
+P3,P3.5,News Evidence and Claim Review Localization Support,"lib/news_evidence.py, lib/news_claim_review.py",tests/tools/test_validate_newsnow_director_artifacts.py,lib/news_evidence.py,PASS
+P4,P4.1,Platform Routes 16:9 Longform Format Support,tools/publishers/platform_routes.py,tests/tools/test_platform_routes.py,tools/publishers/platform_routes.py,PASS
+P4,P4.2,Default English Hashtags and Category Taxonomy,tools/publishers/platform_routes.py,tests/tools/test_platform_routes.py,tools/publishers/platform_routes.py,PASS
+P4,P4.3,Locale-Aware Publish Metadata Validation,scripts/validate_publish_metadata.py,tests/us_migration/test_us_migration_suite.py::TestEditorialAndCultureE01_E12::test_e08_clickbait_title_mismatch,scripts/validate_publish_metadata.py,PASS
+P4,P4.4,Display Language Validation Localization,scripts/validate_display_language.py,tests/us_migration/test_us_migration_suite.py::TestEditorialAndCultureE01_E12::test_e09_caption_contains_vietnamese_labels_rejected,scripts/validate_display_language.py,PASS
+P4,P4.5,Render Quality Validator Multi-Format Support,scripts/validate_render_quality.py,tests/us_migration/test_us_migration_suite.py::TestAudioCaptionMediaA01_A08::test_a08_longform_16x9_rejected_by_shorts_gate_but_accepted_by_horizontal,scripts/validate_render_quality.py,PASS
+P5,P5.1,Editorial and Cultural Test Matrix (E01-E12),tests/us_migration/test_us_migration_suite.py,tests/us_migration/test_us_migration_suite.py::TestEditorialAndCultureE01_E12,artifacts/us-migration/TEST_REPORT.md,PASS
+P5,P5.2,Claim Visual Rights Test Matrix (V01-V10),tests/us_migration/test_us_migration_suite.py,tests/us_migration/test_us_migration_suite.py::TestClaimVisualRightsV01_V10,artifacts/us-migration/TEST_REPORT.md,PASS
+P5,P5.3,Audio Caption Media Test Matrix (A01-A08),tests/us_migration/test_us_migration_suite.py,tests/us_migration/test_us_migration_suite.py::TestAudioCaptionMediaA01_A08,artifacts/us-migration/TEST_REPORT.md,PASS
+P5,P5.4,Publisher Scheduler Security Matrix (P01-P12),tests/us_migration/test_us_migration_suite.py,tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12,artifacts/us-migration/TEST_REPORT.md,PASS
+P5,P5.5,Integration and Operations Matrix (I01-I10),tests/us_migration/test_us_migration_suite.py,tests/us_migration/test_us_migration_suite.py::TestIntegrationAndOperationsI01_I10,artifacts/us-migration/TEST_REPORT.md,PASS
+P6,P6.1,YouTube Publisher Format Routing (Short vs Longform),tools/publishers/youtube_publisher.py,tests/tools/test_short_publish_route.py,tools/publishers/youtube_publisher.py,PASS
+P6,P6.2,OAuth Channel Identity Preflight Guard,tools/publishers/youtube_publisher.py,tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p02_channel_id_guard_blocks_mismatched_channel,tools/publishers/youtube_publisher.py,PASS
+P6,P6.3,Synthetic Media Disclosure Flag Enforcement,tools/publishers/youtube_publisher.py,tests/us_migration/test_us_migration_suite.py::TestClaimVisualRightsV01_V10::test_v10_synthetic_photorealistic_disclosure_required,tools/publishers/youtube_publisher.py,PASS
+P6,P6.4,Locale-Aware Prose Quality Gate in Publisher,tools/publishers/youtube_publisher.py,tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p11_stale_vi_schedule_item_quarantined_not_published_as_english,tools/publishers/youtube_publisher.py,PASS
+P7,P7.1,DST-Safe America/New_York Publishing Scheduler,scripts/schedule_today_native.py,tests/test_schedule_today_native.py::test_schedule_today_native_with_mock_store,scripts/schedule_today_native.py,PASS
+P7,P7.2,Scheduler Shadow Simulation Dry-Run Mode,scripts/schedule_today_native.py,tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p09_dry_run_mode_provably_avoids_network_upload,scripts/schedule_today_native.py,PASS
+P7,P7.3,Concurrent Slot Claim and Deduplication Guard,scripts/schedule_today_native.py,tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p05_duplicate_scheduler_claim_prevented,scripts/schedule_today_native.py,PASS
+P8,P8.1,Canary 1: Reviewed en-US Short (9:16 Portrait),artifacts/us-migration/canaries/canary-short-en-us-01,scripts/validate_render_quality.py,artifacts/us-migration/VISUAL_EVIDENCE_AND_QA.md,PASS
+P8,P8.2,Canary 2: Reviewed en-US Longform (16:9 Landscape),artifacts/us-migration/canaries/canary-longform-en-us-02,scripts/validate_render_quality.py,artifacts/us-migration/VISUAL_EVIDENCE_AND_QA.md,PASS
+P8,P8.3,Three Isolated Rehearsal Bundles (Alpha/Bravo/Charlie),artifacts/us-migration/rehearsals/*,N/A,artifacts/us-migration/THREE_REHEARSALS.md,PASS
+P8,P8.4,Incident Rollback Runbook and Reversal Plan,artifacts/us-migration/ROLLBACK_RUNBOOK.md,N/A,artifacts/us-migration/ROLLBACK_RUNBOOK.md,PASS
+P8,P8.5,Formal GO/NO-GO Dossier (Hard Stop at P8),artifacts/us-migration/GO_NO_GO.md,N/A,artifacts/us-migration/GO_NO_GO.md,PASS

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "topic": "Claude 3.7 Sonnet Announcement",
+  "primary_source": {
+    "title": "Claude 3.7 Sonnet and Claude Code",
+    "url": "https://www.anthropic.com/news/claude-3-7-sonnet",
+    "publisher": "Anthropic",
+    "published_at": "2025-02-24T14:00:00Z",
+    "retrieved_at": "2025-02-24T14:30:00Z"
+  },
+  "key_facts": [
+    "Hybrid reasoning combines instant inference and extended thinking",
+    "Available on API and claude.ai across free and paid plans",
+    "Supports token-budgeted reasoning steps up to 128k tokens"
+  ]
+}

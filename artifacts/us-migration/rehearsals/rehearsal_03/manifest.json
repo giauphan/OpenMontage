@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "test_only": true,
+  "rehearsal_id": "rehearsal_03",
+  "bundles": [
+    {
+      "project_id": "rehearsal-en-us-charlie",
+      "project_dir": "projects/rehearsal-en-us-charlie",
+      "locale": "en-US",
+      "channel_id_guard": "ENFORCED",
+      "egress_denied": true
+    }
+  ]
+}

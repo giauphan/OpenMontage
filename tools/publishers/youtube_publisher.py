@@ -166,29 +166,52 @@ class YoutubePublisher(BaseTool):
 
         title = inputs["title"][:100]
         description = inputs.get("description", "")
+        format_type = str(inputs.get("format", "short")).lower()
+        locale = str(inputs.get("locale") or ("en-US" if "en-us" in str(inputs.get("audience_profile_id", "")).lower() else "vi-VN"))
 
-        from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short
+        from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short, ensure_horizontal
+        from lib.artifact_paths import is_english_locale
 
         try:
-            ensure_vertical(video_path)
-            ensure_youtube_short(video_path)
+            if format_type in ("short", "shorts"):
+                ensure_vertical(video_path)
+                ensure_youtube_short(video_path)
+            elif format_type in ("longform", "long", "16:9"):
+                ensure_horizontal(video_path)
         except ValueError as geom_err:
             return ToolResult(success=False, error=str(geom_err))
 
-        from tools.narration_text import check_vietnamese_prose
-        title_errors = check_vietnamese_prose(title)
-        if title_errors:
-            return ToolResult(
-                success=False,
-                error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
-            )
-        if description:
-            desc_errors = check_vietnamese_prose(description)
-            if desc_errors:
+        from lib.language_validation import get_language_validator
+        validator = get_language_validator(locale)
+        if is_english_locale(locale):
+            title_errors = validator.validate_prose(title)
+            if title_errors:
                 return ToolResult(
                     success=False,
-                    error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
+                    error=f"Invalid YouTube title (non-English prose): {title_errors[0]}",
                 )
+            if description:
+                desc_errors = validator.validate_prose(description)
+                if desc_errors:
+                    return ToolResult(
+                        success=False,
+                        error=f"Invalid YouTube description (non-English prose): {desc_errors[0]}",
+                    )
+        else:
+            from tools.narration_text import check_vietnamese_prose
+            title_errors = check_vietnamese_prose(title)
+            if title_errors:
+                return ToolResult(
+                    success=False,
+                    error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
+                )
+            if description:
+                desc_errors = check_vietnamese_prose(description)
+                if desc_errors:
+                    return ToolResult(
+                        success=False,
+                        error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
+                    )
 
         secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
         if not secret_file_str:
@@ -223,6 +246,26 @@ class YoutubePublisher(BaseTool):
 
             youtube = self._get_authenticated_service(secret_file, token_file)
 
+            expected_channel_id = (
+                inputs.get("expected_channel_id")
+                or os.environ.get("EXPECTED_CHANNEL_ID")
+                or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
+            )
+            if expected_channel_id:
+                ch_resp = youtube.channels().list(mine=True, part="id,snippet").execute()
+                items = ch_resp.get("items", [])
+                if not items:
+                    return ToolResult(
+                        success=False,
+                        error=f"CHANNEL_GUARD_REJECTED: No channel found for authenticated credentials. Expected: {expected_channel_id}",
+                    )
+                actual_channel_id = items[0].get("id")
+                if actual_channel_id != expected_channel_id:
+                    return ToolResult(
+                        success=False,
+                        error=f"CHANNEL_GUARD_REJECTED: Authenticated channel ID '{actual_channel_id}' does not match expected channel ID '{expected_channel_id}'. Upload aborted.",
+                    )
+
             body = {
                 "snippet": {
                     "title": title,
@@ -232,9 +275,19 @@ class YoutubePublisher(BaseTool):
                 },
                 "status": {
                     "privacyStatus": privacy_status,
-                    "selfDeclaredMadeForKids": False,
+                    "selfDeclaredMadeForKids": bool(inputs.get("made_for_kids", False)),
                 },
             }
+            if is_english_locale(locale):
+                body["snippet"]["defaultLanguage"] = "en-US"
+                body["snippet"]["defaultAudioLanguage"] = "en-US"
+            elif locale.startswith("vi"):
+                body["snippet"]["defaultLanguage"] = "vi-VN"
+                body["snippet"]["defaultAudioLanguage"] = "vi-VN"
+
+            if inputs.get("contains_synthetic_media") or inputs.get("has_synthetic_media"):
+                body["status"]["containsSyntheticMedia"] = True
+
             if publish_at:
                 body["status"]["publishAt"] = publish_at
 
