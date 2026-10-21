@@ -180,7 +180,8 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes/index.html"
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.from('#scene-1 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 0.2);
-      tl.to('#scene-1', { opacity: 0, duration: 0.4 }, 5.6);
+      tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 5.6);
+      tl.set('#scene-1 .scene-box', { opacity: 0 }, 6.0);
       tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 6.2);
       window.__timelines['main'] = tl;
     })();
@@ -242,7 +243,8 @@ cat << 'EOF' > "$PROJECT_DIR/hyperframes_reels/index.html"
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.from('#scene-1 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 0.2);
-      tl.to('#scene-1', { opacity: 0, duration: 0.4 }, 5.6);
+      tl.to('#scene-1 .scene-box', { opacity: 0, duration: 0.4 }, 5.6);
+      tl.set('#scene-1 .scene-box', { opacity: 0 }, 6.0);
       tl.from('#scene-2 .scene-box', { opacity: 0, y: 50, duration: 0.8, ease: 'power2.out' }, 6.2);
       window.__timelines['main'] = tl;
     })();

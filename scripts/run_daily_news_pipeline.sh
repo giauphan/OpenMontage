@@ -272,8 +272,17 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
   PROJECT_LOCALE="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$PROJECT_DIR')))" 2>/dev/null || echo "en-US")"
+  locale="$PROJECT_LOCALE"
   is_en=1
   if [ "$PROJECT_LOCALE" = "vi-VN" ]; then is_en=0; fi
+  if [ "$is_en" -eq 1 ]; then
+    script_json="$PROJECT_DIR/artifacts/script_en_US.json"
+  else
+    script_json="$PROJECT_DIR/artifacts/script_vi.json"
+  fi
+  if [ ! -s "$script_json" ] && [ -s "$PROJECT_DIR/artifacts/script.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script.json"
+  fi
 
 # Step 2.5: Run Directors pipeline via Codex CLI (unattended, logged) (P2)
 DIRECTORS_LOG="$ROOT/logs/directors_${PROJECT_ID}_$(date -u +%Y%m%dT%H%M%SZ).log"
@@ -982,7 +991,21 @@ if [ $RENDER_MISSING -ne 0 ]; then
 fi
 
 # Step 2: Create publish_metadata.json first (needed for Codex validation)
-TITLE=$(jq -r '.title // empty' "$script_json" 2>/dev/null || echo "")
+if [ -z "${script_json:-}" ] || [ ! -s "$script_json" ]; then
+  if [ -s "$PROJECT_DIR/artifacts/script_en_US.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script_en_US.json"
+  elif [ -s "$PROJECT_DIR/artifacts/script_vi.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script_vi.json"
+  elif [ -s "$PROJECT_DIR/artifacts/script.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script.json"
+  else
+    script_json=""
+  fi
+fi
+TITLE=""
+if [ -n "$script_json" ] && [ -s "$script_json" ]; then
+  TITLE=$(jq -r '.title // empty' "$script_json" 2>/dev/null || echo "")
+fi
 if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 fi
@@ -1008,12 +1031,12 @@ if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$FULL_RENDER_P
   jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
-  --arg desc "$(jq -r '.description // ""' "$script_json" 2>/dev/null || echo "")" \
+  --arg desc "$(if [ -n "$script_json" ] && [ -s "$script_json" ]; then jq -r '.description // ""' "$script_json" 2>/dev/null || echo ""; fi)" \
   --arg yt_shorts "$REELS_RENDER_PATH" \
   --arg tiktok "$FULL_RENDER_PATH" \
   --arg fb_video "$FULL_RENDER_PATH" \
   --arg ig_reels "$REELS_RENDER_PATH" \
-  --arg locale "$locale" \
+  --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
   --arg format "short" \
   --argjson feed_stale "$FEED_STALE" \
   '{
@@ -1128,8 +1151,13 @@ fi
 # Safeguard: ensure it fits within 100 chars for YT Shorts
 if [ ${#TITLE} -gt 100 ]; then
   # Strip any existing suffix and truncate base title to 80 chars, then append required hashtags
-  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
-  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  if [ "$is_en" -eq 1 ]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  else
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  fi
 fi
 
 CONCEPT_HOOK=$(jq -r '.concept_options[0].hook // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
@@ -1177,6 +1205,8 @@ jq -n \
   --arg tiktok "$FULL_RENDER_PATH" \
   --arg fb_video "$FULL_RENDER_PATH" \
   --arg ig_reels "$REELS_RENDER_PATH" \
+  --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
+  --arg format "short" \
   --argjson feed_stale "$FEED_STALE" \
   --argjson template_prov "$TEMPLATE_PROV_JSON" \
   '{
@@ -1188,6 +1218,8 @@ jq -n \
     tiktok: $tiktok,
     fb_video: $fb_video,
     ig_reels: $ig_reels,
+    locale: $locale,
+    format: $format,
     feed_stale: $feed_stale
   } + (if ($template_prov|length) > 0 then $template_prov else {} end)' > publish_metadata.json
 
