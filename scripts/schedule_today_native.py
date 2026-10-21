@@ -24,7 +24,7 @@ from scripts.publish_config import (
 )
 from scripts.validate_publish_metadata import validate_metadata
 from tools.news import template_provenance
-from tools.publish_store import PublishStore
+from tools.publish_store import PublishStore, publish_key
 from tools.publishers.platform_routes import (
     youtube_shorts_title,
     compose_release_metadata,
@@ -177,6 +177,27 @@ def main():
             print(f"failed {proj}: missing publish_metadata.json")
             failed = True
             continue
+        try:
+            topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as err:
+            print(f"failed {proj}: invalid publish_metadata.json ({err})")
+            failed = True
+            continue
+
+        meta_status = topic_meta.get("status", "")
+        if meta_status in ("published", "scheduled"):
+            print(f"SKIPPED {proj}: already {meta_status}")
+            continue
+
+        yt_account = cfg.get("youtube", {}).get("account", "primary")
+        topic_id = topic_meta.get("id") or proj
+        yt_key = publish_key(date, topic_id, "youtube", "short")
+        if hasattr(store, "get"):
+            existing_claim = store.get(yt_key)
+            if existing_claim and existing_claim.get("status") in ("scheduled", "published"):
+                print(f"ALREADY SCHEDULED {proj} on youtube for {existing_claim.get('scheduled_for', date)} ({existing_claim.get('video_url', '')})")
+                continue
+
         # Strict validation gate: Ensure project has passed validation_status.json in project dir
         vstatus_path = project_dir / "validation_status.json"
         if not vstatus_path.is_file():
@@ -203,17 +224,12 @@ def main():
             print(f"failed {proj}: error reading validation_status.json ({err})")
             failed = True
             continue
-        topic_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
         try:
             from lib.news_release_gate import require_news_evidence
             require_news_evidence(project_dir, metadata=topic_meta)
         except Exception as err:
             print(f"failed {proj}: news evidence gate failed ({err})")
-            failed = True
-            continue
-        meta_status = topic_meta.get("status","")
-        if meta_status in ("published", "scheduled"):
-            print(f"failed {proj}: status '{meta_status}'")
             failed = True
             continue
         meta_valid, meta_errors = validate_metadata(meta_path)

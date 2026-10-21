@@ -161,3 +161,67 @@ def test_publish_config_respects_openmontage_env_vars(tmp_path: Path, monkeypatc
     assert loaded["youtube"]["account"] == "custom_yt"
     assert loaded["meta"]["page_id"] == "custom_page"
 
+
+def test_already_scheduled_projects_skip_gracefully_without_failing_news_gate(tmp_path: Path, monkeypatch, capsys):
+    from scripts.schedule_today_native import main
+
+    projects_dir = tmp_path / "projects"
+    config_dir = tmp_path / "config"
+    projects_dir.mkdir(parents=True)
+    config_dir.mkdir(parents=True)
+
+    today = datetime.now(timezone.utc).strftime("%F")
+
+    (config_dir / "publish_schedule.json").write_text(json.dumps({
+        "timezone": "UTC",
+        "youtube": {"account": "yt-account"},
+        "instagram": {"account_id": "ig-account"},
+        "active_projects": [
+            {"project_id": "cand_meta_scheduled", "publish_date": today, "publish_time": "14:15"},
+            {"project_id": "cand_store_scheduled", "publish_date": today, "publish_time": "21:15"},
+        ]
+    }))
+
+    # cand_meta_scheduled: metadata status is "scheduled", no news evidence
+    cand1 = projects_dir / "cand_meta_scheduled"
+    cand1.mkdir()
+    (cand1 / "publish_metadata.json").write_text(json.dumps({
+        "id": "cand_meta_scheduled",
+        "title": "Tin tức #tintuc",
+        "description": "Bản tin #tintuc",
+        "status": "scheduled",
+    }))
+
+    # cand_store_scheduled: metadata status is "generated", store says already scheduled, no news evidence
+    cand2 = projects_dir / "cand_store_scheduled"
+    cand2.mkdir()
+    (cand2 / "publish_metadata.json").write_text(json.dumps({
+        "id": "cand_store_scheduled",
+        "title": "Tin tức 2 #tintuc",
+        "description": "Bản tin 2 #tintuc",
+        "status": "generated",
+    }))
+
+    class DummyStore:
+        def get(self, key):
+            if "cand_store_scheduled" in key:
+                return {"status": "scheduled", "scheduled_for": today, "video_url": "https://youtu.be/dummy123"}
+            return None
+
+    mock_yt_pub = MagicMock()
+
+    with patch("scripts.schedule_today_native.ROOT", tmp_path), \
+         patch("scripts.schedule_today_native.PublishStore", DummyStore), \
+         patch("scripts.schedule_today_native.load_config", return_value=json.loads((config_dir / "publish_schedule.json").read_text())), \
+         patch("scripts.schedule_today_native.YoutubePublisher", return_value=mock_yt_pub), \
+         patch("sys.argv", ["schedule_today_native.py", "--date", today]):
+
+        exit_code = main()
+        # Must exit 0 and not fail due to news evidence gate
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "SKIPPED cand_meta_scheduled: already scheduled" in captured.out
+        assert "ALREADY SCHEDULED cand_store_scheduled on youtube" in captured.out
+        assert mock_yt_pub.execute.call_count == 0
+
+
