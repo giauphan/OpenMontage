@@ -62,7 +62,7 @@ def validate_hashtags(field_name: str, value: str, required: set[str]) -> list[s
 
 
 
-def validate_metadata(metadata_path: Path) -> tuple[bool, list[str]]:
+def validate_metadata(metadata_path: Path, locale: str | None = None) -> tuple[bool, list[str]]:
     """Validate publish_metadata.json. Returns (success, errors)."""
     if not metadata_path.is_file():
         return False, [f"publish_metadata.json not found: {metadata_path}"]
@@ -75,18 +75,37 @@ def validate_metadata(metadata_path: Path) -> tuple[bool, list[str]]:
 
     errors = []
 
+    if locale is None:
+        locale = metadata.get("locale")
+        if not locale and metadata_path.parent.is_dir():
+            from lib.artifact_paths import resolve_project_locale
+            locale = resolve_project_locale(metadata_path.parent, metadata=metadata)
+        if not locale:
+            locale = "vi-VN"
+
+    from lib.artifact_paths import is_english_locale
+    from lib.language_validation import get_language_validator
+    validator = get_language_validator(locale)
+    is_en = is_english_locale(locale)
+
     # Validate title
     title = metadata.get("title", "")
     if not title:
         errors.append("title field is missing or empty")
     else:
         errors.extend(validate_text_field("title", title))
-        errors.extend(validate_hashtags("title", title, REQUIRED_HASHTAGS))
-        try:
-            youtube_shorts_title(title)
-        except ValueError as exc:
-            errors.append(f"YouTube Shorts title invalid: {exc}")
-        lang_errors = check_vietnamese_prose(title)
+        if not is_en:
+            errors.extend(validate_hashtags("title", title, REQUIRED_HASHTAGS))
+        format_type = metadata.get("format", "short")
+        if format_type == "short":
+            try:
+                youtube_shorts_title(title)
+            except ValueError as exc:
+                errors.append(f"YouTube Shorts title invalid: {exc}")
+        else:
+            if len(title) > 100:
+                errors.append(f"YouTube longform title exceeds 100 characters: {len(title)}")
+        lang_errors = validator.validate_prose(title)
         if lang_errors:
             errors.extend(f"title language error: {err}" for err in lang_errors)
 
@@ -94,8 +113,9 @@ def validate_metadata(metadata_path: Path) -> tuple[bool, list[str]]:
     description = metadata.get("description", "")
     if description:
         errors.extend(validate_text_field("description", description))
-        errors.extend(validate_hashtags("description", description, REQUIRED_HASHTAGS))
-        lang_errors = check_vietnamese_prose(description)
+        if not is_en:
+            errors.extend(validate_hashtags("description", description, REQUIRED_HASHTAGS))
+        lang_errors = validator.validate_prose(description)
         if lang_errors:
             errors.extend(f"description language error: {err}" for err in lang_errors)
 

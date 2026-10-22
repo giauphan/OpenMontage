@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "topic": "Diffusion Transformers Architecture Deep Dive",
+  "primary_source": {
+    "title": "Scalable Diffusion Models with Transformers",
+    "url": "https://arxiv.org/abs/2212.09748",
+    "publisher": "arXiv / Peebles & Xie",
+    "published_at": "2022-12-19T00:00:00Z",
+    "retrieved_at": "2025-02-24T10:00:00Z"
+  },
+  "key_facts": [
+    "Diffusion Transformers replace conventional U-Net backbones with Vision Transformer blocks",
+    "Patchification flattens latent spatial-temporal tokens into a 1D sequence",
+    "Adaptive Layer Normalization (adaLN-Zero) conditions transformer blocks on timestep and class"
+  ]
+}

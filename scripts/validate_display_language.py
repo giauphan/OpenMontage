@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local Vietnamese static HTML/subtitle gate, not OCR or runtime JS validation.
+"""Local Vietnamese and English static HTML/subtitle gate, not OCR or runtime JS validation.
 
 Checks text nodes grouped by block, excluding non-rendered HTML containers and
 explicitly hidden elements. CSS selectors, generated content, canvas, images and
@@ -22,6 +22,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.narration_text import check_vietnamese_prose
+from lib.artifact_paths import is_english_locale
+from lib.language_validation import get_language_validator
 
 _WORDS = re.compile(r"[^\W\d_]+", re.UNICODE)
 _BLOCKS = set("address article aside blockquote div dl dt dd figcaption footer form h1 h2 h3 h4 h5 h6 header li main nav ol p pre section table td th tr ul text".split())
@@ -30,12 +32,15 @@ _VOID = set("area base br col embed hr img input link meta param source track wb
 _SUBTITLE_SUFFIXES = {".srt", ".vtt", ".ass", ".ssa"}
 
 
-def validate_display_text(text: str) -> list[str]:
-    """Apply the shared prose checker with narrow standalone-label exceptions.
+def validate_display_text(text: str, locale: str = "vi-VN") -> list[str]:
+    """Apply the locale-aware prose checker with narrow standalone-label exceptions.
 
     Proper-name recognition is lexical, not entity recognition. Short capitalized
     names are allowed only if the shared checker found no English stop words.
     """
+    if is_english_locale(locale):
+        return get_language_validator(locale).validate_prose(text)
+
     text = unicodedata.normalize("NFC", " ".join(text.split()))
     if not text:
         return []
@@ -108,18 +113,23 @@ class VisibleTextParser(HTMLParser):
 
 
 def _read(path: Path) -> str:
-    text = path.read_text(encoding="utf-8-sig")
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        raise ValueError(f"missing or empty static text source: {path}")
+    with open(path_resolved, "r", encoding="utf-8-sig") as f:
+        text = f.read()
     if not text.strip():
         raise ValueError("missing or empty static text source")
     return text
 
 
-def _text_errors(path: Path, blocks: list[tuple[int, str]]) -> list[str]:
+def _text_errors(path: Path, blocks: list[tuple[int, str]], locale: str = "vi-VN") -> list[str]:
     errors = []
     for line, text in blocks:
-        reasons = validate_display_text(text)
+        reasons = validate_display_text(text, locale=locale)
         if reasons:
-            errors.append(f"{path}:{line}: display text must be Vietnamese: {text[:180]!r} ({'; '.join(reasons)})")
+            expected_lang = "English" if is_english_locale(locale) else "Vietnamese"
+            errors.append(f"{path}:{line}: display text must be {expected_lang}: {text[:180]!r} ({'; '.join(reasons)})")
     return errors
 
 
@@ -154,4 +164,41 @@ def _subtitle_blocks(path: Path) -> list[tuple[int, str]]:
     blocks = []
     for cue in re.split(r"\n\s*\n", text.replace("\r\n", "\n")):
         lines = cue.splitlines()
-        timing = next((i for i, value in enumerate(lines
+        timing = next((i for i, value in enumerate(lines) if "-->" in value), None)
+        if timing is not None:
+            text_lines = [l for l in lines[timing + 1:] if l.strip()]
+            if text_lines:
+                blocks.append((timing + 1, " ".join(text_lines)))
+    return blocks
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("paths", nargs="+", type=Path)
+    parser.add_argument("--locale", default="vi-VN", help="Target locale (en-US or vi-VN)")
+    args = parser.parse_args()
+
+    all_errors: list[str] = []
+    for target in args.paths:
+        if not target.is_file():
+            all_errors.append(f"File not found: {target}")
+            continue
+        try:
+            if target.suffix.lower() in _SUBTITLE_SUFFIXES or target.name.endswith(".json"):
+                blocks = _subtitle_blocks(target)
+            else:
+                parser_inst = VisibleTextParser()
+                parser_inst.feed(_read(target))
+                parser_inst.flush()
+                blocks = parser_inst.blocks
+            all_errors.extend(_text_errors(target, blocks, locale=args.locale))
+        except Exception as exc:
+            all_errors.append(f"{target}: failed to parse text ({exc})")
+
+    for err in all_errors:
+        print(err, file=sys.stderr)
+    return 1 if all_errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

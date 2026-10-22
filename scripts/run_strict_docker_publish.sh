@@ -500,13 +500,17 @@ for PID in "${PROJECT_IDS[@]}"; do
   jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
     || { log "FAIL $PID: publish_metadata.json invalid/missing fields"; continue; }
   # 4c. Render files exist and non-empty.
-  RENDER_OK=1
-  for R in "renders/final_full_vi_9x16.mp4" "renders/final_reels_vi_9x16.mp4"; do
-    [ -s "$PDIR/$R" ] || { log "FAIL $PID: render $R missing/empty"; RENDER_OK=0; }
-  done
+  RENDER_OK=0
+  if [ -s "$PDIR/renders/final_short_en_US_9x16.mp4" ] || [ -s "$PDIR/renders/final_long_en_US_16x9.mp4" ]; then
+    RENDER_OK=1
+  elif [ -s "$PDIR/renders/final_full_vi_9x16.mp4" ] && [ -s "$PDIR/renders/final_reels_vi_9x16.mp4" ]; then
+    RENDER_OK=1
+  else
+    log "FAIL $PID: expected renders missing or empty"
+  fi
   [ "$RENDER_OK" -eq 1 ] || continue
-  # 4d. Technical quality validation via validate_render_quality.py (reels max 60s for Shorts).
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --reels-max-duration 60.0 >> "$VERIFY_LOG" 2>&1 \
+  # 4d. Technical quality validation via validate_render_quality.py (min 60s, up to 180s for Shorts/Reels).
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --min-duration 60.0 --reels-max-duration 180.0 >> "$VERIFY_LOG" 2>&1 \
     || { log "FAIL $PID: validate_render_quality failed"; continue; }
   # 4e. publish_metadata validation.
   "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \

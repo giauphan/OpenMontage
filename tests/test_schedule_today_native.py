@@ -21,7 +21,7 @@ def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tm
     projects_dir.mkdir(parents=True)
     config_dir.mkdir(parents=True)
     
-    today = datetime.now(timezone.utc).strftime("%F")
+    today = "2099-01-01"
     
     (config_dir / "publish_schedule.json").write_text(json.dumps({
         "timezone": "UTC",
@@ -92,7 +92,7 @@ def test_passed_slot_cutoff_is_skipped_gracefully_without_exit_failure(tmp_path:
     projects_dir.mkdir(parents=True)
     config_dir.mkdir(parents=True)
 
-    today = datetime.now(timezone.utc).strftime("%F")
+    today = "2000-01-01"
 
     # Slot set to 00:01 UTC (in the past if running any time after 00:21 UTC, or guaranteed past by mocking publish_time)
     (config_dir / "publish_schedule.json").write_text(json.dumps({
@@ -170,7 +170,7 @@ def test_already_scheduled_projects_skip_gracefully_without_failing_news_gate(tm
     projects_dir.mkdir(parents=True)
     config_dir.mkdir(parents=True)
 
-    today = datetime.now(timezone.utc).strftime("%F")
+    today = "2099-01-01"
 
     (config_dir / "publish_schedule.json").write_text(json.dumps({
         "timezone": "UTC",

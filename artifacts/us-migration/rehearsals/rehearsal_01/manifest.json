@@ -1,0 +1,7 @@
+{
+  "isolated_root": ".",
+  "report": "logs/daily_news_rehearsal_report.json",
+  "failure_evidence": "logs/failure-observation.log",
+  "recovery_evidence": "logs/recovery-observation.log",
+  "signature": "rehearsal-us-run-01"
+}

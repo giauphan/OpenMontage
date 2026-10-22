@@ -50,9 +50,29 @@ MIN_EDGE_DENSITY = 0.005
 MAX_STATIC_RATIO = 0.95
 
 
+def _safe_executable(binary_name: str, candidate: str | None = None) -> str:
+    """Resolve an executable securely, ensuring it matches the expected binary."""
+    if candidate:
+        resolved = shutil.which(candidate)
+        if resolved and os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+            if Path(resolved).name in (binary_name, f"{binary_name}.exe"):
+                return resolved
+    system_bin = shutil.which(binary_name)
+    if system_bin:
+        return system_bin
+    return binary_name
+
+
 def probe(path: Path, ffprobe: str) -> dict:
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        raise ValueError(f"probe target not found: {path}")
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        raise ValueError("Invalid target path")
+    ffprobe_bin = _safe_executable("ffprobe", ffprobe)
     result = subprocess.run(
-        [ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
+        [ffprobe_bin, "-v", "error", "-show_streams", "-show_format", "-of", "json", "--", path_str],
         check=False,
         capture_output=True,
         text=True,
@@ -101,8 +121,15 @@ def number(value: object, default: float = 0.0) -> float:
 
 def measure_mean_volume(path: Path, ffmpeg: str) -> float | None:
     """Return the mean audio level in dBFS, or None when it cannot be measured."""
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-af", "volumedetect",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-af", "volumedetect",
          "-f", "null", "-"],
         check=False,
         capture_output=True,
@@ -122,9 +149,16 @@ def measure_mean_volume(path: Path, ffmpeg: str) -> float | None:
 
 def measure_black_seconds(path: Path, ffmpeg: str, strict: bool = False) -> float | None:
     """Return total detected black-frame duration in seconds, or None if unavailable."""
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     pix_th = "0.02" if not strict else "0.10"
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path),
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str,
          "-vf", f"blackdetect=d=0.5:pic_th=0.99:pix_th={pix_th}", "-an", "-f", "null", "-"],
         check=False,
         capture_output=True,
@@ -143,8 +177,15 @@ def measure_black_seconds(path: Path, ffmpeg: str, strict: bool = False) -> floa
 
 
 def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-vf",
          "fps=1,scale=270:480,edgedetect=low=0.1:high=0.4,signalstats,metadata=print",
          "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
@@ -160,11 +201,18 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
 
 
 def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool = False) -> float | None:
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     noise_threshold = "-50dB" if strict else "-60dB"
     # In strict mode, analyze upper 80% to catch static slides with animated bottom captions
     vf = f"crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2" if strict else f"freezedetect=n={noise_threshold}:d=2"
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-vf",
          vf, "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
     )
@@ -198,6 +246,7 @@ def validate_video(
     max_duration: float | None = None,
     narration_text: Path | None = None,
     strict: bool = False,
+    locale: str = "vi-VN",
 ) -> list[str]:
     errors: list[str] = []
     if not path.is_file() or path.stat().st_size == 0:
@@ -210,7 +259,13 @@ def validate_video(
         if not narration_text.is_file():
             errors.append(f"{narration_text}: missing narration text")
         else:
-            language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
+            from lib.artifact_paths import is_english_locale
+            from lib.language_validation import get_language_validator
+            if is_english_locale(locale):
+                validator = get_language_validator(locale)
+                language_errors = validator.validate_prose(narration_text.read_text(encoding="utf-8"))
+            else:
+                language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
             errors.extend(f"{narration_text}: {error}" for error in language_errors)
             if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
                 errors.append(f"{narration}: narration audio is stale relative to text {narration_text}")
@@ -336,12 +391,12 @@ def main() -> int:
         default=None,
         help="ffmpeg binary used for decode-level audio/video content checks",
     )
-    parser.add_argument("--min-duration", type=float, default=5.0)
+    parser.add_argument("--min-duration", type=float, default=None, help="Base minimum duration in seconds (default: 5.0s, or 60.0s for full render)")
     parser.add_argument(
         "--full-min-duration",
         type=float,
         default=None,
-        help="Minimum duration in seconds for full render (overrides --min-duration for full)",
+        help="Minimum duration in seconds for full render (default: 60.0s / 1 min)",
     )
     parser.add_argument(
         "--reels-min-duration",
@@ -350,7 +405,7 @@ def main() -> int:
         help="Minimum duration in seconds for reels render (overrides --min-duration for reels)",
     )
     parser.add_argument("--tolerance", type=float, default=3.0)
-    parser.add_argument("--reels-max-duration", type=float, default=None)
+    parser.add_argument("--reels-max-duration", type=float, default=180.0, help="Maximum duration for reels (default: 180.0s / 3 min, None for unlimited)")
     parser.add_argument(
         "--render",
         choices=("full", "reels"),
@@ -368,20 +423,33 @@ def main() -> int:
     )
     args = parser.parse_args()
     ffmpeg = args.ffmpeg or shutil.which("ffmpeg")
-    narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
+    from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_narration_text_path
+    locale = resolve_project_locale(args.project_dir)
+    is_en = is_english_locale(locale)
+
+    if is_en:
+        full_render_name = "final_long_en_US_16x9.mp4"
+        reels_render_name = "final_short_en_US_9x16.mp4"
+        narration_text = resolve_narration_text_path(args.project_dir, locale=locale)
+    else:
+        full_render_name = FULL_RENDER
+        reels_render_name = REELS_RENDER
+        narration_text = args.project_dir / "artifacts" / "narration_vi_text.txt"
 
     full_narration = resolve_narration(args.project_dir, "narration.mp3")
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
 
-    full_min = args.full_min_duration if args.full_min_duration is not None else args.min_duration
-    reels_min = args.reels_min_duration if args.reels_min_duration is not None else args.min_duration
+    base_min = args.min_duration if args.min_duration is not None else 5.0
+    full_min = args.full_min_duration if args.full_min_duration is not None else (args.min_duration if args.min_duration is not None else 60.0)
+    reels_min = args.reels_min_duration if args.reels_min_duration is not None else base_min
 
+    full_dims = (1920, 1080) if is_en else PORTRAIT_DIMENSIONS
     renders = (
-        ("full", FULL_RENDER, full_narration, full_min, None),
-        ("reels", REELS_RENDER, reels_narration, reels_min, args.reels_max_duration),
+        ("full", full_render_name, full_narration, full_min, None, full_dims),
+        ("reels", reels_render_name, reels_narration, reels_min, args.reels_max_duration, PORTRAIT_DIMENSIONS),
     )
     errors: list[str] = []
-    for render_kind, render_name, narration, min_dur, max_duration in renders:
+    for render_kind, render_name, narration, min_dur, max_duration, dims in renders:
         if args.render and render_kind != args.render:
             continue
         errors.extend(
@@ -392,10 +460,11 @@ def main() -> int:
                 ffmpeg,
                 min_dur,
                 args.tolerance,
-                PORTRAIT_DIMENSIONS,
+                dims,
                 max_duration,
                 narration_text,
                 strict=args.strict,
+                locale=locale,
             )
         )
     allow_repair = not getattr(args, "no_auto_repair", False) and not os.environ.get("OPENMONTAGE_NO_AUTO_REPAIR")
@@ -411,7 +480,7 @@ def main() -> int:
             if repair_proc.returncode == 0:
                 # Re-run validation checks without further auto-repair
                 errors = []
-                for render_kind, render_name, narration, min_dur, max_duration in renders:
+                for render_kind, render_name, narration, min_dur, max_duration, dims in renders:
                     if args.render and render_kind != args.render:
                         continue
                     errors.extend(
@@ -422,10 +491,11 @@ def main() -> int:
                             ffmpeg,
                             min_dur,
                             args.tolerance,
-                            PORTRAIT_DIMENSIONS,
+                            dims,
                             max_duration,
                             narration_text,
                             strict=args.strict,
+                            locale=locale,
                         )
                     )
     for error in errors:

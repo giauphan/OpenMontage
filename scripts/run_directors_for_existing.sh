@@ -22,7 +22,7 @@ if [ -z "$HYPERFRAMES_BIN" ]; then HYPERFRAMES_BIN="$(find "$HOME/.npm/_npx" -pa
 export FFPROBE_BIN FFMPEG_BIN HYPERFRAMES_BIN
 
 auto_render_quality() {
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$1" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --min-duration 60.0 --reels-max-duration 180.0
 }
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
@@ -129,8 +129,23 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     local project_root="$1"
     local narration="$project_root/assets/narration.mp3"
     local reels_narration="$project_root/assets/narration_reels.mp3"
-    local narration_text="$project_root/artifacts/narration_vi_text.txt"
-    local script_json="$project_root/artifacts/script_vi.json"
+    local locale
+    locale="$(python3 -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$project_root')))" 2>/dev/null || echo "en-US")"
+    local is_en=1
+    if [ "$locale" = "vi-VN" ]; then is_en=0; fi
+
+    local narration_text
+    local script_json
+    local default_voice
+    if [ "$is_en" -eq 1 ]; then
+      narration_text="$project_root/artifacts/narration_en_US_text.txt"
+      script_json="$project_root/artifacts/script_en_US.json"
+      default_voice="${TTS_VOICE:-en-US-ChristopherNeural}"
+    else
+      narration_text="$project_root/artifacts/narration_vi_text.txt"
+      script_json="$project_root/artifacts/script_vi.json"
+      default_voice="vi-VN-HoaiMyNeural"
+    fi
     if [ ! -s "$script_json" ] && [ -s "$project_root/artifacts/script.json" ]; then script_json="$project_root/artifacts/script.json"; fi
     local script_spoken="$project_root/04_audio/script_spoken.md"
     local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
@@ -141,7 +156,11 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
 
     mkdir -p "$project_root/artifacts" "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
     if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
-      jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
+      if [ "$is_en" -eq 1 ]; then
+        jq -r 'if (.sections // null) then [.sections[]? | .narration // .text // empty] | join(" ") elif (.scenes // null) then [.scenes[]? | .narration // .text // empty] | join(" ") else (.narration // .text // .script // empty) end' "$script_json" > "$narration_text"
+      else
+        jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .text // empty] | join(" ") elif (.script // null) then .script else empty end' "$script_json" > "$narration_text"
+      fi
     fi
     if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
       tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
@@ -155,8 +174,12 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       narration_stale=1
     fi
     if [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk "BEGIN{exit !($narration_duration <= 30)}" || [ "$narration_stale" = 1 ]; }; then
-      python3 "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-      edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+      if [ "$is_en" -eq 1 ]; then
+        edge-tts --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
+      else
+        python3 "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
+        edge-tts --voice "$default_voice" --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+      fi
       rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
     fi
     if [ ! -s "$narration" ]; then
@@ -183,7 +206,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
       echo "[$(date -u +%FT%TZ)] ERROR: background music is byte-identical to narration for $PROJECT_ID" >&2
       exit 1
     fi
-    local reels_cap=59.5
+    local reels_cap="${REELS_MAX_SECONDS:-180.0}"
     if awk "BEGIN{exit !($narration_duration > $reels_cap)}"; then
       "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
         || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"
@@ -220,28 +243,42 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     echo "[$(date -u +%FT%TZ)] ERROR: both HyperFrames composition index files are required for $PROJECT_ID"
     exit 1
   fi
-  rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+  if [ "$is_en" -eq 1 ]; then
+    FULL_RENDER_PATH="renders/final_long_en_US_16x9.mp4"
+    REELS_RENDER_PATH="renders/final_short_en_US_9x16.mp4"
+  else
+    FULL_RENDER_PATH="renders/final_full_vi_9x16.mp4"
+    REELS_RENDER_PATH="renders/final_reels_vi_9x16.mp4"
+  fi
+  rm -f "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"
   echo "[$(date -u +%FT%TZ)] render FULL $FULL_COMP"
-  "$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
+  "$HYPERFRAMES_BIN" render "$FULL_COMP" --output "$FULL_RENDER_PATH"
   echo "[$(date -u +%FT%TZ)] render REELS $REELS_COMP"
-  "$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
+  "$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
   auto_render_quality "$ROOT/projects/$PROJECT_ID"
 
   # Step 4: publish_metadata.json
   cd "$ROOT/projects/$PROJECT_ID"
-  TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+  TITLE=$(jq -r '.title // empty' "$script_json" 2>/dev/null || echo "")
   if [ -z "$TITLE" ]; then
     TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
   fi
   if [ -z "$TITLE" ]; then
     TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
   fi
-  if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
-    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
-    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  if [ "$is_en" -eq 1 ]; then
+    if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+      BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+      TITLE="${BASE_TITLE:0:80} #ai #tech"
+    fi
+  else
+    if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
+      BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+      TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+    fi
   fi
 
-  # Build Vietnamese description
+  # Build description
   CONCEPT_HOOK=$(jq -r '.concept_options[0].hook // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
   CONCEPT_MSG=$(jq -r '.concept_options[0].core_message // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
   CONCEPT_CTA=$(jq -r '.concept_options[0].cta // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
@@ -254,24 +291,39 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   if [ -n "$CONCEPT_CTA" ]; then
     if [ -n "$DESCRIPTION" ]; then DESCRIPTION="$DESCRIPTION. $CONCEPT_CTA"; else DESCRIPTION="$CONCEPT_CTA"; fi
   fi
-  if [ -z "$DESCRIPTION" ]; then
-    DESCRIPTION="Điểm tin công nghệ AI mới nhất."
+  if [ "$is_en" -eq 1 ]; then
+    if [ -z "$DESCRIPTION" ]; then
+      DESCRIPTION="Latest AI technology and engineering breakdown."
+    fi
+    DESCRIPTION="$DESCRIPTION"$'\n\n'"#ai #tech #anthropic #claude"
+  else
+    if [ -z "$DESCRIPTION" ]; then
+      DESCRIPTION="Điểm tin công nghệ AI mới nhất."
+    fi
+    DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai"
   fi
-  DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai"
 
   jq -n \
     --arg id "$PROJECT_ID" \
     --arg title "$TITLE" \
     --arg description "$DESCRIPTION" \
+    --arg yt_shorts "$REELS_RENDER_PATH" \
+    --arg tiktok "$FULL_RENDER_PATH" \
+    --arg fb_video "$FULL_RENDER_PATH" \
+    --arg ig_reels "$REELS_RENDER_PATH" \
+    --arg locale "$locale" \
+    --arg format "short" \
     '{
       id: $id,
       topic: $title,
       title: $title,
       description: $description,
-      yt_shorts: "renders/final_reels_vi_9x16.mp4",
-      tiktok: "renders/final_full_vi_9x16.mp4",
-      fb_video: "renders/final_full_vi_9x16.mp4",
-      ig_reels: "renders/final_reels_vi_9x16.mp4",
+      yt_shorts: $yt_shorts,
+      tiktok: $tiktok,
+      fb_video: $fb_video,
+      ig_reels: $ig_reels,
+      locale: $locale,
+      format: $format,
       feed_stale: false
     }' > publish_metadata.json
   echo "[$(date -u +%FT%TZ)] === DONE project=$PROJECT_ID ==="

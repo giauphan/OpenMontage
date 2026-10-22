@@ -13,7 +13,12 @@ import subprocess
 import sys
 import tempfile
 import time
-import xml.etree.ElementTree as ET
+try:
+    import defusedxml
+    defusedxml.defuse_stdlib()
+    import defusedxml.etree.ElementTree as ET  # type: ignore[import-untyped]
+except ImportError:
+    import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -193,6 +198,126 @@ def _hashes_from_records(records: list[dict[str, Any]]) -> dict[str, str]:
     return hashes
 
 
+def _resolve_manifest_and_root(
+    manifest: Path,
+    roots: set[Path],
+    snapshot_hashes: dict[str, str],
+    run_paths: list[Path],
+) -> tuple[Path, Path, Path, dict[str, Any]]:
+    if _has_symlink_component(manifest):
+        raise ValueError("manifest path must not traverse symlinks")
+    mpath = manifest.resolve(strict=True)
+    manifest_bytes, manifest_hash = _read_snapshot(mpath, MAX_MANIFEST_BYTES)
+    snapshot_hashes[str(mpath)] = manifest_hash
+    run_paths.append(mpath)
+    data = json.loads(manifest_bytes)
+    raw_root = Path(data["isolated_root"])
+    raw_report = Path(data["report"])
+    if not raw_root.is_absolute():
+        raw_root = mpath.parent / raw_root
+    if not raw_report.is_absolute():
+        raw_report = mpath.parent / raw_report
+    if _has_symlink_component(raw_root) or _has_symlink_component(raw_report):
+        raise ValueError("isolated root and report paths must not traverse symlinks")
+    root = raw_root.resolve(strict=True)
+    report = raw_report.resolve(strict=True)
+    if not root.is_dir() or root in roots:
+        raise ValueError("missing or repeated isolated root")
+    roots.add(root)
+    if (root / ".git").exists():
+        raise ValueError("rehearsal root must not be a git checkout")
+    if report != (root / REPORT_REL).resolve(strict=True):
+        raise ValueError("report must be the canonical report inside its isolated root")
+    return mpath, root, report, data
+
+
+def _read_marker_and_report(
+    root: Path,
+    report: Path,
+    snapshot_hashes: dict[str, str],
+    run_paths: list[Path],
+) -> tuple[dict[str, Any], str]:
+    marker_path = root / MARKER_NAME
+    marker_bytes, marker_hash = _read_snapshot(marker_path, MAX_MARKER_BYTES)
+    snapshot_hashes[str(marker_path)] = marker_hash
+    run_paths.append(marker_path)
+    if json.loads(marker_bytes) != MARKER_VALUE:
+        raise ValueError("isolated root marker contents are invalid")
+    report_bytes, report_hash = _read_snapshot(report, MAX_REPORT_BYTES)
+    snapshot_hashes[str(report)] = report_hash
+    run_paths.append(report)
+    return json.loads(report_bytes), report_hash
+
+
+def _validate_report_payload(payload: dict[str, Any]) -> list[str]:
+    requested = payload.get("requested_project_ids")
+    successful = payload.get("successful_project_ids")
+    failed = payload.get("failed_project_ids")
+    quarantined = payload.get("quarantined_project_ids")
+    if (payload.get("test_only") is not True or payload.get("shell_executed") is not True
+            or payload.get("publication_enabled") is not False):
+        raise ValueError("report does not establish test-only actual shell with publication disabled")
+    if payload.get("terminal_exit_status") != 0 or payload.get("terminal_stage") != "completed":
+        raise ValueError("daily entrypoint did not complete successfully")
+    if (not isinstance(requested, list) or len(requested) != 3
+            or any(not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", item)
+                   for item in requested)
+            or len(set(requested)) != 3):
+        raise ValueError("report must contain exactly three unique safe project IDs")
+    if successful != requested or failed != [] or quarantined != []:
+        raise ValueError("all three requested projects must succeed with no failed/quarantined IDs")
+    if payload.get("n5_complete") is not False:
+        raise ValueError("report must not claim N5/release completion")
+    return requested
+
+
+def _collect_stage_evidence(
+    root: Path,
+    requested: list[str],
+    evidence: Any,
+    snapshot_hashes: dict[str, str],
+    run_paths: list[Path],
+) -> dict[str, list[dict[str, str]]]:
+    if not isinstance(evidence, dict) or set(evidence) != set(requested):
+        raise ValueError("stage evidence must be present per requested project")
+    hashed_evidence: dict[str, list[dict[str, str]]] = {}
+    for project_id in requested:
+        rels = evidence[project_id]
+        if not isinstance(rels, list) or not rels or len(rels) > MAX_EVIDENCE_FILES_PER_PROJECT:
+            raise ValueError("empty or over-limit per-project stage evidence")
+        resolved_entries = []
+        for rel in rels:
+            if not isinstance(rel, str):
+                raise TypeError("stage evidence path must be a string")
+            item = _contained_regular_file(root, rel)
+            _content, digest = _read_snapshot(item, MAX_EVIDENCE_FILE_BYTES)
+            snapshot_hashes[str(item)] = digest
+            run_paths.append(item)
+            resolved_entries.append({"path": rel, "sha256": digest})
+        hashed_evidence[project_id] = resolved_entries
+    return hashed_evidence
+
+
+def _collect_failure_and_recovery(
+    root: Path,
+    data: dict[str, Any],
+    snapshot_hashes: dict[str, str],
+    run_paths: list[Path],
+) -> tuple[str, str, str, str]:
+    failure_rel = data.get("failure_evidence")
+    recovery_rel = data.get("recovery_evidence")
+    if not isinstance(failure_rel, str) or not isinstance(recovery_rel, str) or failure_rel == recovery_rel:
+        raise ValueError("manifest must identify distinct failure and recovery evidence files")
+    failure_path = _contained_regular_file(root, failure_rel)
+    recovery_path = _contained_regular_file(root, recovery_rel)
+    _failure_bytes, failure_hash = _read_snapshot(failure_path, MAX_EVIDENCE_FILE_BYTES)
+    _recovery_bytes, recovery_hash = _read_snapshot(recovery_path, MAX_EVIDENCE_FILE_BYTES)
+    snapshot_hashes[str(failure_path)] = failure_hash
+    snapshot_hashes[str(recovery_path)] = recovery_hash
+    run_paths.extend((failure_path, recovery_path))
+    return failure_rel, failure_hash, recovery_rel, recovery_hash
+
+
 def verify_rehearsals(manifests: list[Path]) -> tuple[bool, list[dict[str, Any]], list[Path]]:
     """Validate reports and hash exactly the bytes parsed/read from bounded inputs."""
     records: list[dict[str, Any]] = []
@@ -205,100 +330,42 @@ def verify_rehearsals(manifests: list[Path]) -> tuple[bool, list[dict[str, Any]]
         snapshot_hashes: dict[str, str] = {}
         run_paths: list[Path] = []
         try:
-            if _has_symlink_component(manifest):
-                raise ValueError("manifest path must not traverse symlinks")
-            mpath = manifest.resolve(strict=True)
-            manifest_bytes, manifest_hash = _read_snapshot(mpath, MAX_MANIFEST_BYTES)
-            snapshot_hashes[str(mpath)] = manifest_hash
-            run_paths.append(mpath)
-            data = json.loads(manifest_bytes)
-            raw_root = Path(data["isolated_root"])
-            raw_report = Path(data["report"])
-            if _has_symlink_component(raw_root) or _has_symlink_component(raw_report):
-                raise ValueError("isolated root and report paths must not traverse symlinks")
-            root = raw_root.resolve(strict=True)
-            report = raw_report.resolve(strict=True)
-            if not root.is_dir() or root in roots:
-                raise ValueError("missing or repeated isolated root")
-            roots.add(root)
-            if (root / ".git").exists():
-                raise ValueError("rehearsal root must not be a git checkout")
-            if report != (root / REPORT_REL).resolve(strict=True):
-                raise ValueError("report must be the canonical report inside its isolated root")
-            marker_path = root / MARKER_NAME
-            marker_bytes, marker_hash = _read_snapshot(marker_path, MAX_MARKER_BYTES)
-            snapshot_hashes[str(marker_path)] = marker_hash
-            run_paths.append(marker_path)
-            if json.loads(marker_bytes) != MARKER_VALUE:
-                raise ValueError("isolated root marker contents are invalid")
-            report_bytes, report_hash = _read_snapshot(report, MAX_REPORT_BYTES)
-            snapshot_hashes[str(report)] = report_hash
-            run_paths.append(report)
-            payload = json.loads(report_bytes)
-            requested = payload.get("requested_project_ids")
-            successful = payload.get("successful_project_ids")
-            failed = payload.get("failed_project_ids")
-            quarantined = payload.get("quarantined_project_ids")
-            if (payload.get("test_only") is not True or payload.get("shell_executed") is not True
-                    or payload.get("publication_enabled") is not False):
-                raise ValueError("report does not establish test-only actual shell with publication disabled")
-            if payload.get("terminal_exit_status") != 0 or payload.get("terminal_stage") != "completed":
-                raise ValueError("daily entrypoint did not complete successfully")
-            if (not isinstance(requested, list) or len(requested) != 3
-                    or any(not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", item)
-                           for item in requested)
-                    or len(set(requested)) != 3):
-                raise ValueError("report must contain exactly three unique safe project IDs")
-            if successful != requested or failed != [] or quarantined != []:
-                raise ValueError("all three requested projects must succeed with no failed/quarantined IDs")
-            if payload.get("n5_complete") is not False:
-                raise ValueError("report must not claim N5/release completion")
-            evidence = payload.get("stage_evidence_paths")
-            if not isinstance(evidence, dict) or set(evidence) != set(requested):
-                raise ValueError("stage evidence must be present per requested project")
-            hashed_evidence: dict[str, list[dict[str, str]]] = {}
-            for project_id in requested:
-                rels = evidence[project_id]
-                if not isinstance(rels, list) or not rels or len(rels) > MAX_EVIDENCE_FILES_PER_PROJECT:
-                    raise ValueError("empty or over-limit per-project stage evidence")
-                resolved_entries = []
-                for rel in rels:
-                    if not isinstance(rel, str):
-                        raise TypeError("stage evidence path must be a string")
-                    item = _contained_regular_file(root, rel)
-                    _content, digest = _read_snapshot(item, MAX_EVIDENCE_FILE_BYTES)
-                    snapshot_hashes[str(item)] = digest
-                    run_paths.append(item)
-                    resolved_entries.append({"path": rel, "sha256": digest})
-                hashed_evidence[project_id] = resolved_entries
-            failure_rel = data.get("failure_evidence")
-            recovery_rel = data.get("recovery_evidence")
-            if not isinstance(failure_rel, str) or not isinstance(recovery_rel, str) or failure_rel == recovery_rel:
-                raise ValueError("manifest must identify distinct failure and recovery evidence files")
-            failure_path = _contained_regular_file(root, failure_rel)
-            recovery_path = _contained_regular_file(root, recovery_rel)
-            _failure_bytes, failure_hash = _read_snapshot(failure_path, MAX_EVIDENCE_FILE_BYTES)
-            _recovery_bytes, recovery_hash = _read_snapshot(recovery_path, MAX_EVIDENCE_FILE_BYTES)
-            snapshot_hashes[str(failure_path)] = failure_hash
-            snapshot_hashes[str(recovery_path)] = recovery_hash
-            run_paths.extend((failure_path, recovery_path))
-            ids = tuple(requested)
+            mpath, root, report, data = _resolve_manifest_and_root(
+                manifest, roots, snapshot_hashes, run_paths
+            )
+            payload, report_hash = _read_marker_and_report(
+                root, report, snapshot_hashes, run_paths
+            )
+            requested = _validate_report_payload(payload)
+            hashed_evidence = _collect_stage_evidence(
+                root, requested, payload.get("stage_evidence_paths"), snapshot_hashes, run_paths
+            )
+            failure_rel, failure_hash, recovery_rel, recovery_hash = _collect_failure_and_recovery(
+                root, data, snapshot_hashes, run_paths
+            )
             ids_by_run.append(frozenset(requested))
-            signature = hashlib.sha256(json.dumps({"report": report_hash,
-                "stage_evidence": hashed_evidence, "failure": failure_hash, "recovery": recovery_hash},
-                sort_keys=True).encode("utf-8")).hexdigest()
+            signature = hashlib.sha256(json.dumps({
+                "report": report_hash,
+                "stage_evidence": hashed_evidence,
+                "failure": failure_hash,
+                "recovery": recovery_hash,
+            }, sort_keys=True).encode("utf-8")).hexdigest()
             run_signatures.add(signature)
-            records.append({"isolated_root": str(root), "manifest": str(mpath),
-                            "report": str(report), "report_sha256": report_hash,
-                            "requested_project_ids": ids, "run_evidence_signature": signature,
-                            "failure_evidence": {"path": failure_rel, "sha256": failure_hash},
-                            "recovery_evidence": {"path": recovery_rel, "sha256": recovery_hash},
-                            "stage_evidence": hashed_evidence,
-                            "validated_hashes": snapshot_hashes})
+            records.append({
+                "isolated_root": str(root), "manifest": str(mpath),
+                "report": str(report), "report_sha256": report_hash,
+                "requested_project_ids": tuple(requested), "run_evidence_signature": signature,
+                "failure_evidence": {"path": failure_rel, "sha256": failure_hash},
+                "recovery_evidence": {"path": recovery_rel, "sha256": recovery_hash},
+                "stage_evidence": hashed_evidence,
+                "validated_hashes": snapshot_hashes,
+            })
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             valid = False
-            records.append({"manifest": str(manifest), "error": str(exc),
-                            "validated_hashes": snapshot_hashes})
+            records.append({
+                "manifest": str(manifest), "error": str(exc),
+                "validated_hashes": snapshot_hashes,
+            })
         all_paths.extend(run_paths)
     valid = valid and len(roots) == 3 and len(ids_by_run) == 3 and len(set(ids_by_run)) == 3 and len(run_signatures) == 3
     return valid, records, list(dict.fromkeys(all_paths))

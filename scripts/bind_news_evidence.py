@@ -34,7 +34,14 @@ def _is_valid_url(url: str) -> bool:
 
 def bind_news_evidence(project_dir: Path) -> bool:
     artifacts_dir = project_dir / "artifacts"
-    script_path = artifacts_dir / "script_vi.json"
+    if (artifacts_dir / "script_en_US.json").is_file():
+        script_path = artifacts_dir / "script_en_US.json"
+    elif (artifacts_dir / "script_vi.json").is_file():
+        script_path = artifacts_dir / "script_vi.json"
+    elif (artifacts_dir / "script.json").is_file():
+        script_path = artifacts_dir / "script.json"
+    else:
+        script_path = artifacts_dir / "script_vi.json"
     brief_path = artifacts_dir / "research_brief.json"
 
     if not script_path.is_file():

@@ -24,18 +24,18 @@ CAPTION_CSS = """<style id="om-asr-caption-style">
 #main { position: relative; }
 .om-asr-caption {
   position: absolute;
-  z-index: 2147483000;
+  top: auto !important;
   left: 7%;
   right: 7%;
-  bottom: 4%;
+  bottom: 8% !important;
   box-sizing: border-box;
-  max-height: 12%;
+  max-height: 14%;
   overflow: hidden;
   padding: 0.45em 0.7em;
   border-radius: 0.22em;
   background: rgba(0, 0, 0, 0.86);
   color: #fff;
-  font: 700 4vw/1.2 sans-serif;
+  font: 700 clamp(28px, 4vw, 44px)/1.2 sans-serif;
   text-align: center;
   text-wrap: balance;
   overflow-wrap: anywhere;

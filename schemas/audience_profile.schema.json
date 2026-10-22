@@ -1,0 +1,200 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AudienceProfile",
+  "description": "Strict schema for OpenMontage target audience and market profiles",
+  "type": "object",
+  "required": [
+    "profile_id",
+    "primary_market",
+    "spoken_language",
+    "metadata_language",
+    "viewer_profile",
+    "content",
+    "formats",
+    "voice",
+    "captions",
+    "visuals",
+    "publishing",
+    "safety"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "primary_market": {
+      "type": "string",
+      "enum": ["US", "VN"]
+    },
+    "secondary_markets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "spoken_language": {
+      "type": "string",
+      "enum": ["en-US", "vi-VN"]
+    },
+    "metadata_language": {
+      "type": "string",
+      "enum": ["en-US", "vi-VN"]
+    },
+    "viewer_profile": {
+      "type": "object",
+      "required": ["primary_job", "segments", "banned_assumptions"],
+      "additionalProperties": false,
+      "properties": {
+        "primary_job": { "type": "string" },
+        "segments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "banned_assumptions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "required": [
+        "pillars",
+        "source_requirement",
+        "independent_claim_review",
+        "original_value_requirement",
+        "cultural_rewrite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pillars": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "source_requirement": { "type": "string" },
+        "independent_claim_review": { "type": "boolean" },
+        "original_value_requirement": { "type": "string" },
+        "cultural_rewrite": { "type": "boolean" },
+        "native_english_human_approval_initial_canary": { "type": "boolean" }
+      }
+    },
+    "formats": {
+      "type": "object",
+      "required": ["short"],
+      "additionalProperties": false,
+      "properties": {
+        "short": {
+          "type": "object",
+          "required": ["output", "aspect", "internal_pilot_max_seconds"],
+          "additionalProperties": false,
+          "properties": {
+            "output": { "type": "string" },
+            "aspect": { "type": "string", "enum": ["9:16"] },
+            "internal_pilot_max_seconds": { "type": "number", "minimum": 5, "maximum": 60 }
+          }
+        },
+        "longform": {
+          "type": "object",
+          "required": ["output", "aspect", "suggested_minute_range"],
+          "additionalProperties": false,
+          "properties": {
+            "output": { "type": "string" },
+            "aspect": { "type": "string", "enum": ["16:9"] },
+            "suggested_minute_range": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        }
+      }
+    },
+    "voice": {
+      "type": "object",
+      "required": ["locale", "provider_voice", "sample_pronunciation_first"],
+      "additionalProperties": false,
+      "properties": {
+        "locale": { "type": "string", "enum": ["en-US", "vi-VN"] },
+        "provider_voice": { "type": "string" },
+        "sample_pronunciation_first": { "type": "boolean" }
+      }
+    },
+    "captions": {
+      "type": "object",
+      "required": ["language", "generate_from_final_audio", "require_manual_critical_token_review"],
+      "additionalProperties": false,
+      "properties": {
+        "language": { "type": "string", "enum": ["en-US", "vi-VN"] },
+        "generate_from_final_audio": { "type": "boolean" },
+        "require_manual_critical_token_review": { "type": "boolean" }
+      }
+    },
+    "visuals": {
+      "type": "object",
+      "required": [
+        "require_scene_claim_bindings",
+        "require_media_rights",
+        "require_real_frame_samples",
+        "reject_unrelated_generic_background",
+        "reject_fake_product_ui"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "require_scene_claim_bindings": { "type": "boolean" },
+        "require_media_rights": { "type": "boolean" },
+        "require_real_frame_samples": { "type": "boolean" },
+        "reject_unrelated_generic_background": { "type": "boolean" },
+        "reject_fake_product_ui": { "type": "boolean" }
+      }
+    },
+    "publishing": {
+      "type": "object",
+      "required": [
+        "only_platform",
+        "enabled",
+        "allow_public_auto_upload",
+        "default_canary_visibility",
+        "application_timezone",
+        "min_hours_between_releases",
+        "candidate_shorts_per_week",
+        "candidate_longform_per_week",
+        "kill_switch"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "only_platform": { "type": "string", "enum": ["youtube"] },
+        "enabled": { "type": "boolean" },
+        "target_channel_id": { "type": "string" },
+        "allow_public_auto_upload": { "type": "boolean" },
+        "default_canary_visibility": { "type": "string", "enum": ["private", "unlisted"] },
+        "application_timezone": { "type": "string" },
+        "min_hours_between_releases": { "type": "number", "minimum": 1 },
+        "candidate_shorts_per_week": { "type": "integer", "minimum": 1 },
+        "candidate_longform_per_week": { "type": "integer", "minimum": 0 },
+        "kill_switch": { "type": "boolean" }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "required": [
+        "fail_closed",
+        "network_disabled_for_rehearsal",
+        "paid_calls_disabled_for_rehearsal",
+        "require_three_independent_rehearsals",
+        "keep_old_vi_queue_snapshot"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fail_closed": { "type": "boolean" },
+        "network_disabled_for_rehearsal": { "type": "boolean" },
+        "paid_calls_disabled_for_rehearsal": { "type": "boolean" },
+        "require_three_independent_rehearsals": { "type": "boolean" },
+        "keep_old_vi_queue_snapshot": { "type": "boolean" }
+      }
+    }
+  }
+}

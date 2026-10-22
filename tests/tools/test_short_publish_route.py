@@ -47,13 +47,20 @@ def test_publish_slot_instagram_uses_full_render():
             assert job["path"].endswith(FULL_RENDER), f"{job_name} uses {job['path']} instead of {FULL_RENDER}"
 
 
-def test_youtube_publisher_rejects_over_sixty_seconds(monkeypatch, tmp_path):
+def test_youtube_publisher_enforces_one_minute_min_and_three_minute_max(monkeypatch, tmp_path):
     module = _load("tools.publishers.youtube_publisher")
     video = tmp_path / "short.mp4"
     _create_test_video(video)
-    monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 60.01)
 
+    # 1. Under 60 seconds (rejected by 1-minute minimum rule)
+    monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 59.5)
     publisher = module.YoutubePublisher()
     result = publisher.execute({"video_path": str(video), "title": "Chiều tin công nghệ AI"})
     assert not result.success
-    assert "60 seconds" in (result.error or "")
+    assert "minimum duration of 60 seconds" in (result.error or "")
+
+    # 2. Over 180 seconds (rejected by YouTube Shorts 3-minute cap)
+    monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 180.1)
+    result = publisher.execute({"video_path": str(video), "title": "Chiều tin công nghệ AI"})
+    assert not result.success
+    assert "exceeds the YouTube Shorts limit of 180 seconds" in (result.error or "")

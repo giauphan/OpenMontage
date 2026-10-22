@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 ROOT = Path(os.environ.get("OPENMONTAGE_ROOT") or Path(__file__).resolve().parents[1])
@@ -33,14 +33,14 @@ from tools.publishers.youtube_publisher import YoutubePublisher
 
 
 def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | None = None) -> dict:
-    """Build unified YouTube Shorts upload payload using compose_release_metadata."""
+    """Build unified YouTube upload payload using compose_release_metadata."""
     # Ensure id/title/desc exist for compose
     payload_meta = dict(topic_meta)
     if "id" not in payload_meta:
         payload_meta["id"] = payload_meta.get("project_id", "news_video")
     rel = compose_release_metadata(payload_meta)
     yt = rel.youtube_payload
-    return {
+    payload = {
         "video_path": str(video_path),
         "title": yt["title"],
         "description": yt["description"],
@@ -48,7 +48,29 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         "privacy_status": "private" if publish_at else "unlisted",
         "publish_at": publish_at,
         "category_id": "28",
+        "format": payload_meta.get("format", "short"),
+        "locale": payload_meta.get("locale", "vi-VN"),
     }
+    expected_channel = (
+        payload_meta.get("expected_channel_id")
+        or os.environ.get("EXPECTED_CHANNEL_ID")
+        or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
+    )
+    if expected_channel:
+        payload["expected_channel_id"] = expected_channel
+    if "contains_synthetic_media" in payload_meta:
+        payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
+    return payload
+
+
+def make_publish_datetime(d: date, time_str: str, tz: ZoneInfo) -> datetime:
+    """Create a timezone-aware datetime with robust DST gap and fold resolution."""
+    hh, mm = time_str.split(":", 1)
+    naive = datetime.combine(d, datetime.strptime(f"{hh}:{mm}", "%H:%M").time())
+    dt = naive.replace(tzinfo=tz)
+    # Disambiguate DST transitions by converting to UTC and back
+    utc = dt.astimezone(timezone.utc)
+    return utc.astimezone(tz)
 
 
 def ytv_publish_at(dt): return dt.astimezone(timezone.utc).isoformat().replace("+00:00","Z")
@@ -122,6 +144,11 @@ def main():
         dest="enabled_platforms_list",
         help="Enable a specific platform (e.g. ytb, ig, fb, tiktok). Can be repeated.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run shadow/dry-run schedule simulation without calling remote upload APIs",
+    )
     args = parser.parse_args()
 
     cli_held: list[str] = list(args.hold_platforms_list)
@@ -161,8 +188,7 @@ def main():
     failed = False
     for q in queue:
         proj = q["project_id"]
-        hh,mm = q["publish_time"].split(":",1)
-        publish_at = datetime.combine(today, datetime.strptime(f"{hh}:{mm}","%H:%M").time(), tz)
+        publish_at = make_publish_datetime(today, q["publish_time"], tz)
         if previous and publish_at - previous < MIN_GAP:
             print(f"failed {proj}: slot gap under 2h: {previous.isoformat()} -> {publish_at.isoformat()}")
             failed = True
@@ -191,11 +217,19 @@ def main():
 
         yt_account = cfg.get("youtube", {}).get("account", "primary")
         topic_id = topic_meta.get("id") or proj
-        yt_key = publish_key(date, topic_id, "youtube", "short")
+        format_type = topic_meta.get("format", "short")
+        is_longform = format_type in ("longform", "long", "16:9", "16x9")
+        kind = "longform" if is_longform else "short"
+
+        from lib.artifact_paths import resolve_render_path, is_english_locale
+        locale = topic_meta.get("locale") or "vi-VN"
+        is_us_project = is_english_locale(locale) or topic_meta.get("audience") == "us"
+
+        yt_key = publish_key(date, topic_id, "youtube", kind)
         if hasattr(store, "get"):
             existing_claim = store.get(yt_key)
             if existing_claim and existing_claim.get("status") in ("scheduled", "published"):
-                print(f"ALREADY SCHEDULED {proj} on youtube for {existing_claim.get('scheduled_for', date)} ({existing_claim.get('video_url', '')})")
+                print(f"ALREADY SCHEDULED {proj} on youtube ({kind}) for {existing_claim.get('scheduled_for', date)} ({existing_claim.get('video_url', '')})")
                 continue
 
         # Strict validation gate: Ensure project has passed validation_status.json in project dir
@@ -245,14 +279,26 @@ def main():
             print(f"failed {proj}: template provenance invalid ({'; '.join(prov_reasons)})")
             failed = True
             continue
-        yt_rel = topic_meta.get("yt_shorts")
+        if is_longform:
+            yt_rel = topic_meta.get("yt_longform") or topic_meta.get("longform")
+            if not yt_rel:
+                rp = resolve_render_path(project_dir, format_type="longform", locale=locale)
+                yt_rel = rp.relative_to(project_dir) if rp.is_relative_to(project_dir) else rp
+        else:
+            yt_rel = topic_meta.get("yt_shorts") or topic_meta.get("short")
+            if not yt_rel:
+                rp = resolve_render_path(project_dir, format_type="short", locale=locale)
+                yt_rel = rp.relative_to(project_dir) if rp.is_relative_to(project_dir) else rp
+
         if isinstance(yt_rel, dict):
-            yt_rel = yt_rel.get("path") or yt_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
+            yt_rel = yt_rel.get("path") or yt_rel.get("file")
         ig_rel = topic_meta.get("ig_reels")
         if isinstance(ig_rel, dict):
             ig_rel = ig_rel.get("path") or ig_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
         ig_account = cfg.get("instagram", {}).get("account_id") or cfg.get("meta", {}).get("ig_account_id")
         scheduled_for = publish_at.isoformat()
+
+        is_dry_run = bool(getattr(args, "dry_run", False) or os.environ.get("SHADOW_ROLLOUT") == "1" or os.environ.get("DRY_RUN") == "1")
 
         # YT
         if not is_platform_enabled("youtube", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
@@ -263,67 +309,77 @@ def main():
                 print(f"failed {proj}: missing YouTube asset file {asset_path}")
                 failed = True
                 continue
-            yt_key = None; yt_claimed = False
-            if yt_rel and (project_dir / yt_rel).is_file():
-                yt_key, yt_claimed,_ = store.claim(
+
+            if is_dry_run:
+                print(f"SHADOW/DRY-RUN: Simulated YouTube {kind} schedule for {proj} at {scheduled_for} (no store mutations, no network upload)")
+                payload = build_youtube_payload(topic_meta, video_path=str(asset_path), publish_at=ytv_publish_at(publish_at))
+            else:
+                yt_key = None; yt_claimed = False
+                if yt_rel and (project_dir / yt_rel).is_file():
+                    yt_key, yt_claimed,_ = store.claim(
+                        date=date,
+                        topic=topic_meta["id"],
+                        platform="youtube",
+                        account=yt_account,
+                        kind=kind,
+                        status="scheduling",
+                        title=topic_meta["title"],
+                        asset_path=project_dir/yt_rel,
+                        scheduled_for=scheduled_for,
+                        content_hash=content_hash,
+                        template_id=template_id,
+                    )
+                if yt_claimed:
+                    max_yt_attempts = 3
+                    for yt_attempt in range(1, max_yt_attempts + 1):
+                        try:
+                            payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
+                            r = YoutubePublisher().execute(payload)
+                            if r.success:
+                                store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
+                                print(f"YT scheduled {proj} {scheduled_for}")
+                                break
+                            else:
+                                print(f"YT attempt {yt_attempt}/{max_yt_attempts} failed {proj}: {r.error}")
+                                if yt_attempt < max_yt_attempts:
+                                    time.sleep(5 * yt_attempt)
+                                else:
+                                    store.mark_failed(yt_key, r.error)
+                                    failed = True
+                        except Exception as e:
+                            print(f"YT attempt {yt_attempt}/{max_yt_attempts} error {proj}: {e}")
+                            if yt_attempt < max_yt_attempts:
+                                time.sleep(5 * yt_attempt)
+                            else:
+                                store.mark_failed(yt_key, str(e))
+                                failed = True
+
+        # Schedule Instagram Reels
+        if is_us_project and os.environ.get("ENABLE_US_INSTAGRAM") != "1" and "instagram" not in (cli_enabled or []):
+            print(f"⏸️ US_MIGRATION_HOLD: Skipping Instagram scheduling for US project {proj} (YouTube-only during US migration phase)")
+        elif not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
+            print(f"⏸️ HOLD/DISABLED: Skipping Instagram scheduling for {proj} (not enabled or held by pipeline flag/env)")
+        elif ig_account and ig_rel and (project_dir / ig_rel).is_file():
+            if is_dry_run:
+                print(f"SHADOW/DRY-RUN: Simulated Instagram Reels schedule for {proj} at {scheduled_for} (no store mutations)")
+            else:
+                ig_key, ig_claimed,_ = store.claim(
                     date=date,
                     topic=topic_meta["id"],
-                    platform="youtube",
-                    account=yt_account,
-                    kind="short",
+                    platform="instagram",
+                    account=ig_account,
+                    kind="reels",
                     status="scheduling",
                     title=topic_meta["title"],
-                    asset_path=project_dir/yt_rel,
+                    asset_path=project_dir/ig_rel,
                     scheduled_for=scheduled_for,
                     content_hash=content_hash,
                     template_id=template_id,
                 )
-            if yt_claimed:
-                max_yt_attempts = 3
-                for yt_attempt in range(1, max_yt_attempts + 1):
-                    try:
-                        payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
-                        r = YoutubePublisher().execute(payload)
-                        if r.success:
-                            store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
-                            print(f"YT scheduled {proj} {scheduled_for}")
-                            break
-                        else:
-                            print(f"YT attempt {yt_attempt}/{max_yt_attempts} failed {proj}: {r.error}")
-                            if yt_attempt < max_yt_attempts:
-                                time.sleep(5 * yt_attempt)
-                            else:
-                                store.mark_failed(yt_key, r.error)
-                                failed = True
-                    except Exception as e:
-                        print(f"YT attempt {yt_attempt}/{max_yt_attempts} error {proj}: {e}")
-                        if yt_attempt < max_yt_attempts:
-                            time.sleep(5 * yt_attempt)
-                        else:
-                            store.mark_failed(yt_key, str(e))
-                            failed = True
-
-        # Schedule Instagram Reels
-        if not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
-            print(f"⏸️ HOLD/DISABLED: Skipping Instagram scheduling for {proj} (not enabled or held by pipeline flag/env)")
-        elif ig_account and ig_rel and (project_dir / ig_rel).is_file():
-            ig_key, ig_claimed,_ = store.claim(
-                date=date,
-                topic=topic_meta["id"],
-                platform="instagram",
-                account=ig_account,
-                kind="reels",
-                status="scheduling",
-                title=topic_meta["title"],
-                asset_path=project_dir/ig_rel,
-                scheduled_for=scheduled_for,
-                content_hash=content_hash,
-                template_id=template_id,
-            )
-            if ig_claimed:
-                print(f"SCHEDULED: Instagram {date} {topic_meta['id']} {ig_key}")
-            else:
-                print(f"SKIP: Instagram {date} {topic_meta['id']} (already claimed)")
+                if ig_claimed:
+                    print(f"SCHEDULED: Instagram {date} {topic_meta['id']} {ig_key}")
+                else:
+                    print(f"SKIP: Instagram {date} {topic_meta['id']} (already claimed)")
         else:
             print(f"SKIP: Instagram {date} {topic_meta['id']} (missing asset or account)")
 

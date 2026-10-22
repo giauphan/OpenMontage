@@ -1164,7 +1164,14 @@ class CodexAgentValidator:
 
 
 
-        script_path = self.project_dir / "artifacts" / "script_vi.json"
+        if (self.project_dir / "artifacts" / "script_en_US.json").is_file():
+            script_path = self.project_dir / "artifacts" / "script_en_US.json"
+        elif (self.project_dir / "artifacts" / "script_vi.json").is_file():
+            script_path = self.project_dir / "artifacts" / "script_vi.json"
+        elif (self.project_dir / "artifacts" / "script.json").is_file():
+            script_path = self.project_dir / "artifacts" / "script.json"
+        else:
+            script_path = self.project_dir / "artifacts" / "script_en_US.json"
         comp_summary = "Composition: not found"
         comp_text = ""
         if comp_path.is_file():
@@ -1660,10 +1667,19 @@ def main():
         print(f"Error: Project directory not found: {project_dir}")
         sys.exit(2)
 
-    video_paths = [
-        project_dir / "renders" / "final_full_vi_9x16.mp4",
-        project_dir / "renders" / "final_reels_vi_9x16.mp4",
-    ]
+    from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths
+    locale = resolve_project_locale(project_dir)
+    if is_english_locale(locale):
+        full_name, reels_name = resolve_render_paths(project_dir, locale=locale)
+        video_paths = [
+            project_dir / "renders" / full_name,
+            project_dir / "renders" / reels_name,
+        ]
+    else:
+        video_paths = [
+            project_dir / "renders" / "final_full_vi_9x16.mp4",
+            project_dir / "renders" / "final_reels_vi_9x16.mp4",
+        ]
     metadata_path = project_dir / "publish_metadata.json"
 
     validator = CodexAgentValidator(

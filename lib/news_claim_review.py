@@ -205,6 +205,192 @@ def _valid_https_url(value: Any) -> bool:
         return False
 
 
+def _select_script_rel(project: Path) -> str:
+    if (project / "artifacts" / "script_en_US.json").is_file():
+        return "artifacts/script_en_US.json"
+    if (project / "artifacts" / "script_vi.json").is_file():
+        return "artifacts/script_vi.json"
+    if (project / "artifacts" / "script.json").is_file():
+        return "artifacts/script.json"
+    return "artifacts/script_vi.json"
+
+
+def _build_sections_scaffold(sections: Any) -> list[dict[str, Any]]:
+    if not isinstance(sections, list) or not sections:
+        raise ReviewWorksheetError("canonical script must contain non-empty sections")
+    seen: set[str] = set()
+    scaffold = []
+    for section in sections:
+        if not isinstance(section, dict):
+            raise ReviewWorksheetError("script section must be an object")
+        sid = section.get("id")
+        text = section.get("text_vi", section.get("text"))
+        if isinstance(sid, bool) or not isinstance(sid, (str, int)) or not str(sid).strip():
+            raise ReviewWorksheetError("section id must be a non-empty string or integer")
+        if str(sid) in seen:
+            raise ReviewWorksheetError("section ids must be unique")
+        seen.add(str(sid))
+        if not isinstance(text, str) or not text.strip():
+            raise ReviewWorksheetError("section wording must be non-empty")
+        scaffold.append({
+            "section_id": str(sid), "script_wording": text,
+            "candidate_mappings": [], "mapping_status": "unresolved",
+        })
+    return scaffold
+
+
+def _load_script_and_scaffold(
+    project: Path,
+    root_fd: int,
+    budget: list[int],
+) -> tuple[str, bytes, list[dict[str, Any]]]:
+    script_rel = _select_script_rel(project)
+    script_path = project / script_rel
+    script_bytes = _read_real(script_path, project, root_fd, MAX_SCRIPT_BYTES, budget)
+    script = _json(script_bytes, "canonical script")
+    sections = script.get("sections") if isinstance(script, dict) else None
+    scaffold = _build_sections_scaffold(sections)
+    return script_rel, script_bytes, scaffold
+
+
+def _validate_capture_files(
+    project: Path,
+    root_fd: int,
+    budget: list[int],
+    prov: dict[str, Any],
+    capture_id: str,
+) -> dict[str, bytes]:
+    verified: dict[str, bytes] = {}
+    for file_key, hash_key, suffix, limit in (
+        ("raw_file", "raw_sha256", ".raw", MAX_CAPTURE_BYTES),
+        ("extracted_file", "extracted_sha256", ".extracted.json", MAX_CAPTURE_BYTES),
+    ):
+        filename = prov.get(file_key)
+        digest = prov.get(hash_key)
+        if not isinstance(filename, str) or filename != f"{capture_id}{suffix}" or not isinstance(digest, str) or len(digest) != 64 or not set(digest) <= _HEX:
+            raise ReviewWorksheetError("capture filenames must match the selected capture revision and hashes")
+        data = _read_real(project / "artifacts/news_source_capture" / filename, project, root_fd, limit, budget)
+        if not data:
+            raise ReviewWorksheetError(f"capture {file_key} must not be empty")
+        if _sha(data) != digest:
+            raise ReviewWorksheetError(f"capture {file_key} SHA-256 mismatch")
+        verified[file_key] = data
+    return verified
+
+
+def _load_and_verify_provenance_bytes(
+    given_path: str | Path,
+    expected_provenance_sha: str,
+    project: Path,
+    root_fd: int,
+    budget: list[int],
+) -> tuple[Path, str, dict[str, Any]]:
+    if not isinstance(expected_provenance_sha, str):
+        raise ReviewWorksheetError("each provenance requires an expected SHA-256 string")
+    expected = expected_provenance_sha.lower()
+    if len(expected) != 64 or not set(expected) <= _HEX:
+        raise ReviewWorksheetError("each provenance requires an expected SHA-256")
+    prov_path = Path(given_path)
+    prov_path = prov_path if prov_path.is_absolute() else project / prov_path
+    prov_bytes = _read_real(prov_path, project, root_fd, MAX_PROVENANCE_BYTES, budget)
+    prov_hash = _sha(prov_bytes)
+    if prov_hash != expected:
+        raise ReviewWorksheetError("provenance SHA-256 mismatch")
+    prov = _json(prov_bytes, "capture provenance")
+    return prov_path, prov_hash, prov
+
+
+def _validate_provenance_capture_id(
+    prov: Any,
+    prov_path: Path,
+    project: Path,
+    capture_ids: set[str],
+) -> str:
+    if not isinstance(prov, dict) or prov.get("version") != "1.0":
+        raise ReviewWorksheetError("capture is malformed, incomplete, or not review-pending")
+    if prov.get("status") != "pending_editorial_review" or prov.get("review_status") != "pending":
+        raise ReviewWorksheetError("capture is malformed, incomplete, or not review-pending")
+    capture_id = prov.get("capture_id")
+    if not isinstance(capture_id, str) or not capture_id or capture_id in capture_ids:
+        raise ReviewWorksheetError("unknown or duplicate selected capture revision")
+    if prov_path.parent != project / "artifacts" / "news_source_capture":
+        raise ReviewWorksheetError("selected provenance is not a capture revision in the expected directory")
+    if prov_path.name != f"{capture_id}.provenance.json" or prov.get("provenance_file") != prov_path.name:
+        raise ReviewWorksheetError("selected provenance is not a capture revision in the expected directory")
+    capture_ids.add(capture_id)
+    if prov.get("capture_dir") != "artifacts/news_source_capture":
+        raise ReviewWorksheetError("capture path is not the expected project-local directory")
+    return capture_id
+
+
+def _validate_provenance_urls_and_chain(prov: dict[str, Any]) -> datetime:
+    if not _valid_https_url(prov.get("original_url")) or not _valid_https_url(prov.get("final_url")):
+        raise ReviewWorksheetError("capture provenance requires valid HTTPS original and final URLs")
+    retrieved_at = _aware_timestamp(prov.get("retrieved_at"))
+    if retrieved_at is None:
+        raise ReviewWorksheetError("capture provenance requires a timezone-aware retrieved_at")
+    content_type = prov.get("content_type")
+    if not isinstance(content_type, str) or content_type not in {"text/html", "text/plain"}:
+        raise ReviewWorksheetError("capture provenance has invalid content_type")
+    redirect_chain = prov.get("redirect_chain")
+    if (
+        not isinstance(redirect_chain, list)
+        or not redirect_chain
+        or any(not _valid_https_url(url) for url in redirect_chain)
+        or redirect_chain[0] != prov["original_url"]
+        or redirect_chain[-1] != prov["final_url"]
+    ):
+        raise ReviewWorksheetError("capture provenance requires a consistent complete HTTPS redirect_chain")
+    return retrieved_at
+
+
+def _validate_provenance_extracted(
+    project: Path,
+    root_fd: int,
+    budget: list[int],
+    prov: dict[str, Any],
+    capture_id: str,
+) -> None:
+    verified = _validate_capture_files(project, root_fd, budget, prov, capture_id)
+    extracted = _json(verified["extracted_file"], "capture extraction")
+    if not isinstance(extracted, dict) or not isinstance(extracted.get("text"), str) or not extracted["text"].strip():
+        raise ReviewWorksheetError("capture extraction is incomplete")
+    excerpt = prov.get("excerpt")
+    if not isinstance(excerpt, str) or not excerpt.strip() or excerpt not in extracted["text"]:
+        raise ReviewWorksheetError("capture excerpt is absent from extracted text")
+    if prov.get("published_at") != extracted.get("published_at") or prov.get("updated_at") != extracted.get("updated_at"):
+        raise ReviewWorksheetError("capture date metadata does not match extracted record")
+
+
+def _validate_single_capture(
+    given_path: str | Path,
+    expected_provenance_sha: str,
+    project: Path,
+    root_fd: int,
+    budget: list[int],
+    capture_ids: set[str],
+) -> dict[str, Any]:
+    prov_path, prov_hash, prov = _load_and_verify_provenance_bytes(
+        given_path, expected_provenance_sha, project, root_fd, budget
+    )
+    capture_id = _validate_provenance_capture_id(prov, prov_path, project, capture_ids)
+    retrieved_at = _validate_provenance_urls_and_chain(prov)
+    _validate_provenance_extracted(project, root_fd, budget, prov, capture_id)
+
+    return {
+        "capture_id": capture_id,
+        "provenance_file": prov_path.relative_to(project).as_posix(),
+        "provenance_sha256": prov_hash,
+        "raw_file": prov["raw_file"], "raw_sha256": prov["raw_sha256"],
+        "extracted_file": prov["extracted_file"], "extracted_sha256": prov["extracted_sha256"],
+        "original_url": prov["original_url"], "final_url": prov["final_url"],
+        "published_at": _aware_timestamp(prov.get("published_at")),
+        "updated_at": _aware_timestamp(prov.get("updated_at")),
+        "retrieved_at": retrieved_at,
+        "rights_status": "unresolved", "authority_status": "unresolved",
+    }
+
+
 def prepare_claim_review(
     project_dir: str | Path,
     capture_provenance: list[tuple[str | Path, str]],
@@ -218,114 +404,21 @@ def prepare_claim_review(
     root_fd = os.open(project, _DIR_FLAGS)
     budget = [0]
     try:
-        script_path = project / "artifacts" / "script_vi.json"
-        script_bytes = _read_real(script_path, project, root_fd, MAX_SCRIPT_BYTES, budget)
-        script = _json(script_bytes, "canonical script")
-        sections = script.get("sections") if isinstance(script, dict) else None
-        if not isinstance(sections, list) or not sections:
-            raise ReviewWorksheetError("canonical script must contain non-empty sections")
-        seen: set[str] = set()
-        scaffold = []
-        for section in sections:
-            if not isinstance(section, dict):
-                raise ReviewWorksheetError("script section must be an object")
-            sid = section.get("id")
-            text = section.get("text_vi", section.get("text"))
-            if isinstance(sid, bool) or not isinstance(sid, (str, int)) or not str(sid).strip():
-                raise ReviewWorksheetError("section id must be a non-empty string or integer")
-            if str(sid) in seen:
-                raise ReviewWorksheetError("section ids must be unique")
-            seen.add(str(sid))
-            if not isinstance(text, str) or not text.strip():
-                raise ReviewWorksheetError("section wording must be non-empty")
-            scaffold.append({
-                "section_id": str(sid), "script_wording": text,
-                "candidate_mappings": [], "mapping_status": "unresolved",
-            })
+        script_rel, script_bytes, scaffold = _load_script_and_scaffold(project, root_fd, budget)
         if not capture_provenance or len(capture_provenance) > MAX_CAPTURE_REVISIONS:
             raise ReviewWorksheetError(f"select between 1 and {MAX_CAPTURE_REVISIONS} capture revisions")
 
         captures = []
         capture_ids: set[str] = set()
         for given_path, expected_provenance_sha in capture_provenance:
-            if not isinstance(expected_provenance_sha, str):
-                raise ReviewWorksheetError("each provenance requires an expected SHA-256 string")
-            expected = expected_provenance_sha.lower()
-            if len(expected) != 64 or not set(expected) <= _HEX:
-                raise ReviewWorksheetError("each provenance requires an expected SHA-256")
-            prov_path = Path(given_path)
-            prov_path = prov_path if prov_path.is_absolute() else project / prov_path
-            prov_bytes = _read_real(prov_path, project, root_fd, MAX_PROVENANCE_BYTES, budget)
-            prov_hash = _sha(prov_bytes)
-            if prov_hash != expected:
-                raise ReviewWorksheetError("provenance SHA-256 mismatch")
-            prov = _json(prov_bytes, "capture provenance")
-            if not isinstance(prov, dict) or prov.get("version") != "1.0" or prov.get("status") != "pending_editorial_review" or prov.get("review_status") != "pending":
-                raise ReviewWorksheetError("capture is malformed, incomplete, or not review-pending")
-            capture_id = prov.get("capture_id")
-            if not isinstance(capture_id, str) or not capture_id or capture_id in capture_ids:
-                raise ReviewWorksheetError("unknown or duplicate selected capture revision")
-            if prov_path.parent != project / "artifacts" / "news_source_capture" or prov_path.name != f"{capture_id}.provenance.json" or prov.get("provenance_file") != prov_path.name:
-                raise ReviewWorksheetError("selected provenance is not a capture revision in the expected directory")
-            capture_ids.add(capture_id)
-            if prov.get("capture_dir") != "artifacts/news_source_capture":
-                raise ReviewWorksheetError("capture path is not the expected project-local directory")
-            if not _valid_https_url(prov.get("original_url")) or not _valid_https_url(prov.get("final_url")):
-                raise ReviewWorksheetError("capture provenance requires valid HTTPS original and final URLs")
-            retrieved_at = _aware_timestamp(prov.get("retrieved_at"))
-            if retrieved_at is None:
-                raise ReviewWorksheetError("capture provenance requires a timezone-aware retrieved_at")
-            content_type = prov.get("content_type")
-            if not isinstance(content_type, str) or content_type not in {"text/html", "text/plain"}:
-                raise ReviewWorksheetError("capture provenance has invalid content_type")
-            redirect_chain = prov.get("redirect_chain")
-            if (
-                not isinstance(redirect_chain, list)
-                or not redirect_chain
-                or any(not _valid_https_url(url) for url in redirect_chain)
-                or redirect_chain[0] != prov["original_url"]
-                or redirect_chain[-1] != prov["final_url"]
-            ):
-                raise ReviewWorksheetError("capture provenance requires a consistent complete HTTPS redirect_chain")
-            verified: dict[str, bytes] = {}
-            for file_key, hash_key, suffix, limit in (
-                ("raw_file", "raw_sha256", ".raw", MAX_CAPTURE_BYTES),
-                ("extracted_file", "extracted_sha256", ".extracted.json", MAX_CAPTURE_BYTES),
-            ):
-                filename = prov.get(file_key)
-                digest = prov.get(hash_key)
-                if not isinstance(filename, str) or filename != f"{capture_id}{suffix}" or not isinstance(digest, str) or len(digest) != 64 or not set(digest) <= _HEX:
-                    raise ReviewWorksheetError("capture filenames must match the selected capture revision and hashes")
-                data = _read_real(project / "artifacts/news_source_capture" / filename, project, root_fd, limit, budget)
-                if not data:
-                    raise ReviewWorksheetError(f"capture {file_key} must not be empty")
-                if _sha(data) != digest:
-                    raise ReviewWorksheetError(f"capture {file_key} SHA-256 mismatch")
-                verified[file_key] = data
-            extracted = _json(verified["extracted_file"], "capture extraction")
-            if not isinstance(extracted, dict) or not isinstance(extracted.get("text"), str) or not extracted["text"].strip():
-                raise ReviewWorksheetError("capture extraction is incomplete")
-            excerpt = prov.get("excerpt")
-            if not isinstance(excerpt, str) or not excerpt.strip() or excerpt not in extracted["text"]:
-                raise ReviewWorksheetError("capture excerpt is absent from extracted text")
-            if prov.get("published_at") != extracted.get("published_at") or prov.get("updated_at") != extracted.get("updated_at"):
-                raise ReviewWorksheetError("capture date metadata does not match extracted record")
-            captures.append({
-                "capture_id": capture_id,
-                "provenance_file": prov_path.relative_to(project).as_posix(),
-                "provenance_sha256": prov_hash,
-                "raw_file": prov["raw_file"], "raw_sha256": prov["raw_sha256"],
-                "extracted_file": prov["extracted_file"], "extracted_sha256": prov["extracted_sha256"],
-                "original_url": prov["original_url"], "final_url": prov["final_url"],
-                "published_at": _aware_timestamp(prov.get("published_at")),
-                "updated_at": _aware_timestamp(prov.get("updated_at")),
-                "retrieved_at": retrieved_at,
-                "rights_status": "unresolved", "authority_status": "unresolved",
-            })
+            item = _validate_single_capture(
+                given_path, expected_provenance_sha, project, root_fd, budget, capture_ids
+            )
+            captures.append(item)
 
         worksheet = {
             "version": "1.0", "status": "pending_editorial_review",
-            "rendition_scope": "full", "script_file": "artifacts/script_vi.json",
+            "rendition_scope": "full", "script_file": script_rel,
             "script_sha256": _sha(script_bytes), "sections": scaffold,
             "selected_captures": captures,
             "conflicts": [], "conflict_status": "unresolved",

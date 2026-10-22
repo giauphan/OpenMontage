@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "created_at": "2025-02-25T10:00:00Z",
+  "project_id": "canary-short-en-us-01",
+  "title": "Claude 3.7 Sonnet Hybrid Reasoning Announced",
+  "pipeline_type": "daily-news",
+  "locale": "en-US",
+  "audience_profile": "en-US"
+}

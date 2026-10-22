@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ClaimLedger",
+  "description": "Factual claim ledger for US news and editorial verification",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project_id",
+    "locale",
+    "created_at",
+    "claims"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string" },
+    "project_id": { "type": "string" },
+    "locale": { "type": "string", "enum": ["en-US", "en-CA", "vi-VN"] },
+    "created_at": { "type": "string" },
+    "research_brief_sha256": { "type": "string" },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "claim_id",
+          "statement",
+          "confidence",
+          "scope",
+          "source",
+          "verdict"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": { "type": "string", "pattern": "^C[0-9]{3,}$" },
+          "statement": { "type": "string" },
+          "confidence": {
+            "type": "string",
+            "enum": ["verified", "provisional", "disputed", "unverified"]
+          },
+          "scope": {
+            "type": "object",
+            "required": ["market"],
+            "additionalProperties": true,
+            "properties": {
+              "market": { "type": "string" },
+              "plan": { "type": "string" },
+              "as_of": { "type": "string" }
+            }
+          },
+          "source": {
+            "type": "object",
+            "required": ["canonical_url", "publisher", "published_at", "retrieved_at"],
+            "additionalProperties": true,
+            "properties": {
+              "canonical_url": { "type": "string" },
+              "publisher": { "type": "string" },
+              "published_at": { "type": "string" },
+              "retrieved_at": { "type": "string" },
+              "source_sha256": { "type": "string" }
+            }
+          },
+          "evidence_excerpt": { "type": "string" },
+          "limitations": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "script_spans": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "visual_scene_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["APPROVED", "APPROVED_WITH_QUALIFIER", "REJECTED", "BLOCKED"]
+          }
+        }
+      }
+    }
+  }
+}

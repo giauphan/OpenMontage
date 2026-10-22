@@ -75,7 +75,14 @@ def main() -> int:
 
     project_dir = args.project_dir.resolve()
     artifacts_dir = project_dir / "artifacts"
-    script_path = artifacts_dir / "script_vi.json"
+    if (artifacts_dir / "script_en_US.json").is_file():
+        script_path = artifacts_dir / "script_en_US.json"
+    elif (artifacts_dir / "script_vi.json").is_file():
+        script_path = artifacts_dir / "script_vi.json"
+    elif (artifacts_dir / "script.json").is_file():
+        script_path = artifacts_dir / "script.json"
+    else:
+        script_path = artifacts_dir / "script_en_US.json"
     evidence_path = artifacts_dir / "news_evidence.json"
     plan_path = artifacts_dir / "news_visual_plan.json"
     assets_manifest_path = artifacts_dir / "news_visual_assets.json"

@@ -1,0 +1,52 @@
+profile_id: vi-vn-daily-news-v1
+primary_market: VN
+secondary_markets: []
+spoken_language: vi-VN
+metadata_language: vi-VN
+viewer_profile:
+  primary_job: "Tin tức công nghệ AI hằng ngày"
+  segments: [tech_enthusiasts, vietnamese_developers]
+  banned_assumptions:
+    - "Tin tức nước ngoài không cần kiểm chứng nguồn"
+content:
+  pillars: [ai_news, tech_updates]
+  source_requirement: primary_dated_evidence
+  independent_claim_review: true
+  original_value_requirement: news_summary_and_implications
+  cultural_rewrite: false
+  native_english_human_approval_initial_canary: false
+formats:
+  short:
+    output: "renders/final_reels_vi_9x16.mp4"
+    aspect: "9:16"
+    internal_pilot_max_seconds: 60
+voice:
+  locale: vi-VN
+  provider_voice: "vi-VN-HoaiMyNeural"
+  sample_pronunciation_first: false
+captions:
+  language: vi-VN
+  generate_from_final_audio: true
+  require_manual_critical_token_review: false
+visuals:
+  require_scene_claim_bindings: true
+  require_media_rights: true
+  require_real_frame_samples: true
+  reject_unrelated_generic_background: false
+  reject_fake_product_ui: true
+publishing:
+  only_platform: youtube
+  enabled: false
+  allow_public_auto_upload: false
+  default_canary_visibility: unlisted
+  application_timezone: Asia/Ho_Chi_Minh
+  min_hours_between_releases: 2
+  candidate_shorts_per_week: 7
+  candidate_longform_per_week: 0
+  kill_switch: true
+safety:
+  fail_closed: true
+  network_disabled_for_rehearsal: true
+  paid_calls_disabled_for_rehearsal: true
+  require_three_independent_rehearsals: true
+  keep_old_vi_queue_snapshot: true

@@ -1,0 +1,36 @@
+{
+  "test_only": true,
+  "shell_executed": true,
+  "publication_enabled": false,
+  "n5_complete": false,
+  "requested_project_ids": [
+    "rehearsal-en-alpha-01",
+    "rehearsal-en-alpha-02",
+    "rehearsal-en-alpha-03"
+  ],
+  "successful_project_ids": [
+    "rehearsal-en-alpha-01",
+    "rehearsal-en-alpha-02",
+    "rehearsal-en-alpha-03"
+  ],
+  "failed_project_ids": [],
+  "quarantined_project_ids": [],
+  "terminal_exit_status": 0,
+  "terminal_stage": "completed",
+  "stage_evidence_paths": {
+    "rehearsal-en-alpha-01": [
+      "logs/rehearsal-en-alpha-01.log"
+    ],
+    "rehearsal-en-alpha-02": [
+      "logs/rehearsal-en-alpha-02.log"
+    ],
+    "rehearsal-en-alpha-03": [
+      "logs/rehearsal-en-alpha-03.log"
+    ]
+  },
+  "metadata": {
+    "locale": "en-US",
+    "channel_guard": "ENFORCED",
+    "signature": "rehearsal-us-run-01"
+  }
+}

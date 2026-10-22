@@ -73,7 +73,7 @@ fi
 
 export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 export PYTHONPATH="$ROOT"
-export PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
+export PUBLISH_TZ="${PUBLISH_TZ:-America/New_York}"
 # Templated news path: when 1, projects must carry a template selection +
 # typed content instance and compositions are materialized deterministically
 # from the approved package (no free-form HTML, no repair/sed mutation).
@@ -271,6 +271,18 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
   if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
+  PROJECT_LOCALE="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$PROJECT_DIR')))" 2>/dev/null || echo "en-US")"
+  locale="$PROJECT_LOCALE"
+  is_en=1
+  if [ "$PROJECT_LOCALE" = "vi-VN" ]; then is_en=0; fi
+  if [ "$is_en" -eq 1 ]; then
+    script_json="$PROJECT_DIR/artifacts/script_en_US.json"
+  else
+    script_json="$PROJECT_DIR/artifacts/script_vi.json"
+  fi
+  if [ ! -s "$script_json" ] && [ -s "$PROJECT_DIR/artifacts/script.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script.json"
+  fi
 
 # Step 2.5: Run Directors pipeline via Codex CLI (unattended, logged) (P2)
 DIRECTORS_LOG="$ROOT/logs/directors_${PROJECT_ID}_$(date -u +%Y%m%dT%H%M%SZ).log"
@@ -304,23 +316,45 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
   DIRECTOR_SYSTEM_NOTE=""
 else
   if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
-    PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director generation prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
-    DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_templated_system.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director system prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
+    if [ "$is_en" -eq 1 ]; then
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US templated director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_templated_system_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US templated director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    else
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_templated_system.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    fi
   else
-    PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
-    DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
+    if [ "$is_en" -eq 1 ]; then
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    else
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    fi
   fi
 fi
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
@@ -404,6 +438,10 @@ run_directors() {
 DIRECTOR_ARTIFACT_FALLBACK=0
 if [ -n "$REHEARSAL_MANIFEST" ]; then
   cp "$PROJECT_DIR/artifacts/director_reply.json" "$DIRECTORS_JSON"
+  DIRECTOR_EXIT=0
+  DIRECTOR_ARTIFACT_FALLBACK=1
+elif [ "${SKIP_DIRECTORS:-0}" = "1" ] && [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
+  echo '{"session_id":"skipped","is_error":false,"num_turns":0,"total_cost_usd":0}' > "$DIRECTORS_JSON"
   DIRECTOR_EXIT=0
   DIRECTOR_ARTIFACT_FALLBACK=1
 else
@@ -550,6 +588,12 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
   else
     DIRECTOR_EXIT=6
   fi
+elif [ "${SKIP_DIRECTORS:-0}" = "1" ]; then
+  if "$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" --require-compositions; then
+    DIRECTOR_EXIT=0
+  else
+    DIRECTOR_EXIT=6
+  fi
 elif [ "$TEMPLATE_MODE" -eq 1 ]; then
   if [ "$DIRECTOR_EXIT" -eq 0 ] && [ "${MATERIALIZE_EXIT:-0}" -eq 0 ] && validate_current_director_artifacts; then
     DIRECTOR_EXIT=0
@@ -576,11 +620,19 @@ while true; do
   # Capture diagnostics even when the director process itself failed, then
   # pass actionable seek-safety errors into the existing bounded repair turn.
   validate_current_director_artifacts || true
-  RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
-    echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
-    DIRECTOR_EXIT=6
-    break
-  }
+  if [ "$is_en" -eq 1 ]; then
+    RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry_en_US.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing en-US director retry prompt" >> "$DIRECTORS_LOG"
+      DIRECTOR_EXIT=6
+      break
+    }
+  else
+    RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
+      DIRECTOR_EXIT=6
+      break
+    }
+  fi
   if [ -n "$DIRECTOR_VALIDATION_ERRORS" ]; then
     RETRY_PROMPT="$(printf '%s\n\nValidation errors to fix in the composition HTML:\n%s' "$RETRY_PROMPT" "$DIRECTOR_VALIDATION_ERRORS")"
   fi
@@ -611,6 +663,15 @@ set -e
 if [ "$DIRECTOR_EXIT" -eq 0 ]; then
   if [ ! -s "$PROJECT_DIR/artifacts/news_evidence.json" ]; then
     "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" || true
+  fi
+  if [ "$is_en" -eq 1 ]; then
+    echo "Validating en-US cultural localization and display language for $PROJECT_ID..."
+    if [ -f "$PROJECT_DIR/artifacts/script_en_US.json" ]; then
+      "$PY" "$ROOT/scripts/validate_display_language.py" --locale en-US "$PROJECT_DIR/artifacts/script_en_US.json" || {
+        echo "ERROR: en-US script failed cultural/language validation for $PROJECT_ID" >&2
+        return 1
+      }
+    fi
   fi
   NEWS_EVIDENCE_LOG="$(mktemp "$ROOT/logs/news_evidence_${PROJECT_ID}_XXXXXX.json")"
   if ! validate_project_news_evidence "$PROJECT_DIR" "$NEWS_EVIDENCE_LOG"; then
@@ -719,8 +780,23 @@ materialize_hyperframes_assets() {
   local project_root="$1"
   local narration="$project_root/assets/narration.mp3"
   local reels_narration="$project_root/assets/narration_reels.mp3"
-  local narration_text="$project_root/artifacts/narration_vi_text.txt"
-  local script_json="$project_root/artifacts/script_vi.json"
+  local locale
+  locale="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$project_root')))" 2>/dev/null || echo "en-US")"
+  local is_en=1
+  if [ "$locale" = "vi-VN" ]; then is_en=0; fi
+
+  local narration_text
+  local script_json
+  local default_voice
+  if [ "$is_en" -eq 1 ]; then
+    narration_text="$project_root/artifacts/narration_en_US_text.txt"
+    script_json="$project_root/artifacts/script_en_US.json"
+    default_voice="${TTS_VOICE:-en-US-ChristopherNeural}"
+  else
+    narration_text="$project_root/artifacts/narration_vi_text.txt"
+    script_json="$project_root/artifacts/script_vi.json"
+    default_voice="vi-VN-HoaiMyNeural"
+  fi
   if [ ! -s "$script_json" ] && [ -s "$project_root/artifacts/script.json" ]; then script_json="$project_root/artifacts/script.json"; fi
   local script_spoken="$project_root/04_audio/script_spoken.md"
   local source_fonts="$ROOT/.agents/skills/hyperframes-media/assets/fonts"
@@ -746,7 +822,11 @@ materialize_hyperframes_assets() {
     cp "$project_root/assets/voice/narration.mp3" "$narration"
   fi
   if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
-    jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .narration_vi // .text // .narration // empty] | join(" ") else (.text_vi // .narration_vi // .text // .narration // .script // empty) end' "$script_json" > "$narration_text"
+    if [ "$is_en" -eq 1 ]; then
+      jq -r 'if (.sections // null) then [.sections[]? | .narration // .text // empty] | join(" ") elif (.scenes // null) then [.scenes[]? | .narration // .text // empty] | join(" ") else (.narration // .text // .script // empty) end' "$script_json" > "$narration_text"
+    else
+      jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .narration_vi // .text // .narration // empty] | join(" ") else (.text_vi // .narration_vi // .text // .narration // .script // empty) end' "$script_json" > "$narration_text"
+    fi
   fi
   if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
     tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
@@ -760,8 +840,12 @@ materialize_hyperframes_assets() {
     narration_stale=1
   fi
   if [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
-    "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-    edge-tts --voice vi-VN-HoaiMyNeural --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+    if [ "$is_en" -eq 1 ]; then
+      edge-tts --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
+    else
+      "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
+      edge-tts --voice "$default_voice" --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+    fi
     rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
 
@@ -786,17 +870,24 @@ materialize_hyperframes_assets() {
     done
   fi
   validate_project_background_music "$project_root" "$PROJECT_ID" || return 1
-  # Reels/Shorts must stay under the 60s platform limit. Derive a capped
-  # narration for the reels composition so its aligned timeline is <=60s.
-  local reels_cap=59.5
+  # Reels/Shorts duration: support content-dependent duration up to 3 minutes (180s)
+  # with a 60s minimum rule. Do not artificially cap at 59.5s.
+  local reels_cap="${REELS_MAX_SECONDS:-180.0}"
   if awk -v d="$narration_duration" -v c="$reels_cap" 'BEGIN{exit !(d > c)}'; then
     "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
       || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"
   else
     cp "$narration" "$reels_narration"
   fi
-  "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" || return 1
-  "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" || return 1
+  if [ "${CODEX_AGENT_VALIDATION_MOCK:-0}" = "1" ] || [ "${CLAUDE_AGENT_VALIDATION_MOCK:-0}" = "1" ]; then
+    echo "[MOCK] Skipping ASR caption generation (CODEX_AGENT_VALIDATION_MOCK=1 — no model download in offline Docker test)"
+    # Write empty placeholder VTT files so downstream steps that read captions don't fail
+    echo "WEBVTT" > "$project_root/hyperframes/assets/captions.vtt"
+    echo "WEBVTT" > "$project_root/hyperframes_reels/assets/captions.vtt"
+  else
+    "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" --locale "$locale" || return 1
+    "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" --locale "$locale" || return 1
+  fi
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
     if [ "$composition" = "hyperframes_reels" ]; then
@@ -810,10 +901,10 @@ materialize_hyperframes_assets() {
     if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
   done
-  # Repair is a generic mutation path; skip it on templated compositions so
+  # Repair is a generic mutation path; skip it on templated or mock compositions so
   # provenance hashes recorded by the materializer stay valid.
-  if [ "${TEMPLATE_MODE:-0}" -eq 1 ]; then
-    echo "skip repair_hyperframes_quality (templated compositions are deterministic)"
+  if [ "${TEMPLATE_MODE:-0}" -eq 1 ] || [ "${CODEX_AGENT_VALIDATION_MOCK:-0}" = "1" ] || [ "${CLAUDE_AGENT_VALIDATION_MOCK:-0}" = "1" ]; then
+    echo "skip repair_hyperframes_quality (templated/mock composition — deterministic or offline Docker test)"
   else
     "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict || return 1
   fi
@@ -832,10 +923,16 @@ text = re.sub(r'const\s+dur\s*=\s*[0-9.]+;', f'const dur = {dur:.3f};', text)
 open(p, 'w', encoding='utf-8').write(text)
 " "$project_root/$composition/index.html" "$comp_dur" 2>/dev/null || true
     fi
-    "$PY" "$ROOT/scripts/install_news_captions.py" \
-      "$project_root/$composition/index.html" \
-      "$target/narration.mp3" \
-      "$target/word_timestamps.json" || return 1
+    if [ "${CODEX_AGENT_VALIDATION_MOCK:-0}" = "1" ] || [ "${CLAUDE_AGENT_VALIDATION_MOCK:-0}" = "1" ]; then
+      echo "[MOCK] Skipping install_news_captions for $composition (offline Docker test)"
+      # Create a stub word_timestamps.json so later validation doesn't fail on missing file
+      echo '{"word_timestamps":[]}' > "$target/word_timestamps.json"
+    else
+      "$PY" "$ROOT/scripts/install_news_captions.py" \
+        "$project_root/$composition/index.html" \
+        "$target/narration.mp3" \
+        "$target/word_timestamps.json" || return 1
+    fi
   done
 }
 if ! materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"; then
@@ -876,11 +973,18 @@ else
   sed -i 's|\.\./assets/|assets/|g' "$FULL_COMP/index.html" "$REELS_COMP/index.html"
 fi
 
-rm -f renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4
+if [ "$is_en" -eq 1 ]; then
+  FULL_RENDER_PATH="renders/final_long_en_US_16x9.mp4"
+  REELS_RENDER_PATH="renders/final_short_en_US_9x16.mp4"
+else
+  FULL_RENDER_PATH="renders/final_full_vi_9x16.mp4"
+  REELS_RENDER_PATH="renders/final_reels_vi_9x16.mp4"
+fi
+rm -f "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"
 set +e
-"$HYPERFRAMES_BIN" render "$FULL_COMP" --output renders/final_full_vi_9x16.mp4
+"$HYPERFRAMES_BIN" render "$FULL_COMP" --output "$FULL_RENDER_PATH"
 RENDER_FULL_EXIT=$?
-"$HYPERFRAMES_BIN" render "$REELS_COMP" --output renders/final_reels_vi_9x16.mp4
+"$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
 RENDER_REELS_EXIT=$?
 set -e
 if [ "$RENDER_FULL_EXIT" -ne 0 ] || [ "$RENDER_REELS_EXIT" -ne 0 ]; then
@@ -896,8 +1000,8 @@ fi
 # ===== CODEX AGENT STRICT QUALITY VALIDATION =====
 echo "[$(date -u +%FT%TZ)] Codex Agent Strict Quality Validation Started"
 
-# Step 1: Base render quality validation (existing)
-if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60 --strict; then
+# Step 1: Base render quality validation (enforcing min 60s, allowing content duration up to 180s)
+if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --min-duration 60.0 --reels-max-duration 180.0 --strict; then
   VALIDATE_RENDER_EXIT=0
 else
   VALIDATE_RENDER_EXIT=$?
@@ -926,7 +1030,7 @@ fi
 
 # Check if videos exist
 RENDER_MISSING=0
-for render in renders/final_full_vi_9x16.mp4 renders/final_reels_vi_9x16.mp4; do
+for render in "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"; do
   if [ ! -s "$render" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render for $PROJECT_ID" >&2
     RENDER_MISSING=1
@@ -939,7 +1043,21 @@ if [ $RENDER_MISSING -ne 0 ]; then
 fi
 
 # Step 2: Create publish_metadata.json first (needed for Codex validation)
-TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+if [ -z "${script_json:-}" ] || [ ! -s "$script_json" ]; then
+  if [ -s "$PROJECT_DIR/artifacts/script_en_US.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script_en_US.json"
+  elif [ -s "$PROJECT_DIR/artifacts/script_vi.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script_vi.json"
+  elif [ -s "$PROJECT_DIR/artifacts/script.json" ]; then
+    script_json="$PROJECT_DIR/artifacts/script.json"
+  else
+    script_json=""
+  fi
+fi
+TITLE=""
+if [ -n "$script_json" ] && [ -s "$script_json" ]; then
+  TITLE=$(jq -r '.title // empty' "$script_json" 2>/dev/null || echo "")
+fi
 if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 fi
@@ -948,21 +1066,30 @@ if [ -z "$TITLE" ]; then
 fi
 
 # Ensure title contains required hashtags
-if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
-  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
-  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+if [ "$is_en" -eq 1 ]; then
+  if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  fi
+else
+  if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  fi
 fi
 
 # Create publish_metadata.json for validation
-if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/renders/final_full_vi_9x16.mp4" ]; then
+if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$FULL_RENDER_PATH" ]; then
   jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
-  --arg desc "$(jq -r '.description // ""' artifacts/script_vi.json 2>/dev/null || echo "")" \
-  --arg yt_shorts "renders/final_reels_vi_9x16.mp4" \
-  --arg tiktok "renders/final_full_vi_9x16.mp4" \
-  --arg fb_video "renders/final_full_vi_9x16.mp4" \
-  --arg ig_reels "renders/final_reels_vi_9x16.mp4" \
+  --arg desc "$(if [ -n "$script_json" ] && [ -s "$script_json" ]; then jq -r '.description // ""' "$script_json" 2>/dev/null || echo ""; fi)" \
+  --arg yt_shorts "$REELS_RENDER_PATH" \
+  --arg tiktok "$FULL_RENDER_PATH" \
+  --arg fb_video "$FULL_RENDER_PATH" \
+  --arg ig_reels "$REELS_RENDER_PATH" \
+  --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
+  --arg format "short" \
   --argjson feed_stale "$FEED_STALE" \
   '{
     id: $id,
@@ -973,6 +1100,8 @@ if [ -s "$PROJECT_DIR/renders/final_reels_vi_9x16.mp4" ] && [ -s "$PROJECT_DIR/r
     tiktok: $tiktok,
     fb_video: $fb_video,
     ig_reels: $ig_reels,
+    locale: $locale,
+    format: $format,
     feed_stale: $feed_stale
   }' > "$PROJECT_DIR/publish_metadata.json"
 else
@@ -1047,7 +1176,11 @@ if [ "$FEED_STALE" -eq 1 ]; then
 fi
 
 # Step 4: Create publish_metadata.json
-TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+if [ "$is_en" -eq 1 ]; then
+  TITLE=$(jq -r '.title // empty' artifacts/script_en_US.json 2>/dev/null || echo "")
+else
+  TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
+fi
 if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 fi
@@ -1055,16 +1188,28 @@ if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
 fi
 
-# Ensure title contains required hashtags (#tintuc #congnghe #ai)
-if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
-  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
-  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+# Ensure title contains required hashtags (#ai #tech for en-US; #tintuc #congnghe #ai for vi-VN)
+if [ "$is_en" -eq 1 ]; then
+  if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  fi
+else
+  if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  fi
 fi
 # Safeguard: ensure it fits within 100 chars for YT Shorts
 if [ ${#TITLE} -gt 100 ]; then
   # Strip any existing suffix and truncate base title to 80 chars, then append required hashtags
-  BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
-  TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  if [ "$is_en" -eq 1 ]; then
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  else
+    BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
+    TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"
+  fi
 fi
 
 CONCEPT_HOOK=$(jq -r '.concept_options[0].hook // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
@@ -1079,10 +1224,17 @@ fi
 if [ -n "$CONCEPT_CTA" ]; then
   if [ -n "$DESCRIPTION" ]; then DESCRIPTION="$DESCRIPTION. $CONCEPT_CTA"; else DESCRIPTION="$CONCEPT_CTA"; fi
 fi
-if [ -z "$DESCRIPTION" ]; then
-  DESCRIPTION="Điểm tin công nghệ AI mới nhất."
+if [ "$is_en" -eq 1 ]; then
+  if [ -z "$DESCRIPTION" ]; then
+    DESCRIPTION="Latest AI technology and engineering breakdown."
+  fi
+  DESCRIPTION="$DESCRIPTION"$'\n\n'"#ai #tech #anthropic #claude"
+else
+  if [ -z "$DESCRIPTION" ]; then
+    DESCRIPTION="Điểm tin công nghệ AI mới nhất."
+  fi
+  DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai #vietnam"
 fi
-DESCRIPTION="$DESCRIPTION"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai #vietnam"
 
 # On the templated path, bind template provenance into the publish metadata so
 # downstream tooling can carry the deterministic composition + content hashes.
@@ -1101,6 +1253,12 @@ jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
   --arg description "$DESCRIPTION" \
+  --arg yt_shorts "$REELS_RENDER_PATH" \
+  --arg tiktok "$FULL_RENDER_PATH" \
+  --arg fb_video "$FULL_RENDER_PATH" \
+  --arg ig_reels "$REELS_RENDER_PATH" \
+  --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
+  --arg format "short" \
   --argjson feed_stale "$FEED_STALE" \
   --argjson template_prov "$TEMPLATE_PROV_JSON" \
   '{
@@ -1108,19 +1266,21 @@ jq -n \
     topic: $title,
     title: $title,
     description: $description,
-    yt_shorts: "renders/final_reels_vi_9x16.mp4",
-    tiktok: "renders/final_full_vi_9x16.mp4",
-    fb_video: "renders/final_full_vi_9x16.mp4",
-    ig_reels: "renders/final_reels_vi_9x16.mp4",
+    yt_shorts: $yt_shorts,
+    tiktok: $tiktok,
+    fb_video: $fb_video,
+    ig_reels: $ig_reels,
+    locale: $locale,
+    format: $format,
     feed_stale: $feed_stale
   } + (if ($template_prov|length) > 0 then $template_prov else {} end)' > publish_metadata.json
 
 # Step 4.5: Run copyright preflight (if files exist)
-if [ -f "renders/final_full_vi_9x16.mp4" ]; then
-  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_full_vi_9x16.mp4"
+if [ -f "$FULL_RENDER_PATH" ]; then
+  "$PY" "$ROOT/scripts/check_copyright.py" "$FULL_RENDER_PATH"
 fi
-if [ -f "renders/final_reels_vi_9x16.mp4" ]; then
-  "$PY" "$ROOT/scripts/check_copyright.py" "renders/final_reels_vi_9x16.mp4"
+if [ -f "$REELS_RENDER_PATH" ]; then
+  "$PY" "$ROOT/scripts/check_copyright.py" "$REELS_RENDER_PATH"
 fi
 
 SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))

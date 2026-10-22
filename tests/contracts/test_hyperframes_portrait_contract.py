@@ -495,3 +495,27 @@ def test_repair_adds_root_attributes_to_main_tag(tmp_path):
     assert 'data-duration="15.500"' in patched
     assert 'data-start="0"' in patched
 
+
+def test_us_landscape_composition_passes(tmp_path):
+    project_dir = tmp_path / "us_project"
+    project_dir.mkdir()
+    (project_dir / "project.json").write_text('{"locale": "en-US"}', encoding="utf-8")
+    comp_dir = project_dir / "hyperframes"
+    comp_dir.mkdir()
+    html = composition_html(1920, 1080)
+    index = write_composition(comp_dir, html)
+    assert repair.validate_html(index) == []
+
+
+def test_us_reels_composition_requires_portrait(tmp_path):
+    project_dir = tmp_path / "us_project"
+    project_dir.mkdir()
+    (project_dir / "project.json").write_text('{"locale": "en-US"}', encoding="utf-8")
+    comp_dir = project_dir / "hyperframes_reels"
+    comp_dir.mkdir()
+    html = composition_html(1920, 1080)
+    index = write_composition(comp_dir, html)
+    errors = repair.validate_html(index)
+    assert any("expected 1080x1920 portrait canvas" in err for err in errors)
+
+

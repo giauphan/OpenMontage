@@ -66,8 +66,9 @@ def aligned_subtitles(transcript, audio_hash, duration, max_words=3, max_duratio
         raise ValueError("transcript JSON must declare timing_source='asr'")
     if transcript.get("audio_sha256") != audio_hash:
         raise ValueError("transcript audio_sha256 does not match input audio")
-    if transcript.get("language") not in ("vi", "vi-VN", "vie"):
-        raise ValueError("transcript language must be Vietnamese (vi)")
+    valid_languages = ("en", "en-US", "eng", "vi", "vi-VN", "vie")
+    if transcript.get("language") not in valid_languages:
+        raise ValueError(f"transcript language '{transcript.get('language')}' not supported")
     words = transcript.get("word_timestamps")
     if not isinstance(words, list) or not words:
         raise ValueError("transcript has no word_timestamps")

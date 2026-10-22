@@ -47,10 +47,19 @@ def main() -> int:
         print(f"ERROR: Project directory does not exist: {project_dir}", file=sys.stderr)
         return 1
 
-    video_paths = [
-        project_dir / "renders" / "final_full_vi_9x16.mp4",
-        project_dir / "renders" / "final_reels_vi_9x16.mp4",
-    ]
+    from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths
+    locale = resolve_project_locale(project_dir)
+    if is_english_locale(locale):
+        full_name, reels_name = resolve_render_paths(project_dir, locale=locale)
+        video_paths = [
+            project_dir / "renders" / full_name,
+            project_dir / "renders" / reels_name,
+        ]
+    else:
+        video_paths = [
+            project_dir / "renders" / "final_full_vi_9x16.mp4",
+            project_dir / "renders" / "final_reels_vi_9x16.mp4",
+        ]
     metadata_path = project_dir / "publish_metadata.json"
 
     this_mod = sys.modules[__name__]

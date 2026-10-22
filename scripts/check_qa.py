@@ -66,10 +66,18 @@ def narration_path(project: Path) -> Path:
 
 
 def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
-    full = project / FULL_RENDER
-    reels = project / REELS_RENDER
+    from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths, resolve_narration_text_path
+    locale = resolve_project_locale(project)
+    if is_english_locale(locale):
+        full_name, reels_name = resolve_render_paths(project, locale=locale)
+        full = project / full_name
+        reels = project / reels_name
+        narration_text = resolve_narration_text_path(project, locale=locale)
+    else:
+        full = project / FULL_RENDER
+        reels = project / REELS_RENDER
+        narration_text = project / NARRATION_TEXT
     narration = narration_path(project)
-    narration_text = project / NARRATION_TEXT
 
     narration_seconds = duration(narration, ffprobe)
     full_seconds = duration(full, ffprobe)

@@ -1,0 +1,34 @@
+Mode: Initial Generation (en-US / US Market)
+
+Generate or repair all three director outputs for {{PROJECT_DIR}}.
+
+Target Audience & Cultural Localization:
+- Audience: United States technology professionals, developers, and tech enthusiasts.
+- Editorial Standard: Follow skills/meta/cultural-localization-en-us.md and skills/meta/audience-and-culture-us.md.
+- Voice & Tone: Confident, fast-paced, insightful, authoritative American tech documentary narration.
+- Idiomatic Precision: Use natural American spoken English ("straightforward", "tradeoff", "under the hood", "step-by-step"). Avoid literal calques, machine-translation relics, or unnatural tropes.
+
+1. script_en_US.json
+Must be a flat JSON file at {{PROJECT_DIR}}/artifacts/script_en_US.json (do not embed inside checkpoint).
+Schema keys: version (1.0), title, total_duration_seconds, sections (array of: id, text, start_seconds, end_seconds).
+Content: 100% natural, idiomatic American English. Rich spoken-word narration, 180-240 spoken words total (60-75s expected spoken duration, minimum 60s). No dead air. Use a strong 3-second hook that leads with the breakthrough or disruption. CRITICAL DURATION GOAL: Videos must reach at least 60 seconds (1 minute or more). Never write fewer than 180 English words. CRITICAL: NEVER truncate or cut off text mid-sentence or mid-word. Every section MUST be a complete, grammatically sound, fully articulated English sentence.
+
+News evidence and factual grounding: Base all script content strictly on the technology news in {{PROJECT_DIR}}/artifacts/research_brief.json and any supplied frozen source excerpts. Map factual assertions to verified claims per skills/meta/claim-bound-visual-director.md and skills/meta/factcheck-and-claim-ledger.md. Never invent citations, benchmark numbers, quotes, or product specifications.
+
+2. hyperframes/index.html & hyperframes_reels/index.html
+hyperframes/index.html: The complete story with no sections/narration removed. Portrait 1080x1920 CSS layout (or landscape 1920x1080 when configured). Duration matches the full text (60-75s, minimum 60s).
+hyperframes_reels/index.html: Identical structure for Shorts/Reels (1080x1920 portrait, minimum 60s, up to 180s content-dependent).
+Content & Quality for both:
+- NO visible "Montage" or "OpenMontage" branding anywhere.
+- Grounding: Base the narration and on-screen text 100% on the factual technology news in {{PROJECT_DIR}}/artifacts/research_brief.json.
+- Visual scene diversity, visual intent & styling (MANDATORY per skills/meta/claim-bound-visual-director.md):
+  * Content-first visual intent: Every narrative beat must declare a clear visual_intent and evidence_class (e.g. authentic_photo, svg_diagram, contextual_icon, or typographic_focus).
+  * For major technical concepts, hardware, or architecture, author an actual SVG diagram or bind an approved staged source image from assets/visuals/ — do NOT rely on text-only cards.
+  * In visual mode, consume staged local files from assets/visuals/ or inline deterministic SVG layers.
+  * Scene-specific art direction: Distinct scenes must have distinct, context-relevant visual treatment.
+  * High-contrast typography: All headings, body text, badges, and metrics MUST use bright, highly readable colors on dark backgrounds (e.g. #ffffff for titles, #f8fafc for body text, #38bdf8 cyan or #fbbf24 amber for highlights). NEVER use black or dark grey text (#000, #1e293b, #333) on dark cards or backgrounds.
+  * GSAP Scene Transitions & Audio-Visual Sync:
+    - Master timeline registered on window.__timelines['main'].
+    - Every scene entrance matches its script section start time.
+    - Scene 1 stays visible until Scene 2 starts. A frame sampled at any second displays rich headlines, cards, and diagrams — NEVER a blank canvas.
+  * Caption rail reservation: Reserve bottom 16% of the frame as caption-safe zone. Do not author custom static captions; automated ASR captions are installed downstream.

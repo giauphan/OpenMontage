@@ -56,7 +56,7 @@ def validate_templated_compositions(project_dir: Path, require_compositions: boo
     return bool(prov["ok"])
 
 
-def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
+def _normalize_script_payload(payload: Any, locale: str = "vi-VN") -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
         return None
 
@@ -74,9 +74,9 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
         if "title_en" in normalized and "title" not in normalized:
             normalized["title"] = normalized["title_en"]
         if "title" not in normalized:
-            normalized["title"] = normalized.get("theme") or "Tin tức AI"
+            normalized["title"] = normalized.get("theme") or ("AI Tech News" if locale == "en-US" else "Tin tức AI")
 
-        if check_vietnamese_prose(normalized["title"]):
+        if locale == "vi-VN" and check_vietnamese_prose(normalized["title"]):
             return None
 
         if "total_duration" in normalized and "total_duration_seconds" not in normalized:
@@ -121,11 +121,15 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
             selected = ""
             for ct in candidate_texts:
                 if isinstance(ct, str) and ct.strip():
-                    if not check_vietnamese_prose(ct):
+                    if locale == "vi-VN":
+                        if not check_vietnamese_prose(ct):
+                            selected = ct
+                            break
+                        elif not selected:
+                            selected = ct
+                    else:
                         selected = ct
                         break
-                    elif not selected:
-                        selected = ct
             sec["text"] = selected
             # Normalize Vietnamese diacritics
             if isinstance(sec["text"], str):
@@ -153,7 +157,7 @@ def _normalize_script_payload(payload: Any) -> Optional[Dict[str, Any]]:
                 if key not in valid_sec_keys:
                     del sec[key]
 
-            if sec.get("text") and check_vietnamese_prose(sec["text"]):
+            if locale == "vi-VN" and sec.get("text") and check_vietnamese_prose(sec["text"]):
                 return None
 
         validate_artifact("script", normalized)
@@ -592,7 +596,21 @@ def validate_and_promote_director_artifacts(
     LAST_VALIDATION_ERRORS = []
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    canonical_script = artifacts_dir / "script_vi.json"
+
+    locale = "vi-VN"
+    try:
+        from lib.artifact_paths import resolve_project_locale
+        locale = resolve_project_locale(project_dir)
+    except Exception:
+        pass
+
+    if (artifacts_dir / "script_en_US.json").is_file():
+        canonical_script = artifacts_dir / "script_en_US.json"
+    elif (artifacts_dir / "script_vi.json").is_file():
+        canonical_script = artifacts_dir / "script_vi.json"
+    else:
+        canonical_script = artifacts_dir / ("script_en_US.json" if locale == "en-US" else "script_vi.json")
+
     evidence_path = artifacts_dir / "news_evidence.json"
     evidence_present = evidence_path.exists()
     if evidence_present:
@@ -611,17 +629,18 @@ def validate_and_promote_director_artifacts(
             return False
 
     # Fail closed if research brief is explicitly invalid / non-Vietnamese
-    brief_path = artifacts_dir / "research_brief.json"
-    if brief_path.is_file():
-        try:
-            brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
-            brief_title = brief_data.get("title") or brief_data.get("topic") or ""
-            if brief_title and check_vietnamese_prose(brief_title):
-                if canonical_script.is_file() and not evidence_present:
-                    canonical_script.unlink(missing_ok=True)
-                return False
-        except Exception:
-            pass
+    if locale == "vi-VN":
+        brief_path = artifacts_dir / "research_brief.json"
+        if brief_path.is_file():
+            try:
+                brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
+                brief_title = brief_data.get("title") or brief_data.get("topic") or ""
+                if brief_title and check_vietnamese_prose(brief_title):
+                    if canonical_script.is_file() and not evidence_present:
+                        canonical_script.unlink(missing_ok=True)
+                    return False
+            except Exception:
+                pass
 
     # Templated path: compositions come from the approved package materializer.
     # Block the free-form / generic synthesis fallback and verify provenance +
@@ -643,7 +662,7 @@ def validate_and_promote_director_artifacts(
         if evidence_present:
             return not require_compositions or _has_required_compositions(project_dir)
         try:
-            normalized = _normalize_script_payload(json.loads(canonical_script.read_text(encoding="utf-8")))
+            normalized = _normalize_script_payload(json.loads(canonical_script.read_text(encoding="utf-8")), locale=locale)
             if normalized is not None:
                 _promote_to_canonical(canonical_script, normalized)
                 return not require_compositions or _has_required_compositions(project_dir)

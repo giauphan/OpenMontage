@@ -1,0 +1,3 @@
+# Extends openmontage:latest with faster-whisper for isolated pipeline testing
+FROM openmontage:latest
+RUN pip3 install faster-whisper

@@ -35,7 +35,7 @@ jobs:
             requirements-dev.txt
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: command -v ffmpeg >/dev/null 2>&1 || (sudo apt-get update -o Acquire::http::Timeout="10" && sudo apt-get install -y ffmpeg)
 
       - name: Install dependencies
         run: make install-dev

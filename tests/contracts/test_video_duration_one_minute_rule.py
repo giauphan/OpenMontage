@@ -279,3 +279,36 @@ def test_reels_video_exceeding_sixty_seconds_rejected(tmp_path: Path):
     assert any("exceeds 60.00s" in e for e in errors), (
         f"Expected max duration error for 65s reels video, got: {errors}"
     )
+
+
+def test_content_dependent_multi_minute_duration_allowed(tmp_path: Path):
+    """Verify that videos can be 1, 2, or 3 minutes depending on topic content (min 60s, up to 180s for shorts)."""
+    project = tmp_path / "two_minute_project"
+    project.mkdir()
+    artifacts = project / "artifacts"
+    artifacts.mkdir()
+    assets = project / "assets"
+    assets.mkdir()
+    renders = project / "renders"
+    renders.mkdir()
+
+    # 120s (2 minutes) narration and render
+    narration_2m = assets / "narration.mp3"
+    _encode_narration_audio(narration_2m, duration=120.0)
+    time.sleep(0.05)
+
+    render_2m = renders / "final_short_en_US_9x16.mp4"
+    _encode_test_video(render_2m, duration=120.0)
+
+    # Must pass validation when max duration is 180s (3 minutes) and min is 60s
+    errors = render_validator.validate_video(
+        render_2m,
+        narration_2m,
+        FFPROBE,
+        FFMPEG,
+        min_duration=60.0,
+        tolerance=3.0,
+        expected_dimensions=(1080, 1920),
+        max_duration=180.0,
+    )
+    assert errors == [], f"2-minute video must pass quality validation: {errors}"
