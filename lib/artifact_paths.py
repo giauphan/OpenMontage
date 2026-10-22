@@ -12,6 +12,50 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_LOCALE = "vi-VN"
+CANONICAL_SCRIPT_NAME = "script.json"
+
+
+def _default_or_env() -> str:
+    env_locale = os.environ.get("OPENMONTAGE_LOCALE")
+    if env_locale:
+        return _normalize_locale(env_locale)
+    return DEFAULT_LOCALE
+
+
+def _locale_from_dict(data: dict[str, Any] | None) -> str | None:
+    if not isinstance(data, dict):
+        return None
+    locale = data.get("locale") or data.get("spoken_language")
+    if locale:
+        return _normalize_locale(str(locale))
+    profile_id = str(data.get("audience_profile_id") or data.get("profile_id") or "")
+    profile_lower = profile_id.lower()
+    if "en-us" in profile_lower:
+        return "en-US"
+    if "vi-vn" in profile_lower:
+        return "vi-VN"
+    return None
+
+
+def _locale_from_json_file(file_path: Path, root: Path) -> str | None:
+    resolved = file_path.resolve()
+    if resolved.parent != root or not resolved.is_file():
+        return None
+    try:
+        with open(resolved, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return _locale_from_dict(data)
+    except Exception:
+        return None
+
+
+def _locale_from_disk_artifacts(root: Path) -> str | None:
+    artifacts_dir = root / "artifacts"
+    if (artifacts_dir / "script_en_US.json").is_file():
+        return "en-US"
+    if (artifacts_dir / "script_vi.json").is_file():
+        return "vi-VN"
+    return None
 
 
 def resolve_project_locale(
@@ -30,64 +74,25 @@ def resolve_project_locale(
     7. Environment variable `OPENMONTAGE_LOCALE` if set.
     8. Default to `vi-VN` for existing legacy projects.
     """
-    if metadata:
-        locale = metadata.get("locale") or metadata.get("spoken_language")
-        if locale:
-            return _normalize_locale(locale)
-        profile_id = str(metadata.get("audience_profile_id") or metadata.get("profile_id") or "")
-        if "en-us" in profile_id.lower():
-            return "en-US"
-        if "vi-vn" in profile_id.lower():
-            return "vi-VN"
+    loc = _locale_from_dict(metadata)
+    if loc:
+        return loc
 
     try:
         root = Path(project_dir).resolve()
     except (ValueError, RuntimeError):
         return _default_or_env()
 
-    # Check project.json
-    project_json = (root / "project.json").resolve()
-    if project_json.parent == root and project_json.is_file():
-        try:
-            with open(project_json, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                loc = data.get("locale") or data.get("spoken_language")
-                if loc:
-                    return _normalize_locale(loc)
-                prof = str(data.get("audience_profile_id") or data.get("profile_id") or "")
-                if "en-us" in prof.lower():
-                    return "en-US"
-                if "vi-vn" in prof.lower():
-                    return "vi-VN"
-        except Exception:
-            pass
+    for candidate_name in ("project.json", "publish_metadata.json"):
+        loc = _locale_from_json_file(root / candidate_name, root)
+        if loc:
+            return loc
 
-    # Check publish_metadata.json
-    pub_meta = (root / "publish_metadata.json").resolve()
-    if pub_meta.parent == root and pub_meta.is_file():
-        try:
-            with open(pub_meta, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                loc = data.get("locale") or data.get("spoken_language")
-                if loc:
-                    return _normalize_locale(loc)
-        except Exception:
-            pass
+    disk_loc = _locale_from_disk_artifacts(root)
+    if disk_loc:
+        return disk_loc
 
-    # Inspect disk artifacts
-    artifacts_dir = root / "artifacts"
-    if (artifacts_dir / "script_en_US.json").is_file():
-        return "en-US"
-    if (artifacts_dir / "script_vi.json").is_file():
-        return "vi-VN"
-
-    env_locale = os.environ.get("OPENMONTAGE_LOCALE")
-    if env_locale:
-        return _normalize_locale(env_locale)
-
-    return DEFAULT_LOCALE
+    return _default_or_env()
 
 
 def _normalize_locale(locale: str) -> str:
@@ -114,15 +119,16 @@ def resolve_script_path(
     loc = _normalize_locale(locale) if locale else resolve_project_locale(root)
     artifacts = root / "artifacts"
 
+    standard_script = artifacts / CANONICAL_SCRIPT_NAME
     if is_english_locale(loc):
         candidate = artifacts / "script_en_US.json"
-        if not candidate.is_file() and (artifacts / "script.json").is_file():
+        if not candidate.is_file() and standard_script.is_file():
             # Standard agent canonical script is permitted if no script_en_US
-            candidate = artifacts / "script.json"
+            candidate = standard_script
     else:
         candidate = artifacts / "script_vi.json"
-        if not candidate.is_file() and (artifacts / "script.json").is_file():
-            candidate = artifacts / "script.json"
+        if not candidate.is_file() and standard_script.is_file():
+            candidate = standard_script
 
     if must_exist and not candidate.is_file():
         raise FileNotFoundError(

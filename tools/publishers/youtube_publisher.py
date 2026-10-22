@@ -29,6 +29,196 @@ from tools.base_tool import (
 )
 
 
+def _check_video_geometry(video_path: Path, format_type: str) -> ToolResult | None:
+    from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short, ensure_horizontal
+    try:
+        if format_type in ("short", "shorts"):
+            ensure_vertical(video_path)
+            ensure_youtube_short(video_path)
+        elif format_type in ("longform", "long", "16:9"):
+            ensure_horizontal(video_path)
+    except ValueError as geom_err:
+        return ToolResult(success=False, error=str(geom_err))
+    return None
+
+
+def _check_text_prose(title: str, description: str, locale: str) -> ToolResult | None:
+    from lib.artifact_paths import is_english_locale
+    if is_english_locale(locale):
+        from lib.language_validation import get_language_validator
+        validator = get_language_validator(locale)
+        title_errors = validator.validate_prose(title)
+        if title_errors:
+            return ToolResult(
+                success=False,
+                error=f"Invalid YouTube title (non-English prose): {title_errors[0]}",
+            )
+        if description:
+            desc_errors = validator.validate_prose(description)
+            if desc_errors:
+                return ToolResult(
+                    success=False,
+                    error=f"Invalid YouTube description (non-English prose): {desc_errors[0]}",
+                )
+    else:
+        from tools.narration_text import check_vietnamese_prose
+        title_errors = check_vietnamese_prose(title)
+        if title_errors:
+            return ToolResult(
+                success=False,
+                error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
+            )
+        if description:
+            desc_errors = check_vietnamese_prose(description)
+            if desc_errors:
+                return ToolResult(
+                    success=False,
+                    error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
+                )
+    return None
+
+
+def _verify_channel_guard_requirements(expected_channel_id: str | None, is_us_upload: bool) -> ToolResult | None:
+    if (is_us_upload or os.environ.get("CHANNEL_GUARD_REQUIRED") == "1") and not expected_channel_id:
+        return ToolResult(
+            success=False,
+            error="CHANNEL_GUARD_REQUIRED: Upload aborted because expected_channel_id is not specified for US upload. Refusing to publish to unverified channel.",
+        )
+    return None
+
+
+def _verify_authenticated_channel(youtube: Any, expected_channel_id: str) -> ToolResult | None:
+    ch_resp = youtube.channels().list(mine=True, part="id,snippet").execute()
+    items = ch_resp.get("items", [])
+    if not items:
+        return ToolResult(
+            success=False,
+            error=f"CHANNEL_GUARD_REJECTED: No channel found for authenticated credentials. Expected: {expected_channel_id}",
+        )
+    actual_channel_id = items[0].get("id")
+    if actual_channel_id != expected_channel_id:
+        return ToolResult(
+            success=False,
+            error=f"CHANNEL_GUARD_REJECTED: Authenticated channel ID '{actual_channel_id}' does not match expected channel ID '{expected_channel_id}'. Upload aborted.",
+        )
+    return None
+
+
+def _construct_upload_body(
+    inputs: dict[str, Any],
+    title: str,
+    description: str,
+    tags: list[str],
+    category_id: str,
+    privacy_status: str,
+    publish_at: str | None,
+    locale: str,
+) -> dict[str, Any]:
+    from lib.artifact_paths import is_english_locale
+    body = {
+        "snippet": {
+            "title": title,
+            "description": description,
+            "tags": tags,
+            "categoryId": category_id,
+        },
+        "status": {
+            "privacyStatus": privacy_status,
+            "selfDeclaredMadeForKids": bool(inputs.get("made_for_kids", False)),
+        },
+    }
+    if is_english_locale(locale):
+        body["snippet"]["defaultLanguage"] = "en-US"
+        body["snippet"]["defaultAudioLanguage"] = "en-US"
+    elif locale.startswith("vi"):
+        body["snippet"]["defaultLanguage"] = "vi-VN"
+        body["snippet"]["defaultAudioLanguage"] = "vi-VN"
+
+    if inputs.get("contains_synthetic_media") or inputs.get("has_synthetic_media"):
+        body["status"]["containsSyntheticMedia"] = True
+
+    if publish_at:
+        body["status"]["publishAt"] = publish_at
+    return body
+
+
+def _upload_thumbnail_if_present(youtube: Any, video_id: str, thumb_in: str | None) -> None:
+    if not (thumb_in and video_id):
+        return
+    thumb_path = Path(thumb_in).expanduser()
+    if not thumb_path.is_file():
+        return
+    try:
+        from googleapiclient.http import MediaFileUpload
+        youtube.thumbnails().set(
+            videoId=video_id,
+            media_body=MediaFileUpload(str(thumb_path)),
+        ).execute()
+    except Exception as e:
+        print(f"Warning: Custom thumbnail upload skipped ({e})")
+
+
+def _resolve_check_credentials() -> tuple[Path, Path] | dict[str, Any]:
+    secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
+    if not secret_file_str:
+        return {"status": "unavailable", "error_type": "missing_config", "error": "YOUTUBE_CLIENT_SECRET_FILE missing"}
+    secret_file = Path(secret_file_str).expanduser()
+    token_path_str = os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")
+    token_file = Path(token_path_str).expanduser()
+    if not secret_file.is_file() or not token_file.is_file():
+        return {
+            "status": "unavailable",
+            "error_type": "missing_credentials",
+            "error": f"Missing credential files: secret={secret_file.is_file()}, token={token_file.is_file()}",
+        }
+    return secret_file, token_file
+
+
+def _check_oembed_fallback(video_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"^[A-Za-z0-9_-]{1,64}$", video_id):
+        return None
+    try:
+        import json as _json
+        import urllib.parse
+        import urllib.request
+        oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+        parsed = urllib.parse.urlsplit(oembed_url)
+        if parsed.scheme == "https" and parsed.netloc == "www.youtube.com":
+            req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                status_code = getattr(resp, "status", None) or getattr(resp, "code", None) or 200
+                if status_code == 200:
+                    data = _json.loads(resp.read().decode("utf-8"))
+                    return {
+                        "status": "unverified_oembed",
+                        "video_id": video_id,
+                        "title": data.get("title"),
+                        "author_name": data.get("author_name"),
+                        "via_oembed": True,
+                    }
+    except Exception:
+        pass
+    return None
+
+
+def _classify_check_error(exc: Exception) -> dict[str, Any]:
+    error_str = str(exc)
+    status_code = None
+    error_type = "exception"
+    if "HttpError" in str(type(exc)):
+        error_type = "http_error"
+        status_code = getattr(getattr(exc, "resp", None), "status", getattr(exc, "status_code", None))
+    elif "AUTH_REQUIRED" in error_str:
+        error_type = "auth_required"
+
+    return {
+        "status": "error",
+        "error_type": error_type,
+        "status_code": status_code,
+        "error": error_str[:200],
+    }
+
+
 class YoutubePublisher(BaseTool):
     name = "youtube_publisher"
     version = "0.1.0"
@@ -170,49 +360,13 @@ class YoutubePublisher(BaseTool):
         format_type = str(inputs.get("format", "short")).lower()
         locale = str(inputs.get("locale") or ("en-US" if "en-us" in str(inputs.get("audience_profile_id", "")).lower() else "vi-VN"))
 
-        from tools.publishers.platform_routes import ensure_vertical, ensure_youtube_short, ensure_horizontal
-        from lib.artifact_paths import is_english_locale
+        geom_error = _check_video_geometry(video_path, format_type)
+        if geom_error:
+            return geom_error
 
-        try:
-            if format_type in ("short", "shorts"):
-                ensure_vertical(video_path)
-                ensure_youtube_short(video_path)
-            elif format_type in ("longform", "long", "16:9"):
-                ensure_horizontal(video_path)
-        except ValueError as geom_err:
-            return ToolResult(success=False, error=str(geom_err))
-
-        from lib.language_validation import get_language_validator
-        validator = get_language_validator(locale)
-        if is_english_locale(locale):
-            title_errors = validator.validate_prose(title)
-            if title_errors:
-                return ToolResult(
-                    success=False,
-                    error=f"Invalid YouTube title (non-English prose): {title_errors[0]}",
-                )
-            if description:
-                desc_errors = validator.validate_prose(description)
-                if desc_errors:
-                    return ToolResult(
-                        success=False,
-                        error=f"Invalid YouTube description (non-English prose): {desc_errors[0]}",
-                    )
-        else:
-            from tools.narration_text import check_vietnamese_prose
-            title_errors = check_vietnamese_prose(title)
-            if title_errors:
-                return ToolResult(
-                    success=False,
-                    error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
-                )
-            if description:
-                desc_errors = check_vietnamese_prose(description)
-                if desc_errors:
-                    return ToolResult(
-                        success=False,
-                        error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
-                    )
+        prose_error = _check_text_prose(title, description, locale)
+        if prose_error:
+            return prose_error
 
         secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
         if not secret_file_str:
@@ -227,19 +381,12 @@ class YoutubePublisher(BaseTool):
                 error=f"Client secret file not found at: {secret_file}",
             )
 
-        token_path_str = inputs.get(
-            "token_storage_path", "~/.openmontage/youtube_token.json"
-        )
+        token_path_str = inputs.get("token_storage_path", "~/.openmontage/youtube_token.json")
         token_file = Path(token_path_str).expanduser()
 
         tags = inputs.get("tags", [])
-        privacy_status = inputs.get("privacy_status", "unlisted")
-        if privacy_status == "public":
-            # Public publishing disallowed by policy — default to unlisted (draft mode)
-            privacy_status = "unlisted"
+        privacy_status = "private" if inputs.get("publish_at") else ("unlisted" if inputs.get("privacy_status", "unlisted") == "public" else inputs.get("privacy_status", "unlisted"))
         publish_at = inputs.get("publish_at")
-        if publish_at:
-            privacy_status = "private"
         category_id = inputs.get("category_id", "28")
 
         expected_channel_id = (
@@ -247,81 +394,33 @@ class YoutubePublisher(BaseTool):
             or os.environ.get("EXPECTED_CHANNEL_ID")
             or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
         )
-        locale = (
-            inputs.get("locale")
-            or inputs.get("target_locale")
-            or os.environ.get("OPENMONTAGE_LOCALE")
-            or os.environ.get("TARGET_LOCALE")
-            or ""
-        )
-        is_us_upload = str(locale).lower() in ("en", "en-us", "us")
+        target_loc = inputs.get("locale") or inputs.get("target_locale") or os.environ.get("OPENMONTAGE_LOCALE") or os.environ.get("TARGET_LOCALE") or ""
+        is_us_upload = str(target_loc).lower() in ("en", "en-us", "us")
 
-        # Fail-closed Channel ID Safety Guard:
-        # For US-market uploads or when CHANNEL_GUARD_REQUIRED=1, an expected_channel_id MUST be explicitly provided.
-        if (is_us_upload or os.environ.get("CHANNEL_GUARD_REQUIRED") == "1") and not expected_channel_id:
-            return ToolResult(
-                success=False,
-                error="CHANNEL_GUARD_REQUIRED: Upload aborted because expected_channel_id is not specified for US upload. Refusing to publish to unverified channel.",
-            )
+        guard_err = _verify_channel_guard_requirements(expected_channel_id, is_us_upload)
+        if guard_err:
+            return guard_err
 
         try:
             youtube = self._get_authenticated_service(secret_file, token_file)
 
             if expected_channel_id:
-                ch_resp = youtube.channels().list(mine=True, part="id,snippet").execute()
-                items = ch_resp.get("items", [])
-                if not items:
-                    return ToolResult(
-                        success=False,
-                        error=f"CHANNEL_GUARD_REJECTED: No channel found for authenticated credentials. Expected: {expected_channel_id}",
-                    )
-                actual_channel_id = items[0].get("id")
-                if actual_channel_id != expected_channel_id:
-                    return ToolResult(
-                        success=False,
-                        error=f"CHANNEL_GUARD_REJECTED: Authenticated channel ID '{actual_channel_id}' does not match expected channel ID '{expected_channel_id}'. Upload aborted.",
-                    )
+                channel_err = _verify_authenticated_channel(youtube, expected_channel_id)
+                if channel_err:
+                    return channel_err
 
-            body = {
-                "snippet": {
-                    "title": title,
-                    "description": description,
-                    "tags": tags,
-                    "categoryId": category_id,
-                },
-                "status": {
-                    "privacyStatus": privacy_status,
-                    "selfDeclaredMadeForKids": bool(inputs.get("made_for_kids", False)),
-                },
-            }
-            if is_english_locale(locale):
-                body["snippet"]["defaultLanguage"] = "en-US"
-                body["snippet"]["defaultAudioLanguage"] = "en-US"
-            elif locale.startswith("vi"):
-                body["snippet"]["defaultLanguage"] = "vi-VN"
-                body["snippet"]["defaultAudioLanguage"] = "vi-VN"
-
-            if inputs.get("contains_synthetic_media") or inputs.get("has_synthetic_media"):
-                body["status"]["containsSyntheticMedia"] = True
-
-            if publish_at:
-                body["status"]["publishAt"] = publish_at
+            body = _construct_upload_body(
+                inputs, title, description, tags, category_id, privacy_status, publish_at, locale
+            )
 
             from googleapiclient.http import MediaFileUpload
-
             media = MediaFileUpload(
                 str(video_path),
                 chunksize=1024 * 1024 * 5,
                 resumable=True,
                 mimetype="video/*",
             )
-
-            request = youtube.videos().insert(
-                part="snippet,status",
-                body=body,
-                media_body=media,
-            )
-
+            request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
             response = None
             while response is None:
                 status, response = request.next_chunk()
@@ -329,59 +428,37 @@ class YoutubePublisher(BaseTool):
             video_id = response.get("id")
             video_url = f"https://youtu.be/{video_id}"
 
-            # Upload thumbnail if provided (handled gracefully if channel lacks custom thumbnail feature)
-            thumb_in = inputs.get("thumbnail_path")
-            if thumb_in and video_id:
-                thumb_path = Path(thumb_in).expanduser()
-                if thumb_path.is_file():
-                    try:
-                        youtube.thumbnails().set(
-                            videoId=video_id,
-                            media_body=MediaFileUpload(str(thumb_path)),
-                        ).execute()
-                    except Exception as e:
-                        print(f"Warning: Custom thumbnail upload skipped ({e})")
+            _upload_thumbnail_if_present(youtube, video_id, inputs.get("thumbnail_path"))
 
-            timestamp = datetime.now(timezone.utc).isoformat()
             entry = {
                 "platform": "youtube",
                 "status": "published",
                 "url": video_url,
                 "video_id": video_id,
                 "visibility": privacy_status,
-                "timestamp": timestamp,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "metadata_used": {
                     "title": title,
                     "description": description,
                     "publish_at": publish_at,
                 },
             }
-
-            publish_log = {"version": "1.0", "entries": [entry]}
-
             return ToolResult(
                 success=True,
                 data={
-                    "publish_log": publish_log,
+                    "publish_log": {"version": "1.0", "entries": [entry]},
                     "video_id": video_id,
                     "video_url": video_url,
                 },
                 artifacts=[str(video_path)],
             )
-
         except ValueError as val_err:
             msg = str(val_err)
             if "AUTH_REQUIRED" in msg:
-                return ToolResult(
-                    success=False,
-                    error=msg,
-                    data={"auth_required": True},
-                )
+                return ToolResult(success=False, error=msg, data={"auth_required": True})
             return ToolResult(success=False, error=msg)
         except Exception as exc:
-            return ToolResult(
-                success=False, error=f"YouTube upload failed: {str(exc)}"
-            )
+            return ToolResult(success=False, error=f"YouTube upload failed: {str(exc)}")
 
     def check_video_published(self, video_id: str) -> dict[str, Any]:
         """Check status of a YouTube video via YouTube Data API v3 for reconciliation.
@@ -389,18 +466,10 @@ class YoutubePublisher(BaseTool):
         Returns a dict distinguishing unavailable/error/not-found from authoritative status.
         """
         try:
-            secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
-            if not secret_file_str:
-                return {"status": "unavailable", "error_type": "missing_config", "error": "YOUTUBE_CLIENT_SECRET_FILE missing"}
-            secret_file = Path(secret_file_str).expanduser()
-            token_path_str = os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")
-            token_file = Path(token_path_str).expanduser()
-            if not secret_file.is_file() or not token_file.is_file():
-                return {
-                    "status": "unavailable",
-                    "error_type": "missing_credentials",
-                    "error": f"Missing credential files: secret={secret_file.is_file()}, token={token_file.is_file()}",
-                }
+            creds_or_err = _resolve_check_credentials()
+            if isinstance(creds_or_err, dict):
+                return creds_or_err
+            secret_file, token_file = creds_or_err
 
             # HttpError is used only by the string-based type check in the outer
             # except block; the import must not mask the real authentication error.
@@ -429,44 +498,7 @@ class YoutubePublisher(BaseTool):
                 }
             return {"status": "not_found", "video_id": video_id}
         except Exception as exc:
-            # Fallback for read-only reconciliation: Check public visibility via YouTube oEmbed API
-            # This does not require OAuth scopes and definitively proves if a video is publicly accessible.
-            try:
-                import json as _json
-                import urllib.parse
-                import urllib.request
-                # Strict validation of video_id prevents any SSRF or URL injection
-                if re.fullmatch(r"^[A-Za-z0-9_-]{1,64}$", video_id):
-                    oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
-                    parsed = urllib.parse.urlsplit(oembed_url)
-                    if parsed.scheme == "https" and parsed.netloc == "www.youtube.com":
-                        req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
-                        with urllib.request.urlopen(req, timeout=5) as resp:
-                            status_code = getattr(resp, "status", None) or getattr(resp, "code", None) or 200
-                            if status_code == 200:
-                                data = _json.loads(resp.read().decode("utf-8"))
-                                return {
-                                    "status": "unverified_oembed",
-                                    "video_id": video_id,
-                                    "title": data.get("title"),
-                                    "author_name": data.get("author_name"),
-                                    "via_oembed": True,
-                                }
-            except Exception:
-                pass
-
-            error_str = str(exc)
-            status_code = None
-            error_type = "exception"
-            if "HttpError" in str(type(exc)):
-                error_type = "http_error"
-                status_code = getattr(getattr(exc, "resp", None), "status", getattr(exc, "status_code", None))
-            elif "AUTH_REQUIRED" in error_str:
-                error_type = "auth_required"
-
-            return {
-                "status": "error",
-                "error_type": error_type,
-                "status_code": status_code,
-                "error": error_str[:200],
-            }
+            oembed_result = _check_oembed_fallback(video_id)
+            if oembed_result is not None:
+                return oembed_result
+            return _classify_check_error(exc)

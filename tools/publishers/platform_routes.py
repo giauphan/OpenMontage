@@ -170,6 +170,36 @@ def validate_release_metadata(meta: dict) -> list[str]:
     return errors
 
 
+def _resolve_render_target(val: Any, default: str) -> str:
+    target = val or default
+    if isinstance(target, dict):
+        return str(target.get("path") or target.get("file") or default)
+    return str(target)
+
+
+def _clean_and_dedup_tags(tags: Any, default_tags: tuple[str, ...]) -> list[str]:
+    if not isinstance(tags, list):
+        return list(default_tags)
+    seen: set[str] = set()
+    clean_tags: list[str] = []
+    for t in tags:
+        tag_clean = str(t).strip().lstrip("#").lower()
+        if tag_clean and tag_clean not in seen:
+            seen.add(tag_clean)
+            clean_tags.append(tag_clean)
+    return clean_tags or list(default_tags)
+
+
+def _resolve_platform_defaults(data: dict) -> tuple[tuple[str, ...], str, str]:
+    from lib.artifact_paths import is_english_locale
+    locale = data.get("locale") or ("en-US" if "en-us" in str(data.get("audience_profile_id", "")).lower() else "vi-VN")
+    is_en = is_english_locale(locale)
+    default_tags = DEFAULT_ENGLISH_TAGS if is_en else DEFAULT_VIETNAMESE_TAGS
+    default_short = "renders/final_short_en_US_9x16.mp4" if is_en else CUT_RENDER
+    default_full = "renders/final_long_en_US_16x9.mp4" if is_en else FULL_RENDER
+    return default_tags, default_short, default_full
+
+
 def compose_release_metadata(data: dict) -> ReleaseMetadata:
     """Build and validate a unified ReleaseMetadata object from raw metadata dict."""
     errors = validate_release_metadata(data)
@@ -178,44 +208,13 @@ def compose_release_metadata(data: dict) -> ReleaseMetadata:
 
     title = deduplicate_hashtags_in_text(str(data["title"]).strip())
     desc = deduplicate_hashtags_in_text(str(data["description"]).strip())
+    default_tags, default_short, default_full = _resolve_platform_defaults(data)
 
-    locale = data.get("locale") or ("en-US" if "en-us" in str(data.get("audience_profile_id", "")).lower() else "vi-VN")
-    from lib.artifact_paths import is_english_locale
-    is_en = is_english_locale(locale)
-    default_tags = DEFAULT_ENGLISH_TAGS if is_en else DEFAULT_VIETNAMESE_TAGS
-    default_short = "renders/final_short_en_US_9x16.mp4" if is_en else CUT_RENDER
-    default_full = "renders/final_long_en_US_16x9.mp4" if is_en else FULL_RENDER
-
-    tags = data.get("tags")
-    if tags is None or not isinstance(tags, list):
-        # Derive tags from topic/title words if available, else standard fallback
-        tags = list(default_tags)
-    else:
-        # Clean and deduplicate tags
-        seen = set()
-        clean_tags = []
-        for t in tags:
-            tag_clean = str(t).strip().lstrip("#").lower()
-            if tag_clean and tag_clean not in seen:
-                seen.add(tag_clean)
-                clean_tags.append(tag_clean)
-        tags = clean_tags or list(default_tags)
-
-    yt_shorts = data.get("yt_shorts") or default_short
-    if isinstance(yt_shorts, dict):
-        yt_shorts = yt_shorts.get("path") or yt_shorts.get("file") or default_short
-
-    ig_reels = data.get("ig_reels") or default_short
-    if isinstance(ig_reels, dict):
-        ig_reels = ig_reels.get("path") or ig_reels.get("file") or default_short
-
-    fb_video = data.get("fb_video") or default_full
-    if isinstance(fb_video, dict):
-        fb_video = fb_video.get("path") or fb_video.get("file") or default_full
-
-    tiktok = data.get("tiktok") or default_full
-    if isinstance(tiktok, dict):
-        tiktok = tiktok.get("path") or tiktok.get("file") or default_full
+    tags = _clean_and_dedup_tags(data.get("tags"), default_tags)
+    yt_shorts = _resolve_render_target(data.get("yt_shorts"), default_short)
+    ig_reels = _resolve_render_target(data.get("ig_reels"), default_short)
+    fb_video = _resolve_render_target(data.get("fb_video"), default_full)
+    tiktok = _resolve_render_target(data.get("tiktok"), default_full)
 
     extra = {k: v for k, v in data.items() if k not in (
         "id", "title", "description", "yt_shorts", "ig_reels", "fb_video", "tiktok", "tags", "source_url"
@@ -225,10 +224,10 @@ def compose_release_metadata(data: dict) -> ReleaseMetadata:
         project_id=str(data["id"]),
         title=title,
         description=desc,
-        yt_shorts=str(yt_shorts),
-        ig_reels=str(ig_reels),
-        fb_video=str(fb_video),
-        tiktok=str(tiktok),
+        yt_shorts=yt_shorts,
+        ig_reels=ig_reels,
+        fb_video=fb_video,
+        tiktok=tiktok,
         tags=tags,
         source_url=data.get("source_url"),
         extra=extra,
