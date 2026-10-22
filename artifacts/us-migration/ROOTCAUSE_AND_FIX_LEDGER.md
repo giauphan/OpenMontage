@@ -155,3 +155,23 @@ This ledger documents each technical defect, design vulnerability, or compatibil
 - **Post-fix Verification**:
   `tests/tools/test_validate_newsnow_director_artifacts.py` (21 passed).
 
+
+---
+
+## Defect 11: Artificial 60-Second Hard Cap on Shorts/Reels Duration
+
+- **Symptom / Pre-fix Failure**:
+  All pipeline scripts (`run_daily_news_pipeline.sh`, `run_directors_for_existing.sh`, `run_strict_docker_publish.sh`) and `platform_routes.py` capped Shorts/Reels videos at 59.5s or 60.0s maximum, preventing content-rich topics from producing longer (1–3 minute) videos as intended by the US market strategy.
+- **Root Cause**:
+  The original VI-market pipeline enforced YouTube Shorts' 60s limit globally. The US migration required content-dependent duration where the same pipeline should produce 1-, 2-, or 3-minute videos depending on the topic's natural narration length.
+- **File & Line**:
+  `scripts/run_daily_news_pipeline.sh` (`reels_cap=59.5`), `scripts/run_directors_for_existing.sh` (`reels_cap=59.5`), `scripts/run_strict_docker_publish.sh` (`--reels-max-duration 60.0`), `tools/publishers/platform_routes.py` (`YOUTUBE_SHORT_MAX_SECONDS=60.0`), `lib/media_profiles.py` (`max_duration_seconds=60`), `scripts/validate_render_quality.py` (`--reels-max-duration` default).
+- **Minimal Fix**:
+  1. Changed `YOUTUBE_SHORT_MAX_SECONDS` → `180.0` (3 minutes) in `platform_routes.py`.
+  2. Changed `YOUTUBE_SHORT_MIN_SECONDS` → `60.0` and `LONGFORM_MIN_SECONDS` → `60.0` (enforces minimum everywhere).
+  3. Replaced `reels_cap=59.5` → `reels_cap="${REELS_MAX_SECONDS:-180.0}"` in all shell scripts.
+  4. Updated `--reels-max-duration 60` → `--reels-max-duration 180.0 --min-duration 60.0` in all validation calls.
+  5. Updated `lib/media_profiles.py` `YOUTUBE_SHORTS.max_duration_seconds = 180`.
+  6. Updated `scripts/test_pipeline_docker.sh` summary text from `"Capped <= 60s"` → `">= 60s min, up to 180s max"`.
+- **Post-fix Verification**:
+  `tests/contracts/test_video_duration_one_minute_rule.py` (5/5 passed — including new `test_content_dependent_multi_minute_duration_allowed` verifying 120s video accepted with 180s max); `tests/tools/test_short_publish_route.py` (4/4 passed — `test_youtube_publisher_enforces_one_minute_min_and_three_minute_max` replacing old over-60s rejection test). Commit: `b218ba1`.

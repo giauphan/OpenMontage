@@ -37,3 +37,6 @@ P8,P8.2,Canary 2: Reviewed en-US Longform (16:9 Landscape),artifacts/us-migratio
 P8,P8.3,Three Isolated Rehearsal Bundles (Alpha/Bravo/Charlie),artifacts/us-migration/rehearsals/*,N/A,artifacts/us-migration/THREE_REHEARSALS.md,PASS
 P8,P8.4,Incident Rollback Runbook and Reversal Plan,artifacts/us-migration/ROLLBACK_RUNBOOK.md,N/A,artifacts/us-migration/ROLLBACK_RUNBOOK.md,PASS
 P8,P8.5,Formal GO/NO-GO Dossier (Hard Stop at P8),artifacts/us-migration/GO_NO_GO.md,N/A,artifacts/us-migration/GO_NO_GO.md,PASS
+POST,POST.1,Duration Policy: Remove 60s hard cap — enforce 60s minimum content-dependent max up to 180s (Shorts) or unlimited (longform),tools/publishers/platform_routes.py,tests/contracts/test_video_duration_one_minute_rule.py,commit b218ba1,PASS
+POST,POST.2,Update test_pipeline_docker.sh summary text to reflect new duration policy,scripts/test_pipeline_docker.sh,N/A,commit b218ba1+,PASS
+POST,POST.3,Defect 11 documented in ROOTCAUSE_AND_FIX_LEDGER.md,artifacts/us-migration/ROOTCAUSE_AND_FIX_LEDGER.md,N/A,Defect 11 entry,PASS

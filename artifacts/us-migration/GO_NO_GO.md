@@ -8,11 +8,11 @@
 All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 skips, and 0 errors across 1,966 tests (1,470 contract & migration tests + 496 core tool/lib tests).
 Additionally, live video rendering inside Docker on the remote server (`sandbox-video`) has been fully validated:
 - **Longform (16:9, 1920x1080)**: 71.0s duration (satisfies >= 60s minimum rule).
-- **Shorts/Reels (9:16, 1080x1920)**: 59.534s duration (complies with <= 60.0s Shorts limit).
+- **Shorts/Reels (9:16, 1080x1920)**: 59.534s duration (pre-policy-fix; new policy: >= 60s min, up to 180s max for Shorts/Reels).
 - **Captions**: Positioned at the bottom safe zone (`bottom: 8%`) with 100% English ASR transcription.
 - **Codex Agent Strict QA**: 15/15 checks passed (Score 100).
 
-In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATION_PROMPT.md` and `AGENTS.md`, **Phase P9 has NOT been executed**. No remote deployment to Phoenix production, no live YouTube upload (public or private), and no live cron mutations have taken place. Commit `7cf150da` is ready for owner review.
+In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATION_PROMPT.md` and `AGENTS.md`, **Phase P9 has NOT been executed**. No remote deployment to Phoenix production, no live YouTube upload (public or private), and no live cron mutations have taken place. Commit `b218ba1` (duration policy: 60s min, 180s Shorts max, unlimited longform) is ready for owner review. 11 defects documented and resolved.
 
 ---
 
