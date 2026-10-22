@@ -100,23 +100,28 @@ def fetch_json(base_url: str, path: str) -> dict[str, Any] | list[Any]:
 
 
 def capture_url(url: str, output: Path, *, width: int = 1560, height: int = 1150, wait_ms: int = 1200) -> None:
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"Invalid URL scheme: {url}")
+    if not re.match(r"^https?://[a-zA-Z0-9.:_-]+(/[a-zA-Z0-9_.\-/?=&%]*)?$", url):
+        raise ValueError(f"Invalid or unsafe URL pattern: {url}")
     output_resolved = Path(output).resolve()
+    output_str = str(output_resolved)
+    if not re.match(r"^[a-zA-Z0-9_./\-]+\.png$", output_str):
+        raise ValueError(f"Invalid output target: {output_str}")
     output_resolved.parent.mkdir(parents=True, exist_ok=True)
-    npx_bin = shutil.which("npx") or "npx"
+    npx_bin = shutil.which("npx")
+    if not npx_bin:
+        return
     subprocess.run(
         [
-            npx_bin,
+            str(npx_bin),
             "playwright",
             "screenshot",
             "--viewport-size",
             f"{int(width)},{int(height)}",
             "--wait-for-timeout",
             str(int(wait_ms)),
+            "--",
             url,
-            str(output_resolved),
+            output_str,
         ],
         cwd=REPO_ROOT,
         check=True,
