@@ -50,13 +50,29 @@ MIN_EDGE_DENSITY = 0.005
 MAX_STATIC_RATIO = 0.95
 
 
+def _safe_executable(binary_name: str, candidate: str | None = None) -> str:
+    """Resolve an executable securely, ensuring it matches the expected binary."""
+    if candidate:
+        resolved = shutil.which(candidate)
+        if resolved and os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+            if Path(resolved).name in (binary_name, f"{binary_name}.exe"):
+                return resolved
+    system_bin = shutil.which(binary_name)
+    if system_bin:
+        return system_bin
+    return binary_name
+
+
 def probe(path: Path, ffprobe: str) -> dict:
     path_resolved = Path(path).resolve()
     if not path_resolved.is_file():
         raise ValueError(f"probe target not found: {path}")
-    ffprobe_bin = shutil.which("ffprobe") or str(ffprobe)
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        raise ValueError("Invalid target path")
+    ffprobe_bin = _safe_executable("ffprobe", ffprobe)
     result = subprocess.run(
-        [ffprobe_bin, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path_resolved)],
+        [ffprobe_bin, "-v", "error", "-show_streams", "-show_format", "-of", "json", "--", path_str],
         check=False,
         capture_output=True,
         text=True,
@@ -108,9 +124,12 @@ def measure_mean_volume(path: Path, ffmpeg: str) -> float | None:
     path_resolved = Path(path).resolve()
     if not path_resolved.is_file():
         return None
-    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved), "-af", "volumedetect",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-af", "volumedetect",
          "-f", "null", "-"],
         check=False,
         capture_output=True,
@@ -133,10 +152,13 @@ def measure_black_seconds(path: Path, ffmpeg: str, strict: bool = False) -> floa
     path_resolved = Path(path).resolve()
     if not path_resolved.is_file():
         return None
-    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     pix_th = "0.02" if not strict else "0.10"
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved),
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str,
          "-vf", f"blackdetect=d=0.5:pic_th=0.99:pix_th={pix_th}", "-an", "-f", "null", "-"],
         check=False,
         capture_output=True,
@@ -158,9 +180,12 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
     path_resolved = Path(path).resolve()
     if not path_resolved.is_file():
         return None
-    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved), "-vf",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-vf",
          "fps=1,scale=270:480,edgedetect=low=0.1:high=0.4,signalstats,metadata=print",
          "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
@@ -179,12 +204,15 @@ def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool 
     path_resolved = Path(path).resolve()
     if not path_resolved.is_file():
         return None
-    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
+    path_str = str(path_resolved)
+    if path_str.startswith("-"):
+        return None
+    ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     noise_threshold = "-50dB" if strict else "-60dB"
     # In strict mode, analyze upper 80% to catch static slides with animated bottom captions
     vf = f"crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2" if strict else f"freezedetect=n={noise_threshold}:d=2"
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved), "-vf",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-vf",
          vf, "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
     )
