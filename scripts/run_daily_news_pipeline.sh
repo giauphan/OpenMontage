@@ -840,8 +840,15 @@ materialize_hyperframes_assets() {
   else
     cp "$narration" "$reels_narration"
   fi
-  "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" --locale "$locale" || return 1
-  "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" --locale "$locale" || return 1
+  if [ "${CODEX_AGENT_VALIDATION_MOCK:-0}" = "1" ] || [ "${CLAUDE_AGENT_VALIDATION_MOCK:-0}" = "1" ]; then
+    echo "[MOCK] Skipping ASR caption generation (CODEX_AGENT_VALIDATION_MOCK=1 — no model download in offline Docker test)"
+    # Write empty placeholder VTT files so downstream steps that read captions don't fail
+    echo "WEBVTT" > "$project_root/hyperframes/assets/captions.vtt"
+    echo "WEBVTT" > "$project_root/hyperframes_reels/assets/captions.vtt"
+  else
+    "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" --locale "$locale" || return 1
+    "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" --locale "$locale" || return 1
+  fi
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
     if [ "$composition" = "hyperframes_reels" ]; then
@@ -855,10 +862,10 @@ materialize_hyperframes_assets() {
     if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi
   done
-  # Repair is a generic mutation path; skip it on templated compositions so
+  # Repair is a generic mutation path; skip it on templated or mock compositions so
   # provenance hashes recorded by the materializer stay valid.
-  if [ "${TEMPLATE_MODE:-0}" -eq 1 ]; then
-    echo "skip repair_hyperframes_quality (templated compositions are deterministic)"
+  if [ "${TEMPLATE_MODE:-0}" -eq 1 ] || [ "${CODEX_AGENT_VALIDATION_MOCK:-0}" = "1" ] || [ "${CLAUDE_AGENT_VALIDATION_MOCK:-0}" = "1" ]; then
+    echo "skip repair_hyperframes_quality (templated/mock composition — deterministic or offline Docker test)"
   else
     "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict || return 1
   fi
@@ -877,10 +884,16 @@ text = re.sub(r'const\s+dur\s*=\s*[0-9.]+;', f'const dur = {dur:.3f};', text)
 open(p, 'w', encoding='utf-8').write(text)
 " "$project_root/$composition/index.html" "$comp_dur" 2>/dev/null || true
     fi
-    "$PY" "$ROOT/scripts/install_news_captions.py" \
-      "$project_root/$composition/index.html" \
-      "$target/narration.mp3" \
-      "$target/word_timestamps.json" || return 1
+    if [ "${CODEX_AGENT_VALIDATION_MOCK:-0}" = "1" ] || [ "${CLAUDE_AGENT_VALIDATION_MOCK:-0}" = "1" ]; then
+      echo "[MOCK] Skipping install_news_captions for $composition (offline Docker test)"
+      # Create a stub word_timestamps.json so later validation doesn't fail on missing file
+      echo '{"word_timestamps":[]}' > "$target/word_timestamps.json"
+    else
+      "$PY" "$ROOT/scripts/install_news_captions.py" \
+        "$project_root/$composition/index.html" \
+        "$target/narration.mp3" \
+        "$target/word_timestamps.json" || return 1
+    fi
   done
 }
 if ! materialize_hyperframes_assets "$ROOT/projects/$PROJECT_ID"; then
