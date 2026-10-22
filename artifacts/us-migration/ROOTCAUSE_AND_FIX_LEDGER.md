@@ -94,3 +94,64 @@ This ledger documents each technical defect, design vulnerability, or compatibil
   Added `make_publish_datetime(target_date, hour, minute, tz_name="America/New_York")` using Python 3.10 `zoneinfo.ZoneInfo`. The function detects nonexistent spring gap hours and shifts to the first valid time, and uses `fold=0` for unambiguous fall-back hour handling.
 - **Post-fix Verification**:
   Verified by `tests/us_migration/test_us_migration_suite.py::TestPublisherSchedulerSecurityP01_P12::test_p07_dst_spring_gap_handled_unambiguously` and `test_p08_dst_fall_repeated_hour_handled_unambiguously` (PASS).
+
+---
+
+## Defect 7: Top-Canvas Subtitle Position Bug in HyperFrames Captions
+
+- **Symptom / Pre-fix Failure**:
+  When subtitles were installed via `scripts/install_news_captions.py`, captions rendered at the top of the video canvas overlapping titles instead of the bottom safe zone.
+- **Root Cause**:
+  `hyperframes/index.html` defines `.clip { position: absolute; inset: 0; }`. `.om-asr-caption` specified `bottom: 4%` without setting `top: auto !important`, causing the element to anchor to `top: 0`.
+- **File & Line**:
+  `scripts/install_news_captions.py:35-48`
+- **Minimal Fix**:
+  Added `top: auto !important;` and `bottom: 8% !important;` to `CAPTION_CSS`, along with responsive font scaling `clamp(28px, 4vw, 44px)`.
+- **Post-fix Verification**:
+  Extracted video frames (`short_15s.jpg`, `short_35s.jpg`, `long_15s.jpg`, `long_35s.jpg`) confirmed subtitles are securely positioned in the bottom safe zone. Verified by `tests/contracts/test_news_caption_installation.py` (PASS).
+
+---
+
+## Defect 8: Faster-Whisper Hardcoded Vietnamese ASR Language
+
+- **Symptom / Pre-fix Failure**:
+  English spoken narration in US projects was transcribed into nonsense Vietnamese words (e.g. "trạng bất kỳ", "in Docker, một") in `.srt` subtitle cues.
+- **Root Cause**:
+  `scripts/generate_news_captions.py` hardcoded `"language": "vi"` in parameters passed to `transcriber.execute()`.
+- **File & Line**:
+  `scripts/generate_news_captions.py:37-45`
+- **Minimal Fix**:
+  Added `--locale` argument and dynamic language resolution (`asr_language = "en" if locale and locale.startswith("en") else "vi"`), passing `language="en"` to Faster-Whisper for US projects.
+- **Post-fix Verification**:
+  Re-generated test subtitles and verified 46 clean English subtitle cues matching spoken audio. Verified by `tests/contracts/test_daily_news_caption_integration.py` (PASS).
+
+---
+
+## Defect 9: Pipeline Docker Test Duration Threshold (1-Minute Rule)
+
+- **Symptom / Pre-fix Failure**:
+  The initial Docker test project ran for only 17.5s, violating the minimum 1-minute (>= 60s) rule for full videos.
+- **Root Cause**:
+  The test harness created a 3-scene mock totaling 18s and cut the audio abruptly.
+- **File & Line**:
+  `scripts/test_pipeline_docker.sh:100-240`
+- **Minimal Fix**:
+  Expanded test project to 6 scenes totaling 62.0s duration and looped background audio with ffmpeg (`-stream_loop 8`), yielding a 71.0s full video (>= 60s) and 59.534s Reels video (capped <= 60s).
+- **Post-fix Verification**:
+  Rendered both videos in Docker on `sandbox-video`: `final_long_en_US_16x9.mp4` measured 71.0s; `final_short_en_US_9x16.mp4` measured 59.534s. 15/15 Codex QA gates passed.
+
+---
+
+## Defect 10: Canonical Script Fallback Promotion Mismatch
+
+- **Symptom / Pre-fix Failure**:
+  Draft `script.json` files were not promoted to canonical `script_vi.json` or `script_en_US.json` in `validate_and_promote_director_artifacts`.
+- **Root Cause**:
+  `validate_newsnow_director_artifacts.py` mistakenly treated `script.json` as an existing canonical script rather than a draft source for promotion.
+- **File & Line**:
+  `scripts/validate_newsnow_director_artifacts.py:607-615`
+- **Minimal Fix**:
+  Removed `script.json` from `canonical_script` resolution candidates, ensuring it falls through to the promotion block.
+- **Post-fix Verification**:
+  `tests/tools/test_validate_newsnow_director_artifacts.py` (21 passed).
+
