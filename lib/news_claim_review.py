@@ -278,14 +278,13 @@ def _validate_capture_files(
     return verified
 
 
-def _validate_single_capture(
+def _load_and_verify_provenance_bytes(
     given_path: str | Path,
     expected_provenance_sha: str,
     project: Path,
     root_fd: int,
     budget: list[int],
-    capture_ids: set[str],
-) -> dict[str, Any]:
+) -> tuple[Path, str, dict[str, Any]]:
     if not isinstance(expected_provenance_sha, str):
         raise ReviewWorksheetError("each provenance requires an expected SHA-256 string")
     expected = expected_provenance_sha.lower()
@@ -298,16 +297,33 @@ def _validate_single_capture(
     if prov_hash != expected:
         raise ReviewWorksheetError("provenance SHA-256 mismatch")
     prov = _json(prov_bytes, "capture provenance")
-    if not isinstance(prov, dict) or prov.get("version") != "1.0" or prov.get("status") != "pending_editorial_review" or prov.get("review_status") != "pending":
+    return prov_path, prov_hash, prov
+
+
+def _validate_provenance_capture_id(
+    prov: Any,
+    prov_path: Path,
+    project: Path,
+    capture_ids: set[str],
+) -> str:
+    if not isinstance(prov, dict) or prov.get("version") != "1.0":
+        raise ReviewWorksheetError("capture is malformed, incomplete, or not review-pending")
+    if prov.get("status") != "pending_editorial_review" or prov.get("review_status") != "pending":
         raise ReviewWorksheetError("capture is malformed, incomplete, or not review-pending")
     capture_id = prov.get("capture_id")
     if not isinstance(capture_id, str) or not capture_id or capture_id in capture_ids:
         raise ReviewWorksheetError("unknown or duplicate selected capture revision")
-    if prov_path.parent != project / "artifacts" / "news_source_capture" or prov_path.name != f"{capture_id}.provenance.json" or prov.get("provenance_file") != prov_path.name:
+    if prov_path.parent != project / "artifacts" / "news_source_capture":
+        raise ReviewWorksheetError("selected provenance is not a capture revision in the expected directory")
+    if prov_path.name != f"{capture_id}.provenance.json" or prov.get("provenance_file") != prov_path.name:
         raise ReviewWorksheetError("selected provenance is not a capture revision in the expected directory")
     capture_ids.add(capture_id)
     if prov.get("capture_dir") != "artifacts/news_source_capture":
         raise ReviewWorksheetError("capture path is not the expected project-local directory")
+    return capture_id
+
+
+def _validate_provenance_urls_and_chain(prov: dict[str, Any]) -> datetime:
     if not _valid_https_url(prov.get("original_url")) or not _valid_https_url(prov.get("final_url")):
         raise ReviewWorksheetError("capture provenance requires valid HTTPS original and final URLs")
     retrieved_at = _aware_timestamp(prov.get("retrieved_at"))
@@ -325,7 +341,16 @@ def _validate_single_capture(
         or redirect_chain[-1] != prov["final_url"]
     ):
         raise ReviewWorksheetError("capture provenance requires a consistent complete HTTPS redirect_chain")
+    return retrieved_at
 
+
+def _validate_provenance_extracted(
+    project: Path,
+    root_fd: int,
+    budget: list[int],
+    prov: dict[str, Any],
+    capture_id: str,
+) -> None:
     verified = _validate_capture_files(project, root_fd, budget, prov, capture_id)
     extracted = _json(verified["extracted_file"], "capture extraction")
     if not isinstance(extracted, dict) or not isinstance(extracted.get("text"), str) or not extracted["text"].strip():
@@ -335,6 +360,23 @@ def _validate_single_capture(
         raise ReviewWorksheetError("capture excerpt is absent from extracted text")
     if prov.get("published_at") != extracted.get("published_at") or prov.get("updated_at") != extracted.get("updated_at"):
         raise ReviewWorksheetError("capture date metadata does not match extracted record")
+
+
+def _validate_single_capture(
+    given_path: str | Path,
+    expected_provenance_sha: str,
+    project: Path,
+    root_fd: int,
+    budget: list[int],
+    capture_ids: set[str],
+) -> dict[str, Any]:
+    prov_path, prov_hash, prov = _load_and_verify_provenance_bytes(
+        given_path, expected_provenance_sha, project, root_fd, budget
+    )
+    capture_id = _validate_provenance_capture_id(prov, prov_path, project, capture_ids)
+    retrieved_at = _validate_provenance_urls_and_chain(prov)
+    _validate_provenance_extracted(project, root_fd, budget, prov, capture_id)
+
     return {
         "capture_id": capture_id,
         "provenance_file": prov_path.relative_to(project).as_posix(),

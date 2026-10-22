@@ -42,40 +42,48 @@ def _check_video_geometry(video_path: Path, format_type: str) -> ToolResult | No
     return None
 
 
+def _check_english_prose(title: str, description: str, locale: str) -> ToolResult | None:
+    from lib.language_validation import get_language_validator
+    validator = get_language_validator(locale)
+    title_errors = validator.validate_prose(title)
+    if title_errors:
+        return ToolResult(
+            success=False,
+            error=f"Invalid YouTube title (non-English prose): {title_errors[0]}",
+        )
+    if description:
+        desc_errors = validator.validate_prose(description)
+        if desc_errors:
+            return ToolResult(
+                success=False,
+                error=f"Invalid YouTube description (non-English prose): {desc_errors[0]}",
+            )
+    return None
+
+
+def _check_vietnamese_prose(title: str, description: str) -> ToolResult | None:
+    from tools.narration_text import check_vietnamese_prose
+    title_errors = check_vietnamese_prose(title)
+    if title_errors:
+        return ToolResult(
+            success=False,
+            error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
+        )
+    if description:
+        desc_errors = check_vietnamese_prose(description)
+        if desc_errors:
+            return ToolResult(
+                success=False,
+                error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
+            )
+    return None
+
+
 def _check_text_prose(title: str, description: str, locale: str) -> ToolResult | None:
     from lib.artifact_paths import is_english_locale
     if is_english_locale(locale):
-        from lib.language_validation import get_language_validator
-        validator = get_language_validator(locale)
-        title_errors = validator.validate_prose(title)
-        if title_errors:
-            return ToolResult(
-                success=False,
-                error=f"Invalid YouTube title (non-English prose): {title_errors[0]}",
-            )
-        if description:
-            desc_errors = validator.validate_prose(description)
-            if desc_errors:
-                return ToolResult(
-                    success=False,
-                    error=f"Invalid YouTube description (non-English prose): {desc_errors[0]}",
-                )
-    else:
-        from tools.narration_text import check_vietnamese_prose
-        title_errors = check_vietnamese_prose(title)
-        if title_errors:
-            return ToolResult(
-                success=False,
-                error=f"Invalid YouTube title (non-Vietnamese prose): {title_errors[0]}",
-            )
-        if description:
-            desc_errors = check_vietnamese_prose(description)
-            if desc_errors:
-                return ToolResult(
-                    success=False,
-                    error=f"Invalid YouTube description (non-Vietnamese prose): {desc_errors[0]}",
-                )
-    return None
+        return _check_english_prose(title, description, locale)
+    return _check_vietnamese_prose(title, description)
 
 
 def _verify_channel_guard_requirements(expected_channel_id: str | None, is_us_upload: bool) -> ToolResult | None:
@@ -217,6 +225,69 @@ def _classify_check_error(exc: Exception) -> dict[str, Any]:
         "status_code": status_code,
         "error": error_str[:200],
     }
+
+
+def _determine_privacy_status(inputs: dict[str, Any]) -> str:
+    if inputs.get("publish_at"):
+        return "private"
+    status = inputs.get("privacy_status", "unlisted")
+    if status == "public":
+        return "unlisted"
+    return status
+
+
+def _resolve_secret_and_token_files(inputs: dict[str, Any]) -> tuple[Path, Path] | ToolResult:
+    secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
+    if not secret_file_str:
+        return ToolResult(
+            success=False,
+            error="YOUTUBE_CLIENT_SECRET_FILE environment variable not set.",
+        )
+    secret_file = Path(secret_file_str).expanduser()
+    if not secret_file.is_file():
+        return ToolResult(
+            success=False,
+            error=f"Client secret file not found at: {secret_file}",
+        )
+    token_path_str = inputs.get("token_storage_path", "~/.openmontage/youtube_token.json")
+    token_file = Path(token_path_str).expanduser()
+    return secret_file, token_file
+
+
+def _resolve_channel_guard(inputs: dict[str, Any]) -> tuple[str | None, ToolResult | None]:
+    expected_channel_id = (
+        inputs.get("expected_channel_id")
+        or os.environ.get("EXPECTED_CHANNEL_ID")
+        or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
+    )
+    target_loc = inputs.get("locale") or inputs.get("target_locale") or os.environ.get("OPENMONTAGE_LOCALE") or os.environ.get("TARGET_LOCALE") or ""
+    is_us_upload = str(target_loc).lower() in ("en", "en-us", "us")
+    guard_err = _verify_channel_guard_requirements(expected_channel_id, is_us_upload)
+    return expected_channel_id, guard_err
+
+
+def _upload_media_and_thumbnail(
+    youtube: Any,
+    video_path: Path,
+    body: dict[str, Any],
+    thumbnail_path: str | None,
+) -> tuple[str, str]:
+    from googleapiclient.http import MediaFileUpload
+    media = MediaFileUpload(
+        str(video_path),
+        chunksize=1024 * 1024 * 5,
+        resumable=True,
+        mimetype="video/*",
+    )
+    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    response = None
+    while response is None:
+        status, response = request.next_chunk()
+
+    video_id = response.get("id")
+    video_url = f"https://youtu.be/{video_id}"
+    _upload_thumbnail_if_present(youtube, video_id, thumbnail_path)
+    return video_id, video_url
 
 
 class YoutubePublisher(BaseTool):
@@ -368,38 +439,19 @@ class YoutubePublisher(BaseTool):
         if prose_error:
             return prose_error
 
-        secret_file_str = os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "")
-        if not secret_file_str:
-            return ToolResult(
-                success=False,
-                error="YOUTUBE_CLIENT_SECRET_FILE environment variable not set.",
-            )
-        secret_file = Path(secret_file_str).expanduser()
-        if not secret_file.is_file():
-            return ToolResult(
-                success=False,
-                error=f"Client secret file not found at: {secret_file}",
-            )
+        secret_and_token = _resolve_secret_and_token_files(inputs)
+        if isinstance(secret_and_token, ToolResult):
+            return secret_and_token
+        secret_file, token_file = secret_and_token
 
-        token_path_str = inputs.get("token_storage_path", "~/.openmontage/youtube_token.json")
-        token_file = Path(token_path_str).expanduser()
-
-        tags = inputs.get("tags", [])
-        privacy_status = "private" if inputs.get("publish_at") else ("unlisted" if inputs.get("privacy_status", "unlisted") == "public" else inputs.get("privacy_status", "unlisted"))
-        publish_at = inputs.get("publish_at")
-        category_id = inputs.get("category_id", "28")
-
-        expected_channel_id = (
-            inputs.get("expected_channel_id")
-            or os.environ.get("EXPECTED_CHANNEL_ID")
-            or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
-        )
-        target_loc = inputs.get("locale") or inputs.get("target_locale") or os.environ.get("OPENMONTAGE_LOCALE") or os.environ.get("TARGET_LOCALE") or ""
-        is_us_upload = str(target_loc).lower() in ("en", "en-us", "us")
-
-        guard_err = _verify_channel_guard_requirements(expected_channel_id, is_us_upload)
+        expected_channel_id, guard_err = _resolve_channel_guard(inputs)
         if guard_err:
             return guard_err
+
+        tags = inputs.get("tags", [])
+        privacy_status = _determine_privacy_status(inputs)
+        publish_at = inputs.get("publish_at")
+        category_id = inputs.get("category_id", "28")
 
         try:
             youtube = self._get_authenticated_service(secret_file, token_file)
@@ -412,23 +464,9 @@ class YoutubePublisher(BaseTool):
             body = _construct_upload_body(
                 inputs, title, description, tags, category_id, privacy_status, publish_at, locale
             )
-
-            from googleapiclient.http import MediaFileUpload
-            media = MediaFileUpload(
-                str(video_path),
-                chunksize=1024 * 1024 * 5,
-                resumable=True,
-                mimetype="video/*",
+            video_id, video_url = _upload_media_and_thumbnail(
+                youtube, video_path, body, inputs.get("thumbnail_path")
             )
-            request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-            response = None
-            while response is None:
-                status, response = request.next_chunk()
-
-            video_id = response.get("id")
-            video_url = f"https://youtu.be/{video_id}"
-
-            _upload_thumbnail_if_present(youtube, video_id, inputs.get("thumbnail_path"))
 
             entry = {
                 "platform": "youtube",

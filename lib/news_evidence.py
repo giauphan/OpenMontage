@@ -162,6 +162,34 @@ def _validate_source_dates(
             errors.append(f"{label}: source is stale ({age:.2f}h; limit {max_source_age_hours:g}h)")
 
 
+def _is_valid_http_url(url: Any) -> bool:
+    if not isinstance(url, str):
+        return False
+    try:
+        parsed_url = urlsplit(url)
+        if parsed_url.scheme.lower() not in {"http", "https"} or not parsed_url.hostname:
+            return False
+        if parsed_url.port is not None and not 1 <= parsed_url.port <= 65535:
+            return False
+        return True
+    except ValueError:
+        return False
+
+
+def _collect_and_validate_source_dates(
+    source: dict[str, Any],
+    label: str,
+    now_utc: datetime,
+    errors: list[str],
+) -> dict[str, datetime | None]:
+    dates: dict[str, datetime | None] = {}
+    for field in ("published_at", "updated_at", "retrieved_at"):
+        dates[field] = _aware_datetime(source.get(field), f"{label}.{field}", errors)
+        if dates[field] and dates[field] > now_utc:
+            errors.append(f"{label}.{field}: timestamp is in the future")
+    return dates
+
+
 def _validate_single_source(
     source: Any,
     i: int,
@@ -180,25 +208,11 @@ def _validate_single_source(
         errors.append(f"{label}.id: required unique non-empty string")
     else:
         source_by_id[sid] = source
-    parsed_url = None
-    if isinstance(url, str):
-        try:
-            parsed_url = urlsplit(url)
-            if parsed_url.scheme.lower() not in {"http", "https"} or not parsed_url.hostname:
-                parsed_url = None
-            elif parsed_url.port is not None and not 1 <= parsed_url.port <= 65535:
-                parsed_url = None
-        except ValueError:
-            parsed_url = None
-    if parsed_url is None:
+    if not _is_valid_http_url(url):
         errors.append(f"{label}.url: must be a valid absolute HTTP(S) URL")
     if source.get("status") != "available":
         errors.append(f"{label}: source status must be available; outages/unverified sources fail closed")
-    dates: dict[str, datetime | None] = {}
-    for field in ("published_at", "updated_at", "retrieved_at"):
-        dates[field] = _aware_datetime(source.get(field), f"{label}.{field}", errors)
-        if dates[field] and dates[field] > now_utc:
-            errors.append(f"{label}.{field}: timestamp is in the future")
+    dates = _collect_and_validate_source_dates(source, label, now_utc, errors)
     content_path = _safe_relative_file(root, source.get("content_path"), f"{label}.content_path", errors)
     _validate_source_content(content_path, source, label, errors)
     _validate_source_dates(dates, label, now_utc, max_source_age_hours, errors)
@@ -226,6 +240,56 @@ def _validate_script_sections(script_sections: list[Any], errors: list[str]) -> 
     return script_ids
 
 
+def _resolve_referenced_sources(
+    refs: list[Any],
+    label: str,
+    source_by_id: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> list[dict[str, Any]]:
+    if any(refs[index] in refs[:index] for index in range(len(refs))):
+        errors.append(f"{label}.source_ids must not contain duplicate source references")
+    referenced_sources: list[dict[str, Any]] = []
+    for sid in refs:
+        if not isinstance(sid, str) or sid not in source_by_id:
+            errors.append(f"{label}: source_ids contain missing/invalid source reference {sid!r}")
+        else:
+            referenced_sources.append(source_by_id[sid])
+    return referenced_sources
+
+
+def _check_consequential_corroboration(
+    refs: list[Any],
+    referenced_sources: list[dict[str, Any]],
+    label: str,
+    source_by_id: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> None:
+    publishers = {s.get("publisher_id") for s in referenced_sources if isinstance(s.get("publisher_id"), str) and s.get("publisher_id").strip()}
+    distinct_source_ids = {sid for sid in refs if isinstance(sid, str) and sid in source_by_id}
+    normalized_urls = {_normalized_source_url(s.get("url")) for s in referenced_sources}
+    content_hashes = {s.get("content_sha256") for s in referenced_sources if isinstance(s.get("content_sha256"), str)}
+    if len(distinct_source_ids) < 2 or len(publishers) < 2:
+        errors.append(f"{label}: consequential claims require corroboration from at least two distinct attributable publishers")
+    if None in normalized_urls or len(normalized_urls) < 2:
+        errors.append(f"{label}: consequential corroboration requires distinct normalized source URLs")
+    if len(content_hashes) < 2:
+        errors.append(f"{label}: consequential corroboration requires distinct frozen source content")
+
+
+def _check_reviewed_at_freshness(
+    reviewed_at: datetime | None,
+    referenced_sources: list[dict[str, Any]],
+    label: str,
+    errors: list[str],
+) -> None:
+    if not reviewed_at or not referenced_sources:
+        return
+    snapshots = [_aware_datetime(s.get("retrieved_at"), f"{label} referenced source retrieved_at", errors) for s in referenced_sources]
+    valid_snapshots = [sn for sn in snapshots if sn is not None]
+    if valid_snapshots and reviewed_at < max(valid_snapshots):
+        errors.append(f"{label}.reviewed_at must be at or after the latest referenced source snapshot")
+
+
 def _validate_claim_sources(
     refs: Any,
     label: str,
@@ -237,53 +301,36 @@ def _validate_claim_sources(
     if not isinstance(refs, list) or not refs:
         errors.append(f"{label}.source_ids must be a non-empty array")
         return
-    referenced_sources = []
-    if any(refs[index] in refs[:index] for index in range(len(refs))):
-        errors.append(f"{label}.source_ids must not contain duplicate source references")
-    for sid in refs:
-        if not isinstance(sid, str) or sid not in source_by_id:
-            errors.append(f"{label}: source_ids contain missing/invalid source reference {sid!r}")
-        else:
-            referenced_sources.append(source_by_id[sid])
-    publishers = {s.get("publisher_id") for s in referenced_sources if isinstance(s.get("publisher_id"), str) and s.get("publisher_id").strip()}
-    distinct_source_ids = {sid for sid in refs if isinstance(sid, str) and sid in source_by_id}
-    normalized_urls = {_normalized_source_url(s.get("url")) for s in referenced_sources}
-    content_hashes = {s.get("content_sha256") for s in referenced_sources if isinstance(s.get("content_sha256"), str)}
+    referenced_sources = _resolve_referenced_sources(refs, label, source_by_id, errors)
     if consequential:
-        if len(distinct_source_ids) < 2 or len(publishers) < 2:
-            errors.append(f"{label}: consequential claims require corroboration from at least two distinct attributable publishers")
-        if None in normalized_urls or len(normalized_urls) < 2:
-            errors.append(f"{label}: consequential corroboration requires distinct normalized source URLs")
-        if len(content_hashes) < 2:
-            errors.append(f"{label}: consequential corroboration requires distinct frozen source content")
-    if reviewed_at and referenced_sources:
-        snapshots = [_aware_datetime(s.get("retrieved_at"), f"{label} referenced source retrieved_at", errors) for s in referenced_sources]
-        valid_snapshots = [sn for sn in snapshots if sn is not None]
-        if valid_snapshots and reviewed_at < max(valid_snapshots):
-            errors.append(f"{label}.reviewed_at must be at or after the latest referenced source snapshot")
+        _check_consequential_corroboration(refs, referenced_sources, label, source_by_id, errors)
+    _check_reviewed_at_freshness(reviewed_at, referenced_sources, label, errors)
 
 
-def _validate_single_claim(
-    claim: Any,
-    i: int,
+def _validate_claim_section_binding(
+    claim: dict[str, Any],
+    label: str,
     script_ids: list[str],
-    source_by_id: dict[str, dict[str, Any]],
-    now_utc: datetime,
     claim_sections: set[str],
     errors: list[str],
-) -> None:
-    label = f"claims[{i}]"
-    if not isinstance(claim, dict):
-        errors.append(f"{label} must be an object")
-        return
+) -> bool:
     section_id = claim.get("section_id")
     if not isinstance(section_id, (str, int)) or isinstance(section_id, bool) or not str(section_id).strip():
         errors.append(f"{label}.section_id must be a non-empty string or integer")
-        return
+        return False
     section_id_str = str(section_id)
     claim_sections.add(section_id_str)
     if section_id_str not in script_ids:
         errors.append(f"{label}: section_id does not exist in script")
+    return True
+
+
+def _validate_claim_review_metadata(
+    claim: dict[str, Any],
+    label: str,
+    now_utc: datetime,
+    errors: list[str],
+) -> tuple[bool, datetime | None]:
     if not isinstance(claim.get("claim"), str) or not claim["claim"].strip():
         errors.append(f"{label}.claim must be non-empty text")
     classification = claim.get("classification")
@@ -302,7 +349,26 @@ def _validate_single_claim(
     reviewed_at = _aware_datetime(claim.get("reviewed_at"), f"{label}.reviewed_at", errors)
     if reviewed_at and reviewed_at > now_utc:
         errors.append(f"{label}.reviewed_at: timestamp is in the future")
-    _validate_claim_sources(claim.get("source_ids"), label, source_by_id, reviewed_at, consequential is True, errors)
+    return (consequential is True), reviewed_at
+
+
+def _validate_single_claim(
+    claim: Any,
+    i: int,
+    script_ids: list[str],
+    source_by_id: dict[str, dict[str, Any]],
+    now_utc: datetime,
+    claim_sections: set[str],
+    errors: list[str],
+) -> None:
+    label = f"claims[{i}]"
+    if not isinstance(claim, dict):
+        errors.append(f"{label} must be an object")
+        return
+    if not _validate_claim_section_binding(claim, label, script_ids, claim_sections, errors):
+        return
+    is_consequential, reviewed_at = _validate_claim_review_metadata(claim, label, now_utc, errors)
+    _validate_claim_sources(claim.get("source_ids"), label, source_by_id, reviewed_at, is_consequential, errors)
 
 
 def _validate_contradictions(
@@ -320,6 +386,82 @@ def _validate_contradictions(
         refs = conflict.get("source_ids")
         if not isinstance(refs, list) or not refs or any(not isinstance(sid, str) or sid not in source_by_id for sid in refs):
             errors.append(f"{label}.source_ids must reference existing sources supporting the resolution")
+
+
+def _resolve_canonical_artifacts(
+    root: Path,
+    errors: list[str],
+) -> tuple[bytes, dict[str, Any], dict[str, Any], str] | None:
+    script_rel = _find_script_rel(root)
+    script = _safe_relative_file(root, script_rel, "script", errors)
+    evidence_path = _safe_relative_file(root, EVIDENCE_RELATIVE_PATH.as_posix(), "evidence artifact", errors)
+    if script is None or evidence_path is None:
+        return None
+    try:
+        script_bytes = script.read_bytes()
+        script_json = json.loads(script_bytes)
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        errors.append(f"cannot read/parse canonical JSON artifacts: {exc}")
+        return None
+    return script_bytes, script_json, evidence, Path(script_rel).name
+
+
+def _extract_canonical_sections(script_json: Any, script_name: str, errors: list[str]) -> list[Any]:
+    if not isinstance(script_json, dict):
+        errors.append(f"{script_name} must be an object")
+        return []
+    sections = script_json.get("sections")
+    if not isinstance(sections, list) or not sections:
+        errors.append(f"{script_name} must contain a non-empty sections array")
+        return []
+    return sections
+
+
+def _extract_evidence_collections(
+    evidence: dict[str, Any],
+    script_bytes: bytes,
+    script_name: str,
+    errors: list[str],
+) -> tuple[list[Any] | None, list[Any] | None, list[Any] | None]:
+    if evidence.get("script_sha256") != hashlib.sha256(script_bytes).hexdigest():
+        errors.append(f"script binding mismatch: script_sha256 must hash the complete current {script_name} bytes")
+    claims = evidence.get("claims") if isinstance(evidence.get("claims"), list) else None
+    sources = evidence.get("sources") if isinstance(evidence.get("sources"), list) else None
+    conflicts = evidence.get("contradictions") if isinstance(evidence.get("contradictions"), list) else None
+    if not claims:
+        errors.append("claims must be a non-empty array")
+    if not sources:
+        errors.append("sources must be a non-empty array")
+    if conflicts is None:
+        errors.append("contradictions must be an array (use [] when none found)")
+    return claims, sources, conflicts
+
+
+def _verify_evidence_integrity(
+    root: Path,
+    now_utc: datetime,
+    max_source_age_hours: float,
+    script_sections: list[Any],
+    claims: list[Any] | None,
+    sources: list[Any] | None,
+    conflicts: list[Any] | None,
+    errors: list[str],
+) -> None:
+    source_by_id: dict[str, dict[str, Any]] = {}
+    for i, source in enumerate(sources or []):
+        _validate_single_source(source, i, root, now_utc, max_source_age_hours, source_by_id, errors)
+
+    script_ids = _validate_script_sections(script_sections, errors)
+    claim_sections: set[str] = set()
+    for i, claim in enumerate(claims or []):
+        _validate_single_claim(claim, i, script_ids, source_by_id, now_utc, claim_sections, errors)
+
+    for section_id in script_ids:
+        if section_id not in claim_sections:
+            errors.append(f"script section {section_id!r} has no claim/provenance record")
+
+    _validate_contradictions(conflicts or [], source_by_id, errors)
 
 
 def validate_news_evidence(
@@ -340,53 +482,17 @@ def validate_news_evidence(
         errors.append("project_dir must be an existing directory")
         return {"ok": False, "status": "failed", "errors": errors}
 
-    script_rel = _find_script_rel(root)
-    script = _safe_relative_file(root, script_rel, "script", errors)
-    evidence_path = _safe_relative_file(root, EVIDENCE_RELATIVE_PATH.as_posix(), "evidence artifact", errors)
-    if script is None or evidence_path is None:
+    artifacts = _resolve_canonical_artifacts(root, errors)
+    if artifacts is None:
         return {"ok": False, "status": "failed", "errors": errors}
-    try:
-        script_bytes = script.read_bytes()
-        script_json = json.loads(script_bytes)
-        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        return {"ok": False, "status": "failed", "errors": [f"cannot read/parse canonical JSON artifacts: {exc}"]}
-
-    script_name = Path(script_rel).name
-    script_sections = script_json.get("sections") if isinstance(script_json, dict) else None
-    if not isinstance(script_json, dict) or not isinstance(script_sections, list) or not script_sections:
-        errors.append(f"{script_name} must be an object" if not isinstance(script_json, dict) else f"{script_name} must contain a non-empty sections array")
-        script_sections = []
+    script_bytes, script_json, evidence, script_name = artifacts
 
     if not isinstance(evidence, dict) or evidence.get("version") != "2.0":
         return {"ok": False, "status": "failed", "errors": errors + ["news_evidence.json must be a version 2.0 object"]}
-    if evidence.get("script_sha256") != hashlib.sha256(script_bytes).hexdigest():
-        errors.append(f"script binding mismatch: script_sha256 must hash the complete current {script_name} bytes")
 
-    claims = evidence.get("claims") if isinstance(evidence.get("claims"), list) else None
-    sources = evidence.get("sources") if isinstance(evidence.get("sources"), list) else None
-    conflicts = evidence.get("contradictions") if isinstance(evidence.get("contradictions"), list) else None
-    if not claims:
-        errors.append("claims must be a non-empty array")
-    if not sources:
-        errors.append("sources must be a non-empty array")
-    if conflicts is None:
-        errors.append("contradictions must be an array (use [] when none found)")
-
-    source_by_id: dict[str, dict[str, Any]] = {}
-    for i, source in enumerate(sources or []):
-        _validate_single_source(source, i, root, now_utc, max_source_age_hours, source_by_id, errors)
-
-    script_ids = _validate_script_sections(script_sections, errors)
-    claim_sections: set[str] = set()
-    for i, claim in enumerate(claims or []):
-        _validate_single_claim(claim, i, script_ids, source_by_id, now_utc, claim_sections, errors)
-
-    for section_id in script_ids:
-        if section_id not in claim_sections:
-            errors.append(f"script section {section_id!r} has no claim/provenance record")
-
-    _validate_contradictions(conflicts or [], source_by_id, errors)
+    script_sections = _extract_canonical_sections(script_json, script_name, errors)
+    claims, sources, conflicts = _extract_evidence_collections(evidence, script_bytes, script_name, errors)
+    _verify_evidence_integrity(root, now_utc, max_source_age_hours, script_sections, claims, sources, conflicts, errors)
 
     return {
         "ok": not errors,
