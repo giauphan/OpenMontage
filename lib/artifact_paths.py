@@ -40,12 +40,17 @@ def resolve_project_locale(
         if "vi-vn" in profile_id.lower():
             return "vi-VN"
 
-    root = Path(project_dir)
+    try:
+        root = Path(project_dir).resolve()
+    except (ValueError, RuntimeError):
+        return _default_or_env()
+
     # Check project.json
-    project_json = root / "project.json"
-    if project_json.is_file():
+    project_json = (root / "project.json").resolve()
+    if project_json.parent == root and project_json.is_file():
         try:
-            data = json.loads(project_json.read_text(encoding="utf-8"))
+            with open(project_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
             if isinstance(data, dict):
                 loc = data.get("locale") or data.get("spoken_language")
                 if loc:
@@ -59,10 +64,11 @@ def resolve_project_locale(
             pass
 
     # Check publish_metadata.json
-    pub_meta = root / "publish_metadata.json"
-    if pub_meta.is_file():
+    pub_meta = (root / "publish_metadata.json").resolve()
+    if pub_meta.parent == root and pub_meta.is_file():
         try:
-            data = json.loads(pub_meta.read_text(encoding="utf-8"))
+            with open(pub_meta, "r", encoding="utf-8") as f:
+                data = json.load(f)
             if isinstance(data, dict):
                 loc = data.get("locale") or data.get("spoken_language")
                 if loc:

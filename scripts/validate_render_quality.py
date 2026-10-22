@@ -143,8 +143,12 @@ def measure_black_seconds(path: Path, ffmpeg: str, strict: bool = False) -> floa
 
 
 def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved), "-vf",
          "fps=1,scale=270:480,edgedetect=low=0.1:high=0.4,signalstats,metadata=print",
          "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
@@ -160,11 +164,15 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
 
 
 def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool = False) -> float | None:
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
     noise_threshold = "-50dB" if strict else "-60dB"
     # In strict mode, analyze upper 80% to catch static slides with animated bottom captions
     vf = f"crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2" if strict else f"freezedetect=n={noise_threshold}:d=2"
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-vf",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved), "-vf",
          vf, "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
     )

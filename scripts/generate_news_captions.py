@@ -15,13 +15,17 @@ if str(REPO_ROOT) not in sys.path:
 
 def generate_captions(audio_path, output_dir, *, transcriber=None, converter=None, locale=None):
     """Transcribe this exact audio file and convert only measured ASR timings."""
-    audio_path = Path(audio_path)
-    output_dir = Path(output_dir)
+    audio_path = Path(audio_path).resolve()
+    output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    transcript_path = output_dir / "transcript.json"
-    transcript_text_path = output_dir / "transcript.txt"
-    srt_path = output_dir / "subtitles.srt"
-    timings_path = output_dir / "word_timestamps.json"
+    transcript_path = (output_dir / "transcript.json").resolve()
+    transcript_text_path = (output_dir / "transcript.txt").resolve()
+    srt_path = (output_dir / "subtitles.srt").resolve()
+    timings_path = (output_dir / "word_timestamps.json").resolve()
+
+    for path_item in (transcript_path, transcript_text_path, srt_path, timings_path):
+        if path_item.parent != output_dir:
+            raise ValueError(f"Path traversal detected: {path_item}")
 
     if locale is None:
         try:
@@ -112,8 +116,16 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
     transcript["word_timestamps"] = sanitized_words
     words = sanitized_words
 
-    transcript_path.write_text(json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8")
-    transcript_text_path.write_text(" ".join(word["word"].strip() for word in words), encoding="utf-8")
+    with open(transcript_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(transcript, ensure_ascii=False, indent=2))
+    with open(transcript_text_path, "w", encoding="utf-8") as f:
+        f.write(" ".join(word["word"].strip() for word in words))
+
+    if converter is None:
+        converter = (Path(__file__).parent / "generate_vn_subtitles.py").resolve()
+    else:
+        converter = Path(converter).resolve()
+
     command = [
         sys.executable, str(converter), str(transcript_text_path), str(audio_path),
         str(srt_path), "--output-json", str(timings_path),

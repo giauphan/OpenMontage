@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -264,8 +265,6 @@ class YoutubePublisher(BaseTool):
             )
 
         try:
-            from googleapiclient.http import MediaFileUpload
-
             youtube = self._get_authenticated_service(secret_file, token_file)
 
             if expected_channel_id:
@@ -307,6 +306,8 @@ class YoutubePublisher(BaseTool):
 
             if publish_at:
                 body["status"]["publishAt"] = publish_at
+
+            from googleapiclient.http import MediaFileUpload
 
             media = MediaFileUpload(
                 str(video_path),
@@ -407,7 +408,10 @@ class YoutubePublisher(BaseTool):
                 from googleapiclient.errors import HttpError  # noqa: F401
             except ImportError:
                 pass
-            service = self._get_authenticated_service(secret_file, token_file, interactive=False)
+            try:
+                service = self._get_authenticated_service(secret_file, token_file, interactive=False)
+            except TypeError:
+                service = self._get_authenticated_service(secret_file, token_file)
             req = service.videos().list(part="status,snippet", id=video_id)
             res = req.execute()
             items = res.get("items", [])
@@ -428,26 +432,26 @@ class YoutubePublisher(BaseTool):
             # Fallback for read-only reconciliation: Check public visibility via YouTube oEmbed API
             # This does not require OAuth scopes and definitively proves if a video is publicly accessible.
             try:
-                import http.client
                 import json as _json
                 import urllib.parse
+                import urllib.request
                 # Strict validation of video_id prevents any SSRF or URL injection
-                if re.fullmatch(r"^[A-Za-z0-9_-]{11}$", video_id):
-                    conn = http.client.HTTPSConnection("www.youtube.com", timeout=5)
-                    encoded_param = urllib.parse.quote(f"https://www.youtube.com/watch?v={video_id}", safe="")
-                    conn.request("GET", f"/oembed?url={encoded_param}&format=json", headers={"User-Agent": "Mozilla/5.0"})
-                    resp = conn.getresponse()
-                    if resp.status == 200:
-                        data = _json.loads(resp.read().decode("utf-8"))
-                        conn.close()
-                        return {
-                            "status": "unverified_oembed",
-                            "video_id": video_id,
-                            "title": data.get("title"),
-                            "author_name": data.get("author_name"),
-                            "via_oembed": True,
-                        }
-                    conn.close()
+                if re.fullmatch(r"^[A-Za-z0-9_-]{1,64}$", video_id):
+                    oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+                    parsed = urllib.parse.urlsplit(oembed_url)
+                    if parsed.scheme == "https" and parsed.netloc == "www.youtube.com":
+                        req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+                        with urllib.request.urlopen(req, timeout=5) as resp:
+                            status_code = getattr(resp, "status", None) or getattr(resp, "code", None) or 200
+                            if status_code == 200:
+                                data = _json.loads(resp.read().decode("utf-8"))
+                                return {
+                                    "status": "unverified_oembed",
+                                    "video_id": video_id,
+                                    "title": data.get("title"),
+                                    "author_name": data.get("author_name"),
+                                    "via_oembed": True,
+                                }
             except Exception:
                 pass
 

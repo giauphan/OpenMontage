@@ -133,6 +133,8 @@ logs
 *.lock
 !uv.lock
 *.log
+!artifacts/us-migration/rehearsals/**/logs/
+!artifacts/us-migration/rehearsals/**/logs/*.log
 .claude/worktrees/
 .env.*
 !.env.example
