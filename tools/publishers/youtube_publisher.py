@@ -282,7 +282,7 @@ def _upload_media_and_thumbnail(
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = None
     while response is None:
-        status, response = request.next_chunk()
+        _, response = request.next_chunk()
 
     video_id = response.get("id")
     video_url = f"https://youtu.be/{video_id}"
