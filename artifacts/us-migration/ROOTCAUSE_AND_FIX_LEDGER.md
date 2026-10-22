@@ -175,3 +175,18 @@ This ledger documents each technical defect, design vulnerability, or compatibil
   6. Updated `scripts/test_pipeline_docker.sh` summary text from `"Capped <= 60s"` → `">= 60s min, up to 180s max"`.
 - **Post-fix Verification**:
   `tests/contracts/test_video_duration_one_minute_rule.py` (5/5 passed — including new `test_content_dependent_multi_minute_duration_allowed` verifying 120s video accepted with 180s max); `tests/tools/test_short_publish_route.py` (4/4 passed — `test_youtube_publisher_enforces_one_minute_min_and_three_minute_max` replacing old over-60s rejection test). Commit: `b218ba1`.
+
+---
+
+## Defect 12: Offline Docker Execution Failure Due to Faster-Whisper Network Download
+
+- **Symptom / Pre-fix Failure**:
+  Running `scripts/test_pipeline_docker.sh` inside an offline Docker container caused `scripts/run_daily_news_pipeline.sh` to fail during `materialize_hyperframes_assets` because `generate_news_captions.py` attempted to connect to HuggingFace to download the `faster-whisper` model when running in an isolated network sandbox without local model cache.
+- **Root Cause**:
+  `generate_news_captions.py` and `install_news_captions.py` did not inspect `CODEX_AGENT_VALIDATION_MOCK=1` or `CLAUDE_AGENT_VALIDATION_MOCK=1`, causing offline test runs to fail even when mock validation was explicitly intended.
+- **File & Line**:
+  `scripts/run_daily_news_pipeline.sh:843-895`
+- **Minimal Fix**:
+  Added explicit check for `CODEX_AGENT_VALIDATION_MOCK=1` or `CLAUDE_AGENT_VALIDATION_MOCK=1` in `scripts/run_daily_news_pipeline.sh` to generate deterministic placeholder WebVTT and timing stubs, and skip the mutation-repair pass for mock runs.
+- **Post-fix Verification**:
+  Docker execution on `sandbox-video` completed with exit code 0; rendered `final_short_en_US_9x16.mp4` (71.0s) and `final_long_en_US_16x9.mp4` (71.0s); 15/15 Codex checks passed. Commit: `d154fec`.
