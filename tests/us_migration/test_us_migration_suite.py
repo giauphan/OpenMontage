@@ -493,10 +493,11 @@ class TestIntegrationAndOperationsI01_I10:
                 "format": "longform",
                 "locale": "en-US",
                 "audience": "us",
+                "expected_channel_id": "UC_TEST_123",
             },
             video_path=str(dummy_video),
         )
-        assert "expected_channel_id" in payload
+        assert payload.get("expected_channel_id") == "UC_TEST_123"
 
         # When expected_channel_id is None / missing for a US upload, YoutubePublisher fails closed
         payload["expected_channel_id"] = None

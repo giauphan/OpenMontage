@@ -56,7 +56,8 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         or os.environ.get("EXPECTED_CHANNEL_ID")
         or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
     )
-    payload["expected_channel_id"] = expected_channel
+    if expected_channel:
+        payload["expected_channel_id"] = expected_channel
     if "contains_synthetic_media" in payload_meta:
         payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
     return payload
