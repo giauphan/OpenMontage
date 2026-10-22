@@ -411,3 +411,99 @@ class TestIntegrationAndOperationsI01_I10:
         profile = load_audience_profile("en-US")
         assert profile.publishing.kill_switch is True
         assert profile.publishing.enabled is False
+
+    def test_i11_director_retry_prompt_routes_by_locale(self):
+        """I11: Dedicated en-US director retry prompt exists and enforces English contracts."""
+        en_retry = Path("scripts/prompts/director_retry_en_US.prompt.md")
+        assert en_retry.is_file(), "director_retry_en_US.prompt.md must exist"
+        content = en_retry.read_text(encoding="utf-8")
+        assert "script_en_US.json" in content
+        assert "script_vi.json" not in content, "en-US retry must never request script_vi.json"
+        assert "American English" in content
+
+        vn_retry = Path("scripts/prompts/director_retry.prompt.md")
+        vn_content = vn_retry.read_text(encoding="utf-8")
+        assert "script_vi.json" in vn_content
+
+    def test_i12_init_project_explicit_locale_and_audience(self, tmp_path: Path):
+        """I12: init_project explicitly records locale and audience in project.json."""
+        from lib.checkpoint import init_project
+        from lib.artifact_paths import resolve_project_locale
+
+        proj_dir = init_project(
+            "test_us_proj_001",
+            title="AI Revolution in USA",
+            pipeline_type="animated-explainer",
+            pipeline_dir=tmp_path,
+            locale="en-US",
+            audience="us",
+        )
+        marker = json.loads((proj_dir / "project.json").read_text(encoding="utf-8"))
+        assert marker.get("locale") == "en-US"
+        assert marker.get("audience") == "us"
+        assert resolve_project_locale(proj_dir) == "en-US"
+
+    def test_i13_us_publishing_config_and_dst(self):
+        """I13: US publishing configuration uses America/New_York with valid slot spacing."""
+        from scripts.publish_config import (
+            publish_timezone_for_locale,
+            publish_slots_for_locale,
+            validate_slot_spacing,
+        )
+        from scripts.schedule_today_native import make_publish_datetime
+        from zoneinfo import ZoneInfo
+        from datetime import date
+
+        tz = publish_timezone_for_locale("en-US")
+        assert str(tz) == "America/New_York"
+
+        slots = publish_slots_for_locale("en-US")
+        assert len(slots) >= 3
+        assert validate_slot_spacing(slots, min_hours=2.0) is True
+
+        # Test DST transitions (e.g., Nov 1, 2026 fall-back transition)
+        d = date(2026, 11, 1)
+        dt = make_publish_datetime(d, "09:00", tz)
+        assert dt.tzinfo is not None
+        assert dt.hour == 9
+
+    def test_i14_scheduler_format_routing_and_channel_guard(self, tmp_path: Path):
+        """I14: Scheduler supports independent format routing and enforces channel guard on US uploads."""
+        from scripts.schedule_today_native import build_youtube_payload
+        from tools.publish_store import publish_key
+        from tools.publishers.youtube_publisher import YoutubePublisher
+
+        # 1. Distinct publish keys for format
+        key_short = publish_key("2026-10-22", "tech_news", "youtube", "short")
+        key_long = publish_key("2026-10-22", "tech_news", "youtube", "longform")
+        assert key_short != key_long
+        assert "short" in key_short
+        assert "longform" in key_long
+
+        # 2. Channel guard enforcement on US upload
+        secret = tmp_path / "secret.json"
+        secret.write_text("{}", encoding="utf-8")
+        dummy_video = tmp_path / "dummy.mp4"
+        dummy_video.write_bytes(b"dummy video content")
+        payload = build_youtube_payload(
+            {
+                "id": "proj_us_01",
+                "title": "US Tech Overview",
+                "description": "Comprehensive engineering analysis of AI video pipelines.",
+                "format": "longform",
+                "locale": "en-US",
+                "audience": "us",
+            },
+            video_path=str(dummy_video),
+        )
+        assert "expected_channel_id" in payload
+
+        # When expected_channel_id is None / missing for a US upload, YoutubePublisher fails closed
+        payload["expected_channel_id"] = None
+        with patch.dict(os.environ, {"YOUTUBE_CLIENT_SECRET_FILE": str(secret)}, clear=False):
+            with patch.dict(os.environ, {"EXPECTED_CHANNEL_ID": "", "YOUTUBE_EXPECTED_CHANNEL_ID": ""}):
+                with patch("tools.publishers.platform_routes.ensure_horizontal"):
+                    res = YoutubePublisher().execute(payload)
+                    assert not res.success
+                    assert "CHANNEL_GUARD_REQUIRED" in res.error or "expected_channel_id is mandatory" in res.error
+

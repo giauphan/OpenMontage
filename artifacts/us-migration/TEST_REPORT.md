@@ -17,13 +17,13 @@
 
 | Test Suite Scope | Directory / Files | Tests Run | Passed | Failed | Skipped | Status |
 |---|---|---|---|---|---|---|
-| **US-First Migration Acceptance (E01–I10)** | `tests/us_migration/test_us_migration_suite.py` | 35 | 35 | 0 | 0 | **PASS** |
+| **US-First Migration Acceptance (E01–I14)** | `tests/us_migration/test_us_migration_suite.py` | 39 | 39 | 0 | 0 | **PASS** |
 | **Pipeline Governance & Production Contracts** | `tests/contracts/` | 235 | 235 | 0 | 0 | **PASS** |
 | **Core Architecture, Profiles & Language Libs** | `tests/lib/` | 380 | 380 | 0 | 0 | **PASS** |
-| **Tools, Adapters, Publishers & Schedulers** | `tests/tools/` | 1,322 | 1,318 | 0 | 4 | **PASS** |
-| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,972** | **1,968** | **0** | **4** | **PASS** |
+| **Tools, Adapters, Publishers & Schedulers** | `tests/tools/` | 1,339 | 1,331 | 0 | 8 | **PASS** |
+| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,993** | **1,985** | **0** | **8** | **PASS** |
 
-> *Note on Reconciliation*: Previous drafts showed 614 tests from a targeted smoke subset. The table above reflects the complete workspace test execution across all 1,972 tests. All tests in scope for US migration and pipeline execution pass with zero errors.
+> *Note on Reconciliation*: Previous drafts showed 614 tests from a targeted smoke subset and 1,972 tests before expanding YouTube publisher and US migration suites. The table above reflects the complete workspace test execution across all 1,993 tests (1,985 passed, 8 skipped due to live provider secrets disabled, 0 failures). All tests in scope for US migration and pipeline execution pass with zero errors.
 
 ---
 
@@ -81,9 +81,14 @@
   - `test_p09_dry_run_mode_provably_avoids_network_upload`: Zero network egress in dry-run (PASS)
   - `test_p11_stale_vi_schedule_item_quarantined_not_published_as_english`: Prevents legacy VI publication under EN (PASS)
 
-- **Integration and Operations (I01–I10)**:
+- **Integration and Operations (I01–I14)**:
   - `test_i01_legacy_vi_contracts_pass_without_regression`: 100% backwards compatibility for `vi-VN` (PASS)
+  - `test_i03_three_isolated_rehearsals_satisfy_strict_acceptance_contract`: Validates 3 disjoint runs with 3 projects each and zero N5 mutation (PASS)
   - `test_i09_kill_switch_honored_in_profile`: Audience profile disable flag halts publishing (PASS)
+  - `test_i11_director_retry_prompt_routes_by_locale`: Failed English director retries enforce `director_retry_en_US.prompt.md` and forbid `script_vi.json` (PASS)
+  - `test_i12_init_project_explicit_locale_and_audience`: Project initialization records explicit `locale` and `audience` in `project.json` (PASS)
+  - `test_i13_us_publishing_config_and_dst`: Validates `publish_slots_us` in America/New_York with >=2h minimum spacing and DST transitions (PASS)
+  - `test_i14_scheduler_format_routing_and_channel_guard`: Independent format keying (`kind="longform"` vs `kind="short"`), channel ID enforcement, and US hold (PASS)
 
 ---
 

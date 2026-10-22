@@ -620,11 +620,19 @@ while true; do
   # Capture diagnostics even when the director process itself failed, then
   # pass actionable seek-safety errors into the existing bounded repair turn.
   validate_current_director_artifacts || true
-  RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
-    echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
-    DIRECTOR_EXIT=6
-    break
-  }
+  if [ "$is_en" -eq 1 ]; then
+    RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry_en_US.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing en-US director retry prompt" >> "$DIRECTORS_LOG"
+      DIRECTOR_EXIT=6
+      break
+    }
+  else
+    RETRY_PROMPT="$(render_director_prompt "$PROMPT_DIR/director_retry.prompt.md")" || {
+      echo "[$(date -u +%FT%TZ)] ERROR: missing director retry prompt" >> "$DIRECTORS_LOG"
+      DIRECTOR_EXIT=6
+      break
+    }
+  fi
   if [ -n "$DIRECTOR_VALIDATION_ERRORS" ]; then
     RETRY_PROMPT="$(printf '%s\n\nValidation errors to fix in the composition HTML:\n%s' "$RETRY_PROMPT" "$DIRECTOR_VALIDATION_ERRORS")"
   fi

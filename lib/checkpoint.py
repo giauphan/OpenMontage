@@ -285,6 +285,8 @@ def init_project(
     pipeline_type: str,
     pipeline_dir: Optional[Path] = None,
     style_playbook: Optional[str] = None,
+    locale: Optional[str] = None,
+    audience: Optional[str] = None,
 ) -> Path:
     """Initialize a project workspace with the canonical layout + marker file.
 
@@ -332,6 +334,10 @@ def init_project(
     marker["pipeline_type"] = pipeline_type
     if style_playbook is not None:
         marker["style_playbook"] = style_playbook
+    if locale is not None:
+        marker["locale"] = locale
+    if audience is not None:
+        marker["audience"] = audience
 
     with open(marker_path, "w", encoding="utf-8") as f:
         json.dump(marker, f, indent=2)

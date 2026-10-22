@@ -29,7 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt pytest-cov defusedxml
-          pytest tests/ --cov=lib --cov=tools --cov-report=xml:coverage.xml -q || true
+          pytest tests/ --cov=lib --cov=tools --cov-report=xml:coverage.xml -q
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:

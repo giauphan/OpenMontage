@@ -56,8 +56,7 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         or os.environ.get("EXPECTED_CHANNEL_ID")
         or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
     )
-    if expected_channel:
-        payload["expected_channel_id"] = expected_channel
+    payload["expected_channel_id"] = expected_channel
     if "contains_synthetic_media" in payload_meta:
         payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
     return payload
@@ -217,11 +216,19 @@ def main():
 
         yt_account = cfg.get("youtube", {}).get("account", "primary")
         topic_id = topic_meta.get("id") or proj
-        yt_key = publish_key(date, topic_id, "youtube", "short")
+        format_type = topic_meta.get("format", "short")
+        is_longform = format_type in ("longform", "long", "16:9", "16x9")
+        kind = "longform" if is_longform else "short"
+
+        from lib.artifact_paths import resolve_render_path, is_english_locale
+        locale = topic_meta.get("locale") or "vi-VN"
+        is_us_project = is_english_locale(locale) or topic_meta.get("audience") == "us"
+
+        yt_key = publish_key(date, topic_id, "youtube", kind)
         if hasattr(store, "get"):
             existing_claim = store.get(yt_key)
             if existing_claim and existing_claim.get("status") in ("scheduled", "published"):
-                print(f"ALREADY SCHEDULED {proj} on youtube for {existing_claim.get('scheduled_for', date)} ({existing_claim.get('video_url', '')})")
+                print(f"ALREADY SCHEDULED {proj} on youtube ({kind}) for {existing_claim.get('scheduled_for', date)} ({existing_claim.get('video_url', '')})")
                 continue
 
         # Strict validation gate: Ensure project has passed validation_status.json in project dir
@@ -271,9 +278,19 @@ def main():
             print(f"failed {proj}: template provenance invalid ({'; '.join(prov_reasons)})")
             failed = True
             continue
-        yt_rel = topic_meta.get("yt_shorts")
+        if is_longform:
+            yt_rel = topic_meta.get("yt_longform") or topic_meta.get("longform")
+            if not yt_rel:
+                rp = resolve_render_path(project_dir, format_type="longform", locale=locale)
+                yt_rel = rp.relative_to(project_dir) if rp.is_relative_to(project_dir) else rp
+        else:
+            yt_rel = topic_meta.get("yt_shorts") or topic_meta.get("short")
+            if not yt_rel:
+                rp = resolve_render_path(project_dir, format_type="short", locale=locale)
+                yt_rel = rp.relative_to(project_dir) if rp.is_relative_to(project_dir) else rp
+
         if isinstance(yt_rel, dict):
-            yt_rel = yt_rel.get("path") or yt_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
+            yt_rel = yt_rel.get("path") or yt_rel.get("file")
         ig_rel = topic_meta.get("ig_reels")
         if isinstance(ig_rel, dict):
             ig_rel = ig_rel.get("path") or ig_rel.get("file") or "renders/final_reels_vi_9x16.mp4"
@@ -293,7 +310,7 @@ def main():
                 continue
 
             if is_dry_run:
-                print(f"SHADOW/DRY-RUN: Simulated YouTube schedule for {proj} at {scheduled_for} (no store mutations, no network upload)")
+                print(f"SHADOW/DRY-RUN: Simulated YouTube {kind} schedule for {proj} at {scheduled_for} (no store mutations, no network upload)")
                 payload = build_youtube_payload(topic_meta, video_path=str(asset_path), publish_at=ytv_publish_at(publish_at))
             else:
                 yt_key = None; yt_claimed = False
@@ -303,7 +320,7 @@ def main():
                         topic=topic_meta["id"],
                         platform="youtube",
                         account=yt_account,
-                        kind="short",
+                        kind=kind,
                         status="scheduling",
                         title=topic_meta["title"],
                         asset_path=project_dir/yt_rel,
@@ -337,7 +354,9 @@ def main():
                                 failed = True
 
         # Schedule Instagram Reels
-        if not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
+        if is_us_project and os.environ.get("ENABLE_US_INSTAGRAM") != "1" and "instagram" not in (cli_enabled or []):
+            print(f"⏸️ US_MIGRATION_HOLD: Skipping Instagram scheduling for US project {proj} (YouTube-only during US migration phase)")
+        elif not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
             print(f"⏸️ HOLD/DISABLED: Skipping Instagram scheduling for {proj} (not enabled or held by pipeline flag/env)")
         elif ig_account and ig_rel and (project_dir / ig_rel).is_file():
             if is_dry_run:

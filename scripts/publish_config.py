@@ -291,3 +291,54 @@ def scheduled_for(cfg: dict[str, Any], slot_index: int, now: datetime | None = N
         raise ValueError(f"slot_index must be between 0 and {len(slots) - 1}")
     local = datetime.combine(next_publish_date(cfg, now), slots[slot_index], tzinfo=publish_timezone(cfg))
     return local.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def publish_timezone_for_locale(locale: str | None, cfg: dict[str, Any] | None = None) -> ZoneInfo:
+    """Return timezone for a project's locale, respecting PUBLISH_TZ override."""
+    env_tz = os.environ.get("PUBLISH_TZ")
+    if env_tz:
+        return ZoneInfo(env_tz)
+    if cfg is None:
+        try:
+            cfg = load_config()
+        except Exception:
+            cfg = {}
+    from lib.artifact_paths import is_english_locale
+    if locale and is_english_locale(locale):
+        us_tz = cfg.get("us", {}).get("timezone") or "America/New_York"
+        return ZoneInfo(us_tz)
+    return publish_timezone(cfg)
+
+
+def publish_slots_for_locale(locale: str | None, cfg: dict[str, Any] | None = None) -> list[dt_time]:
+    """Return configured publish slots for the given locale."""
+    if cfg is None:
+        try:
+            cfg = load_config()
+        except Exception:
+            cfg = {}
+    from lib.artifact_paths import is_english_locale
+    if locale and is_english_locale(locale):
+        values = (
+            cfg.get("slots", {}).get("publish_slots_us")
+            or cfg.get("us", {}).get("publish_slots")
+            or ["09:00", "13:00", "18:00"]
+        )
+        return [_parse_hhmm(v) for v in values]
+    return publish_slots(cfg)
+
+
+def validate_slot_spacing(slot_times: list[dt_time], min_hours: float = 2.0) -> bool:
+    """Validate that consecutive slot times have at least min_hours gap."""
+    if len(slot_times) <= 1:
+        return True
+    sorted_slots = sorted(slot_times)
+    min_delta = timedelta(hours=min_hours)
+    dummy_date = date(2026, 1, 1)
+    for i in range(len(sorted_slots) - 1):
+        dt1 = datetime.combine(dummy_date, sorted_slots[i])
+        dt2 = datetime.combine(dummy_date, sorted_slots[i + 1])
+        if dt2 - dt1 < min_delta:
+            return False
+    return True
+

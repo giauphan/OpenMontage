@@ -61,11 +61,26 @@ def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]
 
     project_id = candidate["candidate_id"]
     pipeline_dir = Path("projects") / project_id
+    cand_locale = (
+        candidate.get("locale")
+        or selection.get("locale")
+        or os.environ.get("PROJECT_LOCALE")
+        or os.environ.get("OPENMONTAGE_LOCALE")
+        or "en-US"
+    )
+    cand_audience = (
+        candidate.get("audience")
+        or selection.get("audience")
+        or os.environ.get("AUDIENCE_PROFILE")
+        or ("us" if cand_locale == "en-US" else "vi")
+    )
     init_project(
         project_id,
         title=research_brief["topic"],
         pipeline_type="animated-explainer",
         pipeline_dir=Path("projects"),
+        locale=cand_locale,
+        audience=cand_audience,
     )
 
     brief_path = pipeline_dir / "artifacts" / "research_brief.json"

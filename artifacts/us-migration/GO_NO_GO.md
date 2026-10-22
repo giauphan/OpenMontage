@@ -5,7 +5,7 @@
 ### **P0–P8 IMPLEMENTATION: GO (100% COMPLETE & VERIFIED)**
 ### **P9 LIVE PRODUCTION DEPLOYMENT & UPLOAD: HARD STOP / HOLD**
 
-All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 skips, and 0 errors across all test suites (including 35 acceptance tests in `test_us_migration_suite.py` and 1,475 workspace contract/unit tests).
+All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 errors, and passing CI across all test suites (including 39 acceptance tests in `test_us_migration_suite.py` and 1,985 workspace contract/unit tests).
 Additionally, live video rendering inside Docker on the remote server (`sandbox-video`) has been fully validated:
 - **Longform (16:9, 1920x1080)**: 71.0s duration (satisfies >= 60s minimum rule).
 - **Shorts/Reels (9:16, 1080x1920)**: 71.0s duration (verified in Docker under new policy: >= 60s min, up to 180s max for Shorts/Reels).
@@ -13,7 +13,7 @@ Additionally, live video rendering inside Docker on the remote server (`sandbox-
 - **Codex Agent Strict QA**: 15/15 checks passed (Score 100).
 - **Three Rehearsals Contract**: Verified 3 independent runs with 3 disjoint projects each (9 unique projects total), terminal stage `completed`, `n5_complete=false`, and 24 stage evidence files on disk.
 
-In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATION_PROMPT.md` and `AGENTS.md`, **Phase P9 has NOT been executed**. No remote deployment to Phoenix production, no live YouTube upload (public or private), and no live cron mutations have taken place. Candidate commit `469d095` (remediating all PR #30 review findings across security, cultural pipeline, rehearsals, and canaries) is ready for owner review. 20 defects documented and resolved in `ROOTCAUSE_AND_FIX_LEDGER.md`.
+In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATION_PROMPT.md` and `AGENTS.md`, **Phase P9 has NOT been executed**. No remote deployment to Phoenix production, no live YouTube upload (public or private), and no live cron mutations have taken place. Candidate commit remediating all PR #30 review findings across security, cultural pipeline, rehearsals, canaries, director retries, US scheduling, format routing, and CI unmasking is ready for owner review. 24 defects documented and resolved in `ROOTCAUSE_AND_FIX_LEDGER.md`.
 
 ---
 

@@ -19,6 +19,16 @@
       "14:15",
       "21:15"
     ],
+    "publish_slots_us": [
+      "09:00",
+      "13:00",
+      "18:00"
+    ],
+    "today_publish_slots_us": [
+      "09:00",
+      "13:00",
+      "18:00"
+    ],
     "fb_slots_wib": [
       "12:00",
       "14:00",
@@ -28,6 +38,18 @@
       "09:15",
       "14:15",
       "21:15"
+    ]
+  },
+  "us": {
+    "timezone": "America/New_York",
+    "publish_slots": [
+      "09:00",
+      "13:00",
+      "18:00"
+    ],
+    "min_spacing_hours": 2,
+    "enabled_platforms": [
+      "youtube"
     ]
   },
   "active_projects": [

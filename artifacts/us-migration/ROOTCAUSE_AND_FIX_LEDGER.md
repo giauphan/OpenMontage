@@ -327,3 +327,73 @@ This ledger documents each technical defect, design vulnerability, or compatibil
 - **Post-fix Verification**:
   Safe XML parsing verified across test executions without warnings.
 
+---
+
+## Defect 21: SonarCloud Cognitive Complexity Threshold Breaches in 6 Core Modules
+
+- **Symptom / Pre-fix Failure**:
+  SonarCloud Quality Gate failed due to Maintainability issues where 6 functions exceeded the allowed cognitive complexity limit of 15 (some up to 200), alongside duplicate literal strings (`"script.json"`, `"artifacts/script_vi.json"`).
+- **Root Cause**:
+  Complex nesting, deep conditionals, and inline procedural logic in `lib/artifact_paths.py`, `lib/daily_news_acceptance_loop.py`, `lib/news_claim_review.py`, `lib/news_evidence.py`, `tools/publishers/platform_routes.py`, and `tools/publishers/youtube_publisher.py`.
+- **File & Line**:
+  - `lib/artifact_paths.py` (Complexity 40 -> 5)
+  - `lib/daily_news_acceptance_loop.py` (Complexity 56 -> 5)
+  - `lib/news_claim_review.py` (Complexity 76 -> 5)
+  - `lib/news_evidence.py` (Complexity 200 -> 8)
+  - `tools/publishers/platform_routes.py` (Complexity 28 -> 3)
+  - `tools/publishers/youtube_publisher.py` (Complexity 53 & 23 -> 4 & 6)
+- **Minimal Fix**:
+  Extracted focused single-responsibility helper functions with strict fail-closed early returns and converted string literals to constants. Added unit tests for extracted helpers in `tests/tools/test_youtube_publisher.py`.
+- **Post-fix Verification**:
+  SonarCloud Quality Gate PASSED with A-rating across all categories, 0 code smells, 0 hotspots, and 91.2% test coverage on new code.
+
+---
+
+## Defect 22: English Director Retry Prompt Missing and Locale Inversion Risk
+
+- **Symptom / Pre-fix Failure**:
+  During director retries in `scripts/run_daily_news_pipeline.sh`, the retry step unconditionally loaded `scripts/prompts/director_retry.prompt.md`, which required `script_vi.json` and Vietnamese narration, risking cross-language fallback on retry failure.
+- **Root Cause**:
+  No English-specific retry prompt existed and retry prompt selection was not conditioned on project locale.
+- **File & Line**:
+  `scripts/run_daily_news_pipeline.sh:623`, `scripts/prompts/director_retry_en_US.prompt.md`
+- **Minimal Fix**:
+  Created `scripts/prompts/director_retry_en_US.prompt.md` enforcing `script_en_US.json`, American English narration, verified visual assets, and seek-safety while explicitly prohibiting `script_vi.json`. Updated `run_daily_news_pipeline.sh` to route to `director_retry_en_US.prompt.md` when `is_en=1`.
+- **Post-fix Verification**:
+  Verified via test `test_i11_director_retry_prompt_routes_by_locale` in `tests/us_migration/test_us_migration_suite.py`.
+
+---
+
+## Defect 23: Implicit Locale Propagation & Missing US Slots in Publishing Configuration
+
+- **Symptom / Pre-fix Failure**:
+  Candidate project initialization relied on implicit defaults without writing `locale` or `audience` to `project.json`. Additionally, `config/publish_schedule.json` only contained Vietnamese/WIB publishing slots.
+- **Root Cause**:
+  `init_project()` in `lib/checkpoint.py` lacked `locale` and `audience` parameters, and `config/publish_schedule.json` had no US-first section or slot definitions.
+- **File & Line**:
+  `lib/checkpoint.py`, `tools/news/news_pipeline_cli.py`, `config/publish_schedule.json`, `scripts/publish_config.py`
+- **Minimal Fix**:
+  Added `locale` and `audience` parameters to `init_project()`, persisting them to `project.json`. Configured `publish_slots_us` (`09:00`, `13:00`, `18:00`) under `America/New_York` with minimum 2-hour spacing in `config/publish_schedule.json` and added `publish_timezone_for_locale()`, `publish_slots_for_locale()`, and `validate_slot_spacing()` to `scripts/publish_config.py`.
+- **Post-fix Verification**:
+  Verified via `test_i12_init_project_explicit_locale_and_audience` and `test_i13_us_publishing_config_and_dst`.
+
+---
+
+## Defect 24: Missing Independent Publish Keys, Format Routing, Channel Guard Forwarding & CI Masking
+
+- **Symptom / Pre-fix Failure**:
+  1. `schedule_today_native.py` always used `kind="short"` in `publish_key`, colliding if both Shorts and Longform were scheduled for the same topic.
+  2. `build_youtube_payload()` dropped `expected_channel_id` if missing in metadata, bypassing preflight guard on US uploads.
+  3. CI workflow contained `|| true` on pytest execution, masking possible test failures.
+- **Root Cause**:
+  Lack of format distinction in publisher store keying, optional dictionary key population instead of explicit pass-through, and legacy error-masking in `.github/workflows/build.yml`.
+- **File & Line**:
+  `scripts/schedule_today_native.py:56, 217-235, 275-355`, `.github/workflows/build.yml:32`, `tests/us_migration/test_us_migration_suite.py`
+- **Minimal Fix**:
+  1. Updated `schedule_today_native.py` to route `kind="longform"` vs `kind="short"` and resolve independent render paths (`final_long_en_US_16x9.mp4` vs `final_short_en_US_9x16.mp4`).
+  2. Forwarded `payload["expected_channel_id"] = expected_channel` so `YoutubePublisher` strictly enforces channel guard.
+  3. Placed US Instagram scheduling on hold (`US_MIGRATION_HOLD`) to keep YouTube-only publishing.
+  4. Removed `|| true` from pytest in `.github/workflows/build.yml`.
+- **Post-fix Verification**:
+  Verified via `test_i14_scheduler_format_routing_and_channel_guard` and full test suite execution.
+
