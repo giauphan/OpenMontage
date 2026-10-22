@@ -100,7 +100,11 @@ def fetch_json(base_url: str, path: str) -> dict[str, Any] | list[Any]:
 
 
 def capture_url(url: str, output: Path, *, width: int = 1560, height: int = 1150, wait_ms: int = 1200) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {url}")
+    output_resolved = Path(output).resolve()
+    output_resolved.parent.mkdir(parents=True, exist_ok=True)
     npx_bin = shutil.which("npx") or "npx"
     subprocess.run(
         [
@@ -108,11 +112,11 @@ def capture_url(url: str, output: Path, *, width: int = 1560, height: int = 1150
             "playwright",
             "screenshot",
             "--viewport-size",
-            f"{width},{height}",
+            f"{int(width)},{int(height)}",
             "--wait-for-timeout",
-            str(wait_ms),
+            str(int(wait_ms)),
             url,
-            str(output),
+            str(output_resolved),
         ],
         cwd=REPO_ROOT,
         check=True,

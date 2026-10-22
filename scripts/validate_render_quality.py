@@ -51,8 +51,12 @@ MAX_STATIC_RATIO = 0.95
 
 
 def probe(path: Path, ffprobe: str) -> dict:
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        raise ValueError(f"probe target not found: {path}")
+    ffprobe_bin = shutil.which("ffprobe") or str(ffprobe)
     result = subprocess.run(
-        [ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
+        [ffprobe_bin, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path_resolved)],
         check=False,
         capture_output=True,
         text=True,
@@ -101,8 +105,12 @@ def number(value: object, default: float = 0.0) -> float:
 
 def measure_mean_volume(path: Path, ffmpeg: str) -> float | None:
     """Return the mean audio level in dBFS, or None when it cannot be measured."""
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path), "-af", "volumedetect",
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved), "-af", "volumedetect",
          "-f", "null", "-"],
         check=False,
         capture_output=True,
@@ -122,9 +130,13 @@ def measure_mean_volume(path: Path, ffmpeg: str) -> float | None:
 
 def measure_black_seconds(path: Path, ffmpeg: str, strict: bool = False) -> float | None:
     """Return total detected black-frame duration in seconds, or None if unavailable."""
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        return None
+    ffmpeg_bin = shutil.which("ffmpeg") or str(ffmpeg)
     pix_th = "0.02" if not strict else "0.10"
     result = subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "info", "-i", str(path),
+        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", str(path_resolved),
          "-vf", f"blackdetect=d=0.5:pic_th=0.99:pix_th={pix_th}", "-an", "-f", "null", "-"],
         check=False,
         capture_output=True,

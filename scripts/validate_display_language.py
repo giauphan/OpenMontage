@@ -113,7 +113,11 @@ class VisibleTextParser(HTMLParser):
 
 
 def _read(path: Path) -> str:
-    text = path.read_text(encoding="utf-8-sig")
+    path_resolved = Path(path).resolve()
+    if not path_resolved.is_file():
+        raise ValueError(f"missing or empty static text source: {path}")
+    with open(path_resolved, "r", encoding="utf-8-sig") as f:
+        text = f.read()
     if not text.strip():
         raise ValueError("missing or empty static text source")
     return text
