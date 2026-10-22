@@ -517,6 +517,7 @@ def test_hyperframes_render_preserves_workspace_fails_on_tampering(tmp_path, mon
     import subprocess
     from tools.base_tool import ToolResult
 
+    monkeypatch.chdir(tmp_path)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     index_file = workspace / "index.html"

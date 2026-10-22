@@ -608,8 +608,6 @@ def validate_and_promote_director_artifacts(
         canonical_script = artifacts_dir / "script_en_US.json"
     elif (artifacts_dir / "script_vi.json").is_file():
         canonical_script = artifacts_dir / "script_vi.json"
-    elif (artifacts_dir / "script.json").is_file():
-        canonical_script = artifacts_dir / "script.json"
     else:
         canonical_script = artifacts_dir / ("script_en_US.json" if locale == "en-US" else "script_vi.json")
 
