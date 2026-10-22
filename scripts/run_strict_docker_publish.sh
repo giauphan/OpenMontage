@@ -509,8 +509,8 @@ for PID in "${PROJECT_IDS[@]}"; do
     log "FAIL $PID: expected renders missing or empty"
   fi
   [ "$RENDER_OK" -eq 1 ] || continue
-  # 4d. Technical quality validation via validate_render_quality.py (reels max 60s for Shorts).
-  "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --reels-max-duration 60.0 >> "$VERIFY_LOG" 2>&1 \
+  # 4d. Technical quality validation via validate_render_quality.py (min 60s, up to 180s for Shorts/Reels).
+  "$PY" "$ROOT/scripts/validate_render_quality.py" "$PDIR" --min-duration 60.0 --reels-max-duration 180.0 >> "$VERIFY_LOG" 2>&1 \
     || { log "FAIL $PID: validate_render_quality failed"; continue; }
   # 4e. publish_metadata validation.
   "$PY" "$ROOT/scripts/validate_publish_metadata.py" "$PDIR" >> "$VERIFY_LOG" 2>&1 \

@@ -343,12 +343,12 @@ def main() -> int:
         default=None,
         help="ffmpeg binary used for decode-level audio/video content checks",
     )
-    parser.add_argument("--min-duration", type=float, default=5.0)
+    parser.add_argument("--min-duration", type=float, default=5.0, help="Base minimum duration in seconds (default: 5.0s)")
     parser.add_argument(
         "--full-min-duration",
         type=float,
-        default=None,
-        help="Minimum duration in seconds for full render (overrides --min-duration for full)",
+        default=60.0,
+        help="Minimum duration in seconds for full render (default: 60.0s / 1 min)",
     )
     parser.add_argument(
         "--reels-min-duration",
@@ -357,7 +357,7 @@ def main() -> int:
         help="Minimum duration in seconds for reels render (overrides --min-duration for reels)",
     )
     parser.add_argument("--tolerance", type=float, default=3.0)
-    parser.add_argument("--reels-max-duration", type=float, default=None)
+    parser.add_argument("--reels-max-duration", type=float, default=180.0, help="Maximum duration for reels (default: 180.0s / 3 min, None for unlimited)")
     parser.add_argument(
         "--render",
         choices=("full", "reels"),
@@ -431,7 +431,7 @@ def main() -> int:
             if repair_proc.returncode == 0:
                 # Re-run validation checks without further auto-repair
                 errors = []
-                for render_kind, render_name, narration, min_dur, max_duration in renders:
+                for render_kind, render_name, narration, min_dur, max_duration, dims in renders:
                     if args.render and render_kind != args.render:
                         continue
                     errors.extend(
@@ -442,10 +442,11 @@ def main() -> int:
                             ffmpeg,
                             min_dur,
                             args.tolerance,
-                            PORTRAIT_DIMENSIONS,
+                            dims,
                             max_duration,
                             narration_text,
                             strict=args.strict,
+                            locale=locale,
                         )
                     )
     for error in errors:

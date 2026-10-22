@@ -37,7 +37,9 @@ VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
 HORIZONTAL_WIDTH = 1920
 HORIZONTAL_HEIGHT = 1080
-YOUTUBE_SHORT_MAX_SECONDS = 60.0
+YOUTUBE_SHORT_MIN_SECONDS = 60.0
+YOUTUBE_SHORT_MAX_SECONDS = 180.0
+LONGFORM_MIN_SECONDS = 60.0
 YOUTUBE_TITLE_MAX_CHARS = 100
 YOUTUBE_SHORTS_HASHTAG = "#Shorts"
 DEFAULT_VIETNAMESE_TAGS = ["tintuc", "congnghe", "ai", "vietnam"]
@@ -309,8 +311,13 @@ def ensure_vertical(path: Path) -> None:
 
 
 def ensure_youtube_short(path: Path) -> None:
-    """Reject a video that YouTube would classify as a regular video."""
+    """Reject a video that YouTube would classify as a regular video or that violates the 1-minute min rule."""
     duration = probe_duration(path)
+    if duration < YOUTUBE_SHORT_MIN_SECONDS:
+        raise ValueError(
+            f"{path}: {duration:.3f}s is under the YouTube Shorts minimum duration of "
+            f"{YOUTUBE_SHORT_MIN_SECONDS:.0f} seconds (1 minute minimum required)"
+        )
     if duration > YOUTUBE_SHORT_MAX_SECONDS:
         raise ValueError(
             f"{path}: {duration:.3f}s exceeds the YouTube Shorts limit of "
@@ -319,10 +326,17 @@ def ensure_youtube_short(path: Path) -> None:
 
 
 def ensure_horizontal(path: Path) -> None:
-    """Reject any asset that is not landscape / horizontal (e.g. 16:9) for long-form publishing."""
+    """Reject any asset that is not landscape / horizontal (e.g. 16:9) for long-form publishing, or under 60s."""
     width, height = probe_dimensions(path)
     if width <= height:
         raise ValueError(
             f"{path}: {width}x{height} is not horizontal; "
             f"long-form videos must have landscape geometry (width > height, e.g. 16:9)"
         )
+    if path.is_file():
+        duration = probe_duration(path)
+        if duration < LONGFORM_MIN_SECONDS:
+            raise ValueError(
+                f"{path}: {duration:.3f}s is under the minimum long-form duration of "
+                f"{LONGFORM_MIN_SECONDS:.0f} seconds (1 minute minimum required)"
+            )

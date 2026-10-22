@@ -831,9 +831,9 @@ materialize_hyperframes_assets() {
     done
   fi
   validate_project_background_music "$project_root" "$PROJECT_ID" || return 1
-  # Reels/Shorts must stay under the 60s platform limit. Derive a capped
-  # narration for the reels composition so its aligned timeline is <=60s.
-  local reels_cap=59.5
+  # Reels/Shorts duration: support content-dependent duration up to 3 minutes (180s)
+  # with a 60s minimum rule. Do not artificially cap at 59.5s.
+  local reels_cap="${REELS_MAX_SECONDS:-180.0}"
   if awk -v d="$narration_duration" -v c="$reels_cap" 'BEGIN{exit !(d > c)}'; then
     "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" -c copy "$reels_narration" 2>/dev/null \
       || "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -t "$reels_cap" "$reels_narration"
@@ -948,8 +948,8 @@ fi
 # ===== CODEX AGENT STRICT QUALITY VALIDATION =====
 echo "[$(date -u +%FT%TZ)] Codex Agent Strict Quality Validation Started"
 
-# Step 1: Base render quality validation (existing)
-if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --reels-max-duration 60 --strict; then
+# Step 1: Base render quality validation (enforcing min 60s, allowing content duration up to 180s)
+if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --min-duration 60.0 --reels-max-duration 180.0 --strict; then
   VALIDATE_RENDER_EXIT=0
 else
   VALIDATE_RENDER_EXIT=$?
