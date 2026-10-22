@@ -4,7 +4,7 @@
 
 - **Repository**: `giauphan/OpenMontage`
 - **Baseline Git SHA**: `9ca95e8ef67628067cd50195f484332f56e24c8c`
-- **Candidate Commit SHA**: `469d095cb38e4129056231376e0d245f91e9f820`
+- **Candidate Commit SHA**: `1ad75877c1ce38fb911b078c17e9cb0e909a6e62`
 - **Execution Date**: 2026-10-22
 - **Platform**: Linux 5.15 (Ubuntu 22.04 LTS, aarch64)
 - **Python Version**: 3.10.12
