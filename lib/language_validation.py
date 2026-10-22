@@ -34,6 +34,33 @@ VIETNAM_CURRENCY_PATTERNS = [
     re.compile(r"\b\d+\s*(?:triệu|tỷ|nghìn|k|vnd|đ|dong|đồng)\b", re.IGNORECASE),
 ]
 
+UNIDIOMATIC_ENGLISH_PATTERNS = [
+    (re.compile(r"\bvery\s+much\s+(?:people|users|developers|engineers|customers|clients|persons)\b", re.IGNORECASE),
+     "Unidiomatic quantifier: 'very much {noun}' is unnatural English (use 'many {noun}' or 'a large number of {noun}')."),
+    (re.compile(r"\bmuch\s+(?:people|users|developers|engineers|customers|persons)\b", re.IGNORECASE),
+     "Grammar error: 'much' used with countable noun (use 'many')."),
+    (re.compile(r"\b(?:many|much|few)\s+informations?\b", re.IGNORECASE),
+     "Grammar error: 'information' is uncountable in English."),
+    (re.compile(r"\b(?:many|much)\s+advices?\b", re.IGNORECASE),
+     "Grammar error: 'advice' is uncountable in English."),
+    (re.compile(r"\b(?:big|large)\s+amount\s+of\s+(?:people|users|developers|persons)\b", re.IGNORECASE),
+     "Unidiomatic quantifier: 'amount of' with countable people (use 'number of people')."),
+    (re.compile(r"\bopen\s+the\s+(?:light|lamp|screen|computer)\b", re.IGNORECASE),
+     "Literal translation calque: 'open the' instead of 'turn on'."),
+    (re.compile(r"\bclose\s+the\s+(?:light|lamp|screen|computer)\b", re.IGNORECASE),
+     "Literal translation calque: 'close the' instead of 'turn off'."),
+    (re.compile(r"\bmake\s+a\s+question\b", re.IGNORECASE),
+     "Literal translation calque: 'make a question' instead of 'ask a question'."),
+    (re.compile(r"\bdiscuss\s+about\b", re.IGNORECASE),
+     "Unidiomatic preposition: 'discuss about' (use 'discuss')."),
+    (re.compile(r"\bwith\s+the\s+(?:fast\s+)?development\s+of\s+technology\b", re.IGNORECASE),
+     "Unidiomatic trope: 'with the development of technology' is non-native filler."),
+    (re.compile(r"\bas\s+we\s+all\s+know\b", re.IGNORECASE),
+     "Unidiomatic trope: 'as we all know' is non-native filler."),
+    (re.compile(r"\bit\s+is\s+worth\s+mentioning\s+that\b", re.IGNORECASE),
+     "Unidiomatic trope: 'it is worth mentioning that' is non-native filler."),
+]
+
 _WORD_PATTERN = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
@@ -127,6 +154,12 @@ class EnglishLanguageValidator(LanguageValidator):
         ascii_ratio = len(ascii_words) / len(words)
         if ascii_ratio < 0.90:
             errors.append(f"Text does not appear to be standard English prose (ASCII ratio {ascii_ratio:.0%})")
+
+        # 6. Check for unidiomatic machine-translated patterns, calques and non-native tropes
+        for pattern, msg in UNIDIOMATIC_ENGLISH_PATTERNS:
+            match = pattern.search(clean_text)
+            if match:
+                errors.append(f"Cultural localization rejection: {msg} Found: '{match.group(0)}'")
 
         return errors
 

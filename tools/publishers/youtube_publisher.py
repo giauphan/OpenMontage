@@ -241,16 +241,33 @@ class YoutubePublisher(BaseTool):
             privacy_status = "private"
         category_id = inputs.get("category_id", "28")
 
+        expected_channel_id = (
+            inputs.get("expected_channel_id")
+            or os.environ.get("EXPECTED_CHANNEL_ID")
+            or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
+        )
+        locale = (
+            inputs.get("locale")
+            or inputs.get("target_locale")
+            or os.environ.get("OPENMONTAGE_LOCALE")
+            or os.environ.get("TARGET_LOCALE")
+            or ""
+        )
+        is_us_upload = str(locale).lower() in ("en", "en-us", "us")
+
+        # Fail-closed Channel ID Safety Guard:
+        # For US-market uploads or when CHANNEL_GUARD_REQUIRED=1, an expected_channel_id MUST be explicitly provided.
+        if (is_us_upload or os.environ.get("CHANNEL_GUARD_REQUIRED") == "1") and not expected_channel_id:
+            return ToolResult(
+                success=False,
+                error="CHANNEL_GUARD_REQUIRED: Upload aborted because expected_channel_id is not specified for US upload. Refusing to publish to unverified channel.",
+            )
+
         try:
             from googleapiclient.http import MediaFileUpload
 
             youtube = self._get_authenticated_service(secret_file, token_file)
 
-            expected_channel_id = (
-                inputs.get("expected_channel_id")
-                or os.environ.get("EXPECTED_CHANNEL_ID")
-                or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
-            )
             if expected_channel_id:
                 ch_resp = youtube.channels().list(mine=True, part="id,snippet").execute()
                 items = ch_resp.get("items", [])
@@ -411,13 +428,18 @@ class YoutubePublisher(BaseTool):
             # Fallback for read-only reconciliation: Check public visibility via YouTube oEmbed API
             # This does not require OAuth scopes and definitively proves if a video is publicly accessible.
             try:
-                import urllib.request
+                import http.client
                 import json as _json
-                oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
-                req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=5) as resp:
+                import urllib.parse
+                # Strict validation of video_id prevents any SSRF or URL injection
+                if re.fullmatch(r"^[A-Za-z0-9_-]{11}$", video_id):
+                    conn = http.client.HTTPSConnection("www.youtube.com", timeout=5)
+                    encoded_param = urllib.parse.quote(f"https://www.youtube.com/watch?v={video_id}", safe="")
+                    conn.request("GET", f"/oembed?url={encoded_param}&format=json", headers={"User-Agent": "Mozilla/5.0"})
+                    resp = conn.getresponse()
                     if resp.status == 200:
                         data = _json.loads(resp.read().decode("utf-8"))
+                        conn.close()
                         return {
                             "status": "unverified_oembed",
                             "video_id": video_id,
@@ -425,6 +447,7 @@ class YoutubePublisher(BaseTool):
                             "author_name": data.get("author_name"),
                             "via_oembed": True,
                         }
+                    conn.close()
             except Exception:
                 pass
 

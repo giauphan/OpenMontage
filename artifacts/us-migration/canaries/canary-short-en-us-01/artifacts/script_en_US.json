@@ -1,48 +1,52 @@
 {
   "version": "1.0",
-  "locale": "en-US",
-  "title": "Claude 3.7 Sonnet Hybrid Reasoning Announced",
-  "scenes": [
+  "title": "Autonomous AI Video Generation at Scale",
+  "total_duration_seconds": 71.0,
+  "metadata": {
+    "locale": "en-US"
+  },
+  "sections": [
     {
-      "id": "scene_01",
-      "duration": 3.0,
-      "section": "hook",
-      "narration": "Ever wonder why AI models force you to choose between speed and deep reasoning?",
-      "visual_prompt": "Clean split screen contrasting fast inference versus chain-of-thought",
-      "claim_ids": [
-        "C001"
-      ]
+      "id": "scene-1",
+      "label": "Autonomous Pipeline",
+      "text": "OpenMontage activates native video generation in Docker for the US market. Modern content demands fast, reliable rendering with deterministic precision across every scene.",
+      "start_seconds": 0.0,
+      "end_seconds": 10.0
     },
     {
-      "id": "scene_02",
-      "duration": 3.0,
-      "section": "point",
-      "narration": "That trade-off just vanished with Anthropic's new Claude 3.7 Sonnet.",
-      "visual_prompt": "Anthropic Claude 3.7 announcement interface and architecture card",
-      "claim_ids": [
-        "C001"
-      ]
+      "id": "scene-2",
+      "label": "Deterministic Renders",
+      "text": "HyperFrames renders high-definition web animations straight into studio-quality video. Every visual beat, font glyph, and audio layer is validated frame by frame.",
+      "start_seconds": 10.0,
+      "end_seconds": 20.0
     },
     {
-      "id": "scene_03",
-      "duration": 3.0,
-      "section": "proof",
-      "narration": "With hybrid reasoning, you set the thinking budget: near-instant answers or extended reflection.",
-      "visual_prompt": "Slider control demonstrating adjustable thinking tokens",
-      "claim_ids": [
-        "C002"
-      ]
+      "id": "scene-3",
+      "label": "Synchronized Audio",
+      "text": "Speech-to-text models align spoken narration with on-screen subtitle cues in real time. Accurate timing ensures perfect comprehension and seamless mobile viewer engagement.",
+      "start_seconds": 20.0,
+      "end_seconds": 31.0
     },
     {
-      "id": "scene_04",
-      "duration": 3.0,
-      "section": "payoff",
-      "narration": "One unified model for both quick chats and hard technical coding. Follow for daily AI breakdowns.",
-      "visual_prompt": "Benchmark dashboard and summary payoff graphic",
-      "claim_ids": [
-        "C001",
-        "C002"
-      ]
+      "id": "scene-4",
+      "label": "Strict QA Gates",
+      "text": "Automated inspection gates test stream integrity, color contrast, and audio clarity. Black-frame detection and decode verification ensure broadcast-grade reliability.",
+      "start_seconds": 31.0,
+      "end_seconds": 41.5
+    },
+    {
+      "id": "scene-5",
+      "label": "Omnichannel Delivery",
+      "text": "From widescreen YouTube broadcasts to vertical Shorts and Reels, dual-format compositions adapt seamlessly. Creators reach audiences across every platform with zero manual re-editing.",
+      "start_seconds": 41.5,
+      "end_seconds": 52.0
+    },
+    {
+      "id": "scene-6",
+      "label": "Continuous Scalability",
+      "text": "Scalable containerized pipelines empower teams to produce authoritative video content autonomously. OpenMontage delivers stability, speed, and uncompromising quality.",
+      "start_seconds": 52.0,
+      "end_seconds": 71.0
     }
   ]
 }

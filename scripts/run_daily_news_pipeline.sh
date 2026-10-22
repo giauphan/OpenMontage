@@ -316,23 +316,45 @@ if [ -n "$REHEARSAL_MANIFEST" ]; then
   DIRECTOR_SYSTEM_NOTE=""
 else
   if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
-    PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director generation prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
-    DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_templated_system.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director system prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
+    if [ "$is_en" -eq 1 ]; then
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US templated director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_templated_system_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US templated director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    else
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_templated_system.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid templated director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    fi
   else
-    PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
-    DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
-      echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
-      exit 1
-    }
+    if [ "$is_en" -eq 1 ]; then
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system_en_US.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    else
+      PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director generation prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+      DIRECTOR_SYSTEM_NOTE="$(render_director_prompt "$PROMPT_DIR/director_system.prompt.md")" || {
+        echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid director system prompt" >> "$DIRECTORS_LOG"
+        exit 1
+      }
+    fi
   fi
 fi
 DIRECTOR_FULL_INDEX="$ROOT/projects/$PROJECT_ID/hyperframes/index.html"
@@ -633,6 +655,15 @@ set -e
 if [ "$DIRECTOR_EXIT" -eq 0 ]; then
   if [ ! -s "$PROJECT_DIR/artifacts/news_evidence.json" ]; then
     "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" || true
+  fi
+  if [ "$is_en" -eq 1 ]; then
+    echo "Validating en-US cultural localization and display language for $PROJECT_ID..."
+    if [ -f "$PROJECT_DIR/artifacts/script_en_US.json" ]; then
+      "$PY" "$ROOT/scripts/validate_display_language.py" --locale en-US "$PROJECT_DIR/artifacts/script_en_US.json" || {
+        echo "ERROR: en-US script failed cultural/language validation for $PROJECT_ID" >&2
+        return 1
+      }
+    fi
   fi
   NEWS_EVIDENCE_LOG="$(mktemp "$ROOT/logs/news_evidence_${PROJECT_ID}_XXXXXX.json")"
   if ! validate_project_news_evidence "$PROJECT_DIR" "$NEWS_EVIDENCE_LOG"; then

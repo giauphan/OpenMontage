@@ -1,48 +1,52 @@
 {
   "version": "1.0",
-  "locale": "en-US",
-  "title": "How Latent Diffusion Transformers Work: From Noise to High-Fidelity Video",
-  "scenes": [
+  "title": "Autonomous AI Video Generation at Scale",
+  "total_duration_seconds": 71.0,
+  "metadata": {
+    "locale": "en-US"
+  },
+  "sections": [
     {
-      "id": "scene_01",
-      "duration": 4.0,
-      "section": "hook",
-      "narration": "Modern generative video discarded convolutional U-Nets in favor of Diffusion Transformers.",
-      "visual_prompt": "16:9 diagram showing transition from 2020 U-Net architectures to modern DiT models",
-      "claim_ids": [
-        "C001"
-      ]
+      "id": "scene-1",
+      "label": "Autonomous Pipeline",
+      "text": "OpenMontage activates native video generation in Docker for the US market. Modern content demands fast, reliable rendering with deterministic precision across every scene.",
+      "start_seconds": 0.0,
+      "end_seconds": 10.0
     },
     {
-      "id": "scene_02",
-      "duration": 4.0,
-      "section": "point",
-      "narration": "Instead of downsampling feature maps, the model splits latent video representations into sequential patches.",
-      "visual_prompt": "Step-by-step visual of 3D latent grid patchification into token sequences",
-      "claim_ids": [
-        "C001"
-      ]
+      "id": "scene-2",
+      "label": "Deterministic Renders",
+      "text": "HyperFrames renders high-definition web animations straight into studio-quality video. Every visual beat, font glyph, and audio layer is validated frame by frame.",
+      "start_seconds": 10.0,
+      "end_seconds": 20.0
     },
     {
-      "id": "scene_03",
-      "duration": 4.0,
-      "section": "proof",
-      "narration": "Conditioning happens through adaptive layer norm zero, stabilizing training from the start.",
-      "visual_prompt": "Transformer block diagram detailing adaLN-Zero shift, scale, and gating",
-      "claim_ids": [
-        "C002"
-      ]
+      "id": "scene-3",
+      "label": "Synchronized Audio",
+      "text": "Speech-to-text models align spoken narration with on-screen subtitle cues in real time. Accurate timing ensures perfect comprehension and seamless mobile viewer engagement.",
+      "start_seconds": 20.0,
+      "end_seconds": 31.0
     },
     {
-      "id": "scene_04",
-      "duration": 4.0,
-      "section": "payoff",
-      "narration": "This architectural simplicity explains why modern video generators scale predictably with compute.",
-      "visual_prompt": "Scaling curves comparing FID versus Gflops across DiT model sizes",
-      "claim_ids": [
-        "C001",
-        "C002"
-      ]
+      "id": "scene-4",
+      "label": "Strict QA Gates",
+      "text": "Automated inspection gates test stream integrity, color contrast, and audio clarity. Black-frame detection and decode verification ensure broadcast-grade reliability.",
+      "start_seconds": 31.0,
+      "end_seconds": 41.5
+    },
+    {
+      "id": "scene-5",
+      "label": "Omnichannel Delivery",
+      "text": "From widescreen YouTube broadcasts to vertical Shorts and Reels, dual-format compositions adapt seamlessly. Creators reach audiences across every platform with zero manual re-editing.",
+      "start_seconds": 41.5,
+      "end_seconds": 52.0
+    },
+    {
+      "id": "scene-6",
+      "label": "Continuous Scalability",
+      "text": "Scalable containerized pipelines empower teams to produce authoritative video content autonomously. OpenMontage delivers stability, speed, and uncompromising quality.",
+      "start_seconds": 52.0,
+      "end_seconds": 71.0
     }
   ]
 }

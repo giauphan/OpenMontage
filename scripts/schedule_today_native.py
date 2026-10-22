@@ -51,8 +51,13 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         "format": payload_meta.get("format", "short"),
         "locale": payload_meta.get("locale", "vi-VN"),
     }
-    if "expected_channel_id" in payload_meta:
-        payload["expected_channel_id"] = payload_meta["expected_channel_id"]
+    expected_channel = (
+        payload_meta.get("expected_channel_id")
+        or os.environ.get("EXPECTED_CHANNEL_ID")
+        or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
+    )
+    if expected_channel:
+        payload["expected_channel_id"] = expected_channel
     if "contains_synthetic_media" in payload_meta:
         payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
     return payload
@@ -275,6 +280,8 @@ def main():
         ig_account = cfg.get("instagram", {}).get("account_id") or cfg.get("meta", {}).get("ig_account_id")
         scheduled_for = publish_at.isoformat()
 
+        is_dry_run = bool(getattr(args, "dry_run", False) or os.environ.get("SHADOW_ROLLOUT") == "1" or os.environ.get("DRY_RUN") == "1")
+
         # YT
         if not is_platform_enabled("youtube", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
             print(f"⏸️ HOLD/DISABLED: Skipping YouTube scheduling for {proj} (not enabled or held by pipeline flag/env)")
@@ -284,72 +291,75 @@ def main():
                 print(f"failed {proj}: missing YouTube asset file {asset_path}")
                 failed = True
                 continue
-            yt_key = None; yt_claimed = False
-            if yt_rel and (project_dir / yt_rel).is_file():
-                yt_key, yt_claimed,_ = store.claim(
-                    date=date,
-                    topic=topic_meta["id"],
-                    platform="youtube",
-                    account=yt_account,
-                    kind="short",
-                    status="scheduling",
-                    title=topic_meta["title"],
-                    asset_path=project_dir/yt_rel,
-                    scheduled_for=scheduled_for,
-                    content_hash=content_hash,
-                    template_id=template_id,
-                )
-            if yt_claimed:
-                if getattr(args, "dry_run", False) or os.environ.get("SHADOW_ROLLOUT") == "1" or os.environ.get("DRY_RUN") == "1":
-                    store.mark_scheduled(yt_key, video_id=f"dry_run_{proj}", video_url=f"https://youtu.be/dry_run_{proj}", scheduled_for=scheduled_for)
-                    print(f"SHADOW/DRY-RUN: Simulated YouTube schedule for {proj} at {scheduled_for}")
-                    continue
 
-                max_yt_attempts = 3
-                for yt_attempt in range(1, max_yt_attempts + 1):
-                    try:
-                        payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
-                        r = YoutubePublisher().execute(payload)
-                        if r.success:
-                            store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
-                            print(f"YT scheduled {proj} {scheduled_for}")
-                            break
-                        else:
-                            print(f"YT attempt {yt_attempt}/{max_yt_attempts} failed {proj}: {r.error}")
+            if is_dry_run:
+                print(f"SHADOW/DRY-RUN: Simulated YouTube schedule for {proj} at {scheduled_for} (no store mutations, no network upload)")
+                payload = build_youtube_payload(topic_meta, video_path=str(asset_path), publish_at=ytv_publish_at(publish_at))
+            else:
+                yt_key = None; yt_claimed = False
+                if yt_rel and (project_dir / yt_rel).is_file():
+                    yt_key, yt_claimed,_ = store.claim(
+                        date=date,
+                        topic=topic_meta["id"],
+                        platform="youtube",
+                        account=yt_account,
+                        kind="short",
+                        status="scheduling",
+                        title=topic_meta["title"],
+                        asset_path=project_dir/yt_rel,
+                        scheduled_for=scheduled_for,
+                        content_hash=content_hash,
+                        template_id=template_id,
+                    )
+                if yt_claimed:
+                    max_yt_attempts = 3
+                    for yt_attempt in range(1, max_yt_attempts + 1):
+                        try:
+                            payload = build_youtube_payload(topic_meta, video_path=str(project_dir/yt_rel), publish_at=ytv_publish_at(publish_at))
+                            r = YoutubePublisher().execute(payload)
+                            if r.success:
+                                store.mark_scheduled(yt_key, video_id=r.data.get("video_id"), video_url=r.data.get("video_url"), scheduled_for=scheduled_for)
+                                print(f"YT scheduled {proj} {scheduled_for}")
+                                break
+                            else:
+                                print(f"YT attempt {yt_attempt}/{max_yt_attempts} failed {proj}: {r.error}")
+                                if yt_attempt < max_yt_attempts:
+                                    time.sleep(5 * yt_attempt)
+                                else:
+                                    store.mark_failed(yt_key, r.error)
+                                    failed = True
+                        except Exception as e:
+                            print(f"YT attempt {yt_attempt}/{max_yt_attempts} error {proj}: {e}")
                             if yt_attempt < max_yt_attempts:
                                 time.sleep(5 * yt_attempt)
                             else:
-                                store.mark_failed(yt_key, r.error)
+                                store.mark_failed(yt_key, str(e))
                                 failed = True
-                    except Exception as e:
-                        print(f"YT attempt {yt_attempt}/{max_yt_attempts} error {proj}: {e}")
-                        if yt_attempt < max_yt_attempts:
-                            time.sleep(5 * yt_attempt)
-                        else:
-                            store.mark_failed(yt_key, str(e))
-                            failed = True
 
         # Schedule Instagram Reels
         if not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
             print(f"⏸️ HOLD/DISABLED: Skipping Instagram scheduling for {proj} (not enabled or held by pipeline flag/env)")
         elif ig_account and ig_rel and (project_dir / ig_rel).is_file():
-            ig_key, ig_claimed,_ = store.claim(
-                date=date,
-                topic=topic_meta["id"],
-                platform="instagram",
-                account=ig_account,
-                kind="reels",
-                status="scheduling",
-                title=topic_meta["title"],
-                asset_path=project_dir/ig_rel,
-                scheduled_for=scheduled_for,
-                content_hash=content_hash,
-                template_id=template_id,
-            )
-            if ig_claimed:
-                print(f"SCHEDULED: Instagram {date} {topic_meta['id']} {ig_key}")
+            if is_dry_run:
+                print(f"SHADOW/DRY-RUN: Simulated Instagram Reels schedule for {proj} at {scheduled_for} (no store mutations)")
             else:
-                print(f"SKIP: Instagram {date} {topic_meta['id']} (already claimed)")
+                ig_key, ig_claimed,_ = store.claim(
+                    date=date,
+                    topic=topic_meta["id"],
+                    platform="instagram",
+                    account=ig_account,
+                    kind="reels",
+                    status="scheduling",
+                    title=topic_meta["title"],
+                    asset_path=project_dir/ig_rel,
+                    scheduled_for=scheduled_for,
+                    content_hash=content_hash,
+                    template_id=template_id,
+                )
+                if ig_claimed:
+                    print(f"SCHEDULED: Instagram {date} {topic_meta['id']} {ig_key}")
+                else:
+                    print(f"SKIP: Instagram {date} {topic_meta['id']} (already claimed)")
         else:
             print(f"SKIP: Instagram {date} {topic_meta['id']} (missing asset or account)")
 

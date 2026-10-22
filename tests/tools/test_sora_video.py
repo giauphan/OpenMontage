@@ -33,7 +33,10 @@ def test_sora_video_loads_openai_key_from_repo_dotenv_when_process_env_is_empty(
     if env_path.exists():
         pytest.skip("Protect local .env contents; CI regression covers absent-.env checkout")
 
-    env_path.write_text("OPENAI_API_KEY=test-openai-key\n", encoding="utf-8")
+    try:
+        env_path.write_text("OPENAI_API_KEY=test-openai-key\n", encoding="utf-8")
+    except OSError:
+        pytest.skip("Read-only filesystem; cannot write repo .env")
     try:
         env = os.environ.copy()
         env.pop("OPENAI_API_KEY", None)

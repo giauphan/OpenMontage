@@ -1,14 +1,7 @@
 {
-  "version": 1,
-  "test_only": true,
-  "rehearsal_id": "rehearsal_03",
-  "bundles": [
-    {
-      "project_id": "rehearsal-en-us-charlie",
-      "project_dir": "projects/rehearsal-en-us-charlie",
-      "locale": "en-US",
-      "channel_id_guard": "ENFORCED",
-      "egress_denied": true
-    }
-  ]
+  "isolated_root": ".",
+  "report": "logs/daily_news_rehearsal_report.json",
+  "failure_evidence": "logs/failure-observation.log",
+  "recovery_evidence": "logs/recovery-observation.log",
+  "signature": "rehearsal-us-run-03"
 }

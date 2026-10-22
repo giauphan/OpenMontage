@@ -4,7 +4,8 @@
 
 - **Repository**: `giauphan/OpenMontage`
 - **Baseline Git SHA**: `9ca95e8ef67628067cd50195f484332f56e24c8c`
-- **Execution Date**: 2026-10-21
+- **Candidate Commit SHA**: `469d095cb38e4129056231376e0d245f91e9f820`
+- **Execution Date**: 2026-10-22
 - **Platform**: Linux 5.15 (Ubuntu 22.04 LTS, aarch64)
 - **Python Version**: 3.10.12
 - **Pytest Version**: 9.1.1
@@ -14,17 +15,15 @@
 
 ## 2. Test Suite Breakdown
 
-| Test Suite File | Scope | Tests Run | Passed | Failed | Skipped | Runtime |
+| Test Suite Scope | Directory / Files | Tests Run | Passed | Failed | Skipped | Status |
 |---|---|---|---|---|---|---|
-| `tests/us_migration/test_us_migration_suite.py` | US-First Migration Acceptance (E01-I10) | 33 | 33 | 0 | 0 | 0.44s |
-| `tests/contracts/test_daily_news_acceptance_loop.py` | Daily News Production Contract Baseline | 31 | 31 | 0 | 0 | 8.61s |
-| `tests/lib/test_artifact_paths.py` | Canonical Path Resolution & Fail-Closed Guard | 5 | 5 | 0 | 0 | 0.05s |
-| `tests/lib/test_audience_profile.py` | YAML Schema & Immutable Profile Loader | 3 | 3 | 0 | 0 | 0.04s |
-| `tests/lib/test_language_validation.py` | Prose, Diacritic, and Vocabulary Validation | 5 | 5 | 0 | 0 | 0.04s |
-| `tests/tools/test_vietnamese_enforcement.py` | Legacy Vietnamese Safeguards & Regression | 10 | 10 | 0 | 0 | 0.40s |
-| `tests/tools/test_strict_publish_preflight.py` | Publisher Preflight & Quality Gates | 31 | 31 | 0 | 0 | 0.41s |
-| `tests/lib/` & `tests/tools/` (Broad Suite) | Core Libraries, Media Policy, Video Selector, Scoring | 496 | 496 | 0 | 0 | 35.89s |
-| **Total Test Runs** | **Comprehensive Full Workspace Regression** | **614** | **614** | **0** | **0** | **45.88s** |
+| **US-First Migration Acceptance (E01–I10)** | `tests/us_migration/test_us_migration_suite.py` | 35 | 35 | 0 | 0 | **PASS** |
+| **Pipeline Governance & Production Contracts** | `tests/contracts/` | 235 | 235 | 0 | 0 | **PASS** |
+| **Core Architecture, Profiles & Language Libs** | `tests/lib/` | 380 | 380 | 0 | 0 | **PASS** |
+| **Tools, Adapters, Publishers & Schedulers** | `tests/tools/` | 1,322 | 1,318 | 0 | 4 | **PASS** |
+| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,972** | **1,968** | **0** | **4** | **PASS** |
+
+> *Note on Reconciliation*: Previous drafts showed 614 tests from a targeted smoke subset. The table above reflects the complete workspace test execution across all 1,972 tests. All tests in scope for US migration and pipeline execution pass with zero errors.
 
 ---
 

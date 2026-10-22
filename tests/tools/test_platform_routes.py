@@ -25,13 +25,23 @@ def test_youtube_short_route_uses_short_cut():
     assert render == CUT_RENDER
 
 
-def test_youtube_short_rejects_video_over_sixty_seconds(monkeypatch, tmp_path):
+def test_youtube_short_enforces_one_minute_min_and_three_minute_max(monkeypatch, tmp_path):
     video = tmp_path / "short.mp4"
     video.write_bytes(b"video")
-    monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 60.01)
 
-    with pytest.raises(ValueError, match="60 seconds"):
+    # Under 60 seconds rejected
+    monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 59.9)
+    with pytest.raises(ValueError, match="1 minute minimum"):
         ensure_youtube_short(video)
+
+    # Over 180 seconds rejected
+    monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 180.01)
+    with pytest.raises(ValueError, match="180 seconds"):
+        ensure_youtube_short(video)
+
+    # 120 seconds (2 min) accepted
+    monkeypatch.setattr("tools.publishers.platform_routes.probe_duration", lambda _: 120.0)
+    ensure_youtube_short(video)
 
 
 def test_youtube_short_accepts_sixty_second_video(monkeypatch, tmp_path):

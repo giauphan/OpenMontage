@@ -61,7 +61,12 @@ def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]
 
     project_id = candidate["candidate_id"]
     pipeline_dir = Path("projects") / project_id
-    init_project(project_id, title=research_brief["topic"], pipeline_type="animated-explainer")
+    init_project(
+        project_id,
+        title=research_brief["topic"],
+        pipeline_type="animated-explainer",
+        pipeline_dir=Path("projects"),
+    )
 
     brief_path = pipeline_dir / "artifacts" / "research_brief.json"
     brief_path.parent.mkdir(parents=True, exist_ok=True)

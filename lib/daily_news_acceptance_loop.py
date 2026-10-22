@@ -13,7 +13,12 @@ import subprocess
 import sys
 import tempfile
 import time
-import xml.etree.ElementTree as ET
+try:
+    import defusedxml
+    defusedxml.defuse_stdlib()
+    import defusedxml.etree.ElementTree as ET  # type: ignore[import-untyped]
+except ImportError:
+    import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -214,6 +219,10 @@ def verify_rehearsals(manifests: list[Path]) -> tuple[bool, list[dict[str, Any]]
             data = json.loads(manifest_bytes)
             raw_root = Path(data["isolated_root"])
             raw_report = Path(data["report"])
+            if not raw_root.is_absolute():
+                raw_root = mpath.parent / raw_root
+            if not raw_report.is_absolute():
+                raw_report = mpath.parent / raw_report
             if _has_symlink_component(raw_root) or _has_symlink_component(raw_report):
                 raise ValueError("isolated root and report paths must not traverse symlinks")
             root = raw_root.resolve(strict=True)

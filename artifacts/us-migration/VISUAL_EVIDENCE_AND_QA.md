@@ -12,9 +12,9 @@ This document provides complete visual provenance, media container analysis, fra
 - **Path**: `artifacts/us-migration/canaries/canary-short-en-us-01/renders/final_short_en_US_9x16.mp4`
 - **Format**: YouTube Short (9:16 Portrait)
 - **Dimensions**: `1080 x 1920`
-- **Duration**: `12.000s` (Audio match: `12.000s`, Delta: `0.000s`)
+- **Duration**: `71.000s` (Audio match: `71.064s`, Delta: `0.064s`)
 - **Video Codec**: `H.264 / AVC` (`High`, `yuv420p`, `30.00 fps`)
-- **Audio Codec**: `AAC-LC` (`44.1 kHz`, stereo, `192 kbps`)
+- **Audio Codec**: `AAC-LC` (`48.0 kHz`, stereo, `190 kbps`)
 - **Silence Check**: Mean volume `-20.0 dB` (PASS, threshold > `-50.0 dB`)
 - **Black Frame Ratio**: `0.0%` (PASS, threshold <= `30.0%`)
 - **Static Frame Ratio**: `0.0%` (PASS, threshold <= `95.0%`)
@@ -22,10 +22,10 @@ This document provides complete visual provenance, media container analysis, fra
 ### Frame Sample Gallery
 | Timestamp | Scene / Beat | Frame File | Verified Content |
 |---|---|---|---|
-| **00:00.00** | Scene 1 (Hook) | `renders/frame_samples/frame_00s_hook.png` | Bold header "CLAUDE 3.7 SONNET" with contrasting card container |
-| **00:03.00** | Scene 2 (Point) | `renders/frame_samples/frame_03s_point.png` | Primary source attribution card (`anthropic.com/news/claude-3-7-sonnet`) |
-| **00:07.00** | Scene 3 (Proof) | `renders/frame_samples/frame_07s_proof.png` | Thinking budget slider graphic ("Up to 128k tokens") |
-| **00:11.00** | Scene 4 (Payoff) | `renders/frame_samples/frame_11s_payoff.png` | Unified model summary card and channel follow callout |
+| **00:02.00** | Scene 1 (Hook) | `renders/frame_samples/frame_00s_hook.png` | Title card: "Autonomous AI Video Generation at Scale" |
+| **00:15.00** | Scene 2 (Point) | `renders/frame_samples/frame_03s_point.png` | HyperFrames high-definition web animation rendering architecture |
+| **00:35.00** | Scene 4 (Proof) | `renders/frame_samples/frame_07s_proof.png` | Automated inspection gates, black-frame detection & decode verification |
+| **00:55.00** | Scene 6 (Payoff) | `renders/frame_samples/frame_11s_payoff.png` | Scalable containerized pipelines summary and stability callout |
 
 ### Mobile Safe Area Audit
 - **Top Buffer**: 180px reserved for YouTube Shorts player overlays.
@@ -40,9 +40,9 @@ This document provides complete visual provenance, media container analysis, fra
 - **Path**: `artifacts/us-migration/canaries/canary-longform-en-us-02/renders/final_long_en_US_16x9.mp4`
 - **Format**: Standard YouTube Long-form (16:9 Landscape)
 - **Dimensions**: `1920 x 1080`
-- **Duration**: `16.000s` (Audio match: `16.000s`, Delta: `0.000s`)
+- **Duration**: `71.000s` (Audio match: `71.064s`, Delta: `0.064s`)
 - **Video Codec**: `H.264 / AVC` (`High`, `yuv420p`, `30.00 fps`)
-- **Audio Codec**: `AAC-LC` (`44.1 kHz`, stereo, `192 kbps`)
+- **Audio Codec**: `AAC-LC` (`48.0 kHz`, stereo, `190 kbps`)
 - **Silence Check**: Mean volume `-20.0 dB` (PASS)
 - **Black Frame Ratio**: `0.0%` (PASS)
 - **Static Frame Ratio**: `0.0%` (PASS)
@@ -50,10 +50,10 @@ This document provides complete visual provenance, media container analysis, fra
 ### Frame Sample Gallery
 | Timestamp | Scene / Beat | Frame File | Verified Content |
 |---|---|---|---|
-| **00:00.00** | Scene 1 (Hook) | `renders/frame_samples/frame_00s_hook.png` | Title banner "LATENT DIFFUSION TRANSFORMERS (DiT)" |
-| **00:04.00** | Scene 2 (Point) | `renders/frame_samples/frame_04s_point.png` | Section 1: Latent Patchification equations and sequence tokens |
-| **00:08.00** | Scene 3 (Proof) | `renders/frame_samples/frame_08s_proof.png` | Section 2: adaLN-Zero conditioning parameters and scale/shift |
-| **00:14.00** | Scene 4 (Payoff) | `renders/frame_samples/frame_14s_payoff.png` | Architectural scaling summary and compute trade-off insights |
+| **00:02.00** | Scene 1 (Hook) | `renders/frame_samples/frame_00s_hook.png` | Widescreen landscape title card and container pipeline overview |
+| **00:15.00** | Scene 2 (Point) | `renders/frame_samples/frame_04s_point.png` | HyperFrames studio-quality web render flow and deterministic layout |
+| **00:35.00** | Scene 4 (Proof) | `renders/frame_samples/frame_08s_proof.png` | Technical QA verification dashboard and format compliance telemetry |
+| **00:55.00** | Scene 6 (Payoff) | `renders/frame_samples/frame_14s_payoff.png` | Containerized delivery summary and scalable pipeline close |
 
 ---
 

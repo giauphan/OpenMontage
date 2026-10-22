@@ -41,6 +41,13 @@ required_skills:
   - meta/skill-creator
   - meta/animation-runtime-selector
   - meta/voice-performance-director
+  - meta/cultural-localization-en-us
+  - meta/audience-and-culture-us
+  - meta/claim-bound-visual-director
+  - meta/factcheck-and-claim-ledger
+  - meta/en-us-voice-and-captions
+  - meta/hook-and-script-storytelling
+  - meta/independent-qa-reviewer
 
 orchestration:
   mode: executive-producer

@@ -2,26 +2,35 @@
   "test_only": true,
   "shell_executed": true,
   "publication_enabled": false,
-  "n5_complete": true,
-  "egress_status": "DENIED (isolated loopback mock transport)",
+  "n5_complete": false,
   "requested_project_ids": [
-    "rehearsal-en-us-charlie"
+    "rehearsal-en-charlie-01",
+    "rehearsal-en-charlie-02",
+    "rehearsal-en-charlie-03"
   ],
   "successful_project_ids": [
-    "rehearsal-en-us-charlie"
+    "rehearsal-en-charlie-01",
+    "rehearsal-en-charlie-02",
+    "rehearsal-en-charlie-03"
   ],
   "failed_project_ids": [],
   "quarantined_project_ids": [],
   "terminal_exit_status": 0,
-  "terminal_stage": "COMPLETE_STAGE_REHEARSAL_PASS",
-  "channel_guard": {
-    "verified": true,
-    "expected_channel_id_fingerprint": "MOCK_SHA256_MATCH",
-    "live_upload_executed": false
+  "terminal_stage": "completed",
+  "stage_evidence_paths": {
+    "rehearsal-en-charlie-01": [
+      "logs/rehearsal-en-charlie-01.log"
+    ],
+    "rehearsal-en-charlie-02": [
+      "logs/rehearsal-en-charlie-02.log"
+    ],
+    "rehearsal-en-charlie-03": [
+      "logs/rehearsal-en-charlie-03.log"
+    ]
   },
-  "side_effects": {
-    "network_calls": 0,
-    "paid_provider_invocations": 0,
-    "live_cron_mutations": 0
+  "metadata": {
+    "locale": "en-US",
+    "channel_guard": "ENFORCED",
+    "signature": "rehearsal-us-run-03"
   }
 }

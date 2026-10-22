@@ -343,11 +343,11 @@ def main() -> int:
         default=None,
         help="ffmpeg binary used for decode-level audio/video content checks",
     )
-    parser.add_argument("--min-duration", type=float, default=5.0, help="Base minimum duration in seconds (default: 5.0s)")
+    parser.add_argument("--min-duration", type=float, default=None, help="Base minimum duration in seconds (default: 5.0s, or 60.0s for full render)")
     parser.add_argument(
         "--full-min-duration",
         type=float,
-        default=60.0,
+        default=None,
         help="Minimum duration in seconds for full render (default: 60.0s / 1 min)",
     )
     parser.add_argument(
@@ -391,8 +391,9 @@ def main() -> int:
     full_narration = resolve_narration(args.project_dir, "narration.mp3")
     reels_narration = resolve_narration(args.project_dir, "narration_reels.mp3", "narration.mp3")
 
-    full_min = args.full_min_duration if args.full_min_duration is not None else args.min_duration
-    reels_min = args.reels_min_duration if args.reels_min_duration is not None else args.min_duration
+    base_min = args.min_duration if args.min_duration is not None else 5.0
+    full_min = args.full_min_duration if args.full_min_duration is not None else (args.min_duration if args.min_duration is not None else 60.0)
+    reels_min = args.reels_min_duration if args.reels_min_duration is not None else base_min
 
     full_dims = (1920, 1080) if is_en else PORTRAIT_DIMENSIONS
     renders = (

@@ -101,9 +101,10 @@ def fetch_json(base_url: str, path: str) -> dict[str, Any] | list[Any]:
 
 def capture_url(url: str, output: Path, *, width: int = 1560, height: int = 1150, wait_ms: int = 1200) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
+    npx_bin = shutil.which("npx") or "npx"
     subprocess.run(
         [
-            "npx",
+            npx_bin,
             "playwright",
             "screenshot",
             "--viewport-size",
@@ -116,7 +117,6 @@ def capture_url(url: str, output: Path, *, width: int = 1560, height: int = 1150
         cwd=REPO_ROOT,
         check=True,
         timeout=120,
-        shell=(os.name == "nt"),
     )
 
 

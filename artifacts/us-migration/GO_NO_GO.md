@@ -5,14 +5,15 @@
 ### **P0–P8 IMPLEMENTATION: GO (100% COMPLETE & VERIFIED)**
 ### **P9 LIVE PRODUCTION DEPLOYMENT & UPLOAD: HARD STOP / HOLD**
 
-All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 skips, and 0 errors across 1,966 tests (1,470 contract & migration tests + 496 core tool/lib tests).
+All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 skips, and 0 errors across all test suites (including 35 acceptance tests in `test_us_migration_suite.py` and 1,475 workspace contract/unit tests).
 Additionally, live video rendering inside Docker on the remote server (`sandbox-video`) has been fully validated:
 - **Longform (16:9, 1920x1080)**: 71.0s duration (satisfies >= 60s minimum rule).
 - **Shorts/Reels (9:16, 1080x1920)**: 71.0s duration (verified in Docker under new policy: >= 60s min, up to 180s max for Shorts/Reels).
 - **Captions**: Positioned at the bottom safe zone (`bottom: 8%`) with 100% English ASR transcription.
 - **Codex Agent Strict QA**: 15/15 checks passed (Score 100).
+- **Three Rehearsals Contract**: Verified 3 independent runs with 3 disjoint projects each (9 unique projects total), terminal stage `completed`, `n5_complete=false`, and 24 stage evidence files on disk.
 
-In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATION_PROMPT.md` and `AGENTS.md`, **Phase P9 has NOT been executed**. No remote deployment to Phoenix production, no live YouTube upload (public or private), and no live cron mutations have taken place. Commit `d154fec` (duration policy: 60s min, 180s Shorts max, unlimited longform) is ready for owner review. 12 defects documented and resolved.
+In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATION_PROMPT.md` and `AGENTS.md`, **Phase P9 has NOT been executed**. No remote deployment to Phoenix production, no live YouTube upload (public or private), and no live cron mutations have taken place. Candidate commit `469d095` (remediating all PR #30 review findings across security, cultural pipeline, rehearsals, and canaries) is ready for owner review. 20 defects documented and resolved in `ROOTCAUSE_AND_FIX_LEDGER.md`.
 
 ---
 
@@ -23,12 +24,12 @@ In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATI
 | **P0** | **Audit & Hold** | **PASS** | `BASELINE_AND_CODE_MAP.md`, baseline commit `9ca95e8ef67628067cd50195f484332f56e24c8c` verified, snapshot saved |
 | **P1** | **Channel & Rebrand** | **PASS** | `CHANNEL_STUDIO_REBRAND_CHECKLIST.md` detailing Studio settings, Channel ID preservation, and manual unlisting protocol |
 | **P2** | **Profile & Paths** | **PASS** | Schema `audience_profile.schema.json`, profiles `en-US.yaml` and `vi-VN.yaml`, fail-closed `artifact_paths.py` |
-| **P3** | **Factcheck & Localize** | **PASS** | Schema `claim_ledger.schema.json`, 8 meta skills in `skills/meta/`, `lib/language_validation.py` |
-| **P4** | **Creative & Renders** | **PASS** | 16:9 Longform (`ensure_horizontal`) and 9:16 Shorts support in `platform_routes.py` and `validate_render_quality.py` |
-| **P5** | **Acceptance Suite** | **PASS** | 33 tests in `tests/us_migration/test_us_migration_suite.py` passing under `network=DENY` |
-| **P6** | **YouTube Publisher** | **PASS** | Channel ID guard (`channels.list(mine=True)`), format routing, and synthetic media disclosure flag |
-| **P7** | **Scheduler & DST** | **PASS** | `make_publish_datetime` America/New_York DST handling, `--dry-run` shadow simulation, concurrent claim locking |
-| **P8** | **Canaries & Rehearsals**| **PASS** | 2 validated canaries (Short + Longform), 3 isolated rehearsals (Alpha, Bravo, Charlie), all deliverables generated |
+| **P3** | **Factcheck & Localize** | **PASS** | Schema `claim_ledger.schema.json`, 8 meta skills in `skills/meta/`, unidiomatic calque validator in `lib/language_validation.py`, prompts wired in `run_daily_news_pipeline.sh` |
+| **P4** | **Creative & Renders** | **PASS** | 16:9 Longform (`ensure_horizontal`) and 9:16 Shorts support in `platform_routes.py` and `validate_render_quality.py` (min 60s, max 180s) |
+| **P5** | **Acceptance Suite** | **PASS** | 35 tests in `tests/us_migration/test_us_migration_suite.py` passing under `network=DENY` |
+| **P6** | **YouTube Publisher** | **PASS** | Fail-closed Channel ID guard (`channels.list(mine=True)`), format routing, and synthetic media disclosure flag |
+| **P7** | **Scheduler & DST** | **PASS** | `make_publish_datetime` America/New_York DST handling, zero-mutation `--dry-run` shadow simulation, concurrent claim locking |
+| **P8** | **Canaries & Rehearsals**| **PASS** | 2 validated 71.0s canaries (Short + Longform), 3 isolated rehearsals (3 projects/run, 9 disjoint total), all deliverables generated |
 | **P9** | **Live Production** | **HOLD** | **Awaiting Separate Explicit Owner Authorization (Mandatory Stop)** |
 
 ---
@@ -36,14 +37,16 @@ In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATI
 ## 3. Canary Verification Summary
 
 1. **Canary 1: 9:16 Portrait Short (`canary-short-en-us-01`)**
-   - Topic: *Claude 3.7 Sonnet Hybrid Reasoning Announcement*
+   - Topic: *Autonomous AI Video Generation at Scale*
    - Video File: `artifacts/us-migration/canaries/canary-short-en-us-01/renders/final_short_en_US_9x16.mp4`
-   - Hash: `75bd4e89121207b0bfbd8681ec0e246668ceafb8589e17621e3a0180ee797077`
+   - Duration: 71.000s (Audio match: 71.064s)
+   - Hash: `cb23b99369cc7e35b23638b2c9faf0c857d85efe6051556f93903b0adcf86e00`
    - Validation: `validate_render_quality.py` (Exit 0), `validate_publish_metadata.py` (Exit 0)
 2. **Canary 2: 16:9 Landscape Longform (`canary-longform-en-us-02`)**
-   - Topic: *How Latent Diffusion Transformers Work: From Noise to High-Fidelity Video*
+   - Topic: *Autonomous AI Video Generation at Scale*
    - Video File: `artifacts/us-migration/canaries/canary-longform-en-us-02/renders/final_long_en_US_16x9.mp4`
-   - Hash: `881d3a17a16cbc05df12324415e25ab494e55eb917c64cb73e4cb326800bbb42`
+   - Duration: 71.000s (Audio match: 71.064s)
+   - Hash: `904ade3188cc34e30a2bb08a5876d62817fb67c619e6e1b95e45c603a286d2eb`
    - Validation: `validate_render_quality.py` (Exit 0), `validate_publish_metadata.py` (Exit 0)
 
 ---

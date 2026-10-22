@@ -52,7 +52,7 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         payload_meta["id"] = payload_meta.get("project_id", "news_video")
     rel = compose_release_metadata(payload_meta)
     yt = rel.youtube_payload
-    return {
+    payload = {
         "video_path": str(video_path),
         "title": yt["title"],
         "description": yt["description"],
@@ -60,7 +60,19 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         "privacy_status": "private" if publish_at else "unlisted",
         "publish_at": publish_at,
         "category_id": "28",
+        "format": payload_meta.get("format", "short"),
+        "locale": payload_meta.get("locale", "vi-VN"),
     }
+    expected_channel = (
+        payload_meta.get("expected_channel_id")
+        or os.environ.get("EXPECTED_CHANNEL_ID")
+        or os.environ.get("YOUTUBE_EXPECTED_CHANNEL_ID")
+    )
+    if expected_channel:
+        payload["expected_channel_id"] = expected_channel
+    if "contains_synthetic_media" in payload_meta:
+        payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
+    return payload
 
 
 _CFG = load_config()
