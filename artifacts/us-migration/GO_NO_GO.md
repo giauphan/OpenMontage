@@ -1,6 +1,6 @@
 # Final GO / NO-GO Decision Dossier — OpenMontage US Migration
 **Date:** 2026-10-23  
-**Status:** HEAD Verified & Remediated (41/41 Acceptance Tests, Cryptographic HMAC QA Signed)  
+**Status:** HEAD Verified & Remediated (42/42 Acceptance Tests, Cryptographic Release Manifest HMAC QA Signed)  
 
 ---
 
@@ -9,14 +9,14 @@
 ### **P0–P8 IMPLEMENTATION: GO (100% COMPLETE & VERIFIED)**
 ### **P9 LIVE PRODUCTION DEPLOYMENT & UPLOAD: HARD STOP / HOLD**
 
-All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 errors, and passing CI across all test suites (including 41 acceptance tests in `test_us_migration_suite.py`, 27 publish preflight tests in `test_publish_manual_video.py`, and workspace contract/unit tests).
+All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 errors, and passing CI across all test suites (including 42 acceptance tests in `test_us_migration_suite.py`, 27 publish preflight tests in `test_publish_manual_video.py`, and workspace contract/unit tests).
 
 Additionally, production deliverables and canaries have been fully validated and committed to repository tracking:
 - **Longform (16:9, 1920x1080)**: 360.0s (6:00.0) duration, 8 structured chapters, verified against ICLR 2024 / ACM CSUR / DORA research, rendered with burned-in synchronized subtitles and zero ungrounded on-screen statistics.
-- **Shorts/Reels (9:16, 1080x1920)**: 72.0s duration, verified in Docker and `check_qa.py` under the 180s policy (min 60s, max 180s), with burned-in synchronized subtitles.
-- **Subtitles & Captions**: Positioned in bottom safe zones (`bottom: 8%` Shorts, `bottom: 14%` Longform) with 100% en-US text burned into video from canonical SRT files.
-- **Factcheck Grounding**: Zero synthetic placeholder numbers on screen or in narration. 100% of claims map to verified primary peer-reviewed literature (SWE-bench arXiv:2310.06770 Table 2, MetaGPT arXiv:2308.00352, ACM Computing Surveys DOI: 10.1145/568522.568525, Google Cloud DORA 2024).
-- **Cryptographic QA Signing**: All approval records signed with HMAC-SHA256 supervisor keys in `lib/qa_signing.py` and strictly verified during release preflight.
+- **Shorts/Reels (9:16, 1080x1920)**: 72.0s duration, verified in Docker and `check_qa.py` under the 180s platform policy (min 15s, max 180s), with burned-in synchronized subtitles.
+- **Subtitles & Captions**: Positioned in bottom safe zones (`bottom: 8%` Shorts, `bottom: 14%` Longform) with 100% en-US text burned into video from canonical SRT files. Parsed fail-closed requiring full cue integrity and monotonic timing.
+- **Factcheck Grounding**: Zero synthetic placeholder numbers on screen or in narration. 100% of claims map to verified primary peer-reviewed literature (SWE-bench arXiv:2310.06770 Table 2, MetaGPT arXiv:2308.00352, ACM Computing Surveys DOI: 10.1145/568522.568525, Google Cloud DORA 2024). Strict quantitative grounding ensures any numerical figure in the narration is verified against numerical values in the primary source excerpt.
+- **Cryptographic QA Signing**: All approval records signed with HMAC-SHA256 supervisor keys in `lib/qa_signing.py` bound to the full release manifest (composite media, claim ledger, metadata, captions, and script hashes) and strictly verified during release preflight.
 - **Pipeline Release Gates**: Wired `check_qa.py` and `independent_editorial_qa.py` into `scripts/run_daily_news_pipeline.sh` with automated candidate quarantine on failure.
 - **Tracked Deliverables**: Stored directly in `artifacts/us-migration/production_deliverables/` and whitelisted in `.gitignore` so they are fully accessible and auditable on GitHub.
 - **Independent QA**: `check_qa.py` format-aware single-format verification passed; Codex Agent strict QA 15/15 passed; independent QA supervisor passed (Score 40.0/40).
@@ -34,7 +34,7 @@ In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATI
 | **P2** | **Profile & Paths** | **PASS** | Schema `audience_profile.schema.json`, profiles `en-US.yaml` and `vi-VN.yaml`, fail-closed `artifact_paths.py` |
 | **P3** | **Factcheck & Localize** | **PASS** | Schema `claim_ledger.schema.json`, 8 meta skills in `skills/meta/`, unidiomatic calque validator in `lib/language_validation.py`, prompts wired in `run_daily_news_pipeline.sh` |
 | **P4** | **Creative & Renders** | **PASS** | 16:9 Longform (`ensure_horizontal`) and 9:16 Shorts support in `platform_routes.py` and `validate_render_quality.py` (min 60s, max 180s) |
-| **P5** | **Acceptance Suite** | **PASS** | 40 acceptance tests in `tests/us_migration/test_us_migration_suite.py` passing under `network=DENY` (including concurrency P05, dry-run P09, and format-aware QA I15) |
+| **P5** | **Acceptance Suite** | **PASS** | 42 acceptance tests in `tests/us_migration/test_us_migration_suite.py` passing under `network=DENY` (including concurrency P05, dry-run P09, format-aware QA I15, cryptographic signing I16, and negative QA matrix I17) |
 | **P6** | **YouTube Publisher** | **PASS** | Fail-closed Channel ID guard (`channels.list(mine=True)`), format routing, and synthetic media disclosure flag |
 | **P7** | **Scheduler & DST** | **PASS** | `make_publish_datetime` America/New_York DST handling, zero-mutation `--dry-run` shadow simulation, concurrent claim locking |
 | **P8** | **Canaries & Editorial QA** | **PASS** | 2 validated 71.0s docker canaries + 2 full-length US deliverables (`us_ai_short_01` 72.0s 9:16 + `us_ai_longform_02` 360.0s 16:9) tracked in repo under `artifacts/us-migration/production_deliverables/`, 3 isolated rehearsals (9 disjoint projects), and independent editorial QA pass (Score 40.0/40, `EDITORIAL_QA_REPORT.md`) |

@@ -17,11 +17,11 @@
 
 | Test Suite Scope | Directory / Files | Tests Run | Passed | Failed | Skipped | Status |
 |---|---|---|---|---|---|---|
-| **US-First Migration Acceptance (E01–I15)** | `tests/us_migration/test_us_migration_suite.py` | 40 | 40 | 0 | 0 | **PASS** |
+| **US-First Migration Acceptance (E01–I17)** | `tests/us_migration/test_us_migration_suite.py` | 42 | 42 | 0 | 0 | **PASS** |
 | **Pipeline Governance & Production Contracts** | `tests/contracts/` | 235 | 235 | 0 | 0 | **PASS** |
 | **Core Architecture, Profiles & Language Libs** | `tests/lib/` | 380 | 380 | 0 | 0 | **PASS** |
 | **Tools, Adapters, Publishers & Schedulers** | `tests/tools/` | 1,339 | 1,331 | 0 | 8 | **PASS** |
-| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,994** | **1,986** | **0** | **8** | **PASS** |
+| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,996** | **1,988** | **0** | **8** | **PASS** |
 
 > *Note on Reconciliation*: All 1,994 tests in the workspace have been executed. 1,986 passed, 8 skipped due to live provider secrets disabled in offline test harness, 0 failures. All tests in scope for US migration, format routing, and pipeline execution pass with zero errors.
 
@@ -82,7 +82,7 @@
   - `test_p09_dry_run_mode_provably_avoids_network_upload`: Zero network egress in dry-run (PASS)
   - `test_p11_stale_vi_schedule_item_quarantined_not_published_as_english`: Prevents legacy VI publication under EN (PASS)
 
-- **Integration and Operations (I01–I15)**:
+- **Integration and Operations (I01–I17)**:
   - `test_i01_legacy_vi_contracts_pass_without_regression`: 100% backwards compatibility for `vi-VN` (PASS)
   - `test_i03_three_isolated_rehearsals_satisfy_strict_acceptance_contract`: Validates 3 disjoint runs with 3 projects each and zero N5 mutation (PASS)
   - `test_i09_kill_switch_honored_in_profile`: Audience profile disable flag halts publishing (PASS)
@@ -91,6 +91,8 @@
   - `test_i13_us_publishing_config_and_dst`: Validates `publish_slots_us` in America/New_York with >=2h minimum spacing and DST transitions (PASS)
   - `test_i14_scheduler_format_routing_and_channel_guard`: Independent format keying (`kind="longform"` vs `kind="short"`), channel ID enforcement, and US hold (PASS)
   - `test_i15_check_qa_format_awareness_and_shorts_duration`: Independent format validation, 180s YouTube Shorts duration, and legacy dual-render preservation (PASS)
+  - `test_i16_cryptographic_supervisor_signing_and_pipeline_wiring`: Cryptographic supervisor signing prevents forged approval records and wires gates into daily pipeline (PASS)
+  - `test_i17_independent_editorial_qa_negative_matrix`: Rejects ungrounded claims, unapproved sources, tampered media, forged approvals, and malformed/non-monotonic subtitles (PASS)
 
 ---
 

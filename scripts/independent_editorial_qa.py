@@ -120,22 +120,19 @@ def audit_project(
             results["errors"].append(f"{cid}: Evidence excerpt is empty or insufficient: '{excerpt}'")
             results["passed"] = False
         else:
-            # Fact check: ensure script spans reference key entities or data from the evidence excerpt
+            # Fact check: ensure script spans reference key entities and data from the evidence excerpt
             spans = c.get("script_spans", [])
             for span in spans:
                 figures = re.findall(r'\b\d+(?:[\.,]\d+)?%?\b', span)
-                benchmark_terms = [
-                    w for w in re.findall(r'\b[A-Z][a-zA-Z0-9_-]+\b', span)
-                    if len(w) >= 3 and w not in ("The", "This", "And", "For", "With", "Our")
-                ]
-                # If the span asserts specific figures, at least one figure or key entity must be grounded in excerpt
+                # Stricter grounding: If quantitative figures are asserted, they MUST be directly substantiated by numbers in the excerpt. Matching a benchmark name alone is strictly rejected!
                 if figures:
-                    grounded = any(fig in excerpt for fig in figures) or any(term.lower() in excerpt.lower() for term in benchmark_terms)
-                    if not grounded:
-                        results["errors"].append(
-                            f"{cid}: Quantitative figure in script span '{span}' is not substantiated by evidence excerpt '{excerpt[:60]}...'"
-                        )
-                        results["passed"] = False
+                    for fig in figures:
+                        fig_clean = fig.rstrip('%')
+                        if fig not in excerpt and fig_clean not in excerpt:
+                            results["errors"].append(
+                                f"{cid}: Quantitative figure '{fig}' in script span '{span}' is NOT substantiated in evidence excerpt '{excerpt[:80]}...'"
+                            )
+                            results["passed"] = False
 
     # 3. Script & Narration Span Audit
     script_path = project_dir / "artifacts/script_en_US.json"
@@ -185,29 +182,38 @@ def audit_project(
         srt_content = srt_file.read_text(encoding="utf-8")
         cue_count = srt_content.count("-->")
         if cue_count < 3:
-            results["errors"].append(f"Subtitles insufficient cues: {cue_count}")
+            results["errors"].append(f"Subtitles insufficient cues: {cue_count} (minimum 3 required)")
             results["passed"] = False
         else:
-            # Parse timing cues to ensure monotonic validity:
+            # Parse timing cues to ensure monotonic validity and fail-closed integrity
             cue_pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})')
             matches = cue_pattern.findall(srt_content)
-            prev_start_sec = -1.0
-            timeline_valid = True
-            for start_str, end_str in matches:
+            if len(matches) < 3:
+                results["errors"].append(f"Subtitles valid parsed cues ({len(matches)}) less than minimum 3")
+                results["passed"] = False
+            elif len(matches) != cue_count:
+                results["errors"].append(
+                    f"Malformed SRT file: found {cue_count} '-->' markers but only {len(matches)} valid timestamps parsed"
+                )
+                results["passed"] = False
+            else:
                 def to_sec(ts: str) -> float:
                     ts = ts.replace(',', '.')
                     parts = ts.split(':')
                     return float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
-                s_sec = to_sec(start_str)
-                e_sec = to_sec(end_str)
-                if s_sec >= e_sec or s_sec < prev_start_sec:
-                    timeline_valid = False
-                    results["errors"].append(f"Invalid subtitle cue timestamp order: {start_str} --> {end_str}")
-                    results["passed"] = False
-                    break
-                prev_start_sec = s_sec
-            if timeline_valid:
-                results["checks"]["subtitles"] = f"{len(matches)} monotonic cues verified"
+                prev_start_sec = -1.0
+                timeline_valid = True
+                for start_str, end_str in matches:
+                    s_sec = to_sec(start_str)
+                    e_sec = to_sec(end_str)
+                    if s_sec >= e_sec or s_sec < prev_start_sec:
+                        timeline_valid = False
+                        results["errors"].append(f"Invalid subtitle cue timestamp order: {start_str} --> {end_str}")
+                        results["passed"] = False
+                        break
+                    prev_start_sec = s_sec
+                if timeline_valid:
+                    results["checks"]["subtitles"] = f"{len(matches)} valid monotonic cues parsed and verified"
 
     # 5. Media & Technical Video Audit
     render_candidates = [
@@ -284,11 +290,11 @@ def audit_project(
                 results["errors"].append(f"Duration mismatch: {v_dur:.2f}s != {expected_duration:.2f}s (tolerance ±{tol:.1f}s)")
                 results["passed"] = False
         else:
-            # Platform bounds: Short must be 15-90s, longform must be >= 60s
+            # Platform bounds: Short must be 15-180s, longform must be >= 60s
             if expected_format == "short":
-                dur_ok = (15.0 <= v_dur <= 90.0)
+                dur_ok = (15.0 <= v_dur <= 180.0)
                 if not dur_ok:
-                    results["errors"].append(f"Short duration out of platform bounds: {v_dur:.2f}s (expected 15-90s)")
+                    results["errors"].append(f"Short duration out of platform bounds: {v_dur:.2f}s (expected 15-180s)")
                     results["passed"] = False
             else:
                 dur_ok = (v_dur >= 60.0)
@@ -320,20 +326,27 @@ def audit_project(
     else:
         results["checks"]["frame_samples"] = f"{len(frames)} samples verified"
 
-    # Compute video and claim sha256
+    # Compute video, claim, and release artifact sha256 digests
     video_sha = compute_sha256(render_file)
     claim_sha = compute_sha256(claim_path)
+    meta_sha = compute_sha256(meta_file) if meta_file.is_file() else ""
+    srt_sha = compute_sha256(srt_file) if srt_file and srt_file.is_file() else ""
+    script_sha = compute_sha256(script_path) if script_path and script_path.is_file() else ""
     results["media_sha256"] = video_sha
 
     if results["passed"]:
-        # 6. Cryptographic Supervisor Signature
+        # 6. Cryptographic Supervisor Signature bound to full release manifest
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         approval_data = sign_approval_record(
             project_id=project_dir.name,
             media_sha256=video_sha,
             claim_ledger_sha256=claim_sha,
             timestamp_iso=now_iso,
-            reviewer="independent_qa_supervisor"
+            reviewer="independent_qa_supervisor",
+            metadata_sha256=meta_sha,
+            captions_sha256=srt_sha,
+            script_sha256=script_sha,
+            format_type=expected_format,
         )
         try:
             (project_dir / "approval.json").write_text(json.dumps(approval_data, indent=2), encoding="utf-8")

@@ -416,6 +416,7 @@ class TestPublisherSchedulerSecurityP01_P12:
 
     def test_p09_dry_run_mode_provably_avoids_network_upload(self, tmp_path: Path, monkeypatch, capsys):
         """P09: Dry-run / shadow mode performs checks but causes zero store mutations and zero network uploads."""
+        monkeypatch.setenv("QA_SUPERVISOR_SECRET", "test-p09-deterministic-qa-secret")
         from scripts.schedule_today_native import main
         from tests.fixtures.news_evidence import write_reviewed_news_evidence
 
@@ -815,7 +816,7 @@ class TestIntegrationAndOperationsI01_I10:
                         "published_at": "2023-10-10",
                         "retrieved_at": "2026-10-23T06:00:00Z"
                     },
-                    "evidence_excerpt": "Claude 2 resolved 4.8% of instances across 2,294 issues in the benchmark.",
+                    "evidence_excerpt": "Claude 2 resolved 4.8% of instances across 2,294 issues in the SWE-bench benchmark.",
                     "verdict": "APPROVED",
                     "script_spans": ["SWE-bench solved 4.8%"]
                 }
@@ -862,16 +863,26 @@ class TestIntegrationAndOperationsI01_I10:
             assert res_bad_dom["passed"] is False
             assert any("does not resolve to an approved domain" in e for e in res_bad_dom["errors"])
 
-            # D. Negative: Quantitative claim not grounded in evidence excerpt fails
+            # D. Negative: Quantitative claim not grounded in evidence excerpt fails even if benchmark name matches
             bad_grounding_data = copy.deepcopy(valid_claim_data)
-            bad_grounding_data["claims"][0]["script_spans"] = ["Frontier models solved 99.9%"]
-            bad_grounding_data["claims"][0]["evidence_excerpt"] = "Baseline models failed on most engineering tasks."
+            bad_grounding_data["claims"][0]["script_spans"] = ["Frontier models on SWE-bench solved 4.8% of tasks."]
+            # Now change the span to assert 99.9% while excerpt still contains SWE-bench and 4.8%
+            (art_dir / "script_en_US.json").write_text(json.dumps({
+                "scenes": [{"text": "Frontier models on SWE-bench solved 99.9% of software tasks."}]
+            }), encoding="utf-8")
+            (art_dir / "narration_en_US_text.txt").write_text("Frontier models on SWE-bench solved 99.9% of software tasks.", encoding="utf-8")
+            bad_grounding_data["claims"][0]["script_spans"] = ["SWE-bench solved 99.9%"]
+            bad_grounding_data["claims"][0]["evidence_excerpt"] = "Claude 2 resolved 4.8% across SWE-bench issues."
             (art_dir / "claim_ledger.json").write_text(json.dumps(bad_grounding_data), encoding="utf-8")
             res_bad_ground = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
             assert res_bad_ground["passed"] is False
-            assert any("Quantitative figure in script span" in e or "Script span missing" in e for e in res_bad_ground["errors"])
+            assert any("is NOT substantiated" in e for e in res_bad_ground["errors"])
 
-            # Restore valid claim ledger
+            # Restore valid script and claim ledger
+            (art_dir / "script_en_US.json").write_text(json.dumps({
+                "scenes": [{"text": "Frontier models on SWE-bench solved 4.8% of software engineering tasks."}]
+            }), encoding="utf-8")
+            (art_dir / "narration_en_US_text.txt").write_text("Frontier models on SWE-bench solved 4.8% of software engineering tasks.", encoding="utf-8")
             (art_dir / "claim_ledger.json").write_text(json.dumps(valid_claim_data), encoding="utf-8")
 
             # E. Negative: Inverted/non-monotonic subtitle cues fail
@@ -884,6 +895,15 @@ class TestIntegrationAndOperationsI01_I10:
             res_bad_srt = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
             assert res_bad_srt["passed"] is False
             assert any("Invalid subtitle cue timestamp order" in e for e in res_bad_srt["errors"])
+
+            # F. Negative: SRT with markers but unparseable timestamps fails (fail-closed)
+            (art_dir / "captions_en_US.srt").write_text(
+                "1\n--> unparseable\n2\n--> unparseable\n3\n--> unparseable\n",
+                encoding="utf-8"
+            )
+            res_bad_srt_parse = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
+            assert res_bad_srt_parse["passed"] is False
+            assert any("Malformed SRT" in e or "less than minimum" in e for e in res_bad_srt_parse["errors"])
 
 
 

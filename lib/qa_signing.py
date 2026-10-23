@@ -64,10 +64,36 @@ def get_supervisor_secret() -> bytes:
     return random_secret
 
 
-def compute_signature(project_id: str, media_sha256: str, claim_ledger_sha256: str, timestamp_iso: str, reviewer: str) -> str:
-    """Compute HMAC-SHA256 signature over critical verification attributes."""
+def compute_manifest_sha256(
+    project_id: str,
+    media_sha256: str,
+    claim_ledger_sha256: str,
+    metadata_sha256: str = "",
+    captions_sha256: str = "",
+    script_sha256: str = "",
+) -> str:
+    """Compute SHA-256 digest over the complete release manifest envelope."""
+    manifest_str = (
+        f"project:{project_id}|media:{media_sha256}|ledger:{claim_ledger_sha256}|"
+        f"meta:{metadata_sha256}|captions:{captions_sha256}|script:{script_sha256}"
+    )
+    return hashlib.sha256(manifest_str.encode("utf-8")).hexdigest()
+
+
+def compute_signature(
+    project_id: str,
+    media_sha256: str,
+    claim_ledger_sha256: str,
+    timestamp_iso: str,
+    reviewer: str,
+    manifest_sha256: str = ""
+) -> str:
+    """Compute HMAC-SHA256 signature over critical verification attributes or full manifest."""
     secret = get_supervisor_secret()
-    payload = f"{project_id}:{media_sha256}:{claim_ledger_sha256}:{timestamp_iso}:{reviewer}".encode("utf-8")
+    if manifest_sha256:
+        payload = f"{project_id}:manifest:{manifest_sha256}:{timestamp_iso}:{reviewer}".encode("utf-8")
+    else:
+        payload = f"{project_id}:{media_sha256}:{claim_ledger_sha256}:{timestamp_iso}:{reviewer}".encode("utf-8")
     return hmac.new(secret, payload, hashlib.sha256).hexdigest()
 
 
@@ -76,18 +102,51 @@ def sign_approval_record(
     media_sha256: str,
     claim_ledger_sha256: str,
     timestamp_iso: str,
-    reviewer: str = "independent_qa_supervisor"
+    reviewer: str = "independent_qa_supervisor",
+    metadata_sha256: str = "",
+    captions_sha256: str = "",
+    script_sha256: str = "",
+    format_type: str = "short",
 ) -> dict:
-    """Generate a cryptographically signed approval record."""
-    sig = compute_signature(project_id, media_sha256, claim_ledger_sha256, timestamp_iso, reviewer)
+    """Generate a cryptographically signed approval record bound to release manifest."""
+    manifest_sha = compute_manifest_sha256(
+        project_id=project_id,
+        media_sha256=media_sha256,
+        claim_ledger_sha256=claim_ledger_sha256,
+        metadata_sha256=metadata_sha256,
+        captions_sha256=captions_sha256,
+        script_sha256=script_sha256,
+    )
+    sig = compute_signature(
+        project_id=project_id,
+        media_sha256=media_sha256,
+        claim_ledger_sha256=claim_ledger_sha256,
+        timestamp_iso=timestamp_iso,
+        reviewer=reviewer,
+        manifest_sha256=manifest_sha,
+    )
     return {
         "approved": True,
         "status": "approved",
         "approved_by": reviewer,
         "reviewer_id": "qa-supervisor-us-migration",
+        "project_id": project_id,
+        "manifest_sha256": manifest_sha,
+        "release_manifest": {
+            "project_id": project_id,
+            "format": format_type,
+            "media_sha256": media_sha256,
+            "claim_ledger_sha256": claim_ledger_sha256,
+            "metadata_sha256": metadata_sha256,
+            "captions_sha256": captions_sha256,
+            "script_sha256": script_sha256,
+        },
         "approved_media_sha256": media_sha256,
         "media_sha256": media_sha256,
         "claim_ledger_sha256": claim_ledger_sha256,
+        "metadata_sha256": metadata_sha256,
+        "captions_sha256": captions_sha256,
+        "script_sha256": script_sha256,
         "signature": sig,
         "signature_algorithm": "HMAC-SHA256",
         "approved_media_hashes": [media_sha256],
@@ -114,9 +173,28 @@ def verify_approval_record(approval_data: dict, project_id: str) -> tuple[bool, 
     claim_sha = approval_data.get("claim_ledger_sha256", "")
     timestamp = approval_data.get("timestamp", "")
     reviewer = approval_data.get("approved_by", "")
-    
-    expected_sig = compute_signature(project_id, media_sha, claim_sha, timestamp, reviewer)
-    if not hmac.compare_digest(sig, expected_sig):
-        return False, "Cryptographic signature mismatch — approval record forged or tampered"
+    manifest_sha = approval_data.get("manifest_sha256", "")
+
+    # 1. Verify manifest signature if manifest present
+    if manifest_sha:
+        expected_sig = compute_signature(project_id, media_sha, claim_sha, timestamp, reviewer, manifest_sha256=manifest_sha)
+        if hmac.compare_digest(sig, expected_sig):
+            # Verify manifest integrity against individual hashes
+            calc_manifest = compute_manifest_sha256(
+                project_id=project_id,
+                media_sha256=media_sha,
+                claim_ledger_sha256=claim_sha,
+                metadata_sha256=approval_data.get("metadata_sha256", ""),
+                captions_sha256=approval_data.get("captions_sha256", ""),
+                script_sha256=approval_data.get("script_sha256", ""),
+            )
+            if calc_manifest != manifest_sha:
+                return False, f"Release manifest hash mismatch ({calc_manifest[:16]} != {manifest_sha[:16]})"
+            return True, "Valid supervisor signature (release manifest)"
+
+    # 2. Fallback to legacy signature for backward compatibility
+    expected_legacy_sig = compute_signature(project_id, media_sha, claim_sha, timestamp, reviewer)
+    if hmac.compare_digest(sig, expected_legacy_sig):
+        return True, "Valid supervisor signature"
         
-    return True, "Valid supervisor signature"
+    return False, "Cryptographic signature mismatch — approval record forged or tampered"
