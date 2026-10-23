@@ -1180,28 +1180,6 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
   continue
 fi
 
-if [ "$is_en" -eq 1 ]; then
-  if [ ! -f "$PROJECT_DIR/artifacts/claim_ledger.json" ]; then
-    echo "[$(date -u +%FT%TZ)] 🔴 Mandatory claim_ledger.json missing for US English project $PROJECT_ID" >&2
-    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "independent_qa" --project-id "$PROJECT_ID" \
-      --error-type "MISSING_CLAIM_LEDGER" --message "Mandatory claim_ledger.json missing for US project" || true
-    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
-      "Mandatory claim_ledger.json missing for US project" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
-    continue
-  fi
-
-  echo "[$(date -u +%FT%TZ)] Running Independent Editorial QA Supervisor for $PROJECT_ID..."
-  if ! "$PY" "$ROOT/scripts/independent_editorial_qa.py" "$PROJECT_DIR"; then
-    echo "[$(date -u +%FT%TZ)] 🔴 Independent Editorial QA FAILED for $PROJECT_ID" >&2
-    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "independent_qa" --project-id "$PROJECT_ID" \
-      --error-type "INDEPENDENT_QA_FAILED" --message "Independent Editorial QA failed" || true
-    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
-      "Independent editorial QA failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
-    continue
-  fi
-  echo "[$(date -u +%FT%TZ)] 🟢 Independent Editorial QA PASSED for $PROJECT_ID"
-fi
-
 if [ "$FEED_STALE" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] NOTICE: Render completed using STALE feed data."
 fi
@@ -1305,6 +1283,29 @@ jq -n \
     format: $format,
     feed_stale: $feed_stale
   } + (if ($template_prov|length) > 0 then $template_prov else {} end)' > publish_metadata.json
+
+# Step 4.1: Independent Editorial QA Supervisor for US English projects
+if [ "$is_en" -eq 1 ]; then
+  if [ ! -f "$PROJECT_DIR/artifacts/claim_ledger.json" ]; then
+    echo "[$(date -u +%FT%TZ)] 🔴 Mandatory claim_ledger.json missing for US English project $PROJECT_ID" >&2
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "independent_qa" --project-id "$PROJECT_ID" \
+      --error-type "MISSING_CLAIM_LEDGER" --message "Mandatory claim_ledger.json missing for US project" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "Mandatory claim_ledger.json missing for US project" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
+  fi
+
+  echo "[$(date -u +%FT%TZ)] Running Independent Editorial QA Supervisor for $PROJECT_ID..."
+  if ! "$PY" "$ROOT/scripts/independent_editorial_qa.py" "$PROJECT_DIR"; then
+    echo "[$(date -u +%FT%TZ)] 🔴 Independent Editorial QA FAILED for $PROJECT_ID" >&2
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "independent_qa" --project-id "$PROJECT_ID" \
+      --error-type "INDEPENDENT_QA_FAILED" --message "Independent Editorial QA failed" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "Independent editorial QA failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
+  fi
+  echo "[$(date -u +%FT%TZ)] 🟢 Independent Editorial QA PASSED for $PROJECT_ID"
+fi
 
 # Step 4.5: Run copyright preflight (if files exist)
 if [ -f "$FULL_RENDER_PATH" ]; then

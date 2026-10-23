@@ -17,13 +17,13 @@
 
 | Test Suite Scope | Directory / Files | Tests Run | Passed | Failed | Skipped | Status |
 |---|---|---|---|---|---|---|
-| **US-First Migration Acceptance (E01–I17)** | `tests/us_migration/test_us_migration_suite.py` | 42 | 42 | 0 | 0 | **PASS** |
+| **US-First Migration Acceptance (E01–I18)** | `tests/us_migration/test_us_migration_suite.py` | 43 | 43 | 0 | 0 | **PASS** |
 | **Pipeline Governance & Production Contracts** | `tests/contracts/` | 235 | 235 | 0 | 0 | **PASS** |
 | **Core Architecture, Profiles & Language Libs** | `tests/lib/` | 380 | 380 | 0 | 0 | **PASS** |
 | **Tools, Adapters, Publishers & Schedulers** | `tests/tools/` | 1,339 | 1,331 | 0 | 8 | **PASS** |
-| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,996** | **1,988** | **0** | **8** | **PASS** |
+| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,997** | **1,989** | **0** | **8** | **PASS** |
 
-> *Note on Reconciliation*: All 1,994 tests in the workspace have been executed. 1,986 passed, 8 skipped due to live provider secrets disabled in offline test harness, 0 failures. All tests in scope for US migration, format routing, and pipeline execution pass with zero errors.
+> *Note on Reconciliation*: All tests in scope for US migration, format routing, and pipeline execution pass with zero errors. CI run 39953045305 and SonarQube run 39953045306 (2,456 passed, 12 skipped, 0 failures) confirmed green on GitHub Actions.
 
 ---
 
@@ -93,6 +93,7 @@
   - `test_i15_check_qa_format_awareness_and_shorts_duration`: Independent format validation, 180s YouTube Shorts duration, and legacy dual-render preservation (PASS)
   - `test_i16_cryptographic_supervisor_signing_and_pipeline_wiring`: Cryptographic supervisor signing prevents forged approval records and wires gates into daily pipeline (PASS)
   - `test_i17_independent_editorial_qa_negative_matrix`: Rejects ungrounded claims, unapproved sources, tampered media, forged approvals, and malformed/non-monotonic subtitles (PASS)
+  - `test_i18_us_ai_director_e2e_pipeline_and_manifest_enforcement`: AI Director 8-stage pipeline executes end-to-end, validating primary snapshots, verbatim excerpts, and strictly enforcing manifest on-disk integrity against file tampering (PASS)
 
 ---
 

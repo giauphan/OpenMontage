@@ -465,6 +465,9 @@ class TestPublisherSchedulerSecurityP01_P12:
         ]))
 
         from lib.qa_signing import sign_approval_record
+        art_dir = cand_dir / "artifacts"
+        art_dir.mkdir(parents=True, exist_ok=True)
+        (art_dir / "claim_ledger.json").write_bytes(b"claims")
         vid_sha = hashlib.sha256(b"dummy mp4 video bytes").hexdigest()
         cand_approval = sign_approval_record(
             project_id="us_news_cand",
@@ -904,6 +907,178 @@ class TestIntegrationAndOperationsI01_I10:
             res_bad_srt_parse = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
             assert res_bad_srt_parse["passed"] is False
             assert any("Malformed SRT" in e or "less than minimum" in e for e in res_bad_srt_parse["errors"])
+
+    def test_i18_us_ai_director_e2e_pipeline_and_manifest_enforcement(self, tmp_path: Path, monkeypatch):
+        """I18: AI Director 8-stage pipeline executes end-to-end and strictly enforces manifest on-disk integrity and primary source validity."""
+        monkeypatch.setenv("QA_SUPERVISOR_SECRET", "test-secret-i18-e2e-supervisor")
+        from scripts.run_us_ai_director_pipeline import run_us_ai_director_pipeline, StageExecutionError
+        from lib.qa_signing import verify_approval_record
+        from scripts.independent_editorial_qa import audit_project
+
+        proj_dir = tmp_path / "mock_e2e_short"
+        art_dir = proj_dir / "artifacts"
+        snap_dir = art_dir / "source_snapshots"
+        rnd_dir = proj_dir / "renders"
+        frame_dir = rnd_dir / "frame_samples"
+        for d in (art_dir, snap_dir, rnd_dir, frame_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+        for i in range(4):
+            (frame_dir / f"frame_{i:03d}.png").write_bytes(b"dummy frame")
+
+        # Snapshot file
+        snap_content = (
+            "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?\n"
+            "Key Empirical Findings: Across 2,294 GitHub issues, Claude 2 resolved 4.8% of instances.\n"
+        )
+        snap_file = snap_dir / "arxiv_2310_06770.txt"
+        snap_file.write_text(snap_content, encoding="utf-8")
+        snap_sha = hashlib.sha256(snap_content.encode("utf-8")).hexdigest()
+
+        # Script
+        script_data = {
+            "version": "1.0",
+            "title": "SWE-bench Benchmark Analysis",
+            "scenes": [
+                {"id": "s1", "text": "Frontier models on SWE-bench solved 4.8% across 2,294 real-world software tasks."},
+                {"id": "s2", "text": "This demonstrates the empirical need for strict tool sandboxing in production."},
+                {"id": "s3", "text": "Independent verification gates guarantee measurable reliability."}
+            ]
+        }
+        (art_dir / "script_en_US.json").write_text(json.dumps(script_data), encoding="utf-8")
+        (art_dir / "narration_en_US_text.txt").write_text(
+            "Frontier models on SWE-bench solved 4.8% across 2,294 real-world software tasks. "
+            "This demonstrates the empirical need for strict tool sandboxing in production. "
+            "Independent verification gates guarantee measurable reliability.",
+            encoding="utf-8"
+        )
+
+        # Captions
+        captions_srt = (
+            "1\n00:00:01,000 --> 00:00:04,000\nFrontier models on SWE-bench solved 4.8%.\n\n"
+            "2\n00:00:04,500 --> 00:00:08,000\nAcross 2,294 real-world software tasks.\n\n"
+            "3\n00:00:08,500 --> 00:00:12,000\nIndependent verification gates guarantee reliability.\n"
+        )
+        (art_dir / "captions_en_US.srt").write_text(captions_srt, encoding="utf-8")
+
+        # Claim ledger
+        claim_data = {
+            "schema_version": "1.0.0",
+            "project_id": "mock_e2e_short",
+            "locale": "en-US",
+            "created_at": "2026-10-23T06:00:00Z",
+            "claims": [
+                {
+                    "claim_id": "C001",
+                    "statement": "Claude 2 solved 4.8% across 2,294 tasks on SWE-bench.",
+                    "confidence": "verified",
+                    "scope": {"market": "US"},
+                    "source": {
+                        "canonical_url": "https://arxiv.org/abs/2310.06770",
+                        "publisher": "arXiv",
+                        "published_at": "2023-10-10",
+                        "retrieved_at": "2026-10-23T06:00:00Z",
+                        "snapshot_file": "source_snapshots/arxiv_2310_06770.txt",
+                        "snapshot_sha256": snap_sha
+                    },
+                    "evidence_excerpt": "Across 2,294 GitHub issues, Claude 2 resolved 4.8% of instances.",
+                    "verdict": "APPROVED",
+                    "script_spans": ["SWE-bench solved 4.8% across 2,294 real-world software tasks."]
+                }
+            ]
+        }
+        (art_dir / "claim_ledger.json").write_text(json.dumps(claim_data), encoding="utf-8")
+
+        # Mock video render
+        render_mp4 = rnd_dir / "final_short_en_US_9x16.mp4"
+        render_mp4.write_bytes(b"mock valid video data")
+
+        # Publish metadata
+        meta_data = {
+            "id": "mock_e2e_short",
+            "title": "SWE-bench Benchmark Analysis #ai #tech",
+            "description": "Analysis of benchmark results.",
+            "locale": "en-US",
+            "format": "short"
+        }
+        (proj_dir / "publish_metadata.json").write_text(json.dumps(meta_data), encoding="utf-8")
+
+        # Mock ffprobe for Stage 8 audit
+        mock_probe = {
+            "format": {"duration": "72.0"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": 1080,
+                    "height": 1920,
+                    "sample_aspect_ratio": "1:1",
+                    "display_aspect_ratio": "9:16",
+                },
+                {"codec_type": "audio"}
+            ]
+        }
+
+        with patch("scripts.independent_editorial_qa.run_ffprobe", return_value=mock_probe):
+            # 1. Pipeline executes end-to-end and passes all 8 stages
+            result = run_us_ai_director_pipeline(
+                project_dir=proj_dir,
+                format_type="short",
+                render_mode="verify_existing",
+                supervisor_secret="test-secret-i18-e2e-supervisor"
+            )
+            assert result["status"] == "SUCCESS"
+            assert len(result["stages"]) == 8
+            assert all(s["status"] == "PASS" for s in result["stages"])
+
+            # 2. Verify on-disk approval record passes verification with manifest check
+            approval_file = proj_dir / "approval.json"
+            assert approval_file.is_file()
+            approval_data = json.loads(approval_file.read_text(encoding="utf-8"))
+            valid, msg = verify_approval_record(
+                approval_data,
+                "mock_e2e_short",
+                project_dir=proj_dir,
+                require_manifest=True
+            )
+            assert valid is True, f"Approval verification failed: {msg}"
+
+            # 3. Negative: Tampering with on-disk video MP4 causes manifest verification rejection
+            render_mp4.write_bytes(b"tampered malicious video bytes")
+            valid_tamp, msg_tamp = verify_approval_record(
+                approval_data,
+                "mock_e2e_short",
+                project_dir=proj_dir,
+                require_manifest=True
+            )
+            assert valid_tamp is False
+            assert "Disk verification failed: media SHA mismatch" in msg_tamp
+            render_mp4.write_bytes(b"mock valid video data")
+
+            # 4. Negative: Tampering with on-disk publish_metadata.json causes rejection
+            (proj_dir / "publish_metadata.json").write_text('{"tampered": true}', encoding="utf-8")
+            valid_meta, msg_meta = verify_approval_record(
+                approval_data,
+                "mock_e2e_short",
+                project_dir=proj_dir,
+                require_manifest=True
+            )
+            assert valid_meta is False
+            assert "Disk verification failed: metadata SHA mismatch" in msg_meta
+            (proj_dir / "publish_metadata.json").write_text(json.dumps(meta_data), encoding="utf-8")
+
+            # 5. Negative: Unapproved literature domain hostname fails Stage 1
+            bad_claim_data = json.loads((art_dir / "claim_ledger.json").read_text(encoding="utf-8"))
+            bad_claim_data["claims"][0]["source"]["canonical_url"] = "https://fake-arxiv.org/scam-paper"
+            (art_dir / "claim_ledger.json").write_text(json.dumps(bad_claim_data), encoding="utf-8")
+            with pytest.raises(StageExecutionError, match="not in approved literature domains"):
+                run_us_ai_director_pipeline(proj_dir, format_type="short", render_mode="verify_existing")
+            (art_dir / "claim_ledger.json").write_text(json.dumps(claim_data), encoding="utf-8")
+
+            # 6. Negative: Missing or corrupted snapshot file fails Stage 1
+            snap_file.write_text("Corrupted content without excerpt", encoding="utf-8")
+            with pytest.raises(StageExecutionError, match="snapshot SHA mismatch|evidence excerpt is not verbatim"):
+                run_us_ai_director_pipeline(proj_dir, format_type="short", render_mode="verify_existing")
+
 
 
 

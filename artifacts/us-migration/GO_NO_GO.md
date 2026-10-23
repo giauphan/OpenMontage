@@ -1,6 +1,6 @@
 # Final GO / NO-GO Decision Dossier — OpenMontage US Migration
 **Date:** 2026-10-23  
-**Status:** HEAD Verified & Remediated (42/42 Acceptance Tests, Cryptographic Release Manifest HMAC QA Signed)  
+**Status:** HEAD Verified & Remediated (43/43 Acceptance Tests, Cryptographic Release Manifest HMAC QA Signed, 8-Stage AI Director Verified)  
 
 ---
 
@@ -9,7 +9,7 @@
 ### **P0–P8 IMPLEMENTATION: GO (100% COMPLETE & VERIFIED)**
 ### **P9 LIVE PRODUCTION DEPLOYMENT & UPLOAD: HARD STOP / HOLD**
 
-All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 errors, and passing CI across all test suites (including 42 acceptance tests in `test_us_migration_suite.py`, 27 publish preflight tests in `test_publish_manual_video.py`, and workspace contract/unit tests).
+All phases from **P0 through P8** have been fully designed, implemented, tested, and verified with 0 failures, 0 errors, and passing CI across all test suites (including 43 acceptance tests in `test_us_migration_suite.py`, 27 publish preflight tests in `test_publish_manual_video.py`, and workspace contract/unit tests). CI run 39953045305 and SonarQube run 39953045306 (2,456 passed, 12 skipped, 0 failures) verified green.
 
 Additionally, production deliverables and canaries have been fully validated and committed to repository tracking:
 - **Longform (16:9, 1920x1080)**: 360.0s (6:00.0) duration, 8 structured chapters, verified against ICLR 2024 / ACM CSUR / DORA research, rendered with burned-in synchronized subtitles and zero ungrounded on-screen statistics.
@@ -34,10 +34,10 @@ In strict compliance with the **Binding Safety Contract** of `AGENT_IMPLEMENTATI
 | **P2** | **Profile & Paths** | **PASS** | Schema `audience_profile.schema.json`, profiles `en-US.yaml` and `vi-VN.yaml`, fail-closed `artifact_paths.py` |
 | **P3** | **Factcheck & Localize** | **PASS** | Schema `claim_ledger.schema.json`, 8 meta skills in `skills/meta/`, unidiomatic calque validator in `lib/language_validation.py`, prompts wired in `run_daily_news_pipeline.sh` |
 | **P4** | **Creative & Renders** | **PASS** | 16:9 Longform (`ensure_horizontal`) and 9:16 Shorts support in `platform_routes.py` and `validate_render_quality.py` (min 60s, max 180s) |
-| **P5** | **Acceptance Suite** | **PASS** | 42 acceptance tests in `tests/us_migration/test_us_migration_suite.py` passing under `network=DENY` (including concurrency P05, dry-run P09, format-aware QA I15, cryptographic signing I16, and negative QA matrix I17) |
+| **P5** | **Acceptance Suite** | **PASS** | 43 acceptance tests in `tests/us_migration/test_us_migration_suite.py` passing under `network=DENY` (including concurrency P05, dry-run P09, format-aware QA I15, cryptographic signing I16, negative QA matrix I17, and AI Director E2E I18) |
 | **P6** | **YouTube Publisher** | **PASS** | Fail-closed Channel ID guard (`channels.list(mine=True)`), format routing, and synthetic media disclosure flag |
 | **P7** | **Scheduler & DST** | **PASS** | `make_publish_datetime` America/New_York DST handling, zero-mutation `--dry-run` shadow simulation, concurrent claim locking |
-| **P8** | **Canaries & Editorial QA** | **PASS** | 2 validated 71.0s docker canaries + 2 full-length US deliverables (`us_ai_short_01` 72.0s 9:16 + `us_ai_longform_02` 360.0s 16:9) tracked in repo under `artifacts/us-migration/production_deliverables/`, 3 isolated rehearsals (9 disjoint projects), and independent editorial QA pass (Score 40.0/40, `EDITORIAL_QA_REPORT.md`) |
+| **P8** | **Canaries & Editorial QA** | **PASS** | 2 validated 71.0s docker canaries + 2 full-length US deliverables (`us_ai_short_01` 72.0s 9:16 + `us_ai_longform_02` 360.0s 16:9) tracked in repo under `artifacts/us-migration/production_deliverables/`, 8-stage AI Director execution pipeline (`scripts/run_us_ai_director_pipeline.py`), 3 isolated rehearsals (9 disjoint projects), and independent editorial QA pass (Score 40.0/40, `EDITORIAL_QA_REPORT.md`) |
 | **P9** | **Live Production** | **HOLD** | **Awaiting Separate Explicit Owner Authorization (Mandatory Stop)** |
 
 ---

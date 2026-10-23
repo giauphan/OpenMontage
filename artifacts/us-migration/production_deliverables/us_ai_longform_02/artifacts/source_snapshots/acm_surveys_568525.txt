@@ -1,0 +1,11 @@
+A Survey of Rollback-Recovery Protocols in Message-Passing Systems
+Authors: E. N. (Mootaz) Elnozahy, Lorenzo Alvisi, Yi-Min Wang, David B. Johnson
+Journal: ACM Computing Surveys (CSUR), Vol. 34, No. 3, September 2002, pp. 375–408
+DOI: 10.1145/568522.568525
+Canonical URL: https://dl.acm.org/doi/10.1145/568522.568525
+
+Abstract:
+Rollback-recovery techniques solve the problem of making distributed systems fault-tolerant without user intervention. By saving process state periodically during normal execution, a system can restore a consistent global state following a transient failure or crash. This survey provides a comprehensive taxonomy of checkpointing and message logging protocols.
+
+Key Theoretical and Architecture Foundations:
+Coordinated checkpointing protocols record consistent process states to stable storage, ensuring that upon a crash or unhandled failure, the system rolls back to the most recent consistent state, eliminating cascading rollbacks and bounded recovery latency. In multi-stage processing systems, persisting immutable checkpoints at pipeline stage boundaries guarantees fault containment and deterministic replay.

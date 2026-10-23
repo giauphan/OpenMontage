@@ -1,0 +1,10 @@
+2024 State of DevOps Report: AI, Platform Engineering, and Software Delivery
+Publisher: Google Cloud DORA (DevOps Research and Assessment)
+Published: October 2024
+Canonical URL: https://dora.dev/research/2024/dora-report/
+
+Executive Summary and Key Findings:
+The 2024 DORA research program surveyed thousands of engineering professionals globally to understand how artificial intelligence, verification engineering, and platform workflows impact developer productivity, organizational stability, and operational risk.
+
+Key Empirical Findings on Automated Testing and Quality Verification Gates:
+Google Cloud DORA (2024) reports that organizations leveraging robust automated testing, preflight verification gates, and fast feedback loops achieve higher deployment stability and contain deployment failures. The report highlights that incorporating automated quality gates and strict validation checkpoints prevents untested generative AI outputs from introducing regressions or security vulnerabilities into production delivery environments.

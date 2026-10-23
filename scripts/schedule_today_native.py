@@ -303,7 +303,9 @@ def main():
                 import hashlib
                 from lib.qa_signing import verify_approval_record
                 approval_data = json.loads(approval_file.read_text(encoding="utf-8"))
-                valid_sig, sig_msg = verify_approval_record(approval_data, proj)
+                valid_sig, sig_msg = verify_approval_record(
+                    approval_data, proj, project_dir=project_dir, require_manifest=is_us_project
+                )
                 if not valid_sig:
                     print(f"failed {proj}: cryptographic supervisor signature invalid ({sig_msg})")
                     failed = True

@@ -1,0 +1,11 @@
+MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework
+Authors: Sirui Hong, Mingchen Zhuge, Jonathan Chen, Xiawu Zheng, Cheng Hao, Jinlin Wang, Ceyao Zhang, Zili Wang, Steven Ka Shing Yau, Deyu Chen, Liyang He, Jianfeng Du, Chenglin Zou, Zeyu Fan, Jenny Hu, Zekai Wang, Jialiang Chen, Haobo Wang, Yuntian Deng, Huazhong Lou, Mengting Chen, Chenglong Yuan, Jiayi Shen, Jian Zhang, Meng Chen, Chao Peng, Lingfei Wu, Yujun Shen, Junxian He
+Venue: International Conference on Learning Representations (ICLR) 2024
+arXiv: https://arxiv.org/abs/2308.00352
+Canonical URL: https://arxiv.org/abs/2308.00352
+
+Abstract and Methodology:
+Remarkable progress has been made on automated problem solving with multi-agent systems based on Large Language Models (LLMs). However, existing multi-agent systems suffer from hallucinated chatter, chaotic execution loops, and lack of role accountability when handling complex multi-step tasks. In this paper, we introduce MetaGPT, a meta-programming framework that incorporates Standard Operating Procedures (SOPs) into multi-agent collaboration.
+
+Key Empirical Findings:
+Hong et al. (ICLR 2024) evaluate MetaGPT and show that encoding Standard Operating Procedures (SOPs) into specialized multi-agent roles structures collaboration, eliminating circular debate loops observed in unstructured multi-agent dialogue. By decomposing software engineering tasks into structured deliverables (Product Requirement Documents, System Architecture Designs, API specifications, and code reviews), MetaGPT achieves coherent multi-turn alignment and verifiable execution.

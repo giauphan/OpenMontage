@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path("/home/ubuntu/OpenMontage")
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 SHORT_PROJECT = ROOT / "projects/us_ai_short_01"
 LONG_PROJECT = ROOT / "projects/us_ai_longform_02"

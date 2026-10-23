@@ -16,7 +16,9 @@
         "canonical_url": "https://arxiv.org/abs/2308.00352",
         "publisher": "ICLR 2024 / arXiv Computer Science",
         "published_at": "2023-08-01",
-        "retrieved_at": "2026-10-23T05:00:00Z"
+        "retrieved_at": "2026-10-23T05:00:00Z",
+        "snapshot_file": "source_snapshots/arxiv_2308_00352.txt",
+        "snapshot_sha256": "bf7f143de40fced7eb8e0de9475f4879d6c433a1f40b06376fa2796e2c9f354a"
       },
       "evidence_excerpt": "Hong et al. (ICLR 2024) evaluate MetaGPT and show that encoding Standard Operating Procedures (SOPs) into specialized multi-agent roles structures collaboration, eliminating circular debate loops observed in unstructured multi-agent dialogue.",
       "limitations": [
@@ -42,7 +44,9 @@
         "canonical_url": "https://dl.acm.org/doi/10.1145/568522.568525",
         "publisher": "ACM Computing Surveys",
         "published_at": "2002-09-01",
-        "retrieved_at": "2026-10-23T05:00:00Z"
+        "retrieved_at": "2026-10-23T05:00:00Z",
+        "snapshot_file": "source_snapshots/acm_surveys_568525.txt",
+        "snapshot_sha256": "1bdb94a8ac3e6093b9c6aa92385892d8b8ea31e55d7f7a90f012ccad6bf8df83"
       },
       "evidence_excerpt": "Coordinated checkpointing protocols record consistent process states to stable storage, ensuring that upon a crash or unhandled failure, the system rolls back to the most recent consistent state, eliminating cascading rollbacks and bounded recovery latency.",
       "limitations": [
@@ -68,7 +72,9 @@
         "canonical_url": "https://arxiv.org/abs/2310.06770",
         "publisher": "ICLR 2024 / SWE-bench",
         "published_at": "2023-10-10",
-        "retrieved_at": "2026-10-23T05:00:00Z"
+        "retrieved_at": "2026-10-23T05:00:00Z",
+        "snapshot_file": "source_snapshots/arxiv_2310_06770.txt",
+        "snapshot_sha256": "4409349ebbb37f1c948e6b13c28bf01efb6c40c263cbf126096995f73419d970"
       },
       "evidence_excerpt": "Benchmark analyses across SWE-bench and autonomous agent frameworks show that unconstrained agent retries rapidly exhaust context windows and token budgets in cyclic error loops when automated circuit breakers and quality gates are absent.",
       "limitations": [
@@ -94,7 +100,9 @@
         "canonical_url": "https://dora.dev/research/2024/dora-report/",
         "publisher": "Google Cloud DORA (DevOps Research and Assessment)",
         "published_at": "2024-10-01",
-        "retrieved_at": "2026-10-23T05:00:00Z"
+        "retrieved_at": "2026-10-23T05:00:00Z",
+        "snapshot_file": "source_snapshots/dora_2024_report.txt",
+        "snapshot_sha256": "cc979901101a09742c528723012b59e27cb19e421cf53c764aed78aa9c90763c"
       },
       "evidence_excerpt": "Google Cloud DORA (2024) reports that organizations leveraging robust automated testing, preflight verification gates, and fast feedback loops achieve higher deployment stability and contain deployment failures.",
       "limitations": [

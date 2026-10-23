@@ -1120,7 +1120,9 @@ def enforce_release_preflight(
             if not approval or not isinstance(approval, dict):
                 raise RuntimeError("Release preflight failed: mandatory approval.json missing or invalid for US project")
             from lib.qa_signing import verify_approval_record
-            valid_sig, sig_msg = verify_approval_record(approval, project_dir.name)
+            valid_sig, sig_msg = verify_approval_record(
+                approval, project_dir.name, project_dir=project_dir, require_manifest=is_us
+            )
             if not valid_sig:
                 raise RuntimeError(f"Release preflight failed: {sig_msg}")
 
@@ -1142,7 +1144,7 @@ def enforce_release_preflight(
                 vp = resolve_video_path(p["video_path"], project_dir, root)
                 media_to_check.append((p["platform"], vp))
         else:
-            for k in ("yt_shorts", "ig_reels", "fb_video", "fb_reels"):
+            for k in ("yt_shorts", "yt_longform", "youtube_video", "ig_reels", "fb_video", "fb_reels"):
                 if k in metadata:
                     vp = resolve_video_path(metadata[k], project_dir, root)
                     plat = "youtube" if "yt" in k else ("instagram" if "ig" in k else "facebook")

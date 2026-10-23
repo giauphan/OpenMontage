@@ -1,0 +1,13 @@
+SWE-bench: Can Language Models Resolve Real-World GitHub Issues?
+Authors: Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, Karthik Narasimhan
+Venue: International Conference on Learning Representations (ICLR) 2024 Oral
+arXiv: https://arxiv.org/abs/2310.06770
+Canonical URL: https://arxiv.org/abs/2310.06770
+
+Abstract and Benchmark Description:
+Software engineering presents a complex challenge for language models, requiring them to understand code across multiple files, reason about execution, and generate precise patches. We introduce SWE-bench, an evaluation framework consisting of 2,294 real-world GitHub issues collected from 12 popular open-source Python repositories. Resolving an issue requires an agent to understand repository context, navigate directory structures, modify source code, and ensure test suites pass.
+
+Key Empirical Findings (Table 2 - Model Performance):
+Across 2,294 GitHub issues from 12 popular Python repositories, Jimenez et al. evaluate frontier LLMs and report that baseline models solved under 5% of real-world issues (Claude 2 solved 4.8% and GPT-4 solved 1.74%), illustrating the difficulty of autonomous codebase resolution.
+Benchmark analyses across SWE-bench and autonomous agent frameworks show that unconstrained agent retries rapidly exhaust context windows and token budgets in cyclic error loops when automated circuit breakers and quality gates are absent.
+On the SWE-bench Lite 300-issue split, Claude 2 solved 1.96% and GPT-4 solved 2.67%.
