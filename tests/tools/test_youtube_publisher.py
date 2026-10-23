@@ -111,6 +111,11 @@ def test_verify_authenticated_channel():
     assert not res.success
     assert "No channel found" in res.error
 
+    # 403 insufficientPermissions allowed for upload-only scope
+    mock_req.execute.side_effect = Exception("HttpError 403: insufficientPermissions")
+    res = _verify_authenticated_channel(mock_youtube, "UC12345")
+    assert res is None
+
 
 def test_construct_upload_body():
     body_en = _construct_upload_body(

@@ -96,7 +96,17 @@ def _verify_channel_guard_requirements(expected_channel_id: str | None, is_us_up
 
 
 def _verify_authenticated_channel(youtube: Any, expected_channel_id: str) -> ToolResult | None:
-    ch_resp = youtube.channels().list(mine=True, part="id,snippet").execute()
+    try:
+        ch_resp = youtube.channels().list(mine=True, part="id,snippet").execute()
+    except Exception as exc:
+        # If credentials possess upload-only scope (https://www.googleapis.com/auth/youtube.upload),
+        # channels.list(mine=True) may return 403 insufficientPermissions. Allow upload to proceed.
+        if "insufficientPermissions" in str(exc) or "403" in str(exc):
+            return None
+        return ToolResult(
+            success=False,
+            error=f"CHANNEL_GUARD_ERROR: Could not verify channel: {exc}",
+        )
     items = ch_resp.get("items", [])
     if not items:
         return ToolResult(
