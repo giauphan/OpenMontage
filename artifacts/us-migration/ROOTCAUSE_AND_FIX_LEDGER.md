@@ -397,3 +397,42 @@ This ledger documents each technical defect, design vulnerability, or compatibil
 - **Post-fix Verification**:
   Verified via `test_i14_scheduler_format_routing_and_channel_guard` and full test suite execution.
 
+---
+
+## Defect 25: Format-Agnostic Video Path Doubling and Companion Format Coupling in Agent Quality Validators
+
+- **Symptom / Pre-fix Failure**:
+  1. `codex_agent_validation.py`, `claude_agent_validation.py`, and `check_qa.py` constructed video paths as `project_dir / "renders" / full_name` where `full_name` was already `project_dir / "renders" / filename`, causing duplicate path prefixes (`projects/cand/renders/projects/cand/renders/...`).
+  2. The validators unconditionally coupled Shorts and Long-form, demanding both `final_long_en_US_16x9.mp4` and `final_short_en_US_9x16.mp4` exist simultaneously even for single-format project runs.
+- **Root Cause**:
+  `resolve_render_paths()` returns full `Path` objects, but callers treated them as simple file name strings, and legacy validation loops had not been updated for independent format generation in US Migration v2.
+- **File & Line**:
+  `scripts/codex_agent_validation.py:1670-1695`, `scripts/claude_agent_validation.py:50-75`, `scripts/check_qa.py:70-80`, `scripts/fix_narration_timing.py:240-250`
+- **Minimal Fix**:
+  1. Replaced redundant path prefix concatenation with the direct resolved paths.
+  2. Added format detection from `publish_metadata.json` and `project.json` so that shorts projects only validate `final_short_en_US_9x16.mp4` and long-form projects only validate `final_long_en_US_16x9.mp4`.
+- **Post-fix Verification**:
+  Verified end-to-end via `python3 scripts/publish_manual_video.py projects/us_ai_short_01 --dry-run` and pytest suite.
+
+---
+
+## Defect 26: Publisher Asset Validation Hardcoded 60s Reel Duration Ceiling and Preflight Variable Scoping
+
+- **Symptom / Pre-fix Failure**:
+  1. `publish_manual_video.py` rejected compliant YouTube Shorts between 60.0s and 180.0s with `duration XXs exceeds 60.00s`.
+  2. `enforce_release_preflight()` failed with `UnboundLocalError: local variable 'is_news' referenced before assignment` whenever `pipeline_type` was unset.
+  3. `pipeline_monitoring.py` crashed with `NameError: name 'logger' is not defined` when handling file lock errors on read-only mounts.
+- **Root Cause**:
+  1. `validate_publish_asset()` hardcoded `60.0` for all platforms instead of honoring `YOUTUBE_SHORT_MAX_SECONDS = 180.0` from `tools/publishers/platform_routes.py`.
+  2. `is_news` was scoped inside `if pipeline_type:`.
+  3. Missing `import logging` and `logger = logging.getLogger(__name__)`.
+- **File & Line**:
+  `scripts/publish_manual_video.py:180-210, 880-970`, `scripts/pipeline_monitoring.py:10-35, 175-185`
+- **Minimal Fix**:
+  1. Set `max_dur = 180.0 if platform == "youtube" else (60.0 if platform == "instagram" else None)` in `validate_publish_asset()`.
+  2. Hoisted `is_news = is_news_project(project_dir, metadata)` before `if pipeline_type:` in `enforce_release_preflight()`.
+  3. Added proper logging import and logger instance in `pipeline_monitoring.py`.
+- **Post-fix Verification**:
+  Verified via clean exit (code 0) of `python3 scripts/publish_manual_video.py projects/us_ai_short_01 --dry-run`.
+
+

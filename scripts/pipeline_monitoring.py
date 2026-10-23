@@ -14,12 +14,15 @@ import argparse
 import datetime
 import fcntl
 import json
+import logging
 import os
 import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
 LOGS_DIR = ROOT / "logs"
@@ -28,7 +31,10 @@ LOG_REPORT_PATH = LOGS_DIR / "pipeline_error_report.log"
 
 
 def _ensure_logs_dir() -> None:
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
 
 class MonitoringReportError(RuntimeError):
@@ -155,23 +161,26 @@ def append_monitoring_event(
         "details": details or {},
     }
 
-    with _report_lock():
-        records = _read_json_report_unlocked()
-        records.append(event)
-        _save_json_report(records)
+    try:
+        with _report_lock():
+            records = _read_json_report_unlocked()
+            records.append(event)
+            _save_json_report(records)
 
-    # Append to human-readable log
-    icon = "🔴" if status in ("ERROR", "FAIL", "CRASH") else ("🟡" if status in ("RETRY", "WARN") else "🟢")
-    log_line = (
-        f"[{now_utc}] {icon} [{status}] stage={stage} project={project_id or 'none'} "
-        f"attempt={attempt}/{max_attempts} error_type={error_type or 'none'}: {message}\n"
-    )
-    if details:
-        details_str = json.dumps(details, ensure_ascii=False)
-        log_line += f"       └─ details: {details_str}\n"
+        # Append to human-readable log
+        icon = "🔴" if status in ("ERROR", "FAIL", "CRASH") else ("🟡" if status in ("RETRY", "WARN") else "🟢")
+        log_line = (
+            f"[{now_utc}] {icon} [{status}] stage={stage} project={project_id or 'none'} "
+            f"attempt={attempt}/{max_attempts} error_type={error_type or 'none'}: {message}\n"
+        )
+        if details:
+            details_str = json.dumps(details, ensure_ascii=False)
+            log_line += f"       └─ details: {details_str}\n"
 
-    with open(LOG_REPORT_PATH, "a", encoding="utf-8") as f:
-        f.write(log_line)
+        with open(LOG_REPORT_PATH, "a", encoding="utf-8") as f:
+            f.write(log_line)
+    except OSError as e:
+        logger.warning("Pipeline monitoring could not persist event due to OSError (%s): %s", e, message)
 
     return event
 

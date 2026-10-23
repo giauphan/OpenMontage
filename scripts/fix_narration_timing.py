@@ -240,7 +240,8 @@ def main():
             raise SystemExit(f"ERROR: render failed for {comp}")
 
     if is_english_locale(locale):
-        full_name, reels_name = resolve_render_paths(project, locale=locale)
+        full_path, reels_path = resolve_render_paths(project, locale=locale)
+        full_name, reels_name = full_path.name, reels_path.name
     else:
         full_name, reels_name = "final_full_vi_9x16.mp4", "final_reels_vi_9x16.mp4"
 
