@@ -1,0 +1,63 @@
+1
+00:00:00,000 --> 00:00:10,000
+Over the past two years, engineering teams discovered a painful truth:
+
+2
+00:00:10,000 --> 00:00:22,000
+scaling prompt length does not scale autonomous capability. Single-prompt architectures inevitably break down.
+
+3
+00:00:22,000 --> 00:00:40,000
+Production AI agents are distributed state machines built on deterministic tool protocols.
+
+4
+00:00:40,000 --> 00:00:58,000
+A common mistake is treating the model context window as working memory.
+
+5
+00:00:58,000 --> 00:01:25,000
+Production architectures decouple memory into ephemeral turns, semantic stores, and append-only ledgers.
+
+6
+00:01:25,000 --> 00:01:50,000
+Tools must be defined as typed remote procedure calls with hardware-isolated execution boundaries.
+
+7
+00:01:50,000 --> 00:02:15,000
+Immutable checkpoint ledgers bound crash recovery time by resuming execution from the latest valid state snapshot.
+
+8
+00:02:15,000 --> 00:02:40,000
+If a step fails, the system rolls back cleanly instead of restarting from scratch.
+
+9
+00:02:40,000 --> 00:03:05,000
+Empirical benchmarks show supervisor-worker hierarchies prevent circular debate deadlocks and consistently outperform flat peer swarms.
+
+10
+00:03:05,000 --> 00:03:30,000
+The supervisor holds the state machine and evaluates deliverables against strict schema contracts.
+
+11
+00:03:30,000 --> 00:03:55,000
+Subjective self-evaluation is the most dangerous trap in autonomous agent deployment.
+
+12
+00:03:55,000 --> 00:04:20,000
+Production pipelines rely on non-negotiable deterministic quality gates: unit tests, integration tests, and frame decoding.
+
+13
+00:04:20,000 --> 00:04:45,000
+Without strict token budget circuits, runaway retry loops burn through API spend without resolving underlying failures.
+
+14
+00:04:45,000 --> 00:05:10,000
+Production architectures implement per-stage ceilings, retry limits, and tiered model routing.
+
+15
+00:05:10,000 --> 00:05:35,000
+Building production AI agents is about disciplined software engineering scaffolding around foundation models.
+
+16
+00:05:35,000 --> 00:06:00,000
+Shadow dry-runs prove zero mutations and zero unverified side effects before live release.

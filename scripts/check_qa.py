@@ -18,6 +18,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 FULL_RENDER = "renders/final_full_vi_9x16.mp4"
 REELS_RENDER = "renders/final_reels_vi_9x16.mp4"
 NARRATION_CANDIDATES = ("assets/narration.mp3", "assets/voice/narration.mp3")
@@ -66,9 +70,11 @@ def narration_path(project: Path) -> Path:
 
 
 def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
+    import json
     from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths, resolve_narration_text_path
     locale = resolve_project_locale(project)
-    if is_english_locale(locale):
+    is_en = is_english_locale(locale)
+    if is_en:
         full, reels = resolve_render_paths(project, locale=locale)
         narration_text = resolve_narration_text_path(project, locale=locale)
     else:
@@ -76,6 +82,22 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
         reels = project / REELS_RENDER
         narration_text = project / NARRATION_TEXT
     narration = narration_path(project)
+
+    # Determine project format
+    format_type = None
+    meta_path = project / "publish_metadata.json"
+    if meta_path.is_file():
+        try:
+            format_type = json.loads(meta_path.read_text(encoding="utf-8")).get("format")
+        except Exception:
+            pass
+    if not format_type:
+        proj_path = project / "project.json"
+        if proj_path.is_file():
+            try:
+                format_type = json.loads(proj_path.read_text(encoding="utf-8")).get("format")
+            except Exception:
+                pass
 
     narration_seconds = duration(narration, ffprobe)
     full_seconds = duration(full, ffprobe)
@@ -86,33 +108,99 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
     print(f"  full_video={stream_info(full, ffprobe, 'v:0')}  full_audio={stream_info(full, ffprobe, 'a:0')}")
 
     passed = True
-    for label, path in (("narration", narration), ("full render", full), ("reels render", reels)):
-        if not path.is_file() or path.stat().st_size == 0:
-            print(f"  MISSING_FILE {label}: {path}  FAIL")
+    reels_max = 180.0 if is_en else REELS_MAX_SECONDS
+
+    is_short_only = format_type in ("short", "shorts", "reels", "9x16") or (is_en and reels.is_file() and not full.is_file())
+    is_long_only = format_type in ("long", "longform", "16x9", "full") or (is_en and full.is_file() and not reels.is_file())
+
+    if is_short_only:
+        if not narration.is_file() or narration.stat().st_size == 0:
+            print(f"  MISSING_FILE narration: {narration}  FAIL")
             passed = False
+        if not reels.is_file() or reels.stat().st_size == 0:
+            print(f"  MISSING_FILE reels render: {reels}  FAIL")
+            passed = False
+        if narration.is_file() and narration_text.is_file():
+            narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+            print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
+            passed = passed and narration_fresh
+        else:
+            print("  narration_stale=SKIP (source text unavailable)")
 
-    if narration.is_file() and narration_text.is_file():
-        narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
-        print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
-        passed = passed and narration_fresh
+        if narration_seconds is None or reels_seconds is None:
+            print("  narration_render_gap=CANNOT_COMPUTE  FAIL")
+            passed = False
+        else:
+            gap = abs(narration_seconds - reels_seconds)
+            gap_ok = gap <= tolerance
+            print(f"  narration_render_gap={gap:.3f}s  {'PASS' if gap_ok else 'FAIL'} (tolerance={tolerance})")
+            passed = passed and gap_ok
+
+        if reels_seconds is None:
+            print("  reels_duration=CANNOT_COMPUTE  FAIL")
+            return False
+        reels_ok = reels_seconds <= reels_max
+        print(f"  reels_duration={reels_seconds:.3f}s  {'PASS' if reels_ok else 'FAIL'} (max={reels_max:.0f}s)")
+        return passed and reels_ok
+
+    elif is_long_only:
+        if not narration.is_file() or narration.stat().st_size == 0:
+            print(f"  MISSING_FILE narration: {narration}  FAIL")
+            passed = False
+        if not full.is_file() or full.stat().st_size == 0:
+            print(f"  MISSING_FILE full render: {full}  FAIL")
+            passed = False
+        if narration.is_file() and narration_text.is_file():
+            narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+            print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
+            passed = passed and narration_fresh
+        else:
+            print("  narration_stale=SKIP (source text unavailable)")
+
+        if narration_seconds is None or full_seconds is None:
+            print("  narration_render_gap=CANNOT_COMPUTE  FAIL")
+            passed = False
+        else:
+            gap = abs(narration_seconds - full_seconds)
+            gap_ok = gap <= tolerance
+            print(f"  narration_render_gap={gap:.3f}s  {'PASS' if gap_ok else 'FAIL'} (tolerance={tolerance})")
+            passed = passed and gap_ok
+
+        if full_seconds is None:
+            print("  full_duration=CANNOT_COMPUTE  FAIL")
+            return False
+        full_ok = full_seconds >= 60.0
+        print(f"  full_duration={full_seconds:.3f}s  {'PASS' if full_ok else 'FAIL'} (min=60s)")
+        return passed and full_ok
+
     else:
-        print("  narration_stale=SKIP (source text unavailable)")
+        for label, path in (("narration", narration), ("full render", full), ("reels render", reels)):
+            if not path.is_file() or path.stat().st_size == 0:
+                print(f"  MISSING_FILE {label}: {path}  FAIL")
+                passed = False
 
-    if narration_seconds is None or full_seconds is None:
-        print("  narration_render_gap=CANNOT_COMPUTE  FAIL")
-        passed = False
-    else:
-        gap = abs(narration_seconds - full_seconds)
-        gap_ok = gap <= tolerance
-        print(f"  narration_render_gap={gap:.3f}s  {'PASS' if gap_ok else 'FAIL'} (tolerance={tolerance})")
-        passed = passed and gap_ok
+        if narration.is_file() and narration_text.is_file():
+            narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+            print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
+            passed = passed and narration_fresh
+        else:
+            print("  narration_stale=SKIP (source text unavailable)")
 
-    if reels_seconds is None:
-        print("  reels_duration=CANNOT_COMPUTE  FAIL")
-        return False
-    reels_ok = reels_seconds <= REELS_MAX_SECONDS
-    print(f"  reels_duration={reels_seconds:.3f}s  {'PASS' if reels_ok else 'FAIL'} (max={REELS_MAX_SECONDS:.0f}s)")
-    return passed and reels_ok
+        if narration_seconds is None or full_seconds is None:
+            print("  narration_render_gap=CANNOT_COMPUTE  FAIL")
+            passed = False
+        else:
+            gap = abs(narration_seconds - full_seconds)
+            gap_ok = gap <= tolerance
+            print(f"  narration_render_gap={gap:.3f}s  {'PASS' if gap_ok else 'FAIL'} (tolerance={tolerance})")
+            passed = passed and gap_ok
+
+        if reels_seconds is None:
+            print("  reels_duration=CANNOT_COMPUTE  FAIL")
+            return False
+        reels_ok = reels_seconds <= reels_max
+        print(f"  reels_duration={reels_seconds:.3f}s  {'PASS' if reels_ok else 'FAIL'} (max={reels_max:.0f}s)")
+        return passed and reels_ok
 
 
 def resolve_projects(args: argparse.Namespace) -> list[Path]:

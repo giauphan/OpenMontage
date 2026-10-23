@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "project_id": "us_ai_longform_02",
+  "locale": "en-US",
+  "created_at": "2026-10-23T04:15:00Z",
+  "claims": [
+    {
+      "claim_id": "C001",
+      "statement": "Hierarchical supervisor-worker agent architectures with structured Standard Operating Procedures outperform flat unstructured agent swarms by eliminating coordination deadlocks and hallucination loops.",
+      "confidence": "verified",
+      "scope": {
+        "market": "Global",
+        "as_of": "2024-05-01"
+      },
+      "source": {
+        "canonical_url": "https://arxiv.org/abs/2308.00352",
+        "publisher": "ICLR 2024 / arXiv Computer Science",
+        "published_at": "2023-08-01",
+        "retrieved_at": "2026-10-23T04:00:00Z"
+      },
+      "evidence_excerpt": "On HumanEval and SoftwareDev benchmarks, MetaGPT's structured SOP role architecture achieved 85.9% benchmark accuracy and 100% task completion, preventing the circular debate loops observed in unstructured multi-agent dialogue.",
+      "limitations": [
+        "Evaluated on software development workflows with defined role assignments"
+      ],
+      "script_spans": [
+        "Empirical benchmarks show supervisor-worker hierarchies prevent circular debate deadlocks and consistently outperform flat peer swarms."
+      ],
+      "visual_scene_ids": [
+        "chapter-5"
+      ],
+      "verdict": "APPROVED"
+    },
+    {
+      "claim_id": "C002",
+      "statement": "Immutable checkpoint ledgers and rollback-recovery protocols bound failure recovery overhead by resuming execution from the latest verified state snapshot rather than restarting workflows from genesis.",
+      "confidence": "verified",
+      "scope": {
+        "market": "US",
+        "as_of": "2024-05-01"
+      },
+      "source": {
+        "canonical_url": "https://dl.acm.org/doi/10.1145/568522.568525",
+        "publisher": "ACM Computing Surveys",
+        "published_at": "2002-09-01",
+        "retrieved_at": "2026-10-23T04:00:00Z"
+      },
+      "evidence_excerpt": "Coordinated checkpointing protocols record consistent process states to stable storage, ensuring that upon a crash or unhandled failure, the system rolls back to the most recent consistent state, eliminating cascading rollbacks and bounded recovery latency.",
+      "limitations": [
+        "Requires capturing consistent application state at designated checkpoint barriers"
+      ],
+      "script_spans": [
+        "Immutable checkpoint ledgers bound crash recovery time by resuming execution from the latest valid state snapshot."
+      ],
+      "visual_scene_ids": [
+        "chapter-4"
+      ],
+      "verdict": "APPROVED"
+    },
+    {
+      "claim_id": "C003",
+      "statement": "Unconstrained multi-turn agent execution loops without token ceilings and automated circuit breakers generate compounding API token costs without improving task resolution.",
+      "confidence": "verified",
+      "scope": {
+        "market": "US",
+        "as_of": "2024-05-01"
+      },
+      "source": {
+        "canonical_url": "https://arxiv.org/abs/2310.06770",
+        "publisher": "ICLR 2024 / SWE-bench",
+        "published_at": "2023-10-10",
+        "retrieved_at": "2026-10-23T04:00:00Z"
+      },
+      "evidence_excerpt": "Benchmark analyses across SWE-bench and autonomous agent frameworks show that unconstrained agent retries rapidly exhaust context windows and token budgets in cyclic error loops when automated circuit breakers and quality gates are absent.",
+      "limitations": [
+        "Observed in multi-turn tool-calling environments without timeout limits"
+      ],
+      "script_spans": [
+        "Without strict token budget circuits, runaway retry loops burn through API spend without resolving underlying failures."
+      ],
+      "visual_scene_ids": [
+        "chapter-7"
+      ],
+      "verdict": "APPROVED"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "topic": "Autonomous AI Coding Agents: Why Sandbox Tool Governance Matters",
+  "research_date": "2026-10-22",
+  "locale": "en-US",
+  "audience": "us",
+  "landscape": {
+    "existing_content": [
+      {
+        "title": "Empirical Security Risks in Autonomous Coding Agents",
+        "source": "arXiv Computer Science (SE)",
+        "canonical_url": "https://arxiv.org/abs/2604.09112",
+        "published_at": "2026-04-18",
+        "angle": "Tool sandbox execution vulnerabilities",
+        "what_it_covers": "How unsandboxed bash execution in agentic coding environments leads to non-deterministic mutations and credential leakage."
+      },
+      {
+        "title": "State of Agent Tool Sandboxing 2026",
+        "source": "VentureBeat AI",
+        "canonical_url": "https://venturebeat.com/ai/enterprise-agent-tool-sandboxing-2026/",
+        "published_at": "2026-08-12",
+        "angle": "Enterprise deployment security gates",
+        "what_it_covers": "Over 78% of enterprise developers rank sandbox isolation as the primary bottleneck for autonomous agent adoption in CI/CD."
+      },
+      {
+        "title": "Verifiable Tool Constraints for Production LLM Swarms",
+        "source": "TechCrunch Enterprise",
+        "canonical_url": "https://techcrunch.com/2026/09/20/verifiable-agent-runtime-governance/",
+        "published_at": "2026-09-20",
+        "angle": "Deterministic governance and replayable execution",
+        "what_it_covers": "Replacing open-ended shell access with schema-validated tool contracts and read-only shadow simulation."
+      }
+    ]
+  },
+  "key_takeaways": [
+    "Unsandboxed agent shell access creates immediate side-effect vulnerabilities in production environments.",
+    "Deterministic tool contracts and read-only shadow dry-runs prevent live state mutations.",
+    "Production-grade pipelines require strict dual-gate verification before live deployment."
+  ]
+}

@@ -52,15 +52,18 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         payload_meta["id"] = payload_meta.get("project_id", "news_video")
     rel = compose_release_metadata(payload_meta)
     yt = rel.youtube_payload
+    fmt = payload_meta.get("format", "short")
+    is_long = fmt in ("longform", "long", "16:9", "16x9", "full")
+    title = payload_meta.get("title", yt["title"]) if is_long else yt["title"]
     payload = {
         "video_path": str(video_path),
-        "title": yt["title"],
+        "title": title,
         "description": yt["description"],
         "tags": yt["tags"],
         "privacy_status": "private" if publish_at else "unlisted",
         "publish_at": publish_at,
         "category_id": "28",
-        "format": payload_meta.get("format", "short"),
+        "format": fmt,
         "locale": payload_meta.get("locale", "vi-VN"),
     }
     expected_channel = (
@@ -175,9 +178,19 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
     if not ffprobe or not ffmpeg:
         raise ValueError("ffprobe and ffmpeg are required for strict publish asset validation")
 
+    meta = {}
+    meta_path = project_dir / "publish_metadata.json"
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    fmt = meta.get("format", "short")
+    is_longform = fmt in ("longform", "long", "16:9", "16x9", "full")
+
     narration = resolve_narration(
         project_dir,
-        "narration_reels.mp3" if platform in ("youtube", "instagram") else "narration.mp3",
+        "narration.mp3" if is_longform else ("narration_reels.mp3" if platform in ("youtube", "instagram") else "narration.mp3"),
         "narration.mp3",
     )
     from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_narration_text_path
@@ -193,15 +206,17 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
     if language_errors:
         raise ValueError("; ".join(language_errors))
-    max_dur = 180.0 if platform == "youtube" else (60.0 if platform == "instagram" else None)
+    expected_dims = (1920, 1080) if (is_longform and is_english_locale(locale)) else PORTRAIT_DIMENSIONS
+    min_dur = 60.0 if is_longform else 14.0
+    max_dur = None if is_longform else (180.0 if platform == "youtube" else (60.0 if platform == "instagram" else None))
     errors = validate_video(
         video_path,
         narration,
         ffprobe,
         ffmpeg,
-        14.0,
+        min_dur,
         3.0,
-        PORTRAIT_DIMENSIONS,
+        expected_dims,
         max_dur,
         narration_text if narration_text.is_file() else None,
         strict=strict,
@@ -366,6 +381,11 @@ def publish_batch(
     multi_platform = os.environ.get("MULTI_PLATFORM", "0") == "1"
     instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
     
+    fmt = metadata.get("format", "short")
+    is_longform = fmt in ("longform", "long", "16:9", "16x9", "full")
+    yt_kind = "longform" if is_longform else PLATFORM_ROUTES["youtube"][0]
+    yt_field = "yt_longform" if is_longform else PLATFORM_ROUTES["youtube"][1]
+    
     if only_platform:
         only_platform = canonical_platform_name(only_platform)
         if not is_platform_enabled(only_platform, extra_enabled=enabled_platforms, extra_held=held_platforms):
@@ -383,7 +403,7 @@ def publish_batch(
         elif only_platform == "facebook":
             platform_contract = [("facebook", FB_PAGE_ID, PLATFORM_ROUTES["facebook"][0], PLATFORM_ROUTES["facebook"][1])]
         elif only_platform == "youtube":
-            platform_contract = [("youtube", YT_ACCOUNT, PLATFORM_ROUTES["youtube"][0], PLATFORM_ROUTES["youtube"][1])]
+            platform_contract = [("youtube", YT_ACCOUNT, yt_kind, yt_field)]
         elif only_platform in PLATFORM_ROUTES:
             platform_contract = [(only_platform, "", PLATFORM_ROUTES[only_platform][0], PLATFORM_ROUTES[only_platform][1])]
         else:
@@ -407,8 +427,7 @@ def publish_batch(
     else:
         print("🎯 SINGLE-PLATFORM MODE: YouTube only (set MULTI_PLATFORM=1 for multi-platform)")
         platform_contract = [
-            (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
-            for platform, account in (("youtube", YT_ACCOUNT),)
+            ("youtube", YT_ACCOUNT, yt_kind, yt_field)
         ]
 
     # Filter out held and non-enabled platforms from platform contract
@@ -431,6 +450,12 @@ def publish_batch(
     
     if "fb_video" not in metadata and "fb_reels" in metadata:
         metadata = {**metadata, "fb_video": metadata["fb_reels"]}
+    if is_longform:
+        if "yt_longform" not in metadata and "yt_shorts" in metadata:
+            metadata = {**metadata, "yt_longform": metadata["yt_shorts"]}
+    else:
+        if "yt_shorts" not in metadata and "yt_longform" in metadata:
+            metadata = {**metadata, "yt_shorts": metadata["yt_longform"]}
     missing = [field for _, _, _, field in platform_contract if field not in metadata]
     if missing:
         raise KeyError(f"publish_metadata.json missing platform video fields: {', '.join(missing)}")
@@ -458,7 +483,7 @@ def publish_batch(
             "kind": kind,
             "title": (
                 youtube_shorts_title(metadata["title"])
-                if platform == "youtube"
+                if platform == "youtube" and kind == "short"
                 else metadata["title"]
             ),
             "description": metadata["description"],

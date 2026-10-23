@@ -1,0 +1,14 @@
+{
+  "approved": true,
+  "status": "approved",
+  "approved_by": "qa_supervisor",
+  "approved_media_sha256": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4",
+  "media_sha256": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4",
+  "approved_media_hashes": [
+    "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+  ],
+  "media_sha256_by_platform": {
+    "youtube": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+  },
+  "timestamp": "2026-10-22T17:28:00Z"
+}

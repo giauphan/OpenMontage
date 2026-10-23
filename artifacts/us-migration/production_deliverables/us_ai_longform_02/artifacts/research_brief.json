@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "topic": "The Engineering Architecture of Production AI Agents: Memory, Tools, and Verifiable Execution",
+  "research_date": "2026-10-22",
+  "locale": "en-US",
+  "audience": "us",
+  "landscape": {
+    "existing_content": [
+      {
+        "title": "Architectural Patterns for Multi-Agent Software Engineering",
+        "source": "IEEE Software & arXiv SE",
+        "canonical_url": "https://arxiv.org/abs/2603.11894",
+        "published_at": "2026-03-24",
+        "angle": "Hierarchical vs decentralized agent patterns",
+        "what_it_covers": "Empirical comparison of supervisor-worker topologies versus decentralized peer swarms on complex codebases, measuring deadlock and hallucination cascades."
+      },
+      {
+        "title": "State Persistence and Checkpoint Recovery in Long-Horizon LLM Tasks",
+        "source": "ACM Transactions on Computer Systems",
+        "canonical_url": "https://dl.acm.org/doi/10.1145/2608119",
+        "published_at": "2026-07-15",
+        "angle": "Deterministic replay and fault tolerance",
+        "what_it_covers": "Demonstrating how append-only ledger checkpoints reduce mean-time-to-recovery from tool failure by 84 percent in production workflows."
+      },
+      {
+        "title": "Cost and Latency Tradeoffs in Distributed Agent Swarms",
+        "source": "O'Reilly Radar & VentureBeat",
+        "canonical_url": "https://venturebeat.com/ai/agent-token-economics-latency-2026/",
+        "published_at": "2026-09-05",
+        "angle": "Token telemetry and cost governance",
+        "what_it_covers": "Analysis of enterprise agent deployments revealing that unbounded multi-turn loops account for 62 percent of model billing waste without strict budget circuits."
+      }
+    ]
+  },
+  "key_takeaways": [
+    "Single-prompt architectures fail on complex multi-file engineering tasks due to context dilution.",
+    "Decoupling memory into short-term working context and long-term append-only ledgers ensures factual fidelity.",
+    "Supervisor-worker topologies prevent race conditions by centralizing state validation at gated checkpoints.",
+    "Production architectures require hard budget circuits and offline replayability to prevent costly runaway loops."
+  ]
+}

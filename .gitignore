@@ -36,6 +36,10 @@ tests/qa/output/
 !templates/news/packages/news-explainer/hyperframes/
 !templates/news/packages/news-explainer/hyperframes_reels/
 
+# Production deliverables (curated verification evidence for US migration)
+!artifacts/us-migration/production_deliverables/
+!artifacts/us-migration/production_deliverables/**
+
 # Project workspaces (generated assets, renders — all regenerable)
 projects/
 projects_archive/

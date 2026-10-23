@@ -1,0 +1,46 @@
+[
+  {
+    "project_id": "us_ai_short_01",
+    "timestamp": "2026-10-22T17:28:00Z",
+    "status": "PASS",
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0,
+    "color": "\ud83d\udfe2",
+    "strict_quality_pass": true,
+    "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4",
+    "details": {
+      "overall_status": "PASS",
+      "results": [
+        {
+          "check_name": "Technical Contract",
+          "passed": true,
+          "details": {
+            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+          }
+        },
+        {
+          "check_name": "Content Quality",
+          "passed": true,
+          "details": {
+            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+          }
+        },
+        {
+          "check_name": "Metadata Validation",
+          "passed": true,
+          "details": {
+            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+          }
+        },
+        {
+          "check_name": "Codex Agent Review Gate",
+          "passed": true,
+          "details": {
+            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+          }
+        }
+      ]
+    }
+  }
+]

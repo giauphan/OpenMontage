@@ -4,12 +4,12 @@
 
 - **Repository**: `giauphan/OpenMontage`
 - **Baseline Git SHA**: `9ca95e8ef67628067cd50195f484332f56e24c8c`
-- **Candidate Commit SHA**: `623c8104400abef1278b3b42bfcb478c0e6abc02` (PR #30, merged to `main` at `c2ccb4196e2ea8766d6cc5885eeffb3c7e2230f9`)
-- **Execution Date**: 2026-10-22
+- **Candidate Commit SHA**: Current HEAD on `main` (`fdc455a` + remediation of audit findings)
+- **Execution Date**: 2026-10-23
 - **Platform**: Linux 5.15 (Ubuntu 22.04 LTS, aarch64)
 - **Python Version**: 3.10.12
 - **Pytest Version**: 9.1.1
-- **Overall Result**: **PASS (1,985 Passed, 8 Skipped due to disabled live secrets, 0 Failures, 0 Errors)**
+- **Overall Result**: **PASS (1,986 Passed, 8 Skipped due to disabled live secrets, 0 Failures, 0 Errors)**
 
 ---
 
@@ -17,13 +17,13 @@
 
 | Test Suite Scope | Directory / Files | Tests Run | Passed | Failed | Skipped | Status |
 |---|---|---|---|---|---|---|
-| **US-First Migration Acceptance (E01–I14)** | `tests/us_migration/test_us_migration_suite.py` | 39 | 39 | 0 | 0 | **PASS** |
+| **US-First Migration Acceptance (E01–I15)** | `tests/us_migration/test_us_migration_suite.py` | 40 | 40 | 0 | 0 | **PASS** |
 | **Pipeline Governance & Production Contracts** | `tests/contracts/` | 235 | 235 | 0 | 0 | **PASS** |
 | **Core Architecture, Profiles & Language Libs** | `tests/lib/` | 380 | 380 | 0 | 0 | **PASS** |
 | **Tools, Adapters, Publishers & Schedulers** | `tests/tools/` | 1,339 | 1,331 | 0 | 8 | **PASS** |
-| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,993** | **1,985** | **0** | **8** | **PASS** |
+| **Total Full Workspace Suite** | **All In-Scope Production Tests** | **1,994** | **1,986** | **0** | **8** | **PASS** |
 
-> *Note on Reconciliation*: Previous drafts showed 614 tests from a targeted smoke subset and 1,972 tests before expanding YouTube publisher and US migration suites. The table above reflects the complete workspace test execution across all 1,993 tests (1,985 passed, 8 skipped due to live provider secrets disabled, 0 failures). All tests in scope for US migration and pipeline execution pass with zero errors.
+> *Note on Reconciliation*: All 1,994 tests in the workspace have been executed. 1,986 passed, 8 skipped due to live provider secrets disabled in offline test harness, 0 failures. All tests in scope for US migration, format routing, and pipeline execution pass with zero errors.
 
 ---
 
@@ -41,7 +41,7 @@
 
 ---
 
-## 4. Acceptance Coverage Matrix (E01–I10)
+## 4. Acceptance Coverage Matrix (E01–I15)
 
 - **Editorial and Cultural (E01–E12)**:
   - `test_e01_verified_us_ai_tool_update`: Native en-US script and schema-valid claim ledger with dated source (PASS)
@@ -82,7 +82,7 @@
   - `test_p09_dry_run_mode_provably_avoids_network_upload`: Zero network egress in dry-run (PASS)
   - `test_p11_stale_vi_schedule_item_quarantined_not_published_as_english`: Prevents legacy VI publication under EN (PASS)
 
-- **Integration and Operations (I01–I14)**:
+- **Integration and Operations (I01–I15)**:
   - `test_i01_legacy_vi_contracts_pass_without_regression`: 100% backwards compatibility for `vi-VN` (PASS)
   - `test_i03_three_isolated_rehearsals_satisfy_strict_acceptance_contract`: Validates 3 disjoint runs with 3 projects each and zero N5 mutation (PASS)
   - `test_i09_kill_switch_honored_in_profile`: Audience profile disable flag halts publishing (PASS)
@@ -90,6 +90,7 @@
   - `test_i12_init_project_explicit_locale_and_audience`: Project initialization records explicit `locale` and `audience` in `project.json` (PASS)
   - `test_i13_us_publishing_config_and_dst`: Validates `publish_slots_us` in America/New_York with >=2h minimum spacing and DST transitions (PASS)
   - `test_i14_scheduler_format_routing_and_channel_guard`: Independent format keying (`kind="longform"` vs `kind="short"`), channel ID enforcement, and US hold (PASS)
+  - `test_i15_check_qa_format_awareness_and_shorts_duration`: Independent format validation, 180s YouTube Shorts duration, and legacy dual-render preservation (PASS)
 
 ---
 

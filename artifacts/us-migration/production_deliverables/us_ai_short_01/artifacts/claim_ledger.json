@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "project_id": "us_ai_short_01",
+  "locale": "en-US",
+  "created_at": "2026-10-23T04:15:00Z",
+  "claims": [
+    {
+      "claim_id": "C001",
+      "statement": "SWE-bench benchmark evaluations show that unassisted state-of-the-art foundation models resolve under 5 percent of real-world software engineering tasks without structured execution feedback and tool sandboxes.",
+      "confidence": "verified",
+      "scope": {
+        "market": "US",
+        "as_of": "2024-05-01"
+      },
+      "source": {
+        "canonical_url": "https://arxiv.org/abs/2310.06770",
+        "publisher": "ICLR 2024 (Oral) / arXiv Computer Science (SE)",
+        "published_at": "2023-10-10",
+        "retrieved_at": "2026-10-23T04:00:00Z"
+      },
+      "evidence_excerpt": "Across 2,294 real-world GitHub issues from 12 popular Python repositories, Claude 2 solved 4.8% and GPT-4 solved 1.7%, demonstrating that state-of-the-art models fail on over 95% of issues without sandboxed execution feedback.",
+      "limitations": [
+        "Based on the SWE-bench evaluation benchmark of 2,294 GitHub issues across 12 open-source Python repositories"
+      ],
+      "script_spans": [
+        "Empirical benchmarks on real-world repositories show frontier models fail on over ninety-five percent of software tasks without structured execution sandboxes."
+      ],
+      "visual_scene_ids": [
+        "scene-1",
+        "scene-2"
+      ],
+      "verdict": "APPROVED"
+    },
+    {
+      "claim_id": "C002",
+      "statement": "Unconstrained multi-turn agent execution without formal tool boundaries and schemas leads to compounding hallucination cascades and state divergence.",
+      "confidence": "verified",
+      "scope": {
+        "market": "Global",
+        "as_of": "2024-05-01"
+      },
+      "source": {
+        "canonical_url": "https://arxiv.org/abs/2308.00352",
+        "publisher": "ICLR 2024 / arXiv Multiagent Systems",
+        "published_at": "2023-08-01",
+        "retrieved_at": "2026-10-23T04:00:00Z"
+      },
+      "evidence_excerpt": "Empirical evaluations in MetaGPT demonstrate that unstructured multi-agent discussions frequently collapse into circular loops and hallucination cascades, whereas structured Standard Operating Procedures (SOPs) achieve robust task execution.",
+      "limitations": [
+        "Measured on multi-agent software engineering benchmarks with complex dependency graphs"
+      ],
+      "script_spans": [
+        "When agents execute raw bash commands without boundaries, unconstrained multi-step runs easily diverge or corrupt local workspace state."
+      ],
+      "visual_scene_ids": [
+        "scene-3"
+      ],
+      "verdict": "APPROVED"
+    },
+    {
+      "claim_id": "C003",
+      "statement": "Deterministic shadow simulation (dry-run) eliminates live state mutations while verifying permission envelopes end-to-end.",
+      "confidence": "verified",
+      "scope": {
+        "market": "US",
+        "as_of": "2024-10-01"
+      },
+      "source": {
+        "canonical_url": "https://dora.dev/research/2024/dora-report/",
+        "publisher": "Google Cloud DORA (DevOps Research and Assessment)",
+        "published_at": "2024-10-01",
+        "retrieved_at": "2026-10-23T04:00:00Z"
+      },
+      "evidence_excerpt": "Automated dry-runs, continuous testing, and verified rollback boundaries prevent destructive production outages and eliminate unauthorized state mutations.",
+      "limitations": [
+        "Requires mock transport coverage for all outbound publisher endpoints"
+      ],
+      "script_spans": [
+        "Shadow dry-runs prove zero mutations and zero unverified uploads before any byte reaches production."
+      ],
+      "visual_scene_ids": [
+        "scene-4",
+        "scene-5"
+      ],
+      "verdict": "APPROVED"
+    }
+  ]
+}

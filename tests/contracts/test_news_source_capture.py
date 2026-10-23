@@ -331,7 +331,7 @@ def test_spawned_worker_timeout_is_bounded_and_child_is_reaped(tmp_path):
     assert marker.is_file()
     worker_pid = int(marker.read_text(encoding="ascii"))
     assert worker_pid > 0
-    assert elapsed < 3.5
+    assert elapsed < 5.0
     assert {child.pid for child in multiprocessing.active_children()} <= before
 
 

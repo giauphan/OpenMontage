@@ -1,0 +1,11 @@
+{
+  "id": "us_ai_longform_02",
+  "title": "Engineering Architecture of Production AI Agents: Sandboxes, Memory, and Verification",
+  "description": "Why single-prompt LLM agents fail on complex codebases, and how production systems solve it with deterministic sandboxing, append-only ledgers, and supervisor swarms. #ai #softwareengineering #architecture #agents",
+  "status": "generated",
+  "locale": "en-US",
+  "format": "longform",
+  "audience": "us",
+  "yt_longform": "renders/final_long_en_US_16x9.mp4",
+  "duration_seconds": 360.0
+}

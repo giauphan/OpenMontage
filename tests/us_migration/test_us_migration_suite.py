@@ -629,3 +629,76 @@ class TestIntegrationAndOperationsI01_I10:
                     assert not res.success
                     assert "CHANNEL_GUARD_REQUIRED" in res.error or "expected_channel_id is mandatory" in res.error
 
+    def test_i15_check_qa_format_awareness_and_shorts_duration(self, tmp_path: Path):
+        """I15: check_qa.py supports independent format checking and 180s YouTube Shorts duration."""
+        from scripts.check_qa import check_project
+
+        # Case 1: Short-only en-US project (72s) passes without requiring full companion render
+        proj_short = tmp_path / "proj_short"
+        proj_short.mkdir()
+        (proj_short / "project.json").write_text(json.dumps({
+            "project_id": "proj_short",
+            "locale": "en-US",
+            "format": "short"
+        }), encoding="utf-8")
+        (proj_short / "assets").mkdir()
+        (proj_short / "assets/narration.mp3").write_bytes(b"dummy narration")
+        (proj_short / "artifacts").mkdir()
+        (proj_short / "artifacts/narration_en_US_text.txt").write_text("Hello world", encoding="utf-8")
+        (proj_short / "renders").mkdir()
+        short_render = proj_short / "renders/final_short_en_US_9x16.mp4"
+        short_render.write_bytes(b"dummy short video")
+
+        with patch("scripts.check_qa.duration") as mock_dur, \
+             patch("scripts.check_qa.stream_info", return_value="h264/aac"):
+            # Narration 72.0s, short render 72.0s
+            mock_dur.side_effect = lambda p, ff: 72.0 if "final_short" in str(p) or "narration.mp3" in str(p) else None
+            assert check_project(proj_short, "ffprobe", tolerance=0.1) is True
+
+            # Case 1b: Short with 120s duration passes for en-US (180s max)
+            mock_dur.side_effect = lambda p, ff: 120.0 if "final_short" in str(p) or "narration.mp3" in str(p) else None
+            assert check_project(proj_short, "ffprobe", tolerance=0.1) is True
+
+            # Case 1c: Short exceeding 180s fails
+            mock_dur.side_effect = lambda p, ff: 181.0 if "final_short" in str(p) or "narration.mp3" in str(p) else None
+            assert check_project(proj_short, "ffprobe", tolerance=0.1) is False
+
+        # Case 2: Longform-only en-US project (360s) passes without requiring reels render
+        proj_long = tmp_path / "proj_long"
+        proj_long.mkdir()
+        (proj_long / "publish_metadata.json").write_text(json.dumps({
+            "project_id": "proj_long",
+            "locale": "en-US",
+            "format": "longform"
+        }), encoding="utf-8")
+        (proj_long / "artifacts").mkdir()
+        (proj_long / "artifacts/narration_en_US_text.txt").write_text("Hello longform", encoding="utf-8")
+        (proj_long / "assets").mkdir()
+        (proj_long / "assets/narration.mp3").write_bytes(b"dummy narration")
+        (proj_long / "renders").mkdir()
+        long_render = proj_long / "renders/final_long_en_US_16x9.mp4"
+        long_render.write_bytes(b"dummy long video")
+
+        with patch("scripts.check_qa.duration") as mock_dur, \
+             patch("scripts.check_qa.stream_info", return_value="h264/aac"):
+            mock_dur.side_effect = lambda p, ff: 360.0 if "final_long" in str(p) or "narration.mp3" in str(p) else None
+            assert check_project(proj_long, "ffprobe", tolerance=0.1) is True
+
+        # Case 3: Legacy vi-VN project requires both full and reels renders
+        proj_vn = tmp_path / "proj_vn"
+        proj_vn.mkdir()
+        (proj_vn / "project.json").write_text(json.dumps({
+            "project_id": "proj_vn",
+            "locale": "vi-VN"
+        }), encoding="utf-8")
+        (proj_vn / "assets").mkdir()
+        (proj_vn / "assets/narration.mp3").write_bytes(b"dummy narration")
+        (proj_vn / "renders").mkdir()
+        (proj_vn / "renders/final_render.mp4").write_bytes(b"dummy full")
+        # Missing reels render -> must fail
+        with patch("scripts.check_qa.duration") as mock_dur, \
+             patch("scripts.check_qa.stream_info", return_value="h264/aac"):
+            mock_dur.side_effect = lambda p, ff: 50.0 if "final_render.mp4" in str(p) or "narration.mp3" in str(p) else None
+            assert check_project(proj_vn, "ffprobe", tolerance=0.1) is False
+
+
