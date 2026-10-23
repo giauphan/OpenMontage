@@ -13,15 +13,18 @@
             "coded_width": 1920,
             "coded_height": 1080,
             "closed_captions": 0,
+            "film_grain": 0,
             "has_b_frames": 2,
             "sample_aspect_ratio": "1:1",
             "display_aspect_ratio": "16:9",
             "pix_fmt": "yuv420p",
             "level": 40,
             "chroma_location": "left",
+            "field_order": "progressive",
             "refs": 1,
             "is_avc": "true",
             "nal_length_size": "4",
+            "id": "0x1",
             "r_frame_rate": "30/1",
             "avg_frame_rate": "30/1",
             "time_base": "1/15360",
@@ -29,9 +32,10 @@
             "start_time": "0.000000",
             "duration_ts": 5529600,
             "duration": "360.000000",
-            "bit_rate": "1058375",
+            "bit_rate": "1088932",
             "bits_per_raw_sample": "8",
             "nb_frames": "10800",
+            "extradata_size": 48,
             "disposition": {
                 "default": 1,
                 "dub": 0,
@@ -44,12 +48,18 @@
                 "visual_impaired": 0,
                 "clean_effects": 0,
                 "attached_pic": 0,
-                "timed_thumbnails": 0
+                "timed_thumbnails": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0
             },
             "tags": {
                 "language": "und",
                 "handler_name": "VideoHandler",
-                "vendor_id": "[0][0][0][0]"
+                "vendor_id": "[0][0][0][0]",
+                "encoder": "Lavc59.37.100 libx264"
             }
         },
         {
@@ -65,6 +75,7 @@
             "channels": 1,
             "channel_layout": "mono",
             "bits_per_sample": 0,
+            "id": "0x2",
             "r_frame_rate": "0/0",
             "avg_frame_rate": "0/0",
             "time_base": "1/16000",
@@ -72,8 +83,9 @@
             "start_time": "0.000000",
             "duration_ts": 5760000,
             "duration": "360.000000",
-            "bit_rate": "73883",
+            "bit_rate": "57131",
             "nb_frames": "5626",
+            "extradata_size": 5,
             "disposition": {
                 "default": 1,
                 "dub": 0,
@@ -86,7 +98,12 @@
                 "visual_impaired": 0,
                 "clean_effects": 0,
                 "attached_pic": 0,
-                "timed_thumbnails": 0
+                "timed_thumbnails": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0
             },
             "tags": {
                 "language": "und",
@@ -103,14 +120,14 @@
         "format_long_name": "QuickTime / MOV",
         "start_time": "0.000000",
         "duration": "360.000000",
-        "size": "51154726",
-        "bit_rate": "1136771",
+        "size": "51776043",
+        "bit_rate": "1150578",
         "probe_score": 100,
         "tags": {
             "major_brand": "isom",
             "minor_version": "512",
             "compatible_brands": "isomiso2avc1mp41",
-            "encoder": "Lavf58.76.100"
+            "encoder": "Lavf59.27.100"
         }
     }
 }

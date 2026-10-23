@@ -1,0 +1,4 @@
+{"ts": "2026-10-23T14:02:00.936085+00:00", "tool": "youtube_publisher", "event": "start"}
+{"ts": "2026-10-23T14:02:01.140841+00:00", "tool": "youtube_publisher", "event": "finish", "success": false, "cost_usd": 0.0, "duration_s": 0.2}
+{"ts": "2026-10-23T14:07:33.280607+00:00", "tool": "youtube_publisher", "event": "start"}
+{"ts": "2026-10-23T14:07:36.787493+00:00", "tool": "youtube_publisher", "event": "finish", "success": true, "cost_usd": 0.0, "duration_s": 3.51}

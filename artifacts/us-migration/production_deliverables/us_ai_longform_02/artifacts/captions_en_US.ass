@@ -1,0 +1,30 @@
+[Script Info]
+Title: Synced Captions
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,DejaVu Sans,28,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,0,2,80,80,65,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,Over the past two years, engineering teams discovered a painful truth:
+Dialogue: 0,0:00:10.00,0:00:22.00,Default,,0,0,0,,scaling prompt length does not scale autonomous capability. Single-prompt architectures inevitably break down.
+Dialogue: 0,0:00:22.00,0:00:40.00,Default,,0,0,0,,Production AI agents are distributed state machines built on deterministic tool protocols.
+Dialogue: 0,0:00:40.00,0:00:58.00,Default,,0,0,0,,A common mistake is treating the model context window as working memory.
+Dialogue: 0,0:00:58.00,0:01:25.00,Default,,0,0,0,,Production architectures decouple memory into ephemeral turns, semantic stores, and append-only ledgers.
+Dialogue: 0,0:01:25.00,0:01:50.00,Default,,0,0,0,,Tools must be defined as typed remote procedure calls with hardware-isolated execution boundaries.
+Dialogue: 0,0:01:50.00,0:02:15.00,Default,,0,0,0,,Immutable checkpoint ledgers bound crash recovery time by resuming execution from the latest valid state snapshot.
+Dialogue: 0,0:02:15.00,0:02:40.00,Default,,0,0,0,,If a step fails, the system rolls back cleanly instead of restarting from scratch.
+Dialogue: 0,0:02:40.00,0:03:05.00,Default,,0,0,0,,Research from MetaGPT shows that structuring agent collaboration with Standard Operating Procedures helps prevent circular coordination loops.
+Dialogue: 0,0:03:05.00,0:03:30.00,Default,,0,0,0,,The supervisor holds the state machine and evaluates deliverables against strict schema contracts.
+Dialogue: 0,0:03:30.00,0:03:55.00,Default,,0,0,0,,Subjective self-evaluation is the most dangerous trap in autonomous agent deployment.
+Dialogue: 0,0:03:55.00,0:04:20.00,Default,,0,0,0,,Production pipelines rely on non-negotiable deterministic quality gates: unit tests, integration tests, and frame decoding.
+Dialogue: 0,0:04:20.00,0:04:45.00,Default,,0,0,0,,Without strict token budget circuits, runaway retry loops burn through API spend without resolving underlying failures.
+Dialogue: 0,0:04:45.00,0:05:10.00,Default,,0,0,0,,Production architectures implement per-stage ceilings, retry limits, and tiered model routing.
+Dialogue: 0,0:05:10.00,0:05:35.00,Default,,0,0,0,,Building production AI agents is about disciplined software engineering scaffolding around foundation models.
+Dialogue: 0,0:05:35.00,0:06:00.00,Default,,0,0,0,,Comprehensive preflight verification and automated testing gates validate system state before changes deploy to live environments.

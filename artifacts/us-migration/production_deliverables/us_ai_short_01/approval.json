@@ -5,19 +5,19 @@
   "supervisor_role": "Editorial Lead & Safety Officer",
   "reviewer_id": "qa-supervisor-us-migration",
   "project_id": "us_ai_short_01",
-  "manifest_sha256": "f34302694f338731b31981f62ca27af89f17da3c0d2ede3f85e3865c9e80e3dc",
+  "manifest_sha256": "12f3d717a21cd796ce7e1e72a090ca59f0ff0edf0f7c2783d99252bd3408ac4b",
   "release_manifest": {
     "project_id": "us_ai_short_01",
     "format": "short",
-    "media_sha256": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+    "media_sha256": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
     "claim_ledger_sha256": "91811a6c903cb5dafc9637ab6ca7b7f7c71c4a23fa6e68706be6fc5f926c07c7",
     "metadata_sha256": "87e6e00b45bd32dab1f3768d539bf5f66a7bfee9984a5255a94cf6a1dd114043",
     "captions_sha256": "4594c25fd987661032b14e6690844e8e24e7c1291baeffd21b68f4070c495868",
     "script_sha256": "5bf38a7faa0026ff1254b41f03387607aaedd4c583e3778e9f815ab25e9b18a4"
   },
   "audit_trail": {
-    "qa_audit_sha256": "bbe41d5a5bb23606575698969f92dec9949eaec759a8a0e347f4f0625399a9b7",
-    "audited_at": "2026-10-23T12:54:18Z",
+    "qa_audit_sha256": "91652b4945a6ea9a7182e6c7e39e24260a0b44d632678c78af618a72dd837323",
+    "audited_at": "2026-10-23T14:37:13Z",
     "supervisor_identity": "independent_qa_supervisor",
     "supervisor_role": "Editorial Lead & Safety Officer",
     "decision": "APPROVED",
@@ -30,19 +30,19 @@
       "platform_duration_bounds_verified": true
     }
   },
-  "approved_media_sha256": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
-  "media_sha256": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+  "approved_media_sha256": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
+  "media_sha256": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
   "claim_ledger_sha256": "91811a6c903cb5dafc9637ab6ca7b7f7c71c4a23fa6e68706be6fc5f926c07c7",
   "metadata_sha256": "87e6e00b45bd32dab1f3768d539bf5f66a7bfee9984a5255a94cf6a1dd114043",
   "captions_sha256": "4594c25fd987661032b14e6690844e8e24e7c1291baeffd21b68f4070c495868",
   "script_sha256": "5bf38a7faa0026ff1254b41f03387607aaedd4c583e3778e9f815ab25e9b18a4",
-  "signature": "7839217e97b81270dd938f0f039bff8acf49f9dae1a834dd4b6a9d3291487e63",
+  "signature": "657473821acba1a15ef01d075b1b0f16fd047487017b16f0cf516430df0b673d",
   "signature_algorithm": "HMAC-SHA256",
   "approved_media_hashes": [
-    "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b"
+    "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45"
   ],
   "media_sha256_by_platform": {
-    "youtube": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b"
+    "youtube": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45"
   },
-  "timestamp": "2026-10-23T12:54:18Z"
+  "timestamp": "2026-10-23T14:37:13Z"
 }

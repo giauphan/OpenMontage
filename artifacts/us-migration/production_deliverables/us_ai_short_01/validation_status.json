@@ -1,14 +1,14 @@
 [
   {
     "project_id": "us_ai_short_01",
-    "timestamp": "2026-10-23T08:13:53Z",
+    "timestamp": "2026-10-23T14:37:13Z",
     "status": "PASS",
     "total_checks": 6,
     "passed": 6,
     "failed": 0,
     "color": "\ud83d\udfe2",
     "strict_quality_pass": true,
-    "inspected_artifact_hash": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+    "inspected_artifact_hash": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
     "details": {
       "overall_status": "PASS",
       "results": [
@@ -16,7 +16,7 @@
           "check_name": "Technical Contract",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+            "inspected_artifact_hash": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
             "dar": "9:16",
             "sar": "1:1",
             "resolution": "1080x1920",
@@ -27,17 +27,18 @@
           "check_name": "Content Quality & Fact-Checking",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+            "inspected_artifact_hash": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
             "claims_count": 3,
             "verbatim_script_spans_matched": true,
-            "all_claims_approved": true
+            "all_claims_approved": true,
+            "source_snapshots_verified": true
           }
         },
         {
           "check_name": "Synchronized Subtitles Audit",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+            "inspected_artifact_hash": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
             "subtitles_burned": true,
             "cue_count": 10
           }
@@ -46,7 +47,7 @@
           "check_name": "Metadata Validation",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+            "inspected_artifact_hash": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
             "locale": "en-US",
             "format": "short"
           }
@@ -55,8 +56,10 @@
           "check_name": "Independent Editorial QA Review Gate",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "6769ff899aad4313a25d9f427fecee86cb806f04f22d0cd26a2120de1391e59b",
+            "inspected_artifact_hash": "48b177d207abd7138284aa196011846e77f4fc8e4b36aec8a3c9a6c2f8ad0d45",
             "reviewer": "independent_qa_supervisor",
+            "supervisor_role": "Editorial Lead & Safety Officer",
+            "manifest_sha256": "12f3d717a21cd796ce7e1e72a090ca59f0ff0edf0f7c2783d99252bd3408ac4b",
             "verdict": "APPROVED_FOR_STRICT_PREFLIGHT",
             "signature_verified": true
           }
