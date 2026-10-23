@@ -54,78 +54,28 @@
   },
   "active_projects": [
     {
-      "project_id": "cand_565eb8c4b613d526",
-      "publish_date": "2026-10-16",
+      "project_id": "cand_3f4932f083ff2c17",
+      "publish_date": "2026-10-23",
       "publish_time": "21:15"
     },
     {
-      "project_id": "cand_13899991ca58d567",
-      "publish_date": "2026-10-17",
-      "publish_time": "21:15"
-    },
-    {
-      "project_id": "cand_5f42dd27973ab420",
-      "publish_date": "2026-10-18",
-      "publish_time": "14:15"
-    },
-    {
-      "project_id": "cand_95c9e7e2449fec3a",
-      "publish_date": "2026-10-18",
-      "publish_time": "21:15"
-    },
-    {
-      "project_id": "cand_0d261e1cbe90c2ba",
-      "publish_date": "2026-10-19",
-      "publish_time": "09:15"
-    },
-    {
-      "project_id": "cand_2877c615b39e6830",
-      "publish_date": "2026-10-19",
-      "publish_time": "14:15"
-    },
-    {
-      "project_id": "cand_c2b418a44fd13b06",
-      "publish_date": "2026-10-19",
-      "publish_time": "21:15"
-    },
-    {
-      "project_id": "cand_773a2236d831cec3",
-      "publish_date": "2026-10-20",
-      "publish_time": "09:15"
-    },
-    {
-      "project_id": "cand_a27b0ae7beb61394",
-      "publish_date": "2026-10-20",
-      "publish_time": "14:15"
-    },
-    {
-      "project_id": "cand_3455452586e0ce5c",
-      "publish_date": "2026-10-20",
-      "publish_time": "21:15"
-    },
-    {
-      "project_id": "cand_38e4fca7a5a44696",
-      "publish_date": "2026-10-20",
-      "publish_time": "19:15"
-    },
-    {
-      "project_id": "cand_3b08217af45e781a",
-      "publish_date": "2026-10-20",
+      "project_id": "cand_a47de62b6c1ac034",
+      "publish_date": "2026-10-23",
       "publish_time": "23:30"
     },
     {
-      "project_id": "cand_0ac5150cdfbe9347",
-      "publish_date": "2026-10-21",
+      "project_id": "cand_89852a2e1df817b0",
+      "publish_date": "2026-10-24",
       "publish_time": "09:15"
     },
     {
-      "project_id": "cand_90ff53f2951e0b9a",
-      "publish_date": "2026-10-21",
+      "project_id": "cand_4b6e3283f6bd75df",
+      "publish_date": "2026-10-24",
       "publish_time": "14:15"
     },
     {
-      "project_id": "cand_ed1a4107260b37b5",
-      "publish_date": "2026-10-21",
+      "project_id": "cand_fb66f66fdd028161",
+      "publish_date": "2026-10-24",
       "publish_time": "21:15"
     }
   ]
