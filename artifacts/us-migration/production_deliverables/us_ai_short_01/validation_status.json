@@ -1,14 +1,14 @@
 [
   {
     "project_id": "us_ai_short_01",
-    "timestamp": "2026-10-22T17:28:00Z",
+    "timestamp": "2026-10-23T07:01:32Z",
     "status": "PASS",
     "total_checks": 5,
     "passed": 5,
     "failed": 0,
     "color": "\ud83d\udfe2",
     "strict_quality_pass": true,
-    "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4",
+    "inspected_artifact_hash": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c",
     "details": {
       "overall_status": "PASS",
       "results": [
@@ -16,28 +16,38 @@
           "check_name": "Technical Contract",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+            "inspected_artifact_hash": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c",
+            "dar": "9:16",
+            "sar": "1:1",
+            "resolution": "1080x1920",
+            "duration_seconds": 72.0
           }
         },
         {
-          "check_name": "Content Quality",
+          "check_name": "Content Quality & Fact-Checking",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+            "inspected_artifact_hash": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c",
+            "claims_count": 3,
+            "verbatim_script_spans_matched": true
           }
         },
         {
           "check_name": "Metadata Validation",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+            "inspected_artifact_hash": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c",
+            "locale": "en-US",
+            "format": "short"
           }
         },
         {
-          "check_name": "Codex Agent Review Gate",
+          "check_name": "Independent Editorial QA Review Gate",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+            "inspected_artifact_hash": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c",
+            "reviewer": "independent_qa_supervisor",
+            "verdict": "APPROVED_FOR_STRICT_PREFLIGHT"
           }
         }
       ]

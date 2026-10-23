@@ -34,7 +34,7 @@
     {
       "id": "chapter-5",
       "label": "Multi-Agent Orchestration: Supervisors vs Peer Swarms",
-      "text": "When tasks outgrow a single agent, teams often experiment with decentralized peer swarms where agents converse freely. However, research reveals that unconstrained agent debates frequently cascade into deadlocks and circular loops. Empirical benchmarks show supervisor-worker hierarchies prevent circular debate deadlocks and consistently outperform flat peer swarms. In a supervisor architecture, specialized worker agents focus on isolated sub-tasks like static analysis, test writing, or visual rendering. The supervisor holds the state machine, evaluates worker deliverables against strict schema contracts, and decides when the workflow advances.",
+      "text": "When tasks outgrow a single agent, teams often experiment with decentralized peer swarms where agents converse freely. However, research reveals that unconstrained agent debates frequently cascade into deadlocks and circular loops. Research from MetaGPT shows that structuring agent collaboration with Standard Operating Procedures helps prevent circular coordination loops during multi-step execution. In a supervisor architecture, specialized worker agents focus on isolated sub-tasks like static analysis, test writing, or visual rendering. The supervisor holds the state machine, evaluates worker deliverables against strict schema contracts, and decides when the workflow advances.",
       "start_seconds": 185.0,
       "end_seconds": 235.0
     },
@@ -55,7 +55,7 @@
     {
       "id": "chapter-8",
       "label": "Conclusion: The Zero-Mutation Production Blueprint",
-      "text": "Building production AI agents is not about waiting for smarter foundation models; it is about building disciplined software engineering scaffolding around the models we have today. By combining sandboxed tool execution, append-only checkpoint ledgers, hierarchical supervisor coordination, and automated quality gates, engineering teams can deploy autonomous workflows with complete reliability. Shadow dry-runs prove zero mutations and zero unverified side effects before live release. Build verifiable boundaries into your agent architecture today, and your autonomous systems will deliver dependable, compounding value.",
+      "text": "Building production AI agents is not about waiting for smarter foundation models; it is about building disciplined software engineering scaffolding around the models we have today. By combining sandboxed tool execution, append-only checkpoint ledgers, hierarchical supervisor coordination, and automated quality gates, engineering teams can deploy autonomous workflows with complete reliability. Comprehensive preflight verification and automated testing gates validate system state before changes deploy to live environments. Build verifiable boundaries into your agent architecture today, and your autonomous systems will deliver dependable, compounding value.",
       "start_seconds": 325.0,
       "end_seconds": 360.0
     }

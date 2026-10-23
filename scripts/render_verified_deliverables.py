@@ -7,26 +7,28 @@ Grounded in verified primary citations:
 - ACM Rollback-Recovery Survey (DOI: 10.1145/568522.568525)
 - Google Cloud DORA 2024 Report
 
-Produces complete packages in artifacts/us-migration/production_deliverables/
-and projects/us_ai_short_01 and projects/us_ai_longform_02.
+Generates high-production technical graphic cards (replacing testsrc)
+with exact 9:16 and 16:9 aspect ratios (setsar=1) and strict audio mixing.
+
+NOTE: This script does NOT self-approve. Render outputs must be independently
+inspected and approved by scripts/independent_editorial_qa.py.
 """
 import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path("/home/ubuntu/OpenMontage")
+sys.path.insert(0, str(ROOT))
 SHORT_PROJECT = ROOT / "projects/us_ai_short_01"
 LONG_PROJECT = ROOT / "projects/us_ai_longform_02"
 MUSIC_BG = ROOT / "artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3"
 
-PROD_DIR = ROOT / "artifacts/us-migration/production_deliverables"
-PROD_SHORT = PROD_DIR / "us_ai_short_01"
-PROD_LONG = PROD_DIR / "us_ai_longform_02"
-
 TMP_DIR = Path("/tmp/render_verified")
 TMP_DIR.mkdir(parents=True, exist_ok=True)
+GRAPHICS_DIR = Path("/tmp/scene_graphics")
 
 
 def run(cmd: str):
@@ -39,60 +41,67 @@ def run(cmd: str):
     return res.stdout
 
 
+def ensure_graphics():
+    print("\n=== GENERATING CONTEXTUAL SCENE GRAPHICS ===")
+    from scripts.generate_scene_graphics import generate_short_graphics, generate_longform_graphics
+    generate_short_graphics(GRAPHICS_DIR / "short")
+    generate_longform_graphics(GRAPHICS_DIR / "long")
+
+
 def render_short():
-    print("\n=== RENDERING US SHORT (72s, 9:16) ===")
+    print("\n=== RENDERING US SHORT (72s, 1080x1920, 9:16, SAR 1:1) ===")
     narration_txt = SHORT_PROJECT / "artifacts/narration_en_US_text.txt"
     raw_audio = TMP_DIR / "short_narration_raw.mp3"
     mixed_audio = TMP_DIR / "short_mixed_audio.mp3"
+    concat_video = TMP_DIR / "short_concat_raw.mp4"
     final_video = TMP_DIR / "final_short_en_US_9x16.mp4"
 
     # 1. TTS audio
-    run(f'ffmpeg -y -f lavfi -i "flite=textfile={narration_txt}:voice=slt" -af "apad=whole_dur=72.0" {raw_audio}')
+    run(f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={narration_txt}:voice=slt" -af "apad=whole_dur=72.0" {raw_audio}')
 
-    # 2. Mix with music
-    run(f'ffmpeg -y -i {raw_audio} -stream_loop -1 -i {MUSIC_BG} '
+    # 2. Mix with music (narration volume 1.0, background music 0.15)
+    run(f'ffmpeg -y -loglevel error -i {raw_audio} -stream_loop -1 -i {MUSIC_BG} '
         f'-filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.15[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[out]" '
         f'-map "[out]" -t 72.0 {mixed_audio}')
 
-    # 3. Render video with verified metrics
+    # 3. Render scene segments and concatenate
+    s_dir = GRAPHICS_DIR / "short"
+    scenes = [
+        ("scene_01_hook.png", 12.0),
+        ("scene_02_benchmark.png", 14.0),
+        ("scene_03_coordination.png", 15.0),
+        ("scene_04_sandboxing.png", 14.0),
+        ("scene_05_verification.png", 17.0),
+    ]
+    seg_files = []
+    for idx, (img_name, dur) in enumerate(scenes):
+        seg_path = TMP_DIR / f"short_seg_{idx}.mp4"
+        run(f'ffmpeg -y -loglevel error -loop 1 -framerate 30 -t {dur} -i {s_dir / img_name} '
+            f'-vf "pad=1160:2000:40:40:color=#0b0f19,crop=1080:1920:\'40+30*sin(t*1.0)\':\'40+30*cos(t*1.0)\',setsar=1" '
+            f'-c:v libx264 -preset fast -pix_fmt yuv420p {seg_path}')
+        seg_files.append(seg_path)
+
+    list_path = TMP_DIR / "short_concat_list.txt"
+    with open(list_path, "w", encoding="utf-8") as f:
+        for p in seg_files:
+            f.write(f"file '{p}'\n")
+
+    run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
+
+    # 4. Final compositing: Overlay audio, dynamic HUD beam, subtitle safe zone
     vf = (
-        "[1:v]crop=in_w-80:in_h-80:x='40+35*sin(t*0.5)':y='40+35*cos(t*0.5)',scale=1080:1920[bg];"
-        "[bg]drawbox=x=40:y=120:w=1000:h=1680:color=#1e293b@0.4:t=fill,"
-        "drawbox=x=40:y=120:w=1000:h=1680:color=#38bdf8@0.3:t=4,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='AI INFRASTRUCTURE':fontcolor='#38bdf8':fontsize=36:x=(w-text_w)/2:y=200,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='AUTONOMOUS AI CODING AGENTS':fontcolor='#ffffff':fontsize=50:x=(w-text_w)/2:y=280,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Why Sandbox Tool Governance Matters':fontcolor='#94a3b8':fontsize=36:x=(w-text_w)/2:y=360,"
-        # Scene 1: 0-12s
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='THE PRODUCTION DILEMMA':fontcolor='#f59e0b':fontsize=42:x=(w-text_w)/2:y=600:enable='between(t,0,12)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Fast feature generation vs uncontrolled side-effects':fontcolor='#cbd5e1':fontsize=32:x=(w-text_w)/2:y=680:enable='between(t,0,12)',"
-        # Scene 2: 12-26s (SWE-bench benchmark: >95% unassisted failure rate)
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='SWE-BENCH BENCHMARK (ICLR 2024)':fontcolor='#ef4444':fontsize=46:x=(w-text_w)/2:y=600:enable='between(t,12,26)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Frontier models fail >95% without execution sandboxes':fontcolor='#cbd5e1':fontsize=32:x=(w-text_w)/2:y=680:enable='between(t,12,26)',"
-        "drawbox=x=140:y=760:w=800:h=36:color=#334155:t=fill:enable='between(t,12,26)',"
-        "drawbox=x=140:y=760:w=760:h=36:color='#ef4444':t=fill:enable='between(t,12,26)',"
-        # Scene 3: 26-41s (MetaGPT / unconstrained runs)
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='UNCONSTRAINED RUNS DIVERGE':fontcolor='#ef4444':fontsize=46:x=(w-text_w)/2:y=600:enable='between(t,26,41)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Unsandboxed bash leads to cascading state corruption':fontcolor='#cbd5e1':fontsize=32:x=(w-text_w)/2:y=680:enable='between(t,26,41)',"
-        # Scene 4: 41-55s (Architecture)
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='DETERMINISTIC SANDBOXING':fontcolor='#10b981':fontsize=48:x=(w-text_w)/2:y=600:enable='between(t,41,55)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Isolated containers, strict schemas & error payloads':fontcolor='#cbd5e1':fontsize=32:x=(w-text_w)/2:y=680:enable='between(t,41,55)',"
-        # Scene 5: 55-72s (Takeaway)
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='ZERO-MUTATION PRODUCTION GATE':fontcolor='#38bdf8':fontsize=46:x=(w-text_w)/2:y=600:enable='between(t,55,72)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Shadow dry-runs prove safety before live deployment':fontcolor='#cbd5e1':fontsize=32:x=(w-text_w)/2:y=680:enable='between(t,55,72)',"
-        # Dynamic HUD motion scan beam
-        "drawbox=x='mod(t*300,900)+90':y=712:w=80:h=4:color=#38bdf8:t=fill,"
-        # Subtitle safe zone
-        "drawbox=x=100:y=1450:w=880:h=180:color=#020617@0.85:t=fill,"
-        "drawbox=x=100:y=1450:w=880:h=180:color=#38bdf8@0.5:t=2,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='[VERIFIED EN-US SUBTITLES]':fontcolor='#38bdf8':fontsize=24:x=(w-text_w)/2:y=1470,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Deterministic Agent Tool Sandboxing':fontcolor='#ffffff':fontsize=32:x=(w-text_w)/2:y=1540[vout]"
+        "drawbox=x=80:y='mod(t*300,1650)+100':w=920:h=3:color=#38bdf8@0.7:t=fill,"
+        "drawbox=x=60:y=1540:w=960:h=230:color=#0b0f19@0.92:t=fill,"
+        "drawbox=x=60:y=1540:w=960:h=230:color=#38bdf8@0.6:t=2,"
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='[ VERIFIED EN-US SUBTITLES ]':fontcolor='#38bdf8':fontsize=22:x=(w-text_w)/2:y=1565,"
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Autonomous Coding Agent Governance':fontcolor='#ffffff':fontsize=32:x=(w-text_w)/2:y=1640,"
+        "setsar=1"
     )
 
-    run(f'ffmpeg -y -i {mixed_audio} -f lavfi -i "testsrc=s=1200x2040:d=72:r=30,colorchannelmixer=rr=0.35:gg=0.4:bb=0.6" '
-        f'-filter_complex "{vf}" -map "[vout]" -map 0:a '
-        f'-c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -t 72.0 {final_video}')
+    run(f'ffmpeg -y -loglevel error -i {concat_video} -i {mixed_audio} '
+        f'-vf "{vf}" -c:v libx264 -preset fast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -t 72.0 {final_video}')
 
-    # Copy to project and prod dirs
+    # Copy to project directory
     (SHORT_PROJECT / "assets").mkdir(parents=True, exist_ok=True)
     (SHORT_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
     shutil.copy2(mixed_audio, SHORT_PROJECT / "assets/narration.mp3")
@@ -104,77 +113,71 @@ def render_short():
     for sec, name in [(0, "frame_00s_hook.png"), (15, "frame_15s_benchmark.png"),
                       (30, "frame_30s_evidence.png"), (45, "frame_45s_architecture.png"),
                       (60, "frame_60s_takeaway.png")]:
-        run(f'ffmpeg -y -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
+        run(f'ffmpeg -y -loglevel error -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
 
     # Generate ffprobe
     probe = run(f'ffprobe -v quiet -print_format json -show_format -show_streams {final_video}')
     (SHORT_PROJECT / "renders/ffprobe.json").write_text(probe, encoding="utf-8")
-    update_hashes(SHORT_PROJECT, SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4")
     print("Short render complete!")
 
 
 def render_long():
-    print("\n=== RENDERING US LONG-FORM (360s, 16:9) ===")
+    print("\n=== RENDERING US LONG-FORM (360s, 1920x1080, 16:9, SAR 1:1) ===")
     narration_txt = LONG_PROJECT / "artifacts/narration_en_US_text.txt"
     raw_audio = TMP_DIR / "long_narration_raw.mp3"
     mixed_audio = TMP_DIR / "long_mixed_audio.mp3"
+    concat_video = TMP_DIR / "long_concat_raw.mp4"
     final_video = TMP_DIR / "final_long_en_US_16x9.mp4"
 
     # 1. TTS audio
-    run(f'ffmpeg -y -f lavfi -i "flite=textfile={narration_txt}:voice=slt" -af "apad=whole_dur=360.0" {raw_audio}')
+    run(f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={narration_txt}:voice=slt" -af "apad=whole_dur=360.0" {raw_audio}')
 
     # 2. Mix with music
-    run(f'ffmpeg -y -i {raw_audio} -stream_loop -1 -i {MUSIC_BG} '
+    run(f'ffmpeg -y -loglevel error -i {raw_audio} -stream_loop -1 -i {MUSIC_BG} '
         f'-filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.15[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[out]" '
         f'-map "[out]" -t 360.0 {mixed_audio}')
 
-    # 3. Render video with verified chapters
+    # 3. Render chapter segments and concatenate
+    l_dir = GRAPHICS_DIR / "long"
+    chapters = [
+        ("ch01_prompt_bottleneck.png", 40.0),
+        ("ch02_memory_hierarchy.png", 45.0),
+        ("ch03_tool_sandboxing.png", 50.0),
+        ("ch04_rollback_checkpoints.png", 50.0),
+        ("ch05_supervisors_vs_swarms.png", 50.0),
+        ("ch06_quality_gates.png", 45.0),
+        ("ch07_cost_token_circuits.png", 45.0),
+        ("ch08_zero_mutation_blueprint.png", 35.0),
+    ]
+    seg_files = []
+    for idx, (img_name, dur) in enumerate(chapters):
+        seg_path = TMP_DIR / f"long_seg_{idx}.mp4"
+        run(f'ffmpeg -y -loglevel error -loop 1 -framerate 30 -t {dur} -i {l_dir / img_name} '
+            f'-vf "pad=2000:1160:40:40:color=#0b0f19,crop=1920:1080:\'40+30*sin(t*1.0)\':\'40+30*cos(t*1.0)\',setsar=1" '
+            f'-c:v libx264 -preset fast -pix_fmt yuv420p {seg_path}')
+        seg_files.append(seg_path)
+
+    list_path = TMP_DIR / "long_concat_list.txt"
+    with open(list_path, "w", encoding="utf-8") as f:
+        for p in seg_files:
+            f.write(f"file '{p}'\n")
+
+    run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
+
+    # 4. Final compositing: Overlay audio, dynamic HUD beam, specification bar
     vf = (
-        "[1:v]crop=in_w-80:in_h-80:x='40+35*sin(t*0.5)':y='40+35*cos(t*0.5)',scale=1920:1080[bg];"
-        "[bg]drawbox=x=80:y=60:w=1760:h=960:color=#1e293b@0.4:t=fill,"
-        "drawbox=x=80:y=60:w=1760:h=960:color=#38bdf8@0.3:t=3,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='AI SYSTEMS ARCHITECTURE':fontcolor='#38bdf8':fontsize=28:x=(w-text_w)/2:y=100,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='PRODUCTION AI AGENTS':fontcolor='#ffffff':fontsize=54:x=(w-text_w)/2:y=150,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Deterministic Sandboxing, Three-Tier Memory & Verifiable Execution':fontcolor='#94a3b8':fontsize=30:x=(w-text_w)/2:y=220,"
-        "drawbox=x=200:y=280:w=1520:h=2:color=#334155:t=fill,"
-        # Chapter 1: 0-40s
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 1: THE SINGLE-PROMPT BOTTLENECK':fontcolor='#f59e0b':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,0,40)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Prompt scaling fails on complex engineering tasks due to context dilution and compounding hallucination.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,0,40)',"
-        # Chapter 2: 40-85s
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 2: THREE-TIER MEMORY HIERARCHY':fontcolor='#38bdf8':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,40,85)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Decoupling ephemeral context, semantic search, and append-only disk ledgers preserves reasoning precision.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,40,85)',"
-        # Chapter 3: 85-135s
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 3: DETERMINISTIC TOOL SANDBOXING':fontcolor='#10b981':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,85,135)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Strict schemas, resource quotas, and hardware-isolated execution boundaries contain blast radius.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,85,135)',"
-        # Chapter 4: 135-185s (Rollback recovery ACM CSUR)
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 4: STATE MACHINES & CHECKPOINTS (ACM CSUR)':fontcolor='#f59e0b':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,135,185)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Immutable checkpoint ledgers bound crash recovery time by resuming execution from valid state snapshots.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,135,185)',"
-        # Chapter 5: 185-235s (MetaGPT ICLR 2024)
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 5: SUPERVISOR-WORKER HIERARCHY (ICLR 2024)':fontcolor='#a855f7':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,185,235)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='MetaGPT SOP evaluations show supervisor hierarchies prevent circular debate deadlocks over flat peer swarms.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,185,235)',"
-        # Chapter 6: 235-280s
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 6: EMPIRICAL BENCHMARKS & QUALITY GATES':fontcolor='#06b6d4':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,235,280)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Non-negotiable automated tests, frame decoding, and audio-sync gates replace subjective model self-evaluation.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,235,280)',"
-        # Chapter 7: 280-325s (Cost & circuits)
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 7: PRODUCTION COST & TOKEN CIRCUITS':fontcolor='#ef4444':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,280,325)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Per-stage token ceilings, circuit breakers, and tiered routing prevent runaway retry loop expenditures.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,280,325)',"
-        # Chapter 8: 325-360s
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='CHAPTER 8: ZERO-MUTATION PRODUCTION BLUEPRINT':fontcolor='#10b981':fontsize=42:x=(w-text_w)/2:y=380:enable='between(t,325,360)',"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Deterministic sandboxes, append-only ledgers, and shadow dry-runs deliver reliable, compounding value.':fontcolor='#cbd5e1':fontsize=28:x=(w-text_w)/2:y=460:enable='between(t,325,360)',"
-        # Dynamic HUD motion scan beam
-        "drawbox=x='mod(t*400,1600)+160':y=805:w=120:h=4:color=#38bdf8:t=fill,"
-        # Navigation bar
-        "drawbox=x=160:y=820:w=1600:h=90:color=#020617@0.85:t=fill,"
-        "drawbox=x=160:y=820:w=1600:h=90:color=#38bdf8@0.5:t=2,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='[EN-US PRODUCTION SPECIFICATION]':fontcolor='#38bdf8':fontsize=20:x=(w-text_w)/2:y=835,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='1080p 30fps | 6-Minute Technical Deep Dive | Verified Academic Citations':fontcolor='#ffffff':fontsize=24:x=(w-text_w)/2:y=865[vout]"
+        "drawbox=x=80:y='mod(t*400,900)+60':w=1760:h=2:color=#38bdf8@0.6:t=fill,"
+        "drawbox=x=120:y=960:w=1680:h=70:color=#0b0f19@0.9:t=fill,"
+        "drawbox=x=120:y=960:w=1680:h=70:color=#38bdf8@0.5:t=2,"
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='[ PRODUCTION AI SYSTEMS ARCHITECTURE ]':fontcolor='#38bdf8':fontsize=18:x=150:y=985,"
+        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='1080p 30fps | 6-Minute Technical Deep Dive | Verified Academic Citations':fontcolor='#ffffff':fontsize=20:x=680:y=985,"
+        "setsar=1"
     )
 
-    run(f'ffmpeg -y -i {mixed_audio} -f lavfi -i "testsrc=s=2040x1200:d=360:r=30,colorchannelmixer=rr=0.35:gg=0.4:bb=0.6" '
-        f'-filter_complex "{vf}" -map "[vout]" -map 0:a '
-        f'-c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -c:a aac -b:a 192k -t 360.0 {final_video}')
+    run(f'ffmpeg -y -loglevel error -i {concat_video} -i {mixed_audio} '
+        f'-vf "{vf}" -c:v libx264 -preset fast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -t 360.0 {final_video}')
 
-    # Copy to project and prod dirs
+    # Copy to project directory
     (LONG_PROJECT / "assets").mkdir(parents=True, exist_ok=True)
     (LONG_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
     shutil.copy2(mixed_audio, LONG_PROJECT / "assets/narration.mp3")
@@ -191,58 +194,42 @@ def render_long():
                       (250, "frame_06_ch6_quality_gates.png"),
                       (300, "frame_07_ch7_cost_circuits.png"),
                       (340, "frame_08_ch8_zero_mutation.png")]:
-        run(f'ffmpeg -y -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
+        run(f'ffmpeg -y -loglevel error -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
 
     # Generate ffprobe
     probe = run(f'ffprobe -v quiet -print_format json -show_format -show_streams {final_video}')
     (LONG_PROJECT / "renders/ffprobe.json").write_text(probe, encoding="utf-8")
-    update_hashes(LONG_PROJECT, LONG_PROJECT / "renders/final_long_en_US_16x9.mp4")
     print("Longform render complete!")
 
 
-def update_hashes(project_dir: Path, render_file: Path):
-    import hashlib
-    sha = hashlib.sha256(render_file.read_bytes()).hexdigest()
-    app_path = project_dir / "approval.json"
-    if app_path.is_file():
-        data = json.loads(app_path.read_text(encoding="utf-8"))
-        data["approved_media_sha256"] = sha
-        data["media_sha256"] = sha
-        data["approved_media_hashes"] = [sha]
-        data["media_sha256_by_platform"] = {"youtube": sha}
-        app_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    val_path = project_dir / "validation_status.json"
-    if val_path.is_file():
-        val_data = json.loads(val_path.read_text(encoding="utf-8"))
-        for entry in val_data:
-            entry["inspected_artifact_hash"] = sha
-            if "details" in entry and "results" in entry["details"]:
-                for r in entry["details"]["results"]:
-                    if "details" in r and "inspected_artifact_hash" in r["details"]:
-                        r["details"]["inspected_artifact_hash"] = sha
-        val_path.write_text(json.dumps(val_data, indent=2), encoding="utf-8")
-    print(f"Updated hashes for {project_dir.name} -> {sha}")
+def invalidate_stale_approvals():
+    """Invalidate stale approval records upon fresh media render.
 
-
-def mirror_to_production_deliverables():
-    print("\n=== MIRRORING TO artifacts/us-migration/production_deliverables ===")
-    for src_dir, dst_dir in [(SHORT_PROJECT, PROD_SHORT), (LONG_PROJECT, PROD_LONG)]:
-        if dst_dir.exists():
-            shutil.rmtree(dst_dir)
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        # Copy everything except history
-        for item in src_dir.iterdir():
-            if item.name in ("history", "logs", ".keep"):
-                continue
-            if item.is_dir():
-                shutil.copytree(item, dst_dir / item.name)
-            else:
-                shutil.copy2(item, dst_dir / item.name)
-        print(f"Mirrored {src_dir.name} -> {dst_dir}")
+    Ensures that newly rendered deliverables are not mistakenly marked approved
+    until scripts/independent_editorial_qa.py conducts a fresh audit.
+    """
+    for proj in (SHORT_PROJECT, LONG_PROJECT):
+        app = proj / "approval.json"
+        if app.is_file():
+            data = json.loads(app.read_text(encoding="utf-8"))
+            data["approved"] = False
+            data["status"] = "PENDING_INDEPENDENT_QA"
+            data["timestamp"] = "2026-10-23T06:00:00Z"
+            app.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        val = proj / "validation_status.json"
+        if val.is_file():
+            val_data = json.loads(val.read_text(encoding="utf-8"))
+            for entry in (val_data if isinstance(val_data, list) else [val_data]):
+                entry["status"] = "PENDING_INDEPENDENT_QA"
+                entry["strict_quality_pass"] = False
+            val.write_text(json.dumps(val_data, indent=2), encoding="utf-8")
+    print("Invalidated stale approval records pending independent QA audit.")
 
 
 if __name__ == "__main__":
+    ensure_graphics()
     render_short()
     render_long()
-    mirror_to_production_deliverables()
-    print("\nALL DELIVERABLES SUCCESSFULLY RENDERED AND MIRRORED!")
+    invalidate_stale_approvals()
+    print("\nALL DELIVERABLES SUCCESSFULLY RENDERED!")
+    print("Next step: Run scripts/independent_editorial_qa.py for independent verification.")

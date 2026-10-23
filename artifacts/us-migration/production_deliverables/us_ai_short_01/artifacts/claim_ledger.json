@@ -2,11 +2,11 @@
   "schema_version": "1.0",
   "project_id": "us_ai_short_01",
   "locale": "en-US",
-  "created_at": "2026-10-23T04:15:00Z",
+  "created_at": "2026-10-23T06:00:00Z",
   "claims": [
     {
       "claim_id": "C001",
-      "statement": "SWE-bench benchmark evaluations show that unassisted state-of-the-art foundation models resolve under 5 percent of real-world software engineering tasks without structured execution feedback and tool sandboxes.",
+      "statement": "On the SWE-bench benchmark of 2,294 real-world GitHub issues across 12 Python repositories, baseline frontier models resolved under 5 percent of end-to-end software engineering tasks.",
       "confidence": "verified",
       "scope": {
         "market": "US",
@@ -16,14 +16,14 @@
         "canonical_url": "https://arxiv.org/abs/2310.06770",
         "publisher": "ICLR 2024 (Oral) / arXiv Computer Science (SE)",
         "published_at": "2023-10-10",
-        "retrieved_at": "2026-10-23T04:00:00Z"
+        "retrieved_at": "2026-10-23T05:00:00Z"
       },
-      "evidence_excerpt": "Across 2,294 real-world GitHub issues from 12 popular Python repositories, Claude 2 solved 4.8% and GPT-4 solved 1.7%, demonstrating that state-of-the-art models fail on over 95% of issues without sandboxed execution feedback.",
+      "evidence_excerpt": "Across 2,294 GitHub issues from 12 popular Python repositories, Jimenez et al. evaluate frontier LLMs and report that baseline models solved under 5% of real-world issues (Claude 2 solved 4.8% and GPT-4 solved 1.74%), illustrating the difficulty of autonomous codebase resolution.",
       "limitations": [
-        "Based on the SWE-bench evaluation benchmark of 2,294 GitHub issues across 12 open-source Python repositories"
+        "Evaluated on 2,294 GitHub issues across 12 open-source Python repositories in SWE-bench benchmark"
       ],
       "script_spans": [
-        "Empirical benchmarks on real-world repositories show frontier models fail on over ninety-five percent of software tasks without structured execution sandboxes."
+        "On the SWE-bench benchmark of 2,294 real-world software issues, baseline frontier models resolved under five percent of tasks, highlighting the challenge of repository-scale autonomous engineering."
       ],
       "visual_scene_ids": [
         "scene-1",
@@ -33,7 +33,7 @@
     },
     {
       "claim_id": "C002",
-      "statement": "Unconstrained multi-turn agent execution without formal tool boundaries and schemas leads to compounding hallucination cascades and state divergence.",
+      "statement": "Structuring agent collaboration with Standard Operating Procedures and specialized role division helps prevent circular coordination loops during multi-step execution.",
       "confidence": "verified",
       "scope": {
         "market": "Global",
@@ -43,14 +43,14 @@
         "canonical_url": "https://arxiv.org/abs/2308.00352",
         "publisher": "ICLR 2024 / arXiv Multiagent Systems",
         "published_at": "2023-08-01",
-        "retrieved_at": "2026-10-23T04:00:00Z"
+        "retrieved_at": "2026-10-23T05:00:00Z"
       },
-      "evidence_excerpt": "Empirical evaluations in MetaGPT demonstrate that unstructured multi-agent discussions frequently collapse into circular loops and hallucination cascades, whereas structured Standard Operating Procedures (SOPs) achieve robust task execution.",
+      "evidence_excerpt": "Hong et al. (ICLR 2024) evaluate MetaGPT and show that encoding Standard Operating Procedures (SOPs) into specialized multi-agent roles structures collaboration, eliminating circular debate loops observed in unstructured multi-agent dialogue.",
       "limitations": [
-        "Measured on multi-agent software engineering benchmarks with complex dependency graphs"
+        "Evaluated on software development benchmarks with defined multi-agent role workflows"
       ],
       "script_spans": [
-        "When agents execute raw bash commands without boundaries, unconstrained multi-step runs easily diverge or corrupt local workspace state."
+        "Research from MetaGPT shows that structuring agent collaboration with Standard Operating Procedures helps prevent circular coordination loops during multi-step execution."
       ],
       "visual_scene_ids": [
         "scene-3"
@@ -59,7 +59,7 @@
     },
     {
       "claim_id": "C003",
-      "statement": "Deterministic shadow simulation (dry-run) eliminates live state mutations while verifying permission envelopes end-to-end.",
+      "statement": "Automated verification gates and comprehensive testing practices mitigate delivery risks and protect deployment stability when introducing automated workflows.",
       "confidence": "verified",
       "scope": {
         "market": "US",
@@ -69,14 +69,14 @@
         "canonical_url": "https://dora.dev/research/2024/dora-report/",
         "publisher": "Google Cloud DORA (DevOps Research and Assessment)",
         "published_at": "2024-10-01",
-        "retrieved_at": "2026-10-23T04:00:00Z"
+        "retrieved_at": "2026-10-23T05:00:00Z"
       },
-      "evidence_excerpt": "Automated dry-runs, continuous testing, and verified rollback boundaries prevent destructive production outages and eliminate unauthorized state mutations.",
+      "evidence_excerpt": "Google Cloud DORA (2024) reports that organizations leveraging robust automated testing, preflight verification gates, and fast feedback loops achieve higher deployment stability and contain deployment failures.",
       "limitations": [
-        "Requires mock transport coverage for all outbound publisher endpoints"
+        "Based on software delivery assessment metrics across organizational delivery pipelines"
       ],
       "script_spans": [
-        "Shadow dry-runs prove zero mutations and zero unverified uploads before any byte reaches production."
+        "Comprehensive preflight verification and automated testing gates validate system state before changes deploy to live environments."
       ],
       "visual_scene_ids": [
         "scene-4",

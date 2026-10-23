@@ -1,26 +1,26 @@
 1
-00:00:00,000 --> 00:00:06,000
-Autonomous AI coding agents can write entire features in minutes,
+00:00:00,000 --> 00:00:04,500
+Autonomous AI coding agents can generate entire features in minutes,
 
 2
-00:00:06,000 --> 00:00:12,000
-but running them in production without strict tool sandboxing is an engineering disaster.
+00:00:04,500 --> 00:00:12,000
+but running them in production without strict tool sandboxing is an engineering disaster waiting to happen.
 
 3
 00:00:12,000 --> 00:00:19,000
-Empirical benchmarks show frontier models fail on over ninety-five percent of software tasks
+On the SWE-bench benchmark of 2,294 real-world software issues,
 
 4
 00:00:19,000 --> 00:00:26,000
-without structured execution sandboxes and verified feedback loops.
+baseline frontier models resolved under five percent of tasks, highlighting the challenge of repository-scale autonomous engineering.
 
 5
 00:00:26,000 --> 00:00:33,000
-When agents execute raw bash commands without boundaries,
+Research from MetaGPT shows that structuring agent collaboration with Standard Operating Procedures helps prevent circular coordination loops.
 
 6
 00:00:33,000 --> 00:00:41,000
-unconstrained multi-step runs easily diverge or corrupt local workspace state.
+Without boundary contracts, unconstrained agent runs risk mutating workspace state or triggering silent regression bugs.
 
 7
 00:00:41,000 --> 00:00:48,000
@@ -28,12 +28,12 @@ The solution is deterministic runtime governance.
 
 8
 00:00:48,000 --> 00:00:55,000
-Tools must execute inside isolated sandboxes with strict schema contracts.
+Tools must execute inside isolated sandboxes with strict schema contracts, structured error handling, and hardware-enforced boundaries.
 
 9
 00:00:55,000 --> 00:01:03,000
-Shadow dry-runs prove zero mutations and zero unverified uploads
+Comprehensive preflight verification and automated testing gates validate system state before changes deploy to live environments.
 
 10
 00:01:03,000 --> 00:01:12,000
-before any byte reaches production. Deploy with total confidence.
+Build verifiable tool boundaries first, and your autonomous agents will operate with measurable reliability.

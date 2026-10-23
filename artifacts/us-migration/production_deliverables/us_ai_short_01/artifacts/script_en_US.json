@@ -6,21 +6,21 @@
     {
       "id": "scene-1",
       "label": "The Hook",
-      "text": "Autonomous AI coding agents can write entire features in minutes, but running them in production without strict tool sandboxing is an engineering disaster waiting to happen.",
+      "text": "Autonomous AI coding agents can generate entire features in minutes, but running them in production without strict tool sandboxing is an engineering disaster waiting to happen.",
       "start_seconds": 0.0,
       "end_seconds": 12.0
     },
     {
       "id": "scene-2",
-      "label": "The Problem",
-      "text": "Empirical benchmarks on real-world repositories show frontier models fail on over ninety-five percent of software tasks without structured execution sandboxes. Raw shell access gives models unconstrained control over file systems, credentials, and network sockets.",
+      "label": "The Benchmark",
+      "text": "On the SWE-bench benchmark of 2,294 real-world software issues, baseline frontier models resolved under five percent of tasks, highlighting the challenge of repository-scale autonomous engineering. Raw shell access gives models unconstrained control over file systems, credentials, and network sockets.",
       "start_seconds": 12.0,
       "end_seconds": 26.0
     },
     {
       "id": "scene-3",
-      "label": "The Evidence",
-      "text": "When agents execute raw bash commands without boundaries, unconstrained multi-step runs easily diverge or corrupt local workspace state. Accidental destructive deletes, unverified packages, and silent regression bugs become common.",
+      "label": "Coordination and Failure Modes",
+      "text": "Research from MetaGPT shows that structuring agent collaboration with Standard Operating Procedures helps prevent circular coordination loops during multi-step execution. Without boundary contracts, unconstrained agent runs risk mutating workspace state or triggering silent regression bugs.",
       "start_seconds": 26.0,
       "end_seconds": 41.0
     },
@@ -34,7 +34,7 @@
     {
       "id": "scene-5",
       "label": "The Takeaway",
-      "text": "Shadow dry-runs prove zero mutations and zero unverified uploads before any byte reaches production. Build verifiable tool boundaries first, and your autonomous agents will deploy with total confidence.",
+      "text": "Comprehensive preflight verification and automated testing gates validate system state before changes deploy to live environments. Build verifiable tool boundaries first, and your autonomous agents will operate with measurable reliability.",
       "start_seconds": 55.0,
       "end_seconds": 72.0
     }

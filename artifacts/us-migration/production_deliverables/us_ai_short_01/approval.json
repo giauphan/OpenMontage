@@ -1,14 +1,14 @@
 {
   "approved": true,
   "status": "approved",
-  "approved_by": "qa_supervisor",
-  "approved_media_sha256": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4",
-  "media_sha256": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4",
+  "approved_by": "independent_qa_supervisor",
+  "approved_media_sha256": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c",
+  "media_sha256": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c",
   "approved_media_hashes": [
-    "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+    "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c"
   ],
   "media_sha256_by_platform": {
-    "youtube": "7518b1f0740dcc57862629a0aabd781a9d0e0a6acb3037567b921b0f9f3560a4"
+    "youtube": "47cf803f90577066c896dd13c234675956d50e861e66c34b261bf5c8d4913f8c"
   },
-  "timestamp": "2026-10-22T17:28:00Z"
+  "timestamp": "2026-10-23T07:01:32Z"
 }

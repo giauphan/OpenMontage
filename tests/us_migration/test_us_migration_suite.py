@@ -641,10 +641,10 @@ class TestIntegrationAndOperationsI01_I10:
             "locale": "en-US",
             "format": "short"
         }), encoding="utf-8")
-        (proj_short / "assets").mkdir()
-        (proj_short / "assets/narration.mp3").write_bytes(b"dummy narration")
         (proj_short / "artifacts").mkdir()
         (proj_short / "artifacts/narration_en_US_text.txt").write_text("Hello world", encoding="utf-8")
+        (proj_short / "assets").mkdir()
+        (proj_short / "assets/narration.mp3").write_bytes(b"dummy narration")
         (proj_short / "renders").mkdir()
         short_render = proj_short / "renders/final_short_en_US_9x16.mp4"
         short_render.write_bytes(b"dummy short video")

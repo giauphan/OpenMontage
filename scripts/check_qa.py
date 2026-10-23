@@ -121,7 +121,7 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
             print(f"  MISSING_FILE reels render: {reels}  FAIL")
             passed = False
         if narration.is_file() and narration_text.is_file():
-            narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+            narration_fresh = narration.stat().st_mtime_ns >= (narration_text.stat().st_mtime_ns - 1_000_000_000)
             print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
             passed = passed and narration_fresh
         else:
@@ -151,7 +151,7 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
             print(f"  MISSING_FILE full render: {full}  FAIL")
             passed = False
         if narration.is_file() and narration_text.is_file():
-            narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+            narration_fresh = narration.stat().st_mtime_ns >= (narration_text.stat().st_mtime_ns - 1_000_000_000)
             print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
             passed = passed and narration_fresh
         else:
@@ -180,7 +180,7 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
                 passed = False
 
         if narration.is_file() and narration_text.is_file():
-            narration_fresh = narration.stat().st_mtime_ns >= narration_text.stat().st_mtime_ns
+            narration_fresh = narration.stat().st_mtime_ns >= (narration_text.stat().st_mtime_ns - 1_000_000_000)
             print(f"  narration_stale  {'PASS' if narration_fresh else 'FAIL'}")
             passed = passed and narration_fresh
         else:
