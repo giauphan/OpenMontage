@@ -41,6 +41,44 @@ def run(cmd: str):
     return res.stdout
 
 
+def srt_to_ass(srt_path: Path, ass_path: Path, width: int, height: int, font_size: int, margin_v: int):
+    """Convert SRT cues to ASS with exact pixel PlayRes canvas to avoid top-screen overflow."""
+    import re
+    srt_text = srt_path.read_text(encoding="utf-8")
+    blocks = re.split(r"\n\s*\n", srt_text.strip())
+    dialogues = []
+    for block in blocks:
+        lines = [l.strip() for l in block.splitlines() if l.strip()]
+        if len(lines) < 3:
+            continue
+        time_match = re.match(r"(\d+):(\d+):(\d+)[,\.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,\.](\d+)", lines[1])
+        if not time_match:
+            continue
+        sh, sm, ss, sms, eh, em, es, ems = time_match.groups()
+        start_ass = f"{int(sh)}:{sm}:{ss}.{int(sms)//10:02d}"
+        end_ass = f"{int(eh)}:{em}:{es}.{int(ems)//10:02d}"
+        text = " ".join(lines[2:])
+        text = text.replace("{", "\\{").replace("}", "\\}")
+        dialogues.append(f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{text}")
+
+    ass_content = f"""[Script Info]
+Title: Synced Captions
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+PlayResX: {width}
+PlayResY: {height}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,DejaVu Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,0,2,80,80,{margin_v},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+""" + "\n".join(dialogues) + "\n"
+    ass_path.write_text(ass_content, encoding="utf-8")
+
+
 def ensure_graphics():
     print("\n=== GENERATING CONTEXTUAL SCENE GRAPHICS ===")
     from scripts.generate_scene_graphics import generate_short_graphics, generate_longform_graphics
@@ -90,11 +128,13 @@ def render_short():
 
     # 4. Final compositing: Overlay audio, dynamic HUD beam, burned-in synchronized subtitles
     srt_short = SHORT_PROJECT / "artifacts/captions_en_US.srt"
+    ass_short = TMP_DIR / "short_captions.ass"
+    srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=42, margin_v=200)
     vf = (
         "drawbox=x=80:y='mod(t*300,1650)+100':w=920:h=3:color=#38bdf8@0.7:t=fill,"
         "drawbox=x=60:y=1540:w=960:h=230:color=#0b0f19@0.92:t=fill,"
         "drawbox=x=60:y=1540:w=960:h=230:color=#38bdf8@0.6:t=2,"
-        f"subtitles={srt_short}:force_style='FontSize=24,FontName=DejaVu Sans,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,MarginV=170',"
+        f"ass={ass_short},"
         "setsar=1"
     )
 
@@ -106,6 +146,7 @@ def render_short():
     (SHORT_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
     shutil.copy2(mixed_audio, SHORT_PROJECT / "assets/narration.mp3")
     shutil.copy2(final_video, SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4")
+    shutil.copy2(ass_short, SHORT_PROJECT / "artifacts/captions_en_US.ass")
 
     # Sample frames
     frame_dir = SHORT_PROJECT / "renders/frame_samples"
@@ -166,11 +207,13 @@ def render_long():
 
     # 4. Final compositing: Overlay audio, dynamic HUD beam, burned-in synchronized subtitles
     srt_long = LONG_PROJECT / "artifacts/captions_en_US.srt"
+    ass_long = TMP_DIR / "long_captions.ass"
+    srt_to_ass(srt_long, ass_long, width=1920, height=1080, font_size=28, margin_v=65)
     vf = (
         "drawbox=x=80:y='mod(t*400,900)+60':w=1760:h=2:color=#38bdf8@0.6:t=fill,"
         "drawbox=x=120:y=960:w=1680:h=70:color=#0b0f19@0.9:t=fill,"
         "drawbox=x=120:y=960:w=1680:h=70:color=#38bdf8@0.5:t=2,"
-        f"subtitles={srt_long}:force_style='FontSize=20,FontName=DejaVu Sans,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,MarginV=25',"
+        f"ass={ass_long},"
         "setsar=1"
     )
 
@@ -182,6 +225,7 @@ def render_long():
     (LONG_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
     shutil.copy2(mixed_audio, LONG_PROJECT / "assets/narration.mp3")
     shutil.copy2(final_video, LONG_PROJECT / "renders/final_long_en_US_16x9.mp4")
+    shutil.copy2(ass_long, LONG_PROJECT / "artifacts/captions_en_US.ass")
 
     # Sample frames
     frame_dir = LONG_PROJECT / "renders/frame_samples"
