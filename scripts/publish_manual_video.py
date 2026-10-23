@@ -388,7 +388,9 @@ def publish_batch(
     
     if only_platform:
         only_platform = canonical_platform_name(only_platform)
-        if not is_platform_enabled(only_platform, extra_enabled=enabled_platforms, extra_held=held_platforms):
+        effective_enabled = set(enabled_platforms) if enabled_platforms else set()
+        effective_enabled.add(only_platform)
+        if not is_platform_enabled(only_platform, extra_enabled=effective_enabled, extra_held=held_platforms):
             reason = "held" if is_platform_held(only_platform, extra_held=held_platforms) else "disabled"
             print(f"⏸️ {reason.upper()}: Platform {only_platform} is {reason} by pipeline flag/env/config. Skipping publish.")
             kind = PLATFORM_ROUTES.get(only_platform, ("short", ""))[0]

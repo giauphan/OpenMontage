@@ -167,6 +167,16 @@ def get_enabled_platforms(
         has_source = True
         enabled.update(parse_platform_list(extra_enabled))
 
+    if os.environ.get("MULTI_PLATFORM") == "1":
+        has_source = True
+        enabled.update(["youtube", "instagram", "facebook"])
+        if os.environ.get("FACEBOOK_PUBLISH_ENABLED") == "0":
+            enabled.discard("facebook")
+
+    if os.environ.get("INSTAGRAM_MODE") == "1":
+        has_source = True
+        enabled.add("instagram")
+
     for env_var in ("ENABLED_PLATFORMS", "ACTIVE_PLATFORMS", "PUBLISH_PLATFORMS"):
         raw = os.environ.get(env_var)
         if raw is not None:
