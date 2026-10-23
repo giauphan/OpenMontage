@@ -123,8 +123,9 @@ def generate_short_graphics(output_dir: Path):
     d.text((130, 1150), "PRIMARY LITERATURE CITATION", fill=TEXT_CYAN, font=f_badge)
     d.text((130, 1200), "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?", fill=TEXT_WHITE, font=f_body)
     d.text((130, 1240), "Carlos E. Jimenez et al., Princeton Language and Intelligence", fill=TEXT_MUTED, font=f_body)
-    d.text((130, 1280), "Venue: ICLR 2024 (Oral) · Published: Oct 2023", fill=TEXT_MUTED, font=f_body)
-    d.text((130, 1330), "Canonical DOI / URL: https://arxiv.org/abs/2310.06770", fill=TEXT_CYAN, font=f_mono)
+    d.text((130, 1280), "Venue: ICLR 2024 (Oral) · Published: Oct 2023 · arXiv:2310.06770", fill=TEXT_MUTED, font=f_body)
+    d.text((130, 1320), "Table 2 Full Benchmark (2,294 tasks): Claude 2 solved 4.80%, GPT-4 1.74%", fill=TEXT_CYAN, font=f_mono)
+    d.text((130, 1360), "Canonical Reference: https://arxiv.org/abs/2310.06770", fill=TEXT_MUTED, font=f_mono)
 
     img.save(output_dir / "scene_02_benchmark.png")
 
@@ -398,8 +399,8 @@ def generate_longform_graphics(output_dir: Path):
             "col2_items": [
                 "• Frontier High-Reasoning Models: Architecture design, final editorial QA",
                 "• Lightweight Fast Models: Unit test runners, transcription, formatting",
-                "• Benchmark Evidence: SWE-bench shows unconstrained loops waste tokens",
-                "• Result: 60-80% cost reduction without compromising deliverable quality",
+                "• Benchmark Evidence: Unconstrained retry loops rapidly exhaust context windows",
+                "• Architectural Strategy: Tiered routing contains API spend during automated runs",
             ],
             "citation": "Without strict token budget circuits, runaway retry loops burn through API spend without resolving failures."
         },

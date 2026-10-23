@@ -701,4 +701,53 @@ class TestIntegrationAndOperationsI01_I10:
             mock_dur.side_effect = lambda p, ff: 50.0 if "final_render.mp4" in str(p) or "narration.mp3" in str(p) else None
             assert check_project(proj_vn, "ffprobe", tolerance=0.1) is False
 
+    def test_i16_cryptographic_supervisor_signing_and_pipeline_wiring(self, tmp_path: Path):
+        """I16: Cryptographic supervisor signing prevents forged approval records and wires gates into daily pipeline."""
+        from lib.qa_signing import sign_approval_record, verify_approval_record, compute_signature
+
+        project_id = "test_us_project_01"
+        media_sha = hashlib.sha256(b"fake media bytes").hexdigest()
+        claim_sha = hashlib.sha256(b"fake claim ledger").hexdigest()
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # 1. Authentic record verifies
+        record = sign_approval_record(project_id, media_sha, claim_sha, timestamp)
+        valid, msg = verify_approval_record(record, project_id)
+        assert valid is True
+        assert "Valid supervisor signature" in msg
+
+        # 2. Tampered media SHA fails
+        record_tampered_media = dict(record)
+        record_tampered_media["approved_media_sha256"] = hashlib.sha256(b"altered video").hexdigest()
+        valid, msg = verify_approval_record(record_tampered_media, project_id)
+        assert valid is False
+        assert "mismatch" in msg
+
+        # 3. Tampered claim ledger SHA fails
+        record_tampered_claims = dict(record)
+        record_tampered_claims["claim_ledger_sha256"] = hashlib.sha256(b"altered claims").hexdigest()
+        valid, msg = verify_approval_record(record_tampered_claims, project_id)
+        assert valid is False
+        assert "mismatch" in msg
+
+        # 4. Forged project ID fails
+        valid, msg = verify_approval_record(record, "attacker_project")
+        assert valid is False
+        assert "mismatch" in msg
+
+        # 5. Missing signature fails
+        unsigned_record = dict(record)
+        del unsigned_record["signature"]
+        valid, msg = verify_approval_record(unsigned_record, project_id)
+        assert valid is False
+        assert "missing cryptographic signature" in msg
+
+        # 6. Verify pipeline script wiring
+        pipeline_sh = Path("/home/ubuntu/OpenMontage/scripts/run_daily_news_pipeline.sh").read_text(encoding="utf-8")
+        assert "check_qa.py" in pipeline_sh
+        assert "independent_editorial_qa.py" in pipeline_sh
+        assert "Independent Editorial QA FAILED" in pipeline_sh
+        assert "news_failure_quarantine.py" in pipeline_sh
+
+
 

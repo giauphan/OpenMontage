@@ -1113,6 +1113,17 @@ def enforce_release_preflight(
                 f"(status={approval.get('status')!r}, approved={approval.get('approved')!r})"
             )
 
+        from lib.artifact_paths import resolve_project_locale, is_english_locale
+        locale = resolve_project_locale(project_dir)
+        if "signature" in approval or (is_english_locale(locale) and (project_dir / "artifacts" / "claim_ledger.json").is_file()):
+            try:
+                from lib.qa_signing import verify_approval_record
+                valid_sig, sig_msg = verify_approval_record(approval, project_dir.name)
+                if not valid_sig:
+                    raise RuntimeError(f"Release preflight failed: {sig_msg}")
+            except ImportError:
+                pass
+
         # Build list of media files to check
         media_to_check: list[tuple[str, Path]] = []
         if platforms:

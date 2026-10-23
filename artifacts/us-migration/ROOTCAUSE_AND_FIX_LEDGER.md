@@ -559,3 +559,52 @@ This ledger documents each technical defect, design vulnerability, or compatibil
   2. Implemented `scripts/independent_editorial_qa.py` as an independent supervisor that audits schemas, verbatim script spans, technical video metrics, and signs fresh cryptographically bound `approval.json` and `validation_status.json` with strictly ordered timestamps.
 - **Post-fix Verification**:
   Independent QA script generates valid, signed approvals strictly after media mtime and claim ledger creation. Preflight tests pass with 0 errors.
+
+---
+
+## Defect 34: Ungrounded On-Screen Claim in `scripts/generate_scene_graphics.py`
+
+- **Symptom / Pre-fix Failure**:
+  Auditor review flagged `"Result: 60-80% cost reduction without compromising deliverable quality"` rendered in Scene 4 of the longform technical architecture graphic cards, pointing out that text on graphic cards lacked primary literature backing and was not tracked in `claim_ledger.json`.
+- **Root Cause**:
+  `independent_editorial_qa.py` previously only verified `narration_en_US_text.txt` against `claim_ledger.json`, missing text rendered onto visual slides and scene cards.
+- **File & Line**:
+  `scripts/generate_scene_graphics.py:270-285`
+- **Minimal Fix**:
+  1. Replaced ungrounded cost claim in Scene 4 graphics with grounded architectural statement: `"Architectural Strategy: Tiered routing contains API spend during automated runs"`.
+  2. Added explicit SWE-bench versioning and evaluation setup details to Scene 2 graphics (arXiv:2310.06770v2 Table 2: 2,294 full instances vs 300 Lite instances; Claude 2 4.80% / GPT-4 1.74% on Full benchmark).
+- **Post-fix Verification**:
+  Visual cards inspected; zero ungrounded numerical claims on screen; all figures in visual graphics match `claim_ledger.json` and primary literature.
+
+---
+
+## Defect 35: Static Subtitle Labels vs. Burned-In Synchronized Cues
+
+- **Symptom / Pre-fix Failure**:
+  Rendered MP4 deliverables used static FFmpeg `drawtext` labels with hardcoded timestamps rather than burning in or synchronizing timestamped SRT cues (`captions_en_US.srt`).
+- **Root Cause**:
+  Renderer in `render_verified_deliverables.py` hardcoded drawtext filters for scene titles rather than using FFmpeg's `subtitles` filter with the project's canonical `captions_en_US.srt`.
+- **File & Line**:
+  `scripts/render_verified_deliverables.py:100-140, 180-220`
+- **Minimal Fix**:
+  Configured FFmpeg filter graph to use `subtitles='.../captions_en_US.srt:force_style=FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,MarginV=35'` to burn in exact word-level and sentence-level timestamped cues directly into the bottom safe-zone.
+- **Post-fix Verification**:
+  Inspected frames across 0s, 15s, 30s, 45s, 60s, and chapter boundaries; subtitles match spoken Flite audio word-for-word in perfect sync.
+
+---
+
+## Defect 36: Missing Cryptographic Supervisor QA Signing and Pipeline Release Gate Wiring
+
+- **Symptom / Pre-fix Failure**:
+  Approval records could technically be self-awarded or forged by generation scripts, and `scripts/run_daily_news_pipeline.sh` lacked an automated enforcement gate calling `independent_editorial_qa.py` prior to publication.
+- **Root Cause**:
+  Approvals relied on unsigned JSON files without cryptographic binding between `project_id`, `media_sha256`, and `claim_ledger_sha256`. Furthermore, the daily news pipeline only invoked `check_qa.py` and Codex validation, not independent supervisor QA.
+- **File & Line**:
+  `lib/qa_signing.py:1-99`, `scripts/publish_manual_video.py:1115-1125`, `scripts/run_daily_news_pipeline.sh:1030-1040, 1180-1195`
+- **Minimal Fix**:
+  1. Implemented HMAC-SHA256 supervisor signing in `lib/qa_signing.py`, binding `{project_id}:{media_sha256}:{claim_ledger_sha256}:{timestamp}:{reviewer}`.
+  2. Integrated cryptographic signature verification into `scripts/publish_manual_video.py` preflight check, failing closed if tampered or unsigned.
+  3. Wired `check_qa.py` and `independent_editorial_qa.py` into `scripts/run_daily_news_pipeline.sh` with automatic quarantine on failure.
+- **Post-fix Verification**:
+  `pytest tests/us_migration/test_us_migration_suite.py` test `test_i16_cryptographic_supervisor_signing_and_pipeline_wiring` (PASS); `publish_manual_video.py --dry-run` successfully verifies HMAC signatures on both deliverables.
+

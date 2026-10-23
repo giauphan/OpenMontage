@@ -88,13 +88,13 @@ def render_short():
 
     run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
 
-    # 4. Final compositing: Overlay audio, dynamic HUD beam, subtitle safe zone
+    # 4. Final compositing: Overlay audio, dynamic HUD beam, burned-in synchronized subtitles
+    srt_short = SHORT_PROJECT / "artifacts/captions_en_US.srt"
     vf = (
         "drawbox=x=80:y='mod(t*300,1650)+100':w=920:h=3:color=#38bdf8@0.7:t=fill,"
         "drawbox=x=60:y=1540:w=960:h=230:color=#0b0f19@0.92:t=fill,"
         "drawbox=x=60:y=1540:w=960:h=230:color=#38bdf8@0.6:t=2,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='[ VERIFIED EN-US SUBTITLES ]':fontcolor='#38bdf8':fontsize=22:x=(w-text_w)/2:y=1565,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Autonomous Coding Agent Governance':fontcolor='#ffffff':fontsize=32:x=(w-text_w)/2:y=1640,"
+        f"subtitles={srt_short}:force_style='FontSize=24,FontName=DejaVu Sans,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,MarginV=170',"
         "setsar=1"
     )
 
@@ -164,13 +164,13 @@ def render_long():
 
     run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
 
-    # 4. Final compositing: Overlay audio, dynamic HUD beam, specification bar
+    # 4. Final compositing: Overlay audio, dynamic HUD beam, burned-in synchronized subtitles
+    srt_long = LONG_PROJECT / "artifacts/captions_en_US.srt"
     vf = (
         "drawbox=x=80:y='mod(t*400,900)+60':w=1760:h=2:color=#38bdf8@0.6:t=fill,"
         "drawbox=x=120:y=960:w=1680:h=70:color=#0b0f19@0.9:t=fill,"
         "drawbox=x=120:y=960:w=1680:h=70:color=#38bdf8@0.5:t=2,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='[ PRODUCTION AI SYSTEMS ARCHITECTURE ]':fontcolor='#38bdf8':fontsize=18:x=150:y=985,"
-        "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='1080p 30fps | 6-Minute Technical Deep Dive | Verified Academic Citations':fontcolor='#ffffff':fontsize=20:x=680:y=985,"
+        f"subtitles={srt_long}:force_style='FontSize=20,FontName=DejaVu Sans,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,MarginV=25',"
         "setsar=1"
     )
 

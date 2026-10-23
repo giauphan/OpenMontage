@@ -20,7 +20,7 @@
       },
       "evidence_excerpt": "Across 2,294 GitHub issues from 12 popular Python repositories, Jimenez et al. evaluate frontier LLMs and report that baseline models solved under 5% of real-world issues (Claude 2 solved 4.8% and GPT-4 solved 1.74%), illustrating the difficulty of autonomous codebase resolution.",
       "limitations": [
-        "Evaluated on 2,294 GitHub issues across 12 open-source Python repositories in SWE-bench benchmark"
+        "Evaluated on 2,294 GitHub issues across 12 open-source Python repositories in SWE-bench Full benchmark (Table 2: Claude 2 solved 4.80%, GPT-4 solved 1.74%); on the SWE-bench Lite 300-issue split, Claude 2 solved 1.96%."
       ],
       "script_spans": [
         "On the SWE-bench benchmark of 2,294 real-world software issues, baseline frontier models resolved under five percent of tasks, highlighting the challenge of repository-scale autonomous engineering."

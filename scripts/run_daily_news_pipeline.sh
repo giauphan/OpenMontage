@@ -1028,6 +1028,15 @@ if [ "$NEWS_VISUAL_MODE" = "1" ]; then
   fi
 fi
 
+if ! "$PY" "$ROOT/scripts/check_qa.py" "$PROJECT_DIR"; then
+  echo "[$(date -u +%FT%TZ)] ERROR: check_qa validation failed for $PROJECT_ID" >&2
+  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "check_qa" --project-id "$PROJECT_ID" \
+    --error-type "CHECK_QA_FAILED" --message "check_qa validation failed" || true
+  "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+    "check_qa validation failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+  continue
+fi
+
 # Check if videos exist
 RENDER_MISSING=0
 for render in "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"; do
@@ -1169,6 +1178,19 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
   "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
     "Codex validation failed after $MAX_RETRIES attempts" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
+fi
+
+if [ "$is_en" -eq 1 ] && [ -f "$PROJECT_DIR/artifacts/claim_ledger.json" ]; then
+  echo "[$(date -u +%FT%TZ)] Running Independent Editorial QA Supervisor for $PROJECT_ID..."
+  if ! "$PY" "$ROOT/scripts/independent_editorial_qa.py" "$PROJECT_DIR"; then
+    echo "[$(date -u +%FT%TZ)] 🔴 Independent Editorial QA FAILED for $PROJECT_ID" >&2
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "independent_qa" --project-id "$PROJECT_ID" \
+      --error-type "INDEPENDENT_QA_FAILED" --message "Independent Editorial QA failed" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "Independent editorial QA failed" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
+  fi
+  echo "[$(date -u +%FT%TZ)] 🟢 Independent Editorial QA PASSED for $PROJECT_ID"
 fi
 
 if [ "$FEED_STALE" -eq 1 ]; then

@@ -2,13 +2,17 @@
   "approved": true,
   "status": "approved",
   "approved_by": "independent_qa_supervisor",
-  "approved_media_sha256": "6406c6f5db852f8ed97c9dec181d94716745425a73a045a0f4c2390375e3c765",
-  "media_sha256": "6406c6f5db852f8ed97c9dec181d94716745425a73a045a0f4c2390375e3c765",
+  "reviewer_id": "qa-supervisor-us-migration",
+  "approved_media_sha256": "c3c167cb76b14f21979d4c5255e33522fce2efc11255233ebb2fe0dcb89d5e18",
+  "media_sha256": "c3c167cb76b14f21979d4c5255e33522fce2efc11255233ebb2fe0dcb89d5e18",
+  "claim_ledger_sha256": "980ed95d88b3f031547f4c2b8ee07a28994c5d6ac7787c487dc64a9e2012d145",
+  "signature": "ef9a6fb146a032fe2678381c4cc00b5b40fe63cc845ae819140a527459f616a8",
+  "signature_algorithm": "HMAC-SHA256",
   "approved_media_hashes": [
-    "6406c6f5db852f8ed97c9dec181d94716745425a73a045a0f4c2390375e3c765"
+    "c3c167cb76b14f21979d4c5255e33522fce2efc11255233ebb2fe0dcb89d5e18"
   ],
   "media_sha256_by_platform": {
-    "youtube": "6406c6f5db852f8ed97c9dec181d94716745425a73a045a0f4c2390375e3c765"
+    "youtube": "c3c167cb76b14f21979d4c5255e33522fce2efc11255233ebb2fe0dcb89d5e18"
   },
-  "timestamp": "2026-10-23T07:01:32Z"
+  "timestamp": "2026-10-23T08:00:32Z"
 }
