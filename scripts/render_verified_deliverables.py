@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,7 +116,7 @@ def render_short():
     for idx, (img_name, dur) in enumerate(scenes):
         seg_path = TMP_DIR / f"short_seg_{idx}.mp4"
         run(f'ffmpeg -y -loglevel error -loop 1 -framerate 30 -t {dur} -i {s_dir / img_name} '
-            f'-vf "pad=1160:2000:40:40:color=#0b0f19,crop=1080:1920:\'40+30*sin(t*1.0)\':\'40+30*cos(t*1.0)\',setsar=1" '
+            f'-vf "scale=1080:1920,setsar=1" '
             f'-c:v libx264 -preset fast -pix_fmt yuv420p {seg_path}')
         seg_files.append(seg_path)
 
@@ -126,12 +127,11 @@ def render_short():
 
     run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
 
-    # 4. Final compositing: Overlay audio, dynamic HUD beam, burned-in synchronized subtitles
+    # 4. Final compositing: Overlay audio, static subtitle container, burned-in synchronized subtitles
     srt_short = SHORT_PROJECT / "artifacts/captions_en_US.srt"
     ass_short = TMP_DIR / "short_captions.ass"
     srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=42, margin_v=200)
     vf = (
-        "drawbox=x=80:y='mod(t*300,1650)+100':w=920:h=3:color=#38bdf8@0.7:t=fill,"
         "drawbox=x=60:y=1540:w=960:h=230:color=#0b0f19@0.92:t=fill,"
         "drawbox=x=60:y=1540:w=960:h=230:color=#38bdf8@0.6:t=2,"
         f"ass={ass_short},"
@@ -147,6 +147,9 @@ def render_short():
     shutil.copy2(mixed_audio, SHORT_PROJECT / "assets/narration.mp3")
     shutil.copy2(final_video, SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4")
     shutil.copy2(ass_short, SHORT_PROJECT / "artifacts/captions_en_US.ass")
+    now = time.time()
+    os.utime(SHORT_PROJECT / "assets/narration.mp3", (now, now))
+    os.utime(SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4", (now + 1.0, now + 1.0))
 
     # Sample frames
     frame_dir = SHORT_PROJECT / "renders/frame_samples"
@@ -194,7 +197,7 @@ def render_long():
     for idx, (img_name, dur) in enumerate(chapters):
         seg_path = TMP_DIR / f"long_seg_{idx}.mp4"
         run(f'ffmpeg -y -loglevel error -loop 1 -framerate 30 -t {dur} -i {l_dir / img_name} '
-            f'-vf "pad=2000:1160:40:40:color=#0b0f19,crop=1920:1080:\'40+30*sin(t*1.0)\':\'40+30*cos(t*1.0)\',setsar=1" '
+            f'-vf "scale=1920:1080,setsar=1" '
             f'-c:v libx264 -preset fast -pix_fmt yuv420p {seg_path}')
         seg_files.append(seg_path)
 
@@ -205,12 +208,11 @@ def render_long():
 
     run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
 
-    # 4. Final compositing: Overlay audio, dynamic HUD beam, burned-in synchronized subtitles
+    # 4. Final compositing: Overlay audio, static subtitle container, burned-in synchronized subtitles
     srt_long = LONG_PROJECT / "artifacts/captions_en_US.srt"
     ass_long = TMP_DIR / "long_captions.ass"
     srt_to_ass(srt_long, ass_long, width=1920, height=1080, font_size=28, margin_v=65)
     vf = (
-        "drawbox=x=80:y='mod(t*400,900)+60':w=1760:h=2:color=#38bdf8@0.6:t=fill,"
         "drawbox=x=120:y=960:w=1680:h=70:color=#0b0f19@0.9:t=fill,"
         "drawbox=x=120:y=960:w=1680:h=70:color=#38bdf8@0.5:t=2,"
         f"ass={ass_long},"
@@ -226,6 +228,9 @@ def render_long():
     shutil.copy2(mixed_audio, LONG_PROJECT / "assets/narration.mp3")
     shutil.copy2(final_video, LONG_PROJECT / "renders/final_long_en_US_16x9.mp4")
     shutil.copy2(ass_long, LONG_PROJECT / "artifacts/captions_en_US.ass")
+    now = time.time()
+    os.utime(LONG_PROJECT / "assets/narration.mp3", (now, now))
+    os.utime(LONG_PROJECT / "renders/final_long_en_US_16x9.mp4", (now + 1.0, now + 1.0))
 
     # Sample frames
     frame_dir = LONG_PROJECT / "renders/frame_samples"
