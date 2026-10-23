@@ -113,38 +113,38 @@ def generate_short_graphics(output_dir: Path):
     draw_grid_background(d, w, h)
 
     # Main Card
-    d.rounded_rectangle([60, 200, 1020, 1500], radius=24, fill=CARD_BG, outline=CARD_BORDER, width=3)
-    d.text((100, 240), "[ AI PRODUCTION INFRASTRUCTURE ]", fill=TEXT_CYAN, font=f_badge)
-    d.text((100, 285), "AUTONOMOUS AI\nCODING AGENTS", fill=TEXT_WHITE, font=f_title, spacing=8)
-    draw_wrapped_text(d, "Why Tool Sandboxing & Boundary Governance Matter", f_subtitle, TEXT_MUTED, 100, 395, max_w)
+    d.rounded_rectangle([60, 270, 1020, 1780], radius=24, fill=CARD_BG, outline=CARD_BORDER, width=3)
+    d.text((100, 310), "[ AI PRODUCTION INFRASTRUCTURE ]", fill=TEXT_CYAN, font=f_badge)
+    d.text((100, 355), "AUTONOMOUS AI\nCODING AGENTS", fill=TEXT_WHITE, font=f_title, spacing=8)
+    draw_wrapped_text(d, "Why Tool Sandboxing & Boundary Governance Matter", f_subtitle, TEXT_MUTED, 100, 465, max_w)
 
     # Box 1: The Production Dilemma
-    d.rounded_rectangle([90, 460, 990, 730], radius=16, fill=(15, 23, 42, 255), outline=TEXT_AMBER, width=2)
-    d.text((120, 480), "THE PRODUCTION DILEMMA", fill=TEXT_AMBER, font=f_badge)
-    d.text((120, 520), "High Synthesis Velocity:", fill=TEXT_GREEN, font=f_badge)
-    draw_wrapped_text(d, "LLMs generate multi-file code solutions in seconds.", f_body, TEXT_WHITE, 120, 555, max_w)
-    d.text((120, 615), "Unchecked Execution Blast Radius:", fill=TEXT_RED, font=f_badge)
-    draw_wrapped_text(d, "Raw shell access risks silent workspace state corruption.", f_body, TEXT_WHITE, 120, 650, max_w)
+    d.rounded_rectangle([90, 530, 990, 800], radius=16, fill=(15, 23, 42, 255), outline=TEXT_AMBER, width=2)
+    d.text((120, 550), "THE PRODUCTION DILEMMA", fill=TEXT_AMBER, font=f_badge)
+    d.text((120, 590), "High Synthesis Velocity:", fill=TEXT_GREEN, font=f_badge)
+    draw_wrapped_text(d, "LLMs generate multi-file code solutions in seconds.", f_body, TEXT_WHITE, 120, 625, max_w)
+    d.text((120, 685), "Unchecked Execution Blast Radius:", fill=TEXT_RED, font=f_badge)
+    draw_wrapped_text(d, "Raw shell access risks silent workspace state corruption.", f_body, TEXT_WHITE, 120, 720, max_w)
 
     # Box 2: Core Engineering Foundation
-    d.rounded_rectangle([90, 760, 990, 1110], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
-    d.text((120, 785), "CORE ENGINEERING FOUNDATION", fill=TEXT_CYAN, font=f_badge)
+    d.rounded_rectangle([90, 830, 990, 1180], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
+    d.text((120, 855), "CORE ENGINEERING FOUNDATION", fill=TEXT_CYAN, font=f_badge)
     items = [
         "1. Hardware-Isolated Containers (Read-only roots & IPC namespaces)",
         "2. Typed Schema IPC Contracts (Strict parameter validation)",
         "3. Structured Error Diagnostics (Machine-readable recovery payloads)",
         "4. Preflight Shadow Dry-Runs (Zero-mutation pre-verification)",
     ]
-    curr_y = 830
+    curr_y = 900
     for it in items:
         curr_y = draw_wrapped_text(d, it, f_body, TEXT_WHITE, 120, curr_y, max_w, line_spacing=12)
 
     # Box 3: Industry Standards
-    d.rounded_rectangle([90, 1140, 990, 1460], radius=16, fill=(15, 23, 42, 255), outline=TEXT_MUTED, width=1)
-    d.text((120, 1165), "INDUSTRY STANDARDS & BENCHMARKS", fill=TEXT_MUTED, font=f_badge)
-    draw_wrapped_text(d, "Empirical benchmarks & distributed consensus protocols:", f_body, TEXT_WHITE, 120, 1205, max_w)
-    draw_wrapped_text(d, "SWE-bench (ICLR 2024) · MetaGPT (ICLR 2024) · DORA 2024", f_mono, TEXT_CYAN, 120, 1255, max_w)
-    draw_wrapped_text(d, "Non-negotiable verification gates for autonomous pipelines.", f_body, TEXT_MUTED, 120, 1315, max_w)
+    d.rounded_rectangle([90, 1210, 990, 1530], radius=16, fill=(15, 23, 42, 255), outline=TEXT_MUTED, width=1)
+    d.text((120, 1235), "INDUSTRY STANDARDS & BENCHMARKS", fill=TEXT_MUTED, font=f_badge)
+    draw_wrapped_text(d, "Empirical benchmarks & distributed consensus protocols:", f_body, TEXT_WHITE, 120, 1275, max_w)
+    draw_wrapped_text(d, "SWE-bench (ICLR 2024) · MetaGPT (ICLR 2024) · DORA 2024", f_mono, TEXT_CYAN, 120, 1325, max_w)
+    draw_wrapped_text(d, "Non-negotiable verification gates for autonomous pipelines.", f_body, TEXT_MUTED, 120, 1385, max_w)
 
     img.save(output_dir / "scene_01_hook.png")
 
@@ -155,42 +155,42 @@ def generate_short_graphics(output_dir: Path):
     d = ImageDraw.Draw(img)
     draw_grid_background(d, w, h)
 
-    d.rounded_rectangle([60, 200, 1020, 1500], radius=24, fill=CARD_BG, outline=TEXT_RED, width=3)
-    d.text((100, 240), "[ EMPIRICAL BENCHMARK · ICLR 2024 ]", fill=TEXT_RED, font=f_badge)
-    d.text((100, 285), "SWE-BENCH RESOLUTION\nFAILURE ANALYSIS", fill=TEXT_WHITE, font=f_title, spacing=8)
-    draw_wrapped_text(d, "2,294 Real-World GitHub Issues across 12 Python Repos", f_subtitle, TEXT_MUTED, 100, 395, max_w)
+    d.rounded_rectangle([60, 270, 1020, 1780], radius=24, fill=CARD_BG, outline=TEXT_RED, width=3)
+    d.text((100, 310), "[ EMPIRICAL BENCHMARK · ICLR 2024 ]", fill=TEXT_RED, font=f_badge)
+    d.text((100, 355), "SWE-BENCH RESOLUTION\nFAILURE ANALYSIS", fill=TEXT_WHITE, font=f_title, spacing=8)
+    draw_wrapped_text(d, "2,294 Real-World GitHub Issues across 12 Python Repos", f_subtitle, TEXT_MUTED, 100, 465, max_w)
 
     # Chart Card
-    d.rounded_rectangle([90, 460, 990, 1060], radius=16, fill=(15, 23, 42, 255), outline=BAR_BG, width=2)
-    d.text((120, 485), "BASELINE MODEL RESOLUTION RATES (UNASSISTED)", fill=TEXT_MUTED, font=f_badge)
+    d.rounded_rectangle([90, 530, 990, 1130], radius=16, fill=(15, 23, 42, 255), outline=BAR_BG, width=2)
+    d.text((120, 555), "BASELINE MODEL RESOLUTION RATES (UNASSISTED)", fill=TEXT_MUTED, font=f_badge)
 
     # Claude 2 Bar: 4.8%
-    d.text((120, 535), "Claude 2 (Jimenez et al. 2024)", fill=TEXT_WHITE, font=f_body)
-    d.rounded_rectangle([120, 575, 840, 615], radius=8, fill=BAR_BG)
-    d.rounded_rectangle([120, 575, 120 + int(720 * 0.048), 615], radius=8, fill=TEXT_AMBER)
-    d.text((860, 575), "4.8%", fill=TEXT_AMBER, font=f_badge)
+    d.text((120, 605), "Claude 2 (Jimenez et al. 2024)", fill=TEXT_WHITE, font=f_body)
+    d.rounded_rectangle([120, 645, 840, 685], radius=8, fill=BAR_BG)
+    d.rounded_rectangle([120, 645, 120 + int(720 * 0.048), 685], radius=8, fill=TEXT_AMBER)
+    d.text((860, 645), "4.8%", fill=TEXT_AMBER, font=f_badge)
 
     # GPT-4 Bar: 1.74%
-    d.text((120, 645), "GPT-4 (Jimenez et al. 2024)", fill=TEXT_WHITE, font=f_body)
-    d.rounded_rectangle([120, 685, 840, 725], radius=8, fill=BAR_BG)
-    d.rounded_rectangle([120, 685, 120 + int(720 * 0.0174), 725], radius=8, fill=TEXT_AMBER)
-    d.text((860, 685), "1.74%", fill=TEXT_AMBER, font=f_badge)
+    d.text((120, 715), "GPT-4 (Jimenez et al. 2024)", fill=TEXT_WHITE, font=f_body)
+    d.rounded_rectangle([120, 755, 840, 795], radius=8, fill=BAR_BG)
+    d.rounded_rectangle([120, 755, 120 + int(720 * 0.0174), 795], radius=8, fill=TEXT_AMBER)
+    d.text((860, 755), "1.74%", fill=TEXT_AMBER, font=f_badge)
 
     # Overall failure rate
-    d.text((120, 755), "Unassisted Task Failure Rate", fill=TEXT_RED, font=f_badge)
-    d.rounded_rectangle([120, 795, 840, 835], radius=8, fill=BAR_BG)
-    d.rounded_rectangle([120, 795, 120 + int(720 * 0.952), 835], radius=8, fill=TEXT_RED)
-    d.text((860, 795), ">95%", fill=TEXT_RED, font=f_badge)
+    d.text((120, 825), "Unassisted Task Failure Rate", fill=TEXT_RED, font=f_badge)
+    d.rounded_rectangle([120, 865, 840, 905], radius=8, fill=BAR_BG)
+    d.rounded_rectangle([120, 865, 120 + int(720 * 0.952), 905], radius=8, fill=TEXT_RED)
+    d.text((860, 865), ">95%", fill=TEXT_RED, font=f_badge)
 
-    draw_wrapped_text(d, "Baseline frontier models struggle with repository-scale reasoning without structured execution sandboxes and feedback.", f_body, TEXT_MUTED, 120, 880, max_w)
+    draw_wrapped_text(d, "Baseline frontier models struggle with repository-scale reasoning without structured execution sandboxes and feedback.", f_body, TEXT_MUTED, 120, 950, max_w)
 
     # Citation Card
-    d.rounded_rectangle([90, 1090, 990, 1460], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
-    d.text((120, 1115), "PRIMARY LITERATURE CITATION", fill=TEXT_CYAN, font=f_badge)
-    draw_wrapped_text(d, "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?", f_body, TEXT_WHITE, 120, 1155, max_w)
-    draw_wrapped_text(d, "Carlos E. Jimenez et al., Princeton Language and Intelligence · ICLR 2024 Oral", f_body, TEXT_MUTED, 120, 1215, max_w)
-    draw_wrapped_text(d, "Table 2 Full Benchmark (2,294 tasks): Claude 2 solved 4.80%, GPT-4 1.74%", f_mono, TEXT_CYAN, 120, 1275, max_w)
-    draw_wrapped_text(d, "Canonical arXiv Reference: https://arxiv.org/abs/2310.06770", f_mono, TEXT_MUTED, 120, 1345, max_w)
+    d.rounded_rectangle([90, 1160, 990, 1530], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
+    d.text((120, 1185), "PRIMARY LITERATURE CITATION", fill=TEXT_CYAN, font=f_badge)
+    draw_wrapped_text(d, "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?", f_body, TEXT_WHITE, 120, 1225, max_w)
+    draw_wrapped_text(d, "Carlos E. Jimenez et al., Princeton Language and Intelligence · ICLR 2024 Oral", f_body, TEXT_MUTED, 120, 1285, max_w)
+    draw_wrapped_text(d, "Table 2 Full Benchmark (2,294 tasks): Claude 2 solved 4.80%, GPT-4 1.74%", f_mono, TEXT_CYAN, 120, 1345, max_w)
+    draw_wrapped_text(d, "Canonical arXiv Reference: https://arxiv.org/abs/2310.06770", f_mono, TEXT_MUTED, 120, 1415, max_w)
 
     img.save(output_dir / "scene_02_benchmark.png")
 
@@ -201,43 +201,43 @@ def generate_short_graphics(output_dir: Path):
     d = ImageDraw.Draw(img)
     draw_grid_background(d, w, h)
 
-    d.rounded_rectangle([60, 200, 1020, 1500], radius=24, fill=CARD_BG, outline=TEXT_AMBER, width=3)
-    d.text((100, 240), "[ MULTI-AGENT COORDINATION · ICLR 2024 ]", fill=TEXT_AMBER, font=f_badge)
-    d.text((100, 285), "CIRCULAR DEBATES VS\nSTRUCTURED SOPS", fill=TEXT_WHITE, font=f_title, spacing=8)
-    draw_wrapped_text(d, "MetaGPT Multi-Agent Role Architecture (Hong et al.)", f_subtitle, TEXT_MUTED, 100, 395, max_w)
+    d.rounded_rectangle([60, 270, 1020, 1780], radius=24, fill=CARD_BG, outline=TEXT_AMBER, width=3)
+    d.text((100, 310), "[ MULTI-AGENT COORDINATION · ICLR 2024 ]", fill=TEXT_AMBER, font=f_badge)
+    d.text((100, 355), "CIRCULAR DEBATES VS\nSTRUCTURED SOPS", fill=TEXT_WHITE, font=f_title, spacing=8)
+    draw_wrapped_text(d, "MetaGPT Multi-Agent Role Architecture (Hong et al.)", f_subtitle, TEXT_MUTED, 100, 465, max_w)
 
     # Box 1: Unstructured Swarms
-    d.rounded_rectangle([90, 460, 990, 740], radius=16, fill=(15, 23, 42, 255), outline=TEXT_RED, width=2)
-    d.text((120, 485), "UNSTRUCTURED AGENT SWARMS (FAILURE PATTERN)", fill=TEXT_RED, font=f_badge)
+    d.rounded_rectangle([90, 530, 990, 810], radius=16, fill=(15, 23, 42, 255), outline=TEXT_RED, width=2)
+    d.text((120, 555), "UNSTRUCTURED AGENT SWARMS (FAILURE PATTERN)", fill=TEXT_RED, font=f_badge)
     swarms = [
         "• Peer-to-peer unconstrained agent debate loops",
         "• Cascading circular confirmation and hallucination drift",
         "• Accidental destructive mutations and silent state regression",
     ]
-    curr_y = 530
+    curr_y = 600
     for s in swarms:
         curr_y = draw_wrapped_text(d, s, f_body, TEXT_WHITE, 120, curr_y, max_w, line_spacing=10)
 
     # Box 2: MetaGPT Structured SOPs
-    d.rounded_rectangle([90, 770, 990, 1150], radius=16, fill=(15, 23, 42, 255), outline=TEXT_GREEN, width=2)
-    d.text((120, 795), "METAGPT STRUCTURED SOPS (VERIFIED SOLUTION)", fill=TEXT_GREEN, font=f_badge)
+    d.rounded_rectangle([90, 840, 990, 1220], radius=16, fill=(15, 23, 42, 255), outline=TEXT_GREEN, width=2)
+    d.text((120, 865), "METAGPT STRUCTURED SOPS (VERIFIED SOLUTION)", fill=TEXT_GREEN, font=f_badge)
     sops = [
         "1. Role Division: Product Manager -> Architect -> Engineer -> QA",
         "2. Standard Operating Procedures (SOPs) eliminate debate loops",
         "3. Structured intermediate artifacts form strict handoff contracts",
         "4. Supervisor evaluates deliverables against immutable schemas",
     ]
-    curr_y = 840
+    curr_y = 910
     for sp in sops:
         curr_y = draw_wrapped_text(d, sp, f_body, TEXT_WHITE, 120, curr_y, max_w, line_spacing=10)
     draw_wrapped_text(d, "Result: 100% task completion on software development benchmarks", f_body, TEXT_GREEN, 120, curr_y + 8, max_w)
 
     # Box 3: Citation
-    d.rounded_rectangle([90, 1180, 990, 1460], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
-    d.text((120, 1205), "PRIMARY LITERATURE CITATION", fill=TEXT_CYAN, font=f_badge)
-    draw_wrapped_text(d, "MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework", f_body, TEXT_WHITE, 120, 1245, max_w)
-    draw_wrapped_text(d, "Sirui Hong et al., DeepWisdom & KAUST · ICLR 2024", f_body, TEXT_MUTED, 120, 1300, max_w)
-    draw_wrapped_text(d, "Canonical Reference: https://arxiv.org/abs/2308.00352", f_mono, TEXT_CYAN, 120, 1355, max_w)
+    d.rounded_rectangle([90, 1250, 990, 1530], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
+    d.text((120, 1275), "PRIMARY LITERATURE CITATION", fill=TEXT_CYAN, font=f_badge)
+    draw_wrapped_text(d, "MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework", f_body, TEXT_WHITE, 120, 1315, max_w)
+    draw_wrapped_text(d, "Sirui Hong et al., DeepWisdom & KAUST · ICLR 2024", f_body, TEXT_MUTED, 120, 1370, max_w)
+    draw_wrapped_text(d, "Canonical Reference: https://arxiv.org/abs/2308.00352", f_mono, TEXT_CYAN, 120, 1425, max_w)
 
     img.save(output_dir / "scene_03_coordination.png")
 
@@ -248,25 +248,25 @@ def generate_short_graphics(output_dir: Path):
     d = ImageDraw.Draw(img)
     draw_grid_background(d, w, h)
 
-    d.rounded_rectangle([60, 200, 1020, 1500], radius=24, fill=CARD_BG, outline=TEXT_GREEN, width=3)
-    d.text((100, 240), "[ DETERMINISTIC RUNTIME GOVERNANCE ]", fill=TEXT_GREEN, font=f_badge)
-    d.text((100, 285), "ISOLATED TOOL\nEXECUTION BOUNDARIES", fill=TEXT_WHITE, font=f_title, spacing=8)
-    draw_wrapped_text(d, "Hardware Enforced Containers & Schema Validation", f_subtitle, TEXT_MUTED, 100, 395, max_w)
+    d.rounded_rectangle([60, 270, 1020, 1780], radius=24, fill=CARD_BG, outline=TEXT_GREEN, width=3)
+    d.text((100, 310), "[ DETERMINISTIC RUNTIME GOVERNANCE ]", fill=TEXT_GREEN, font=f_badge)
+    d.text((100, 355), "ISOLATED TOOL\nEXECUTION BOUNDARIES", fill=TEXT_WHITE, font=f_title, spacing=8)
+    draw_wrapped_text(d, "Hardware Enforced Containers & Schema Validation", f_subtitle, TEXT_MUTED, 100, 465, max_w)
 
     # Three Pillars
     pillars = [
-        ("PILLAR 1: CONTAINER ISOLATION", "Ephemeral IPC namespaces, read-only system roots, and network socket isolation restrict execution blast radius.", TEXT_CYAN, 460),
-        ("PILLAR 2: STRICT SCHEMA PROTOCOLS", "Every tool call enforces immutable typed JSON schemas. Out-of-bounds parameters fail before execution.", TEXT_AMBER, 710),
-        ("PILLAR 3: STRUCTURED ERROR PAYLOADS", "Execution errors return machine-readable diagnostic payloads rather than crashing the agent state machine.", TEXT_GREEN, 960),
+        ("PILLAR 1: CONTAINER ISOLATION", "Ephemeral IPC namespaces, read-only system roots, and network socket isolation restrict execution blast radius.", TEXT_CYAN, 530),
+        ("PILLAR 2: STRICT SCHEMA PROTOCOLS", "Every tool call enforces immutable typed JSON schemas. Out-of-bounds parameters fail before execution.", TEXT_AMBER, 780),
+        ("PILLAR 3: STRUCTURED ERROR PAYLOADS", "Execution errors return machine-readable diagnostic payloads rather than crashing the agent state machine.", TEXT_GREEN, 1030),
     ]
     for p_title, p_desc, p_col, p_y in pillars:
         d.rounded_rectangle([90, p_y, 990, p_y + 220], radius=16, fill=(15, 23, 42, 255), outline=p_col, width=2)
         d.text((120, p_y + 20), p_title, fill=p_col, font=f_badge)
         draw_wrapped_text(d, p_desc, f_body, TEXT_WHITE, 120, p_y + 65, max_w, line_spacing=8)
 
-    d.rounded_rectangle([90, 1210, 990, 1460], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
-    d.text((120, 1235), "OPERATIONAL BENEFIT", fill=TEXT_CYAN, font=f_badge)
-    draw_wrapped_text(d, "Prevents credential exfiltration, destructive shell operations, and unverified workspace mutations across autonomous pipelines.", f_body, TEXT_WHITE, 120, 1275, max_w)
+    d.rounded_rectangle([90, 1280, 990, 1530], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
+    d.text((120, 1305), "OPERATIONAL BENEFIT", fill=TEXT_CYAN, font=f_badge)
+    draw_wrapped_text(d, "Prevents credential exfiltration, destructive shell operations, and unverified workspace mutations across autonomous pipelines.", f_body, TEXT_WHITE, 120, 1345, max_w)
 
     img.save(output_dir / "scene_04_sandboxing.png")
 
@@ -277,32 +277,32 @@ def generate_short_graphics(output_dir: Path):
     d = ImageDraw.Draw(img)
     draw_grid_background(d, w, h)
 
-    d.rounded_rectangle([60, 200, 1020, 1500], radius=24, fill=CARD_BG, outline=TEXT_CYAN, width=3)
-    d.text((100, 240), "[ DEVOPS RESEARCH & ASSESSMENT · DORA 2024 ]", fill=TEXT_CYAN, font=f_badge)
-    d.text((100, 285), "AUTOMATED PREFLIGHT\nVERIFICATION GATES", fill=TEXT_WHITE, font=f_title, spacing=8)
-    draw_wrapped_text(d, "Validating System State Before Live Environment Release", f_subtitle, TEXT_MUTED, 100, 395, max_w)
+    d.rounded_rectangle([60, 270, 1020, 1780], radius=24, fill=CARD_BG, outline=TEXT_CYAN, width=3)
+    d.text((100, 310), "[ DEVOPS RESEARCH & ASSESSMENT · DORA 2024 ]", fill=TEXT_CYAN, font=f_badge)
+    d.text((100, 355), "AUTOMATED PREFLIGHT\nVERIFICATION GATES", fill=TEXT_WHITE, font=f_title, spacing=8)
+    draw_wrapped_text(d, "Validating System State Before Live Environment Release", f_subtitle, TEXT_MUTED, 100, 465, max_w)
 
     # Verification Gates
-    d.rounded_rectangle([90, 460, 990, 1140], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
-    d.text((120, 485), "PRE-RELEASE QUALITY GATES (DORA 2024)", fill=TEXT_MUTED, font=f_badge)
+    d.rounded_rectangle([90, 530, 990, 1210], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
+    d.text((120, 555), "PRE-RELEASE QUALITY GATES (DORA 2024)", fill=TEXT_MUTED, font=f_badge)
 
     gates = [
-        ("GATE 1: STATIC SCHEMA & CITATION AUDIT", "Verified canonical DOIs, bounded claims, script span matching", TEXT_GREEN, 535),
-        ("GATE 2: AUTOMATED TESTING & FFPROBE QA", "Zero black frames, exact 9:16 SAR 1:1, audio-sync verification", TEXT_GREEN, 675),
-        ("GATE 3: SHADOW DRY-RUN SIMULATION", "Executes full release protocol without live state mutations", TEXT_CYAN, 815),
-        ("GATE 4: INDEPENDENT QUALITY SUPERVISOR", "Cryptographic approval bound to media SHA-256 (Zero self-approval)", TEXT_AMBER, 955),
+        ("GATE 1: STATIC SCHEMA & CITATION AUDIT", "Verified canonical DOIs, bounded claims, script span matching", TEXT_GREEN, 605),
+        ("GATE 2: AUTOMATED TESTING & FFPROBE QA", "Zero black frames, exact 9:16 SAR 1:1, audio-sync verification", TEXT_GREEN, 745),
+        ("GATE 3: SHADOW DRY-RUN SIMULATION", "Executes full release protocol without live state mutations", TEXT_CYAN, 885),
+        ("GATE 4: INDEPENDENT QUALITY SUPERVISOR", "Cryptographic approval bound to media SHA-256 (Zero self-approval)", TEXT_AMBER, 1025),
     ]
     for g_title, g_desc, g_col, g_y in gates:
         d.text((120, g_y), f"✓ {g_title}", fill=g_col, font=f_badge)
         draw_wrapped_text(d, g_desc, f_body, TEXT_WHITE, 145, g_y + 35, max_w - 25)
 
     # Citation Card
-    d.rounded_rectangle([90, 1170, 990, 1460], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
-    d.text((120, 1195), "PRIMARY LITERATURE CITATION", fill=TEXT_CYAN, font=f_badge)
-    draw_wrapped_text(d, "Google Cloud State of DevOps Report (DORA 2024)", f_body, TEXT_WHITE, 120, 1235, max_w)
-    draw_wrapped_text(d, "DevOps Research and Assessment · Published: Oct 2024", f_body, TEXT_MUTED, 120, 1280, max_w)
-    draw_wrapped_text(d, "Key Finding: Fast verification gates mitigate delivery risks", f_body, TEXT_GREEN, 120, 1325, max_w)
-    draw_wrapped_text(d, "Canonical URL: https://dora.dev/research/2024/dora-report/", f_mono, TEXT_CYAN, 120, 1375, max_w)
+    d.rounded_rectangle([90, 1240, 990, 1530], radius=16, fill=(15, 23, 42, 255), outline=CARD_BORDER, width=2)
+    d.text((120, 1265), "PRIMARY LITERATURE CITATION", fill=TEXT_CYAN, font=f_badge)
+    draw_wrapped_text(d, "Google Cloud State of DevOps Report (DORA 2024)", f_body, TEXT_WHITE, 120, 1305, max_w)
+    draw_wrapped_text(d, "DevOps Research and Assessment · Published: Oct 2024", f_body, TEXT_MUTED, 120, 1350, max_w)
+    draw_wrapped_text(d, "Key Finding: Fast verification gates mitigate delivery risks", f_body, TEXT_GREEN, 120, 1395, max_w)
+    draw_wrapped_text(d, "Canonical URL: https://dora.dev/research/2024/dora-report/", f_mono, TEXT_CYAN, 120, 1445, max_w)
 
     img.save(output_dir / "scene_05_verification.png")
     print(f"Generated 5 Short scene graphics in {output_dir}")

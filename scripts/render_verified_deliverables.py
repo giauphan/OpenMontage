@@ -42,7 +42,7 @@ def run(cmd: str):
     return res.stdout
 
 
-def srt_to_ass(srt_path: Path, ass_path: Path, width: int, height: int, font_size: int, margin_v: int):
+def srt_to_ass(srt_path: Path, ass_path: Path, width: int, height: int, font_size: int, margin_v: int, alignment: int = 2):
     """Convert SRT cues to ASS with exact pixel PlayRes canvas to avoid top-screen overflow."""
     import re
     srt_text = srt_path.read_text(encoding="utf-8")
@@ -72,7 +72,7 @@ PlayResY: {height}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,DejaVu Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,0,2,80,80,{margin_v},1
+Style: Default,DejaVu Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,0,{alignment},80,80,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -127,13 +127,13 @@ def render_short():
 
     run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
 
-    # 4. Final compositing: Overlay audio, static subtitle container, burned-in synchronized subtitles
+    # 4. Final compositing: Overlay audio, top subtitle container, burned-in synchronized subtitles
     srt_short = SHORT_PROJECT / "artifacts/captions_en_US.srt"
     ass_short = TMP_DIR / "short_captions.ass"
-    srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=42, margin_v=200)
+    srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=38, margin_v=95, alignment=8)
     vf = (
-        "drawbox=x=60:y=1540:w=960:h=230:color=#0b0f19@0.92:t=fill,"
-        "drawbox=x=60:y=1540:w=960:h=230:color=#38bdf8@0.6:t=2,"
+        "drawbox=x=60:y=60:w=960:h=180:color=#0b0f19@0.92:t=fill,"
+        "drawbox=x=60:y=60:w=960:h=180:color=#38bdf8@0.6:t=2,"
         f"ass={ass_short},"
         "setsar=1"
     )
@@ -251,13 +251,14 @@ def render_long():
     print("Longform render complete!")
 
 
-def invalidate_stale_approvals():
+def invalidate_stale_approvals(short_only: bool = False):
     """Invalidate stale approval records upon fresh media render.
 
     Ensures that newly rendered deliverables are not mistakenly marked approved
     until scripts/independent_editorial_qa.py conducts a fresh audit.
     """
-    for proj in (SHORT_PROJECT, LONG_PROJECT):
+    targets = [SHORT_PROJECT] if short_only else [SHORT_PROJECT, LONG_PROJECT]
+    for proj in targets:
         app = proj / "approval.json"
         if app.is_file():
             data = json.loads(app.read_text(encoding="utf-8"))
@@ -276,9 +277,15 @@ def invalidate_stale_approvals():
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--short-only", action="store_true", help="Render only the US Short deliverable")
+    args = parser.parse_args()
+
     ensure_graphics()
     render_short()
-    render_long()
-    invalidate_stale_approvals()
-    print("\nALL DELIVERABLES SUCCESSFULLY RENDERED!")
+    if not args.short_only:
+        render_long()
+    invalidate_stale_approvals(short_only=args.short_only)
+    print("\nALL REQUESTED DELIVERABLES SUCCESSFULLY RENDERED!")
     print("Next step: Run scripts/independent_editorial_qa.py for independent verification.")
