@@ -1,14 +1,14 @@
 [
   {
     "project_id": "us_ai_longform_02",
-    "timestamp": "2026-10-23T15:17:17Z",
+    "timestamp": "2026-10-23T15:45:41Z",
     "status": "PASS",
     "total_checks": 6,
     "passed": 6,
     "failed": 0,
     "color": "\ud83d\udfe2",
     "strict_quality_pass": true,
-    "inspected_artifact_hash": "352e4aa6e25d04de40255d2228ef8d57d7b417d8d1c1c5a99d80c51899d1b14a",
+    "inspected_artifact_hash": "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99",
     "details": {
       "overall_status": "PASS",
       "results": [
@@ -16,7 +16,7 @@
           "check_name": "Technical Contract",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "352e4aa6e25d04de40255d2228ef8d57d7b417d8d1c1c5a99d80c51899d1b14a",
+            "inspected_artifact_hash": "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99",
             "dar": "16:9",
             "sar": "1:1",
             "resolution": "1920x1080",
@@ -27,7 +27,7 @@
           "check_name": "Content Quality & Fact-Checking",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "352e4aa6e25d04de40255d2228ef8d57d7b417d8d1c1c5a99d80c51899d1b14a",
+            "inspected_artifact_hash": "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99",
             "claims_count": 4,
             "verbatim_script_spans_matched": true,
             "all_claims_approved": true,
@@ -38,7 +38,7 @@
           "check_name": "Synchronized Subtitles Audit",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "352e4aa6e25d04de40255d2228ef8d57d7b417d8d1c1c5a99d80c51899d1b14a",
+            "inspected_artifact_hash": "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99",
             "subtitles_burned": true,
             "cue_count": 16
           }
@@ -47,7 +47,7 @@
           "check_name": "Metadata Validation",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "352e4aa6e25d04de40255d2228ef8d57d7b417d8d1c1c5a99d80c51899d1b14a",
+            "inspected_artifact_hash": "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99",
             "locale": "en-US",
             "format": "longform"
           }
@@ -56,10 +56,10 @@
           "check_name": "Independent Editorial QA Review Gate",
           "passed": true,
           "details": {
-            "inspected_artifact_hash": "352e4aa6e25d04de40255d2228ef8d57d7b417d8d1c1c5a99d80c51899d1b14a",
+            "inspected_artifact_hash": "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99",
             "reviewer": "independent_qa_supervisor",
             "supervisor_role": "Editorial Lead & Safety Officer",
-            "manifest_sha256": "7fd2897241df5bc314d21c8d1092cf902884c933e30c87f198db17d47649398a",
+            "manifest_sha256": "703b9088c91de5f0590bce33dd61843ef5286cba3a6790edbe9d123f21792d2e",
             "verdict": "APPROVED_FOR_STRICT_PREFLIGHT",
             "signature_verified": true
           }
