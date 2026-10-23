@@ -52,31 +52,5 @@
       "youtube"
     ]
   },
-  "active_projects": [
-    {
-      "project_id": "cand_3f4932f083ff2c17",
-      "publish_date": "2026-10-23",
-      "publish_time": "21:15"
-    },
-    {
-      "project_id": "cand_a47de62b6c1ac034",
-      "publish_date": "2026-10-23",
-      "publish_time": "23:30"
-    },
-    {
-      "project_id": "cand_89852a2e1df817b0",
-      "publish_date": "2026-10-24",
-      "publish_time": "09:15"
-    },
-    {
-      "project_id": "cand_4b6e3283f6bd75df",
-      "publish_date": "2026-10-24",
-      "publish_time": "14:15"
-    },
-    {
-      "project_id": "cand_fb66f66fdd028161",
-      "publish_date": "2026-10-24",
-      "publish_time": "21:15"
-    }
-  ]
+  "active_projects": []
 }
