@@ -193,6 +193,7 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
     if language_errors:
         raise ValueError("; ".join(language_errors))
+    max_dur = 180.0 if platform == "youtube" else (60.0 if platform == "instagram" else None)
     errors = validate_video(
         video_path,
         narration,
@@ -201,7 +202,7 @@ def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, s
         14.0,
         3.0,
         PORTRAIT_DIMENSIONS,
-        60.0 if platform in ("youtube", "instagram") else None,
+        max_dur,
         narration_text if narration_text.is_file() else None,
         strict=strict,
         locale=locale,
@@ -879,6 +880,12 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
     validate_script = root / "scripts" / "validate_render_quality.py"
     if not validate_script.is_file() or not ffprobe or not ffmpeg:
         raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: validator, ffprobe, and ffmpeg are required")
+    meta = load_metadata(project_path)
+    fmt = meta.get("format")
+    from lib.artifact_paths import resolve_project_locale, is_english_locale
+    locale = resolve_project_locale(project_path)
+    is_en = is_english_locale(locale)
+
     command = [
         sys.executable,
         str(validate_script),
@@ -887,9 +894,20 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
         ffprobe,
         "--ffmpeg",
         ffmpeg,
-        "--reels-max-duration",
-        "60",
     ]
+    if is_en:
+        if fmt in ("short", "shorts", "reels", "9x16"):
+            command.extend(["--render", "reels", "--reels-max-duration", "180"])
+        elif fmt in ("long", "longform", "16x9", "full"):
+            command.extend(["--render", "full"])
+        else:
+            if (project_path / "renders" / "final_short_en_US_9x16.mp4").is_file():
+                command.extend(["--render", "reels", "--reels-max-duration", "180"])
+            elif (project_path / "renders" / "final_long_en_US_16x9.mp4").is_file():
+                command.extend(["--render", "full"])
+    else:
+        command.extend(["--reels-max-duration", "60"])
+
     if strict:
         command.append("--strict")
     result = subprocess.run(command, capture_output=True, text=True)
@@ -933,6 +951,9 @@ def enforce_release_preflight(
         except Exception as e:
             raise RuntimeError(f"Release preflight failed: Invalid project.json: {e}") from e
 
+    from lib.news_release_gate import is_news_project
+    is_news = is_news_project(project_dir, metadata)
+
     if pipeline_type:
         from lib.checkpoint import (
             get_pipeline_stages,
@@ -941,9 +962,6 @@ def enforce_release_preflight(
             CANONICAL_STAGE_ARTIFACTS,
         )
         from lib.pipeline_loader import load_pipeline_readonly
-        from lib.news_release_gate import is_news_project
-
-        is_news = is_news_project(project_dir, metadata)
 
         try:
             stages = get_pipeline_stages(pipeline_type)

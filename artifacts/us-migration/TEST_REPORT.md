@@ -4,12 +4,12 @@
 
 - **Repository**: `giauphan/OpenMontage`
 - **Baseline Git SHA**: `9ca95e8ef67628067cd50195f484332f56e24c8c`
-- **Candidate Commit SHA**: `5067a196f27f2bd751842d89eca9d8d4e88ac696`
+- **Candidate Commit SHA**: `623c8104400abef1278b3b42bfcb478c0e6abc02` (PR #30, merged to `main` at `c2ccb4196e2ea8766d6cc5885eeffb3c7e2230f9`)
 - **Execution Date**: 2026-10-22
 - **Platform**: Linux 5.15 (Ubuntu 22.04 LTS, aarch64)
 - **Python Version**: 3.10.12
 - **Pytest Version**: 9.1.1
-- **Overall Result**: **PASS (0 Failures, 0 Skips, 0 Errors)**
+- **Overall Result**: **PASS (1,985 Passed, 8 Skipped due to disabled live secrets, 0 Failures, 0 Errors)**
 
 ---
 
@@ -31,7 +31,8 @@
 
 1. **Network Egress Denial (`network=DENY`)**:
    - All tests in `tests/us_migration/test_us_migration_suite.py` execute against local in-memory mocks (`googleapiclient.discovery.build`, mock HTTP transports, and simulated local file systems).
-   - In `test_p09_dry_run_mode_provably_avoids_network_upload`, outbound calls to `videos().insert()` and `channels().list()` were monitored. In `--dry-run` mode, zero outbound requests were dispatched.
+   - In `test_p05_duplicate_scheduler_claim_prevented`, concurrency contention across two schedulers is validated against `PublishStore.claim()`, ensuring atomic unique constraints reject duplicate slot claims (`claimed=False`).
+   - In `test_p09_dry_run_mode_provably_avoids_network_upload`, the full `schedule_today_native.main` CLI runner executes with `--dry-run` against a valid candidate project, provably verifying zero store mutations (`store.claim`, `store.mark_scheduled` not called), zero network uploads (`YoutubePublisher.execute` not called), and zero metadata disk mutations.
 2. **Paid Provider Invocations**:
    - Zero billable API calls made to ElevenLabs, Runway, Kling, HeyGen, or Fal.ai during any test or canary generation. All test audio and video were generated using local FFmpeg lavfi filters.
 3. **Database and Live Scheduler Mutations**:
@@ -94,4 +95,4 @@
 
 ## 5. Conclusion
 
-The candidate implementation satisfies all deterministic quality, security, and editorial boundaries. Zero tests were skipped, and all regression suites passed completely.
+The candidate implementation satisfies all deterministic quality, security, and editorial boundaries. Zero tests failed, 8 tests were skipped exclusively due to live provider secrets disabled, and all regression suites passed completely.

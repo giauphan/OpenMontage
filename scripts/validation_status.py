@@ -31,7 +31,10 @@ class ValidationStatusLogger:
             self.STATUS_FILE = Path("/app/validation_status.json")
             self.logs_dir = Path("/app/logs")
             self.LOG_FILE = Path("/app/logs/validation_log.txt")
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         
     def log_validation_result(self, project_id: str, status: str, 
                               total_checks: int, passed: int, failed: int,

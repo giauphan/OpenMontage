@@ -50,11 +50,29 @@ def main() -> int:
     from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths
     locale = resolve_project_locale(project_dir)
     if is_english_locale(locale):
-        full_name, reels_name = resolve_render_paths(project_dir, locale=locale)
-        video_paths = [
-            project_dir / "renders" / full_name,
-            project_dir / "renders" / reels_name,
-        ]
+        fmt = None
+        meta_file = project_dir / "publish_metadata.json"
+        if meta_file.is_file():
+            try:
+                meta_data = json.loads(meta_file.read_text(encoding="utf-8"))
+                fmt = meta_data.get("format")
+            except Exception:
+                pass
+        if not fmt and (project_dir / "project.json").is_file():
+            try:
+                pcfg = json.loads((project_dir / "project.json").read_text(encoding="utf-8"))
+                fmt = pcfg.get("format")
+            except Exception:
+                pass
+
+        full_path, reels_path = resolve_render_paths(project_dir, locale=locale)
+        if fmt in ("short", "shorts", "reels", "9x16"):
+            video_paths = [reels_path]
+        elif fmt in ("long", "longform", "16x9", "full"):
+            video_paths = [full_path]
+        else:
+            existing = [p for p in (reels_path, full_path) if p.is_file()]
+            video_paths = existing if existing else [reels_path]
     else:
         video_paths = [
             project_dir / "renders" / "final_full_vi_9x16.mp4",

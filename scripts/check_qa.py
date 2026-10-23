@@ -69,9 +69,7 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
     from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths, resolve_narration_text_path
     locale = resolve_project_locale(project)
     if is_english_locale(locale):
-        full_name, reels_name = resolve_render_paths(project, locale=locale)
-        full = project / full_name
-        reels = project / reels_name
+        full, reels = resolve_render_paths(project, locale=locale)
         narration_text = resolve_narration_text_path(project, locale=locale)
     else:
         full = project / FULL_RENDER

@@ -327,12 +327,72 @@ class TestPublisherSchedulerSecurityP01_P12:
                     assert not result.success
                     assert "CHANNEL_GUARD_REQUIRED" in result.error
 
-    def test_p05_duplicate_scheduler_claim_prevented(self, tmp_path: Path):
+    def test_p05_duplicate_scheduler_claim_prevented(self, tmp_path: Path, monkeypatch):
         """P05: Concurrency check: two schedulers attempting same slot/channel/rendition cannot double-claim."""
-        from tools.publish_store import publish_key
-        key1 = publish_key("2026-10-21", "topic-1", "youtube", "short")
-        key2 = publish_key("2026-10-21", "topic-1", "youtube", "short")
-        assert key1 == key2
+        from tools.publish_store import PublishStore, publish_key
+
+        video_file = tmp_path / "video.mp4"
+        video_file.write_bytes(b"dummy video content for hashing")
+
+        monkeypatch.setenv("FIREBASE_SERVICE_ACCOUNT", json.dumps({"project_id": "test-project"}))
+        monkeypatch.setattr("tools.publish_store.Credentials.from_service_account_info", lambda *args, **kwargs: None)
+        monkeypatch.setattr("tools.publish_store.media_fingerprint", lambda path: "mock_fingerprint_sha256")
+
+        # In-memory store backend simulating Firestore atomic document creation with uniqueness
+        firestore_documents = {}
+
+        def mock_create_many_once(self_store, documents):
+            # Atomic conditional check: if any document exists, write fails
+            for key in documents:
+                if key in firestore_documents:
+                    return False
+            firestore_documents.update(documents)
+            return True
+
+        def mock_get(self_store, key):
+            return firestore_documents.get(key)
+
+        monkeypatch.setattr(PublishStore, "create_many_once", mock_create_many_once)
+        monkeypatch.setattr(PublishStore, "get", mock_get)
+        monkeypatch.setattr("tools.publish_store.AuthorizedSession", lambda creds: MagicMock())
+
+        store1 = PublishStore()
+        store2 = PublishStore()
+
+        # Scheduler 1 claims the slot
+        key1, claimed1, record1 = store1.claim(
+            date="2026-10-21",
+            topic="us-ai-breakthrough",
+            platform="youtube",
+            account="us_channel",
+            kind="short",
+            status="scheduling",
+            title="US AI Breakthrough Today",
+            asset_path=str(video_file),
+            scheduled_for="2026-10-21T14:00:00Z",
+        )
+        assert claimed1 is True
+        assert key1 == publish_key("2026-10-21", "us-ai-breakthrough", "youtube", "short")
+        assert record1["status"] == "scheduling"
+
+        # Scheduler 2 attempts to claim the exact same slot/channel/rendition concurrently
+        key2, claimed2, record2 = store2.claim(
+            date="2026-10-21",
+            topic="us-ai-breakthrough",
+            platform="youtube",
+            account="us_channel",
+            kind="short",
+            status="scheduling",
+            title="US AI Breakthrough Today",
+            asset_path=str(video_file),
+            scheduled_for="2026-10-21T14:00:00Z",
+        )
+        assert claimed2 is False
+        assert key2 == key1
+        # Scheduler 2 receives the existing record claimed by Scheduler 1
+        assert record2 is not None
+        assert record2["status"] == "scheduling"
+        assert record2["title"] == "US AI Breakthrough Today"
 
     def test_p07_dst_spring_gap_handled_unambiguously(self):
         """P07: America/New_York DST spring-forward 1-hour gap is safely handled."""
@@ -354,21 +414,82 @@ class TestPublisherSchedulerSecurityP01_P12:
         dt = make_publish_datetime(fall_day, "01:30", tz)
         assert dt.tzinfo is not None
 
-    def test_p09_dry_run_mode_provably_avoids_network_upload(self, tmp_path: Path):
+    def test_p09_dry_run_mode_provably_avoids_network_upload(self, tmp_path: Path, monkeypatch, capsys):
         """P09: Dry-run / shadow mode performs checks but causes zero store mutations and zero network uploads."""
-        mock_store = MagicMock()
-        with patch.dict(os.environ, {"DRY_RUN": "1", "SHADOW_ROLLOUT": "1"}):
-            with patch("tools.publishers.youtube_publisher.YoutubePublisher.execute") as mock_exec:
-                # Simulating dry-run scheduler branch
-                is_dry_run = True
-                if not is_dry_run:
-                    mock_store.claim(key="test-key", platform="youtube", slot="12:00")
-                    mock_store.mark_scheduled(key="test-key", video_id="mock-id")
-                    mock_exec({"video_path": "test.mp4"})
+        from scripts.schedule_today_native import main
+        from tests.fixtures.news_evidence import write_reviewed_news_evidence
 
-                mock_store.claim.assert_not_called()
-                mock_store.mark_scheduled.assert_not_called()
-                mock_exec.assert_not_called()
+        projects_dir = tmp_path / "projects"
+        config_dir = tmp_path / "config"
+        projects_dir.mkdir(parents=True)
+        config_dir.mkdir(parents=True)
+
+        today = "2099-01-01"
+
+        schedule_cfg = {
+            "timezone": "America/New_York",
+            "youtube": {"account": "us_channel"},
+            "instagram": {"account_id": "us_ig"},
+            "active_projects": [
+                {"project_id": "us_news_cand", "publish_date": today, "publish_time": "23:59"}
+            ],
+        }
+        (config_dir / "publish_schedule.json").write_text(json.dumps(schedule_cfg))
+
+        cand_dir = projects_dir / "us_news_cand"
+        cand_dir.mkdir()
+        write_reviewed_news_evidence(cand_dir)
+        monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
+
+        renders_dir = cand_dir / "renders"
+        renders_dir.mkdir(parents=True)
+        video_file = renders_dir / "final_short_en_US_9x16.mp4"
+        video_file.write_bytes(b"dummy mp4 video bytes")
+
+        initial_meta = {
+            "id": "us_news_cand",
+            "title": "US AI Breakthrough #Shorts",
+            "description": "Daily update on autonomous AI agents in production.",
+            "status": "generated",
+            "locale": "en-US",
+            "format": "short",
+            "yt_shorts": "renders/final_short_en_US_9x16.mp4",
+        }
+        meta_path = cand_dir / "publish_metadata.json"
+        meta_path.write_text(json.dumps(initial_meta, indent=2))
+        initial_meta_content = meta_path.read_text()
+
+        (cand_dir / "validation_status.json").write_text(json.dumps([
+            {"status": "PASS", "strict_quality_pass": True}
+        ]))
+
+        mock_store = MagicMock()
+        mock_store.get.return_value = None
+        mock_yt_pub = MagicMock()
+
+        with patch("scripts.schedule_today_native.ROOT", tmp_path), \
+             patch("scripts.schedule_today_native.load_config", return_value=schedule_cfg), \
+             patch("scripts.schedule_today_native.PublishStore", return_value=mock_store), \
+             patch("scripts.schedule_today_native.YoutubePublisher", return_value=mock_yt_pub), \
+             patch("sys.argv", ["schedule_today_native.py", "--date", today, "--dry-run"]):
+
+            exit_code = main()
+            assert exit_code == 0
+
+            # Assert zero store mutations
+            mock_store.claim.assert_not_called()
+            mock_store.mark_scheduled.assert_not_called()
+            mock_store.mark_published.assert_not_called()
+
+            # Assert zero network upload executions
+            mock_yt_pub.execute.assert_not_called()
+
+            # Assert zero metadata file mutation on disk
+            assert meta_path.read_text() == initial_meta_content
+
+            # Verify output message confirms shadow simulation
+            captured = capsys.readouterr()
+            assert "SHADOW/DRY-RUN: Simulated YouTube short schedule for us_news_cand" in captured.out
 
     def test_p11_stale_vi_schedule_item_quarantined_not_published_as_english(self):
         """P11: Stale Vietnamese items in schedule queue cannot be published under en-US branding."""
