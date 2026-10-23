@@ -116,7 +116,7 @@ def render_short():
     for idx, (img_name, dur) in enumerate(scenes):
         seg_path = TMP_DIR / f"short_seg_{idx}.mp4"
         run(f'ffmpeg -y -loglevel error -loop 1 -framerate 30 -t {dur} -i {s_dir / img_name} '
-            f'-vf "scale=1080:1920,setsar=1" '
+            f'-vf "pad=1084:1924:2:2:color=#0b0f19,crop=1080:1920:\'2+1.5*sin(t*0.5)\':\'2+1.5*cos(t*0.5)\',setsar=1" '
             f'-c:v libx264 -preset fast -pix_fmt yuv420p {seg_path}')
         seg_files.append(seg_path)
 
@@ -197,7 +197,7 @@ def render_long():
     for idx, (img_name, dur) in enumerate(chapters):
         seg_path = TMP_DIR / f"long_seg_{idx}.mp4"
         run(f'ffmpeg -y -loglevel error -loop 1 -framerate 30 -t {dur} -i {l_dir / img_name} '
-            f'-vf "scale=1920:1080,setsar=1" '
+            f'-vf "pad=1924:1084:2:2:color=#0b0f19,crop=1920:1080:\'2+1.5*sin(t*0.5)\':\'2+1.5*cos(t*0.5)\',setsar=1" '
             f'-c:v libx264 -preset fast -pix_fmt yuv420p {seg_path}')
         seg_files.append(seg_path)
 
