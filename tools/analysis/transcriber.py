@@ -119,6 +119,20 @@ class Transcriber(BaseTool):
         """Rough estimate: ~0.5x real-time on CPU for 'base' model."""
         return 60.0  # conservative default
 
+    def _get_model_options(self, selected_device: str, selected_compute_type: str, local_files_only: bool = False) -> dict[str, Any]:
+        """Build CTranslate2 WhisperModel options enforcing CPU thread limits."""
+        import os
+        options: dict[str, Any] = {
+            "device": selected_device,
+            "compute_type": selected_compute_type,
+        }
+        if selected_device == "cpu":
+            options["cpu_threads"] = int(os.environ.get("ASR_CPU_THREADS", "1"))
+            options["num_workers"] = int(os.environ.get("ASR_NUM_WORKERS", "1"))
+        if local_files_only:
+            options["local_files_only"] = True
+        return options
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])
         model_size = inputs.get("model_size", "base")
@@ -166,12 +180,7 @@ class Transcriber(BaseTool):
             pass
 
         def _transcribe_on(selected_device: str, selected_compute_type: str):
-            model_options = {
-                "device": selected_device,
-                "compute_type": selected_compute_type,
-            }
-            if local_files_only:
-                model_options["local_files_only"] = True
+            model_options = self._get_model_options(selected_device, selected_compute_type, local_files_only)
             model = WhisperModel(model_size, **model_options)
             segments_iter, transcription_info = model.transcribe(
                 str(input_path),

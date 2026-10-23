@@ -2,7 +2,9 @@
 """Create strict, audio-specific Vietnamese captions for daily news renders."""
 
 import argparse
+import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +13,34 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+
+def get_asr_cache_key(audio_sha: str, locale: str, model_size: str = "small") -> str:
+    key_src = f"{audio_sha}:{locale}:{model_size}:v1"
+    return hashlib.sha256(key_src.encode("utf-8")).hexdigest()
+
+
+def check_asr_cache(cache_key: str, cache_dir: Path | str | None = None) -> dict | None:
+    if cache_dir is None:
+        cache_dir = REPO_ROOT / ".cache/asr"
+    cache_path = Path(cache_dir) / f"{cache_key}.json"
+    if cache_path.is_file():
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    return None
+
+
+def save_asr_cache(cache_key: str, data: dict, cache_dir: Path | str | None = None) -> None:
+    if cache_dir is None:
+        cache_dir = REPO_ROOT / ".cache/asr"
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"{cache_key}.json"
+    tmp_path = cache_dir / f"{cache_key}.tmp.json"
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp_path, cache_path)
 
 
 def generate_captions(audio_path, output_dir, *, transcriber=None, converter=None, locale=None):
@@ -39,35 +69,45 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
 
     asr_language = "en" if locale and locale.startswith("en") else "vi"
 
-    if transcriber is None:
-        from tools.analysis.transcriber import Transcriber
+    # Check ASR cache
+    audio_bytes = audio_path.read_bytes()
+    audio_sha = hashlib.sha256(audio_bytes).hexdigest()
+    cache_key = get_asr_cache_key(audio_sha, locale=locale or asr_language, model_size="small")
+    cached_transcript = check_asr_cache(cache_key)
 
-        transcriber = Transcriber()
-    if converter is None:
-        converter = Path(__file__).with_name("generate_vn_subtitles.py")
+    if cached_transcript is not None:
+        transcript = cached_transcript
+    else:
+        if transcriber is None:
+            from tools.analysis.transcriber import Transcriber
 
-    try:
-        result = transcriber.execute({
-            "input_path": str(audio_path),
-            "model_size": "small",
-            "language": asr_language,
-            "diarize": False,
-            "output_dir": str(output_dir),
-            "local_files_only": True,
-        })
-    except Exception as exc:
-        raise RuntimeError(
-            f"Cached-only transcription failed for {audio_path}: {exc}. "
-            "Ensure faster-whisper model 'small' is already cached on the render "
-            "host; this pipeline will not download it."
-        ) from exc
-    if not result.success:
-        raise RuntimeError(
-            "Cached-only transcription failed for "
-            f"{audio_path}: {result.error}. Ensure faster-whisper model 'small' "
-            "is already cached on the render host; this pipeline will not download it."
-        )
-    transcript = result.data
+            transcriber = Transcriber()
+        if converter is None:
+            converter = Path(__file__).with_name("generate_vn_subtitles.py")
+
+        try:
+            result = transcriber.execute({
+                "input_path": str(audio_path),
+                "model_size": "small",
+                "language": asr_language,
+                "diarize": False,
+                "output_dir": str(output_dir),
+                "local_files_only": True,
+            })
+        except Exception as exc:
+            raise RuntimeError(
+                f"Cached-only transcription failed for {audio_path}: {exc}. "
+                "Ensure faster-whisper model 'small' is already cached on the render "
+                "host; this pipeline will not download it."
+            ) from exc
+        if not result.success:
+            raise RuntimeError(
+                "Cached-only transcription failed for "
+                f"{audio_path}: {result.error}. Ensure faster-whisper model 'small' "
+                "is already cached on the render host; this pipeline will not download it."
+            )
+        transcript = result.data
+        save_asr_cache(cache_key, transcript)
     if not isinstance(transcript, dict) or transcript.get("timing_source") != "asr":
         raise RuntimeError(f"Transcriber did not return ASR timings for {audio_path}")
     words = transcript.get("word_timestamps")

@@ -1,5 +1,5 @@
 # OpenMontage — US Migration Editorial & Technical QA Report
-**Audit Date**: 2026-10-23 15:45:41 UTC  
+**Audit Date**: 2026-10-23 16:10:34 UTC  
 **Reviewer**: Independent QA Supervisor  
 **Status**: VERIFIED & APPROVED
 
@@ -15,7 +15,7 @@ with HMAC-SHA256 supervisor keys after multi-stage empirical verification.
 
 | Project | Format | Duration | Resolution | SAR | DAR | SHA-256 Digest | Status |
 |---|---|---|---|---|---|---|---|
-| `us_ai_short_01` | Short | 72.0s | 1080x1920 | 1:1 | 9:16 | `e94a3d8a502d4c9b...` | **PASS** |
+| `us_ai_short_01` | Short | 72.0s | 1080x1920 | 1:1 | 9:16 | `abfc5cf2ec9d8b1b...` | **PASS** |
 | `us_ai_longform_02` | Long-form | 360.0s | 1920x1080 | 1:1 | 16:9 | `11f9145388385c37...` | **PASS** |
 
 ---

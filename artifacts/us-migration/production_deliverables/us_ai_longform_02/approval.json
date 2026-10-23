@@ -17,7 +17,7 @@
   },
   "audit_trail": {
     "qa_audit_sha256": "d2e07883c7cbdbf7f739ede4e1c017c1a7b3fa1a6a20946a79f56b23906290da",
-    "audited_at": "2026-10-23T15:45:41Z",
+    "audited_at": "2026-10-23T16:10:34Z",
     "supervisor_identity": "independent_qa_supervisor",
     "supervisor_role": "Editorial Lead & Safety Officer",
     "decision": "APPROVED",
@@ -36,7 +36,7 @@
   "metadata_sha256": "12dfe4f9261db6426de6e268d651a4df5e3043f401c2b53f5c90fb45f9da563e",
   "captions_sha256": "f5d59d24dfc4c0a7ec6c8bb75bd248a789c373c44f6455d400b8004495d22789",
   "script_sha256": "d0796f50974cc32b6ad58f8a0261339bc81aa79ee9139c510b696d5c470a2028",
-  "signature": "c2a524806005142e1237ade0ddc3a7f9a675865181c886ae089a3b259f2256b9",
+  "signature": "a76855abd35fa3898af97271b5acb7c04956ae20fc2fd1dd3e80c0b7ada4af34",
   "signature_algorithm": "HMAC-SHA256",
   "approved_media_hashes": [
     "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99"
@@ -44,5 +44,5 @@
   "media_sha256_by_platform": {
     "youtube": "11f9145388385c370eab73f5ff4202b56de39d007eebe262ffc1bf7fc27bba99"
   },
-  "timestamp": "2026-10-23T15:45:41Z"
+  "timestamp": "2026-10-23T16:10:34Z"
 }

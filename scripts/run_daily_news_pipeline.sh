@@ -817,20 +817,32 @@ materialize_hyperframes_assets() {
   }
 
   mkdir -p "$project_root/artifacts" "$project_root/assets" "$project_root/hyperframes/assets" "$project_root/hyperframes_reels/assets"
-  : > "$narration_text"
+  local derived_text="$narration_text.derived"
+  : > "$derived_text"
+  if [ -s "$script_json" ]; then
+    if [ "$is_en" -eq 1 ]; then
+      jq -r 'if (.sections // null) then [.sections[]? | .narration // .text // empty] | join(" ") elif (.scenes // null) then [.scenes[]? | .narration // .text // empty] | join(" ") else (.narration // .text // .script // empty) end' "$script_json" > "$derived_text"
+    else
+      jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .narration_vi // .text // .narration // empty] | join(" ") else (.text_vi // .narration_vi // .text // .narration // .script // empty) end' "$script_json" > "$derived_text"
+    fi
+  fi
+  if [ ! -s "$derived_text" ] && [ -s "$script_spoken" ]; then
+    tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$derived_text"
+  fi
+  if [ -s "$derived_text" ]; then
+    if [ ! -s "$narration_text" ] || ! cmp -s "$derived_text" "$narration_text"; then
+      mv "$derived_text" "$narration_text"
+    else
+      rm -f "$derived_text"
+    fi
+  else
+    rm -f "$derived_text"
+  fi
+
   if [ ! -s "$narration" ] && [ -s "$project_root/assets/voice/narration.mp3" ]; then
     cp "$project_root/assets/voice/narration.mp3" "$narration"
   fi
-  if [ "$(wc -c < "$narration_text" 2>/dev/null || echo 0)" -le 1 ] && [ -s "$script_json" ]; then
-    if [ "$is_en" -eq 1 ]; then
-      jq -r 'if (.sections // null) then [.sections[]? | .narration // .text // empty] | join(" ") elif (.scenes // null) then [.scenes[]? | .narration // .text // empty] | join(" ") else (.narration // .text // .script // empty) end' "$script_json" > "$narration_text"
-    else
-      jq -r 'if (.sections // null) then [.sections[]? | .text_vi // .narration_vi // .text // .narration // empty] | join(" ") else (.text_vi // .narration_vi // .text // .narration // .script // empty) end' "$script_json" > "$narration_text"
-    fi
-  fi
-  if [ ! -s "$narration_text" ] && [ -s "$script_spoken" ]; then
-    tr '\n' ' ' < "$script_spoken" | sed -E 's/^[[:space:]]*#+[[:space:]]*//; s/[*_`]//g' > "$narration_text"
-  fi
+
   local narration_duration=0
   if [ -s "$narration" ]; then
     narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
@@ -839,14 +851,18 @@ materialize_hyperframes_assets() {
   if [ ! -s "$narration" ] || { [ -s "$narration_text" ] && [ "$narration_text" -nt "$narration" ]; }; then
     narration_stale=1
   fi
-  if [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1 && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
-    if [ "$is_en" -eq 1 ]; then
-      edge-tts --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
-    else
-      "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-      edge-tts --voice "$default_voice" --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+  if [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
+    if "$PY" -m tools.audio.narration_cli "$project_root" --output "$narration" >/dev/null 2>&1; then
+      rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
+    elif command -v edge-tts >/dev/null 2>&1; then
+      if [ "$is_en" -eq 1 ]; then
+        edge-tts --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
+      else
+        "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
+        edge-tts --voice "$default_voice" --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+      fi
+      rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
     fi
-    rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
   fi
 
   # Captions are generated after the Reels narration has its final audio bytes,

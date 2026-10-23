@@ -4,3 +4,5 @@
 {"ts": "2026-10-23T14:07:36.787493+00:00", "tool": "youtube_publisher", "event": "finish", "success": true, "cost_usd": 0.0, "duration_s": 3.51}
 {"ts": "2026-10-23T14:48:35.823874+00:00", "tool": "youtube_publisher", "event": "start"}
 {"ts": "2026-10-23T14:48:39.440244+00:00", "tool": "youtube_publisher", "event": "finish", "success": true, "cost_usd": 0.0, "duration_s": 3.62}
+{"ts": "2026-10-23T15:47:03.683944+00:00", "tool": "youtube_publisher", "event": "start"}
+{"ts": "2026-10-23T15:47:06.445367+00:00", "tool": "youtube_publisher", "event": "finish", "success": true, "cost_usd": 0.0, "duration_s": 2.76}

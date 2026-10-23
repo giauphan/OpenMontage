@@ -139,6 +139,40 @@ class TTSSelector(BaseTool):
         return [t for t in registry.get_by_capability("tts")
                 if t.name != self.name]
 
+    def _discover_candidates(self) -> list[BaseTool]:
+        """Discover candidate tools for selection or cascading fallback."""
+        return self._providers()
+
+    def execute_with_cascade(self, inputs: dict[str, Any]) -> ToolResult:
+        """Execute with true cascading fallback across ordered providers."""
+        candidates = self._discover_candidates()
+        fallback_order = inputs.get("fallback_order") or []
+        preferred = inputs.get("preferred_provider", "auto")
+        if preferred != "auto" and preferred not in fallback_order:
+            fallback_order = [preferred] + [f for f in fallback_order if f != preferred]
+
+        tool_by_provider = {t.provider: t for t in candidates if t.get_status() == ToolStatus.AVAILABLE}
+
+        ordered_tools: list[BaseTool] = []
+        for p in fallback_order:
+            if p in tool_by_provider and tool_by_provider[p] not in ordered_tools:
+                ordered_tools.append(tool_by_provider[p])
+
+        for p, t in tool_by_provider.items():
+            if t not in ordered_tools:
+                ordered_tools.append(t)
+
+        last_error = "No available TTS provider."
+        for tool in ordered_tools:
+            res = tool.execute(inputs)
+            if res.success:
+                res.data.setdefault("selected_tool", tool.name)
+                res.data["selected_provider"] = tool.provider
+                return res
+            last_error = res.error or f"Provider {tool.provider} failed"
+
+        return ToolResult(success=False, error=last_error)
+
     @property
     def fallback_tools(self) -> list[str]:
         """Dynamically built from discovered providers."""
@@ -182,6 +216,9 @@ class TTSSelector(BaseTool):
                     "normalized_task_context": task_context,
                 },
             )
+
+        if inputs.get("fallback_order") or inputs.get("allow_fallback"):
+            return self.execute_with_cascade(inputs)
 
         # Normal generation — use scored selection
         tool, score = self._select_best_tool(inputs, candidates, task_context)

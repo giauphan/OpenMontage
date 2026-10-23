@@ -88,8 +88,11 @@ def hyperframes_command() -> list[str]:
             return ["node", str(candidate)]
     raise SystemExit("ERROR: hyperframes CLI not found (install it or add it to PATH)")
 
-def synth(voice, text, out: Path, rate: str):
-    args = ["edge-tts", "--voice", voice, "--text", prepare_narration(text), "--write-media", str(out)]
+def synth(voice, text, out: Path, rate: str, locale: str = "en-US"):
+    if not voice:
+        return 1, "--voice: voice identifier is required"
+    clean_text = prepare_narration(text) if locale.startswith("vi") else text
+    args = ["edge-tts", "--voice", voice, "--text", clean_text, "--write-media", str(out)]
     if rate:
         args += ["--rate", rate]
     r = subprocess.run(args, capture_output=True, text=True)
@@ -153,7 +156,7 @@ def main():
     chosen = None
     for rate in rates:
         warn(f"synth rate={rate or 'natural'}")
-        rc, err = synth(args.voice, text, tmp, rate)
+        rc, err = synth(voice, text, tmp, rate, locale=locale)
         if rc != 0:
             warn("edge-tts error: " + err)
             continue
@@ -165,7 +168,7 @@ def main():
     if chosen is None:
         # Keep the closest natural reading and record the gap; do not fail silently.
         warn("no rate fit within tolerance; using closest natural and letting QA decide")
-        rc, err = synth(args.voice, text, tmp, None)
+        rc, err = synth(voice, text, tmp, None, locale=locale)
         if rc != 0:
             raise SystemExit("ERROR: baseline synth failed: " + err)
         dur = probe_duration(tmp)

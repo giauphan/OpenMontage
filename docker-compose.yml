@@ -24,6 +24,11 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.75"
+          memory: 4096M
 
   # Daily publish scheduler (YouTube / Meta / NewsNow automated pipeline)
   scheduler:
@@ -59,4 +64,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 2048M
     restart: unless-stopped

@@ -151,12 +151,20 @@ if (only.has("tts") && lines.length) {
     if (!wordArr) wordArr = await transcribeWav({ wavRel: rel, lang, hyperframesDir });
     const dur = ffprobeDuration(abs);
     if (!isFinite(dur) || dur <= 0) {
-      anomalies.push(`line ${id}: bad voice duration — omitted`);
+      die(`line ${id}: bad voice duration (${dur}s) — failing closed`);
       return null;
     }
     return { id, path: rel, duration_s: r3(dur), words: withWordIds(wordArr) };
   };
-  const results = await Promise.all(lines.map(synthLine));
+  // Sequential synthesis (concurrency=1) to prevent CPU oversubscription on shared VPS
+  const results = [];
+  for (const line of lines) {
+    const v = await synthLine(line);
+    if (!v) {
+      die(`line ${line.id}: synthesis failed — narration requires complete voice track`);
+    }
+    results.push(v);
+  }
   voices = results.filter(Boolean);
   for (const v of voices)
     console.error(`  voice ${v.id}: ${v.path} (${v.duration_s}s, ${v.words.length} words)`);
