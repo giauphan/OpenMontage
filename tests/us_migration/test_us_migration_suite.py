@@ -463,6 +463,16 @@ class TestPublisherSchedulerSecurityP01_P12:
             {"status": "PASS", "strict_quality_pass": True}
         ]))
 
+        from lib.qa_signing import sign_approval_record
+        vid_sha = hashlib.sha256(b"dummy mp4 video bytes").hexdigest()
+        cand_approval = sign_approval_record(
+            project_id="us_news_cand",
+            media_sha256=vid_sha,
+            claim_ledger_sha256=hashlib.sha256(b"claims").hexdigest(),
+            timestamp_iso="2026-10-23T08:00:00Z"
+        )
+        (cand_dir / "approval.json").write_text(json.dumps(cand_approval, indent=2))
+
         mock_store = MagicMock()
         mock_store.get.return_value = None
         mock_yt_pub = MagicMock()
@@ -743,11 +753,137 @@ class TestIntegrationAndOperationsI01_I10:
         assert "missing cryptographic signature" in msg
 
         # 6. Verify pipeline script wiring
-        pipeline_sh = Path("/home/ubuntu/OpenMontage/scripts/run_daily_news_pipeline.sh").read_text(encoding="utf-8")
+        repo_root = Path(__file__).resolve().parents[2]
+        pipeline_sh = (repo_root / "scripts" / "run_daily_news_pipeline.sh").read_text(encoding="utf-8")
         assert "check_qa.py" in pipeline_sh
         assert "independent_editorial_qa.py" in pipeline_sh
         assert "Independent Editorial QA FAILED" in pipeline_sh
         assert "news_failure_quarantine.py" in pipeline_sh
+
+    def test_i17_independent_editorial_qa_negative_matrix(self, tmp_path: Path):
+        """I17: Negative verification matrix rejects ungrounded claims, unapproved sources, tampered media, forged approvals, and bad subtitles."""
+        import copy
+        from lib.qa_signing import get_supervisor_secret, sign_approval_record, verify_approval_record
+        from scripts.independent_editorial_qa import audit_project
+
+        # 1. Strict production requires explicit secret key
+        with patch.dict(os.environ, {"OPENMONTAGE_ENV": "production", "QA_SUPERVISOR_SECRET": ""}):
+            with patch("lib.qa_signing.DEFAULT_SECRET_PATH", tmp_path / "nonexistent_secret"):
+                with pytest.raises(RuntimeError, match="QA supervisor secret key not configured"):
+                    get_supervisor_secret()
+
+        # Build mock valid project in tmp_path
+        proj_dir = tmp_path / "mock_us_short"
+        art_dir = proj_dir / "artifacts"
+        rnd_dir = proj_dir / "renders"
+        frame_dir = rnd_dir / "frame_samples"
+        for d in (art_dir, rnd_dir, frame_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+        for i in range(4):
+            (frame_dir / f"frame_{i:03d}.png").write_bytes(b"dummy frame")
+
+        (art_dir / "script_en_US.json").write_text(json.dumps({
+            "scenes": [{"text": "Frontier models on SWE-bench solved 4.8% of software engineering tasks."}]
+        }), encoding="utf-8")
+        (art_dir / "narration_en_US_text.txt").write_text(
+            "Frontier models on SWE-bench solved 4.8% of software engineering tasks.", encoding="utf-8"
+        )
+        (art_dir / "captions_en_US.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:04,000\nFrontier models on SWE-bench solved 4.8%.\n\n"
+            "2\n00:00:04,500 --> 00:00:08,000\nSoftware engineering tasks.\n\n"
+            "3\n00:00:08,500 --> 00:00:12,000\nConclusion and summary.\n",
+            encoding="utf-8"
+        )
+
+        valid_claim_data = {
+            "schema_version": "1.0.0",
+            "project_id": "mock_us_short",
+            "locale": "en-US",
+            "created_at": "2026-10-23T06:00:00Z",
+            "claims": [
+                {
+                    "claim_id": "C001",
+                    "statement": "Claude 2 solved 4.8% of tasks on SWE-bench.",
+                    "confidence": "verified",
+                    "scope": {
+                        "market": "US"
+                    },
+                    "source": {
+                        "canonical_url": "https://arxiv.org/abs/2310.06770",
+                        "publisher": "arXiv",
+                        "published_at": "2023-10-10",
+                        "retrieved_at": "2026-10-23T06:00:00Z"
+                    },
+                    "evidence_excerpt": "Claude 2 resolved 4.8% of instances across 2,294 issues in the benchmark.",
+                    "verdict": "APPROVED",
+                    "script_spans": ["SWE-bench solved 4.8%"]
+                }
+            ]
+        }
+        (art_dir / "claim_ledger.json").write_text(json.dumps(valid_claim_data), encoding="utf-8")
+
+        # Mock ffprobe for render video
+        render_mp4 = rnd_dir / "final_short_en_US_9x16.mp4"
+        render_mp4.write_bytes(b"mock video data")
+
+        mock_probe = {
+            "format": {"duration": "60.0"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": 1080,
+                    "height": 1920,
+                    "sample_aspect_ratio": "1:1",
+                    "display_aspect_ratio": "9:16",
+                },
+                {"codec_type": "audio"}
+            ]
+        }
+
+        with patch("scripts.independent_editorial_qa.run_ffprobe", return_value=mock_probe):
+            # A. Valid project passes
+            res = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
+            assert res["passed"] is True, f"Expected pass but got errors: {res['errors']}"
+
+            # B. Negative: Non-approved verdict (REJECTED) fails
+            bad_verdict_data = copy.deepcopy(valid_claim_data)
+            bad_verdict_data["claims"][0]["verdict"] = "REJECTED"
+            (art_dir / "claim_ledger.json").write_text(json.dumps(bad_verdict_data), encoding="utf-8")
+            res_bad_v = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
+            assert res_bad_v["passed"] is False
+            assert any("must be 'APPROVED'" in e for e in res_bad_v["errors"])
+
+            # C. Negative: Unapproved / fake domain fails
+            bad_domain_data = copy.deepcopy(valid_claim_data)
+            bad_domain_data["claims"][0]["source"]["canonical_url"] = "http://untrusted-blog.xyz/scam"
+            (art_dir / "claim_ledger.json").write_text(json.dumps(bad_domain_data), encoding="utf-8")
+            res_bad_dom = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
+            assert res_bad_dom["passed"] is False
+            assert any("does not resolve to an approved domain" in e for e in res_bad_dom["errors"])
+
+            # D. Negative: Quantitative claim not grounded in evidence excerpt fails
+            bad_grounding_data = copy.deepcopy(valid_claim_data)
+            bad_grounding_data["claims"][0]["script_spans"] = ["Frontier models solved 99.9%"]
+            bad_grounding_data["claims"][0]["evidence_excerpt"] = "Baseline models failed on most engineering tasks."
+            (art_dir / "claim_ledger.json").write_text(json.dumps(bad_grounding_data), encoding="utf-8")
+            res_bad_ground = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
+            assert res_bad_ground["passed"] is False
+            assert any("Quantitative figure in script span" in e or "Script span missing" in e for e in res_bad_ground["errors"])
+
+            # Restore valid claim ledger
+            (art_dir / "claim_ledger.json").write_text(json.dumps(valid_claim_data), encoding="utf-8")
+
+            # E. Negative: Inverted/non-monotonic subtitle cues fail
+            (art_dir / "captions_en_US.srt").write_text(
+                "1\n00:00:05,000 --> 00:00:02,000\nInverted timestamps.\n\n"
+                "2\n00:00:03,000 --> 00:00:06,000\nSecond cue.\n\n"
+                "3\n00:00:07,000 --> 00:00:10,000\nThird cue.\n",
+                encoding="utf-8"
+            )
+            res_bad_srt = audit_project(proj_dir, expected_format="short", expected_duration=60.0, duration_tolerance=2.0)
+            assert res_bad_srt["passed"] is False
+            assert any("Invalid subtitle cue timestamp order" in e for e in res_bad_srt["errors"])
 
 
 

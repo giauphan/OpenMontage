@@ -9,18 +9,26 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_SECRET_PATH = Path("/home/ubuntu/.openmontage_qa_secret")
+DEFAULT_SECRET_PATH = Path(os.path.expanduser("~/.openmontage_qa_secret"))
 ENV_SECRET_KEY = "QA_SUPERVISOR_SECRET"
+_SESSION_FALLBACK_SECRET: Optional[bytes] = None
 
 
 def get_supervisor_secret() -> bytes:
-    """Retrieve or initialize the supervisor secret key."""
+    """Retrieve or initialize the supervisor secret key.
+    
+    In production environments (OPENMONTAGE_ENV=production or STRICT_QA=1),
+    an explicit QA_SUPERVISOR_SECRET must be provisioned. Hardcoded fallback
+    keys in source control are strictly forbidden.
+    """
+    global _SESSION_FALLBACK_SECRET
     env_secret = os.environ.get(ENV_SECRET_KEY)
-    if env_secret:
-        return env_secret.encode("utf-8")
+    if env_secret and env_secret.strip():
+        return env_secret.strip().encode("utf-8")
     
     if DEFAULT_SECRET_PATH.is_file():
         try:
@@ -30,15 +38,30 @@ def get_supervisor_secret() -> bytes:
         except OSError:
             pass
             
-    # Deterministic fallback secret for workspace environment if not yet provisioned
-    secret = b"openmontage-independent-qa-supervisor-secret-key-v1"
+    is_strict_prod = (
+        os.environ.get("OPENMONTAGE_ENV") == "production"
+        or os.environ.get("PRODUCTION") == "1"
+        or os.environ.get("STRICT_QA") == "1"
+    )
+    if is_strict_prod:
+        raise RuntimeError(
+            "QA supervisor secret key not configured: QA_SUPERVISOR_SECRET environment variable is required in production (no default fallback permitted)."
+        )
+
+    if _SESSION_FALLBACK_SECRET is not None:
+        return _SESSION_FALLBACK_SECRET
+
+    # Generate a cryptographically secure random 256-bit secret for local session
+    random_secret = secrets.token_bytes(32)
     try:
         DEFAULT_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
-        DEFAULT_SECRET_PATH.write_bytes(secret)
+        DEFAULT_SECRET_PATH.write_bytes(random_secret)
         os.chmod(DEFAULT_SECRET_PATH, 0o600)
     except OSError:
         pass
-    return secret
+
+    _SESSION_FALLBACK_SECRET = random_secret
+    return random_secret
 
 
 def compute_signature(project_id: str, media_sha256: str, claim_ledger_sha256: str, timestamp_iso: str, reviewer: str) -> str:

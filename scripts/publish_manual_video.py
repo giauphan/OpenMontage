@@ -1115,14 +1115,25 @@ def enforce_release_preflight(
 
         from lib.artifact_paths import resolve_project_locale, is_english_locale
         locale = resolve_project_locale(project_dir)
-        if "signature" in approval or (is_english_locale(locale) and (project_dir / "artifacts" / "claim_ledger.json").is_file()):
-            try:
-                from lib.qa_signing import verify_approval_record
-                valid_sig, sig_msg = verify_approval_record(approval, project_dir.name)
-                if not valid_sig:
-                    raise RuntimeError(f"Release preflight failed: {sig_msg}")
-            except ImportError:
-                pass
+        is_us = is_english_locale(locale) or metadata.get("audience") == "us"
+        if is_us or "signature" in approval:
+            if not approval or not isinstance(approval, dict):
+                raise RuntimeError("Release preflight failed: mandatory approval.json missing or invalid for US project")
+            from lib.qa_signing import verify_approval_record
+            valid_sig, sig_msg = verify_approval_record(approval, project_dir.name)
+            if not valid_sig:
+                raise RuntimeError(f"Release preflight failed: {sig_msg}")
+
+            # Strict claim ledger verification for US projects
+            ledger_file = project_dir / "artifacts" / "claim_ledger.json"
+            if is_us:
+                if not ledger_file.is_file():
+                    raise RuntimeError("Release preflight failed: mandatory claim_ledger.json missing for US project")
+                import hashlib
+                h_c = hashlib.sha256(ledger_file.read_bytes()).hexdigest()
+                approved_claim_sha = approval.get("claim_ledger_sha256")
+                if approved_claim_sha and h_c != approved_claim_sha:
+                    raise RuntimeError(f"Release preflight failed: claim ledger SHA-256 mismatch ({h_c} != {approved_claim_sha})")
 
         # Build list of media files to check
         media_to_check: list[tuple[str, Path]] = []

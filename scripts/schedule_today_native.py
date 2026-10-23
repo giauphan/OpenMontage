@@ -290,6 +290,58 @@ def main():
                 rp = resolve_render_path(project_dir, format_type="short", locale=locale)
                 yt_rel = rp.relative_to(project_dir) if rp.is_relative_to(project_dir) else rp
 
+        # Cryptographic supervisor approval gate for US/English deliverables
+        if is_us_project or (project_dir / "approval.json").is_file() or (project_dir / "artifacts" / "claim_ledger.json").is_file():
+            approval_file = project_dir / "approval.json"
+            if not approval_file.is_file():
+                approval_file = project_dir / "artifacts" / "approval.json"
+            if not approval_file.is_file():
+                print(f"failed {proj}: mandatory approval.json missing for US project")
+                failed = True
+                continue
+            try:
+                import hashlib
+                from lib.qa_signing import verify_approval_record
+                approval_data = json.loads(approval_file.read_text(encoding="utf-8"))
+                valid_sig, sig_msg = verify_approval_record(approval_data, proj)
+                if not valid_sig:
+                    print(f"failed {proj}: cryptographic supervisor signature invalid ({sig_msg})")
+                    failed = True
+                    continue
+
+                # Verify media hash
+                approved_media_sha = approval_data.get("approved_media_sha256") or approval_data.get("media_sha256")
+                approved_hashes_list = approval_data.get("approved_media_hashes", [])
+                if approved_media_sha and yt_rel:
+                    target_vid = project_dir / yt_rel
+                    if target_vid.is_file():
+                        h = hashlib.sha256()
+                        with open(target_vid, "rb") as vf:
+                            while chunk := vf.read(65536):
+                                h.update(chunk)
+                        actual_vid_sha = h.hexdigest()
+                        all_allowed = set(approved_hashes_list)
+                        if approved_media_sha:
+                            all_allowed.add(approved_media_sha)
+                        if actual_vid_sha not in all_allowed:
+                            print(f"failed {proj}: media SHA-256 mismatch ({actual_vid_sha[:16]}... != {approved_media_sha[:16]}...)")
+                            failed = True
+                            continue
+
+                # Verify claim ledger hash if ledger exists
+                approved_claim_sha = approval_data.get("claim_ledger_sha256")
+                ledger_file = project_dir / "artifacts" / "claim_ledger.json"
+                if approved_claim_sha and ledger_file.is_file():
+                    h_c = hashlib.sha256(ledger_file.read_bytes()).hexdigest()
+                    if h_c != approved_claim_sha:
+                        print(f"failed {proj}: claim ledger SHA-256 mismatch ({h_c[:16]}... != {approved_claim_sha[:16]}...)")
+                        failed = True
+                        continue
+            except Exception as err:
+                print(f"failed {proj}: error verifying cryptographic approval ({err})")
+                failed = True
+                continue
+
         if isinstance(yt_rel, dict):
             yt_rel = yt_rel.get("path") or yt_rel.get("file")
         ig_rel = topic_meta.get("ig_reels")

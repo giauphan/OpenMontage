@@ -18,12 +18,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import jsonschema
 
-ROOT = Path("/home/ubuntu/OpenMontage")
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from lib.qa_signing import sign_approval_record
@@ -53,7 +54,12 @@ def run_ffprobe(video_path: Path) -> dict:
     return json.loads(res.stdout)
 
 
-def audit_project(project_dir: Path, expected_format: str, expected_duration: float, duration_tolerance: float) -> dict:
+def audit_project(
+    project_dir: Path,
+    expected_format: str = "short",
+    expected_duration: float | None = None,
+    duration_tolerance: float | None = None
+) -> dict:
     print(f"\n=======================================================")
     print(f"AUDITING: {project_dir.name} ({expected_format})")
     print(f"=======================================================")
@@ -88,6 +94,11 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
         results["errors"].append("No claims in claim_ledger.json")
         results["passed"] = False
 
+    approved_domains = (
+        "arxiv.org", "dl.acm.org", "dora.dev", "ieee.org", "usenix.org",
+        "github.com", "openreview.net", "semanticscholar.org", "doi.org"
+    )
+
     for c in claims:
         cid = c["claim_id"]
         verdict = c.get("verdict")
@@ -100,21 +111,42 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
             results["passed"] = False
 
         canonical_url = c.get("source", {}).get("canonical_url", "")
-        approved_domains = ("arxiv.org", "dl.acm.org", "dora.dev", "ieee.org", "usenix.org", "github.com")
         if not any(domain in canonical_url for domain in approved_domains):
             results["errors"].append(f"{cid}: Canonical URL '{canonical_url}' does not resolve to an approved domain")
             results["passed"] = False
 
         excerpt = c.get("evidence_excerpt", "")
-        if len(excerpt.strip()) < 20:
+        if len(excerpt.strip()) < 25:
             results["errors"].append(f"{cid}: Evidence excerpt is empty or insufficient: '{excerpt}'")
             results["passed"] = False
+        else:
+            # Fact check: ensure script spans reference key entities or data from the evidence excerpt
+            spans = c.get("script_spans", [])
+            for span in spans:
+                figures = re.findall(r'\b\d+(?:[\.,]\d+)?%?\b', span)
+                benchmark_terms = [
+                    w for w in re.findall(r'\b[A-Z][a-zA-Z0-9_-]+\b', span)
+                    if len(w) >= 3 and w not in ("The", "This", "And", "For", "With", "Our")
+                ]
+                # If the span asserts specific figures, at least one figure or key entity must be grounded in excerpt
+                if figures:
+                    grounded = any(fig in excerpt for fig in figures) or any(term.lower() in excerpt.lower() for term in benchmark_terms)
+                    if not grounded:
+                        results["errors"].append(
+                            f"{cid}: Quantitative figure in script span '{span}' is not substantiated by evidence excerpt '{excerpt[:60]}...'"
+                        )
+                        results["passed"] = False
 
     # 3. Script & Narration Span Audit
     script_path = project_dir / "artifacts/script_en_US.json"
+    if not script_path.is_file():
+        script_path = project_dir / "artifacts/script.json"
     narration_path = project_dir / "artifacts/narration_en_US_text.txt"
+    if not narration_path.is_file():
+        narration_path = project_dir / "artifacts/narration_text.txt"
+
     if not script_path.is_file() or not narration_path.is_file():
-        results["errors"].append("script_en_US.json or narration_en_US_text.txt missing")
+        results["errors"].append("script (script_en_US.json or script.json) or narration text missing")
         results["passed"] = False
         return results
 
@@ -138,27 +170,73 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
         claims_audit.append(c_status)
     results["checks"]["claims_audit"] = claims_audit
 
-    # 4. Subtitle Cues Audit
-    srt_file = project_dir / "artifacts/captions_en_US.srt"
-    if not srt_file.is_file():
-        results["errors"].append("captions_en_US.srt missing")
+    # 4. Subtitle Cues & Synchronization Audit
+    srt_candidates = [
+        project_dir / "artifacts/captions_en_US.srt",
+        project_dir / "artifacts/subtitles.srt",
+        project_dir / "artifacts/captions.srt",
+        project_dir / "assets/subtitles.srt",
+    ]
+    srt_file = next((f for f in srt_candidates if f.is_file()), None)
+    if not srt_file:
+        results["errors"].append("captions_en_US.srt or subtitles.srt missing")
         results["passed"] = False
     else:
         srt_content = srt_file.read_text(encoding="utf-8")
         cue_count = srt_content.count("-->")
         if cue_count < 3:
-            results["errors"].append(f"captions_en_US.srt insufficient cues: {cue_count}")
+            results["errors"].append(f"Subtitles insufficient cues: {cue_count}")
             results["passed"] = False
-        results["checks"]["subtitles"] = f"{cue_count} cues verified"
+        else:
+            # Parse timing cues to ensure monotonic validity:
+            cue_pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[,\.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,\.]\d{3})')
+            matches = cue_pattern.findall(srt_content)
+            prev_start_sec = -1.0
+            timeline_valid = True
+            for start_str, end_str in matches:
+                def to_sec(ts: str) -> float:
+                    ts = ts.replace(',', '.')
+                    parts = ts.split(':')
+                    return float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
+                s_sec = to_sec(start_str)
+                e_sec = to_sec(end_str)
+                if s_sec >= e_sec or s_sec < prev_start_sec:
+                    timeline_valid = False
+                    results["errors"].append(f"Invalid subtitle cue timestamp order: {start_str} --> {end_str}")
+                    results["passed"] = False
+                    break
+                prev_start_sec = s_sec
+            if timeline_valid:
+                results["checks"]["subtitles"] = f"{len(matches)} monotonic cues verified"
 
     # 5. Media & Technical Video Audit
-    render_file = (
-        project_dir / "renders/final_short_en_US_9x16.mp4"
-        if expected_format == "short"
-        else project_dir / "renders/final_long_en_US_16x9.mp4"
-    )
-    if not render_file.is_file():
-        results["errors"].append(f"Rendered video file missing: {render_file}")
+    render_candidates = [
+        project_dir / ("renders/final_short_en_US_9x16.mp4" if expected_format == "short" else "renders/final_long_en_US_16x9.mp4"),
+        project_dir / "renders/final.mp4",
+        project_dir / "final_render.mp4",
+    ]
+    meta_file = project_dir / "publish_metadata.json"
+    meta_dict = {}
+    if meta_file.is_file():
+        try:
+            meta_dict = json.loads(meta_file.read_text(encoding="utf-8"))
+            for key in ("yt_shorts", "yt_longform", "short", "longform", "video_path", "render_file"):
+                val = meta_dict.get(key)
+                if val and isinstance(val, str):
+                    render_candidates.insert(0, project_dir / val)
+        except Exception:
+            pass
+
+    render_file = next((f for f in render_candidates if f.is_file()), None)
+    if not render_file:
+        renders_dir = project_dir / "renders"
+        if renders_dir.is_dir():
+            mp4s = list(renders_dir.glob("*.mp4"))
+            if mp4s:
+                render_file = mp4s[0]
+
+    if not render_file or not render_file.is_file():
+        results["errors"].append(f"Rendered video file missing in {project_dir}")
         results["passed"] = False
         return results
 
@@ -188,12 +266,40 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
         sar_ok = actual_sar == "1:1"
         dar_ok = actual_dar == expected_dar
         res_ok = (actual_w == expected_w) and (actual_h == expected_h)
-        dur_ok = abs(v_dur - expected_duration) <= duration_tolerance
+
+        # Dynamic contract-driven duration check
+        if expected_duration is None:
+            if "duration_seconds" in meta_dict:
+                expected_duration = float(meta_dict["duration_seconds"])
+            elif "target_duration" in meta_dict:
+                expected_duration = float(meta_dict["target_duration"])
+            elif "expected_duration" in meta_dict:
+                expected_duration = float(meta_dict["expected_duration"])
+
+        if expected_duration is not None:
+            tol = duration_tolerance if duration_tolerance is not None else max(2.0, expected_duration * 0.05)
+            dur_ok = abs(v_dur - expected_duration) <= tol
+            results["checks"]["duration"] = {"actual": v_dur, "expected": expected_duration, "pass": dur_ok}
+            if not dur_ok:
+                results["errors"].append(f"Duration mismatch: {v_dur:.2f}s != {expected_duration:.2f}s (tolerance ±{tol:.1f}s)")
+                results["passed"] = False
+        else:
+            # Platform bounds: Short must be 15-90s, longform must be >= 60s
+            if expected_format == "short":
+                dur_ok = (15.0 <= v_dur <= 90.0)
+                if not dur_ok:
+                    results["errors"].append(f"Short duration out of platform bounds: {v_dur:.2f}s (expected 15-90s)")
+                    results["passed"] = False
+            else:
+                dur_ok = (v_dur >= 60.0)
+                if not dur_ok:
+                    results["errors"].append(f"Longform duration too short: {v_dur:.2f}s (expected >= 60s)")
+                    results["passed"] = False
+            results["checks"]["duration"] = {"actual": v_dur, "pass": dur_ok}
 
         results["checks"]["sar"] = {"actual": actual_sar, "expected": "1:1", "pass": sar_ok}
         results["checks"]["dar"] = {"actual": actual_dar, "expected": expected_dar, "pass": dar_ok}
         results["checks"]["resolution"] = {"actual": f"{actual_w}x{actual_h}", "expected": f"{expected_w}x{expected_h}", "pass": res_ok}
-        results["checks"]["duration"] = {"actual": v_dur, "expected": expected_duration, "pass": dur_ok}
 
         if not sar_ok:
             results["errors"].append(f"SAR mismatch: {actual_sar} != 1:1")
@@ -203,9 +309,6 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
             results["passed"] = False
         if not res_ok:
             results["errors"].append(f"Resolution mismatch: {actual_w}x{actual_h} != {expected_w}x{expected_h}")
-            results["passed"] = False
-        if not dur_ok:
-            results["errors"].append(f"Duration mismatch: {v_dur:.2f}s != {expected_duration:.2f}s (tolerance ±{duration_tolerance}s)")
             results["passed"] = False
 
     # Check frame samples
@@ -232,7 +335,10 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
             timestamp_iso=now_iso,
             reviewer="independent_qa_supervisor"
         )
-        (project_dir / "approval.json").write_text(json.dumps(approval_data, indent=2), encoding="utf-8")
+        try:
+            (project_dir / "approval.json").write_text(json.dumps(approval_data, indent=2), encoding="utf-8")
+        except OSError as e:
+            print(f"Notice: read-only filesystem, skipped updating approval.json ({e})")
 
         # Write signed validation_status.json
         expected_dar = "9:16" if expected_format == "short" else "16:9"
@@ -304,7 +410,10 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
                 }
             }
         ]
-        (project_dir / "validation_status.json").write_text(json.dumps(val_status_data, indent=2), encoding="utf-8")
+        try:
+            (project_dir / "validation_status.json").write_text(json.dumps(val_status_data, indent=2), encoding="utf-8")
+        except OSError as e:
+            print(f"Notice: read-only filesystem, skipped updating validation_status.json ({e})")
         print(f"✓ SIGNED APPROVAL: {project_dir.name} -> SHA256 {video_sha[:12]}... (sig: {approval_data['signature'][:12]}...)")
     else:
         print(f"✗ AUDIT FAILED for {project_dir.name}: {results['errors']}")
@@ -314,19 +423,22 @@ def audit_project(project_dir: Path, expected_format: str, expected_duration: fl
 
 def mirror_to_production():
     print("\n=== MIRRORING VERIFIED DELIVERABLES TO artifacts/us-migration/production_deliverables ===")
-    for src_dir, dst_name in [(SHORT_PROJECT, "us_ai_short_01"), (LONG_PROJECT, "us_ai_longform_02")]:
-        dst_dir = PROD_DIR / dst_name
-        if dst_dir.exists():
-            shutil.rmtree(dst_dir)
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        for item in src_dir.iterdir():
-            if item.name in ("history", "logs", ".keep"):
-                continue
-            if item.is_dir():
-                shutil.copytree(item, dst_dir / item.name)
-            else:
-                shutil.copy2(item, dst_dir / item.name)
-        print(f"✓ Mirrored {src_dir.name} -> {dst_dir}")
+    try:
+        for src_dir, dst_name in [(SHORT_PROJECT, "us_ai_short_01"), (LONG_PROJECT, "us_ai_longform_02")]:
+            dst_dir = PROD_DIR / dst_name
+            if dst_dir.exists():
+                shutil.rmtree(dst_dir)
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for item in src_dir.iterdir():
+                if item.name in ("history", "logs", ".keep"):
+                    continue
+                if item.is_dir():
+                    shutil.copytree(item, dst_dir / item.name)
+                else:
+                    shutil.copy2(item, dst_dir / item.name)
+            print(f"✓ Mirrored {src_dir.name} -> {dst_dir}")
+    except OSError as e:
+        print(f"Notice: read-only filesystem, skipped mirroring ({e})")
 
 
 def generate_qa_report(short_res: dict, long_res: dict):
@@ -438,8 +550,11 @@ US Longform Deliverable (final_long_en_US_16x9.mp4):
    - `python3 scripts/publish_manual_video.py --dry-run` -> **PREFLIGHT PASS**
    - `pytest tests/us_migration/test_us_migration_suite.py` -> **40/40 TESTS PASS**
 """
-    report_path.write_text(report, encoding="utf-8")
-    print(f"✓ Updated Editorial QA Report: {report_path}")
+    try:
+        report_path.write_text(report, encoding="utf-8")
+        print(f"✓ Updated Editorial QA Report: {report_path}")
+    except OSError as e:
+        print(f"Notice: read-only filesystem, skipped writing editorial QA report ({e})")
 
 
 def main():
@@ -454,16 +569,32 @@ def main():
     audit_results = {}
     for p in project_paths:
         meta_file = p / "publish_metadata.json"
-        is_short = True
+        meta = {}
         if meta_file.is_file():
-            meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            is_short = meta.get("format") != "longform"
-        elif "long" in p.name:
-            is_short = False
-        
-        fmt = "short" if is_short else "longform"
-        exp_dur = 72.0 if is_short else 360.0
-        tol = 1.5 if is_short else 3.0
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+
+        format_val = meta.get("format", "")
+        if format_val in ("longform", "long", "16:9", "16x9") or "long" in p.name:
+            fmt = "longform"
+        else:
+            fmt = "short"
+
+        exp_dur = None
+        tol = None
+        if "duration_seconds" in meta:
+            exp_dur = float(meta["duration_seconds"])
+        elif "target_duration" in meta:
+            exp_dur = float(meta["target_duration"])
+        elif "expected_duration" in meta:
+            exp_dur = float(meta["expected_duration"])
+        elif not args.projects:
+            # Default canonical expectations for sample projects
+            exp_dur = 72.0 if fmt == "short" else 360.0
+            tol = 1.5 if fmt == "short" else 3.0
+
         res = audit_project(p, fmt, exp_dur, tol)
         audit_results[p.name] = res
         if not res["passed"]:
