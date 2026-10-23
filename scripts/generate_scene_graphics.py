@@ -8,9 +8,25 @@ import os
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_REGULAR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-FONT_MONO = "/usr/share/fonts/truetype/ubuntu/UbuntuMono-B.ttf"
+def _find_font(candidates: list[str]) -> str:
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+FONT_BOLD = _find_font([
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+])
+FONT_REGULAR = _find_font([
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+])
+FONT_MONO = _find_font([
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
+    "/usr/share/fonts/truetype/ubuntu/UbuntuMono-B.ttf",
+])
 
 # Color palette
 BG_DARK = (11, 15, 25, 255)         # #0b0f19
