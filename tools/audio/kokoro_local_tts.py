@@ -91,7 +91,13 @@ class KokoroLocalTTS(BaseTool):
 
         try:
             import kokoro_onnx  # type: ignore
-            return ToolStatus.AVAILABLE
+            # Verify cached ONNX weights and voices exist
+            candidates = [
+                (Path.home() / ".cache/hyperframes/tts/models/kokoro-v1.0.onnx", Path.home() / ".cache/hyperframes/tts/voices/voices-v1.0.bin"),
+                (Path("/home/ubuntu/.cache/hyperframes/tts/models/kokoro-v1.0.onnx"), Path("/home/ubuntu/.cache/hyperframes/tts/voices/voices-v1.0.bin")),
+            ]
+            if any(m.is_file() and v.is_file() for m, v in candidates):
+                return ToolStatus.AVAILABLE
         except ImportError:
             pass
 
@@ -175,16 +181,23 @@ class KokoroLocalTTS(BaseTool):
 
                     combined = np.concatenate(all_samples)
                     tmp_wav = output_path.with_suffix(".tmp.wav")
-                    sf.write(str(tmp_wav), combined, sample_rate)
-                    subprocess.run(
-                        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp_wav), "-c:a", "libmp3lame", "-b:a", "192k", str(output_path)],
-                        check=True
-                    )
-                    if tmp_wav.exists():
-                        tmp_wav.unlink()
-                    dur = probe_audio_duration(output_path)
-                    if dur > 0:
-                        return True, dur, None
+                    tmp_mp3 = output_path.with_suffix(".tmp.mp3")
+                    try:
+                        sf.write(str(tmp_wav), combined, sample_rate)
+                        res_ff = subprocess.run(
+                            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp_wav), "-c:a", "libmp3lame", "-b:a", "192k", str(tmp_mp3)],
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
+                        )
+                        if res_ff.returncode == 0 and tmp_mp3.exists() and tmp_mp3.stat().st_size > 0:
+                            dur = probe_audio_duration(tmp_mp3)
+                            if dur > 0:
+                                os.replace(tmp_mp3, output_path)
+                                return True, dur, None
+                    finally:
+                        tmp_wav.unlink(missing_ok=True)
+                        tmp_mp3.unlink(missing_ok=True)
         except Exception:
             pass
 
@@ -204,17 +217,23 @@ class KokoroLocalTTS(BaseTool):
                 import numpy as np
                 combined = np.concatenate(all_audio)
                 tmp_wav = output_path.with_suffix(".tmp.wav")
-                sf.write(str(tmp_wav), combined, sample_rate)
-                # Convert WAV to MP3 with ffmpeg
-                subprocess.run(
-                    ["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp_wav), "-c:a", "libmp3lame", "-b:a", "192k", str(output_path)],
-                    check=True
-                )
-                if tmp_wav.exists():
-                    tmp_wav.unlink()
-                dur = probe_audio_duration(output_path)
-                if dur > 0:
-                    return True, dur, None
+                tmp_mp3 = output_path.with_suffix(".tmp.mp3")
+                try:
+                    sf.write(str(tmp_wav), combined, sample_rate)
+                    res_ff = subprocess.run(
+                        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp_wav), "-c:a", "libmp3lame", "-b:a", "192k", str(tmp_mp3)],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if res_ff.returncode == 0 and tmp_mp3.exists() and tmp_mp3.stat().st_size > 0:
+                        dur = probe_audio_duration(tmp_mp3)
+                        if dur > 0:
+                            os.replace(tmp_mp3, output_path)
+                            return True, dur, None
+                finally:
+                    tmp_wav.unlink(missing_ok=True)
+                    tmp_mp3.unlink(missing_ok=True)
         except Exception:
             pass
 
