@@ -260,35 +260,35 @@ class FixedNicheStoryboardDirector:
         c3 = claim_ids[2] if len(claim_ids) > 2 else c2
         extra_claim_ids = claim_ids[3:]
 
-        # Per-family dynamic narration templates
+        # Per-family dynamic narration templates (~125-130 words for 65-75s target duration)
         if family == "context_memory":
-            b1_narration = f"Why does your AI coding agent forget project rules between sessions?"
-            b2_narration = "You give it strict repository instructions, but on the next run, it starts from zero."
-            b3_narration = "Here is why: conversation context lives in ephemeral memory, while durable repo instructions require explicit load hooks."
-            b4_narration = "The remedy is simple: define an immutable AGENTS.md guide and enforce mandatory session preflight."
-            b5_narration = "Verify it locally by checking that every newly spawned agent quotes the repository boundary before writing code."
-            b6_narration = "Always verify state persistence across restarts rather than assuming conversational memory survives."
+            b1_narration = "Why does your AI coding agent forget repository guidelines between sessions?"
+            b2_narration = "You provide detailed constraints in chat, yet the next agent session resets back to zero."
+            b3_narration = "The root cause is ephemeral session memory. Large language models maintain zero persistent state across process restarts unless repository instructions are explicitly injected into the agent system prompt on every invocation."
+            b4_narration = "The engineering remedy is declarative configuration. Define an immutable AGENTS markdown contract at the repository root, and enforce automated preflight checks that load these boundaries before executing any code modifications."
+            b5_narration = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
+            b6_narration = "Always enforce deterministic state persistence across sessions in code and CI, rather than assuming conversational memory survives."
         elif family == "agent_tool_use":
-            b1_narration = f"Why do tool calls fail when an AI coding agent executes MCP functions?"
-            b2_narration = "A single mismatch between tool JSON schema and runtime payload causes immediate failure."
-            b3_narration = "The root cause is strict schema validation: agents often output string arguments instead of structured JSON objects."
-            b4_narration = "The verified fix: validate tool input against the JSON schema and provide automatic schema repair filters."
-            b5_narration = "Verify the remedy by executing mock MCP tool calls and checking that schema mismatch errors drop to zero."
-            b6_narration = "Strict schema adherence and sandbox isolation are mandatory for reliable agent tool execution."
+            b1_narration = "Why do tool calls fail when an AI coding agent executes Model Context Protocol functions?"
+            b2_narration = "A single type mismatch between the tool schema and the runtime payload causes immediate tool execution failure."
+            b3_narration = "The underlying mechanism is strict validation in client libraries. Autonomous agents frequently emit stringified arguments or hallucinated keys instead of structured dictionaries conforming to the tool definition."
+            b4_narration = "The verified remedy is schema defense. Enforce input schema validation before invoking the server, and provide automatic schema coercion filters that sanitize agent payloads before dispatch."
+            b5_narration = "Verify this remedy locally by executing mock MCP tool calls with malformed payloads, asserting that repair filters recover valid arguments and schema errors drop to zero."
+            b6_narration = "Strict schema adherence and defensive payload coercion are mandatory for resilient agent tool integration across production environments."
         elif family == "debugging_reliability":
-            b1_narration = f"Why do AI agent pull requests pass generated tests but break continuous integration?"
-            b2_narration = "Agents write code that passes mock assertions while introducing regression defects into the main suite."
-            b3_narration = "The underlying mechanism is test pollution: isolated unit tests miss environment flags and multi-file dependencies."
-            b4_narration = "The fix is automated regression verification: require reproducing failures before applying patches."
-            b5_narration = "Verify the fix by running full contract test suites in clean, isolated sandbox environments."
-            b6_narration = "Always require repro tests with verified assertions before trusting automated agent bug repairs."
+            b1_narration = "Why do AI agent pull requests pass generated tests but break continuous integration builds?"
+            b2_narration = "Agents generate localized code that satisfies isolated mock assertions while silently introducing breaking regression defects across the broader test suite."
+            b3_narration = "The underlying mechanism is context contamination and test blindness. Unit tests written in isolation overlook system environment flags, asynchronous timing constraints, and multi-package dependency cycles."
+            b4_narration = "The disciplined engineering remedy is reproduction before remediation. Require agents to author a failing reproduction test verifying the defect before generating any patch."
+            b5_narration = "Verify this fix by executing the reproduction test against clean main branch baselines, ensuring the defect reproduces and the subsequent patch cleanly resolves it in isolation."
+            b6_narration = "Always require verified reproduction tests and clean contract assertions before trusting automated agent bug repairs in production repositories."
         else:
-            b1_narration = f"How do engineers identify and fix failures in {title}?"
-            b2_narration = f"In production environments, unhandled failure modes can deadlock agent reasoning loops."
-            b3_narration = f"Understanding the architectural mechanism prevents subtle failures from propagating downstream."
-            b4_narration = f"Applying disciplined engineering patterns ensures deterministic behavior across execution environments."
-            b5_narration = "Verify the implementation with automated reproduction tests and strict boundary assertions."
-            b6_narration = "Autonomous agent systems require rigorous validation before deployment to production repositories."
+            b1_narration = f"How do engineers identify, isolate, and resolve failure modes in {title}?"
+            b2_narration = "In production agent environments, unhandled edge cases quickly deadlock multi-turn reasoning loops and corrupt downstream project artifacts."
+            b3_narration = "The core architectural mechanism stems from implicit assumptions about execution state. When intermediate steps lack explicit schemas or health checks, minor faults compound into total task failure."
+            b4_narration = "The engineering remedy is structured contract enforcement. Define strict boundaries, validate all tool and step inputs defensively, and add deterministic recovery routines before executing mutations."
+            b5_narration = "Verify the implementation by authoring reproducible regression benchmarks, asserting that all boundary assertions hold and edge cases fail safely under isolated sandbox conditions."
+            b6_narration = "Building resilient agent architectures requires continuous verification and defense in depth, rather than relying on unvalidated model assumptions."
 
         # 6-beat recipe from VIDEO_PLAYBOOK.md
         beats_spec = [
@@ -296,7 +296,7 @@ class FixedNicheStoryboardDirector:
                 "beat_id": "B01",
                 "script_section_id": "S01",
                 "start_s": 0.0,
-                "end_s": 3.0,
+                "end_s": 6.0,
                 "story_function": "problem_hook",
                 "narration": b1_narration,
                 "claim_ids": [c1],
@@ -309,8 +309,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B02",
                 "script_section_id": "S02",
-                "start_s": 3.0,
-                "end_s": 10.0,
+                "start_s": 6.0,
+                "end_s": 14.0,
                 "story_function": "developer_impact",
                 "narration": b2_narration,
                 "claim_ids": [c1],
@@ -323,8 +323,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B03",
                 "script_section_id": "S03",
-                "start_s": 10.0,
-                "end_s": 25.0,
+                "start_s": 14.0,
+                "end_s": 31.0,
                 "story_function": "architectural_mechanism",
                 "narration": b3_narration,
                 "claim_ids": [c2],
@@ -337,8 +337,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B04",
                 "script_section_id": "S04",
-                "start_s": 25.0,
-                "end_s": 42.0,
+                "start_s": 31.0,
+                "end_s": 47.0,
                 "story_function": "verified_fix",
                 "narration": b4_narration,
                 "claim_ids": list(dict.fromkeys([c2, c3, *extra_claim_ids])),
@@ -351,8 +351,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B05",
                 "script_section_id": "S05",
-                "start_s": 42.0,
-                "end_s": 58.0,
+                "start_s": 47.0,
+                "end_s": 60.0,
                 "story_function": "verification_checklist",
                 "narration": b5_narration,
                 "claim_ids": [c3],
@@ -365,7 +365,7 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B06",
                 "script_section_id": "S06",
-                "start_s": 58.0,
+                "start_s": 60.0,
                 "end_s": target_duration,
                 "story_function": "payoff_and_caveat",
                 "narration": b6_narration,

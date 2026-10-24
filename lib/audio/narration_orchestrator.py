@@ -12,6 +12,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -21,6 +22,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Mapping
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -327,7 +330,10 @@ class NarrationOrchestrator:
 
             # Atomic replace into output_path and cache
             os.replace(tmp_synth, output_path)
-            shutil.copy2(output_path, cached_mp3)
+            try:
+                shutil.copy2(output_path, cached_mp3)
+            except OSError as e:
+                logger.debug(f"Could not cache narration to {cached_mp3}: {e}")
 
             return {
                 "success": True,

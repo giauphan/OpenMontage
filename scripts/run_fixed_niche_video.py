@@ -115,6 +115,16 @@ def render_project_composition(
                 "Truncating narration with FFmpeg -t is rejected."
             )
 
+        # In production renders, warn if narration duration is below minimum allowed duration
+        if not allow_synthetic_audio and duration_seconds >= 60.0 and audio_dur < 60.0:
+            logger.warning(
+                f"Narration duration ({audio_dur:.2f}s) is below 60.0s. "
+                "Aligning render duration to prevent out-of-sync playback."
+            )
+
+        # Determine actual render duration strictly matching narration audio if valid within shorts contract
+        render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else duration_seconds
+
         # Load visual plan beats if present for storyboard-aligned timing
         visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
         beats: List[Dict[str, Any]] = []
@@ -142,11 +152,14 @@ def render_project_composition(
             vf += f",subtitles='{esc_srt}'"
 
         if beats:
-            # Create storyboard-synchronized slides preserving exact beat start_s and end_s
+            # Scale beat slide durations to match exact render duration so there is zero silent tail
+            planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
+            scale = (render_dur / planned_total) if planned_total > 0 else 1.0
+
             concat_list = renders_dir / "slides_concat.txt"
             with concat_list.open("w", encoding="utf-8") as f:
                 for b in beats:
-                    dur = max(0.1, float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0)))
+                    beat_dur = max(0.1, (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale)
                     aid = b.get("asset_id") or (b.get("asset_ids", [""])[0] if b.get("asset_ids") else "")
                     svg_cand = visuals_dir / f"{aid}.svg"
                     if not svg_cand.is_file():
@@ -154,7 +167,7 @@ def render_project_composition(
                         svg_cand = matches[0] if matches else (svg_assets[0] if svg_assets else None)
                     if svg_cand and svg_cand.is_file():
                         f.write(f"file '{svg_cand.resolve()}'\n")
-                        f.write(f"duration {dur:.3f}\n")
+                        f.write(f"duration {beat_dur:.3f}\n")
                 if svg_assets:
                     last_aid = beats[-1].get("asset_id") or (beats[-1].get("asset_ids", [""])[0] if beats[-1].get("asset_ids") else "")
                     last_svg = visuals_dir / f"{last_aid}.svg"
@@ -169,13 +182,13 @@ def render_project_composition(
                 "-vf", vf,
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
                 "-c:a", "aac", "-b:a", "192k",
-                "-t", str(duration_seconds),
+                "-t", str(render_dur),
                 str(output_mp4),
             ]
             subprocess.run(cmd, check=True)
             concat_list.unlink(missing_ok=True)
         elif svg_assets:
-            slide_dur = duration_seconds / len(svg_assets)
+            slide_dur = render_dur / len(svg_assets)
             concat_list = renders_dir / "slides_concat.txt"
             with concat_list.open("w", encoding="utf-8") as f:
                 for svg in svg_assets:
@@ -190,7 +203,7 @@ def render_project_composition(
                 "-vf", vf,
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
                 "-c:a", "aac", "-b:a", "192k",
-                "-t", str(duration_seconds),
+                "-t", str(render_dur),
                 str(output_mp4),
             ]
             subprocess.run(cmd, check=True)
@@ -408,18 +421,96 @@ class FixedNicheVideoRunner:
                 f"Synthesized narration duration ({dur:.2f}s) exceeds maximum target duration ({target_dur:.2f}s). "
                 "Truncating narration mid-sentence is forbidden."
             )
+
+        # In production synthesis with neural voice, reject narration outside 65-75s contract
+        if provider == "kokoro" and not (65.0 <= dur <= 75.0):
+            raise ValueError(
+                f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. "
+                "Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
+            )
+
+        # Re-align all timed artifacts with synthesized audio duration
+        visual_plan_file = self.project_dir / "artifacts" / "news_visual_plan.json"
+        script_file = self.project_dir / "artifacts" / "script_en_US.json"
+        proof_map_file = self.project_dir / "artifacts" / "video_proof_map.json"
+        srt_file = self.project_dir / "artifacts" / "captions.srt"
+        assets_file = self.project_dir / "artifacts" / "news_visual_assets.json"
+
+        if visual_plan_file.is_file() and dur > 0:
+            try:
+                plan_json = json.loads(visual_plan_file.read_text(encoding="utf-8"))
+                beats = plan_json.get("beats", [])
+                if beats:
+                    planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
+                    if planned_total > 0:
+                        align_dur = dur if 65.0 <= dur <= 75.0 else target_dur
+                        scale = align_dur / planned_total
+                        curr_start = 0.0
+                        for b in beats:
+                            beat_dur = (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale
+                            b["start_s"] = round(curr_start, 3)
+                            curr_start += beat_dur
+                            b["end_s"] = round(curr_start, 3)
+                        beats[-1]["end_s"] = round(align_dur, 3)
+
+                        # Prepare all reconciled payload dictionaries before writing
+                        captions_content = generate_srt_from_beats(beats)
+                        beat_map = {b["beat_id"]: b for b in beats}
+
+                        script_bytes_to_write = None
+                        assets_json_to_write = None
+                        if script_file.is_file():
+                            script_json = json.loads(script_file.read_text(encoding="utf-8"))
+                            script_json["target_duration_seconds"] = round(align_dur, 3)
+                            for sec in script_json.get("sections", []):
+                                bid = sec.get("beat_id")
+                                if bid in beat_map:
+                                    sec["start_s"] = beat_map[bid]["start_s"]
+                                    sec["end_s"] = beat_map[bid]["end_s"]
+                            script_bytes_to_write = json.dumps(script_json, indent=2).encode("utf-8")
+                            if assets_file.is_file():
+                                assets_json = json.loads(assets_file.read_text(encoding="utf-8"))
+                                assets_json["script_sha256"] = hashlib.sha256(script_bytes_to_write).hexdigest()
+                                assets_json_to_write = json.dumps(assets_json, indent=2)
+
+                        proof_json_to_write = None
+                        if proof_map_file.is_file():
+                            proof_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
+                            for pb in proof_json.get("beats", []):
+                                bid = pb.get("beat_id")
+                                if bid in beat_map:
+                                    pb["start_s"] = beat_map[bid]["start_s"]
+                                    pb["end_s"] = beat_map[bid]["end_s"]
+                            proof_json_to_write = json.dumps(proof_json, indent=2)
+
+                        # Write all verified artifact updates
+                        visual_plan_file.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
+                        srt_file.write_text(captions_content, encoding="utf-8")
+                        if script_bytes_to_write is not None:
+                            script_file.write_bytes(script_bytes_to_write)
+                        if assets_json_to_write is not None:
+                            assets_file.write_text(assets_json_to_write, encoding="utf-8")
+                        if proof_json_to_write is not None:
+                            proof_map_file.write_text(proof_json_to_write, encoding="utf-8")
+            except Exception as e:
+                raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
+
         return out_audio
 
     def render(self) -> Dict[str, Any]:
         """Render final 9:16 video and perform strict signed QA gating."""
         target_dur = self.get_target_duration()
         output_mp4 = self.project_dir / "renders" / "final_short_en_US_9x16.mp4"
+        audio_path = self.project_dir / "assets" / "narration.mp3"
+        audio_dur = probe_audio_duration(audio_path) if audio_path.is_file() else -1.0
+        # Enforce shorts duration contract: select audio_dur within [65.0, 75.0], fallback to target_dur
+        render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else target_dur
 
         render_project_composition(
             project_dir=self.project_dir,
             composition_name="hyperframes_reels",
             output_mp4=output_mp4,
-            duration_seconds=target_dur,
+            duration_seconds=render_dur,
         )
 
         # Probe output video using argument list (prevent CWE-78)
@@ -441,8 +532,8 @@ class FixedNicheVideoRunner:
         sample_points = [
             (0, "frame_00s_hook.png"),
             (3, "frame_03s_impact.png"),
-            (int(target_dur / 2), "frame_mid_mechanism.png"),
-            (int(target_dur - 2), "frame_end_payoff.png"),
+            (int(render_dur / 2), "frame_mid_mechanism.png"),
+            (int(render_dur - 2), "frame_end_payoff.png"),
         ]
         sampling_ok = True
         for sec, fname in sample_points:
@@ -503,6 +594,8 @@ class FixedNicheVideoRunner:
         app_status = "APPROVED_FOR_PRIVATE_CANARY" if qa_pass else "QA_FAILED"
         val_status_code = "VIDEO_READY_FOR_PRIVATE_REVIEW" if qa_pass else "QA_FAILED"
 
+        actual_dur = probe_dur if probe_dur > 0 else render_dur
+
         app_record = {
             "approved": qa_pass,
             "status": app_status,
@@ -510,6 +603,7 @@ class FixedNicheVideoRunner:
             "audio_sha256": audio_sha,
             "video_sha256": video_sha,
             "target_aspect": "9:16",
+            "duration": actual_dur,
             "target_duration": target_dur,
             "policy_sha256": self.policy.policy_sha256,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -521,7 +615,8 @@ class FixedNicheVideoRunner:
             "status": val_status_code,
             "strict_quality_pass": qa_pass,
             "rendered_mp4": str(output_mp4),
-            "duration": target_dur,
+            "duration": actual_dur,
+            "target_duration": target_dur,
             "policy_sha256": self.policy.policy_sha256,
         }
         (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
@@ -529,7 +624,8 @@ class FixedNicheVideoRunner:
         return {
             "status": val_status_code,
             "rendered_mp4": str(output_mp4),
-            "duration": target_dur,
+            "duration": actual_dur,
+            "target_duration": target_dur,
             "frames_dir": str(frames_dir),
             "approval_path": str(self.project_dir / "approval.json"),
         }

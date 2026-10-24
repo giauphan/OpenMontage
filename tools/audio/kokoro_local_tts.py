@@ -241,3 +241,9 @@ class KokoroLocalTTS(BaseTool):
             logger.debug("Kokoro PyTorch backend failed: %s", exc)
 
         return False, 0.0, "No Kokoro backend (HTTP service or library) could synthesize the requested audio"
+
+
+def is_kokoro_available() -> bool:
+    """Convenience helper to check if Kokoro TTS is available."""
+    return KokoroLocalTTS().get_status() == ToolStatus.AVAILABLE
+
