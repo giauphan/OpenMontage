@@ -370,11 +370,16 @@ class NarrationOrchestrator:
                 "-af", "highpass=f=80,lowpass=f=7500,volume=1.5,loudnorm",
                 "-c:a", "libmp3lame", "-b:a", "192k", str(output_path),
             ]
-            res_flite = subprocess.run(cmd, capture_output=True, text=True)
-            txt_tmp.unlink(missing_ok=True)
-            if res_flite.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
-                return ToolResult(success=True, data={"audio_path": str(output_path), "provider": "flite", "voice": flite_voice})
-            return ToolResult(success=False, error=f"flite failed: {res_flite.stderr}")
+            timeout_s = max(30, int(len(text) / 15))
+            try:
+                res_flite = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+                if res_flite.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+                    return ToolResult(success=True, data={"audio_path": str(output_path), "provider": "flite", "voice": flite_voice})
+                return ToolResult(success=False, error=f"flite failed: {res_flite.stderr}")
+            except Exception as exc:
+                return ToolResult(success=False, error=f"flite failed: {exc}")
+            finally:
+                txt_tmp.unlink(missing_ok=True)
 
         # Default provider invocation
         if provider_name.lower() in ("edge",):
@@ -482,8 +487,11 @@ class NarrationOrchestrator:
             voice = cand["voice"]
             best_entry = None
 
+            # Skip rate sweep for providers that do not support rate/speed adjustments (e.g. flite)
+            cand_rates = [None] if provider.lower() in ("flite",) else rates
+
             candidate_failed = False
-            for rate in rates:
+            for rate in cand_rates:
                 if candidate_failed:
                     break
                 speed = 1.0

@@ -72,7 +72,7 @@ class KokoroLocalTTS(BaseTool):
     )
 
     def get_status(self) -> ToolStatus:
-        # Check if local Kokoro service or HyperFrames Kokoro CLI is available
+        # Check if local Kokoro service is available
         service_url = os.environ.get("KOKORO_SERVICE_URL", "http://127.0.0.1:8880/v1/audio/speech")
         try:
             import urllib.request
@@ -82,14 +82,20 @@ class KokoroLocalTTS(BaseTool):
         except Exception:
             pass
 
-        # Check for python kokoro module or hyperframes CLI
+        # Check for python kokoro or kokoro_onnx module
         try:
-            import kokoro
+            import kokoro  # type: ignore
             return ToolStatus.AVAILABLE
         except ImportError:
             pass
 
-        return ToolStatus.AVAILABLE  # Available for fallback / on-demand
+        try:
+            import kokoro_onnx  # type: ignore
+            return ToolStatus.AVAILABLE
+        except ImportError:
+            pass
+
+        return ToolStatus.UNCONFIGURED
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         text = inputs.get("text", "").strip()
@@ -211,33 +217,5 @@ class KokoroLocalTTS(BaseTool):
                     return True, dur, None
         except Exception:
             pass
-
-        # 4. Fallback to Edge-TTS or Flite local synthesis for test/mock parity
-        voice_en = "en-US-ChristopherNeural"
-        tmp_mp3 = output_path.with_suffix(".tmp.mp3")
-        try:
-            res = subprocess.run(
-                ["edge-tts", "--voice", voice_en, "--text", text, "--write-media", str(tmp_mp3)],
-                capture_output=True,
-                text=True
-            )
-            if res.returncode == 0 and tmp_mp3.exists():
-                dur = probe_audio_duration(tmp_mp3)
-                if dur > 0:
-                    os.replace(tmp_mp3, output_path)
-                    return True, dur, None
-        except Exception:
-            pass
-
-        # Offline fallback via flite
-        txt_tmp = output_path.with_suffix(".txt")
-        txt_tmp.write_text(text, encoding="utf-8")
-        cmd = f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={txt_tmp}:voice=slt" -c:a libmp3lame -b:a 192k {output_path}'
-        res_flite = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        txt_tmp.unlink(missing_ok=True)
-        if res_flite.returncode == 0 and output_path.exists():
-            dur = probe_audio_duration(output_path)
-            if dur > 0:
-                return True, dur, None
 
         return False, 0.0, "No Kokoro backend (HTTP service or library) could synthesize the requested audio"

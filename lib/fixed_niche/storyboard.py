@@ -54,7 +54,10 @@ class VideoProofMap:
 class FixedNicheStoryboardDirector:
     """Generates 65–75s 6-beat storyboard and technical diagram artwork."""
 
-    def __init__(self, policy_sha256: str = "c30371ea0237f573667d16f5b2e99c93c2f9ee4c"):
+    def __init__(self, policy_sha256: Optional[str] = None):
+        if policy_sha256 is None:
+            from lib.fixed_niche.policy import load_locked_policy
+            policy_sha256 = load_locked_policy().policy_sha256
         self.policy_sha256 = policy_sha256
 
     def generate_technical_svg(

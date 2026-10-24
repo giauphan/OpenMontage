@@ -30,6 +30,11 @@ class FixedNicheTopicSelector:
         self._transport = transport
         self.prompt_template_path = Path("scripts/prompts/fixed_us_topic_selection.prompt.md")
 
+    @staticmethod
+    def _candidate_id(cand: Dict[str, Any], index: int) -> str:
+        cid = cand.get("id") or cand.get("candidate_id")
+        return str(cid) if cid is not None else f"cand_{index}"
+
     def validate_selection(
         self,
         data: Dict[str, Any],
@@ -47,7 +52,7 @@ class FixedNicheTopicSelector:
         if not selected_id:
             raise CandidateBoundSelectionError("Selection output omitted 'selected_candidate_id'")
 
-        valid_ids = {str(c.get("id") or c.get("candidate_id")) for c in candidates}
+        valid_ids = {self._candidate_id(c, i) for i, c in enumerate(candidates)}
         if str(selected_id) not in valid_ids:
             # HARD REQUIREMENT: Reject unknown ID; no silent remap!
             raise CandidateBoundSelectionError(
@@ -75,7 +80,7 @@ class FixedNicheTopicSelector:
             "Authorized In-Scope Candidates:\n"
         )
         for i, cand in enumerate(candidates):
-            cid = cand.get("id") or cand.get("candidate_id") or f"cand_{i}"
+            cid = self._candidate_id(cand, i)
             title = cand.get("title", "Untitled")
             body = cand.get("body") or cand.get("summary") or ""
             url = cand.get("canonical_url") or cand.get("url") or ""
@@ -126,7 +131,7 @@ class FixedNicheTopicSelector:
 
         # Deterministic top-ranked selection when transport not provided or for offline tests
         top_cand = candidate_pool[0]
-        cid = str(top_cand.get("id") or top_cand.get("candidate_id"))
+        cid = self._candidate_id(top_cand, 0)
         return {
             "status": OutcomeStatus.ELIGIBLE.value,
             "selected_candidate_id": cid,
