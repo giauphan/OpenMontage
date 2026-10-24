@@ -363,8 +363,14 @@ class NarrationOrchestrator:
             flite_voice = voice if voice in ("slt", "rms", "awb", "kal", "kal16") else "slt"
             txt_tmp = output_path.with_suffix(".txt")
             txt_tmp.write_text(text, encoding="utf-8")
-            cmd = f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={txt_tmp}:voice={flite_voice}" -af "highpass=f=80,lowpass=f=7500,volume=1.5,loudnorm" -c:a libmp3lame -b:a 192k {output_path}'
-            res_flite = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            esc = str(txt_tmp).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+            cmd = [
+                "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+                "-i", f"flite=textfile='{esc}':voice={flite_voice}",
+                "-af", "highpass=f=80,lowpass=f=7500,volume=1.5,loudnorm",
+                "-c:a", "libmp3lame", "-b:a", "192k", str(output_path),
+            ]
+            res_flite = subprocess.run(cmd, capture_output=True, text=True)
             txt_tmp.unlink(missing_ok=True)
             if res_flite.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
                 return ToolResult(success=True, data={"audio_path": str(output_path), "provider": "flite", "voice": flite_voice})
@@ -375,22 +381,14 @@ class NarrationOrchestrator:
             args = ["edge-tts", "--voice", voice, "--text", text, "--write-media", str(output_path)]
             if settings and settings.get("rate"):
                 args += ["--rate", str(settings["rate"])]
+            timeout_s = max(30, int(len(text) / 15))
             try:
-                res = subprocess.run(args, capture_output=True, text=True, timeout=5)
+                res = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s)
                 if res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
-                    return ToolResult(success=True, data={"audio_path": str(output_path)})
-            except Exception:
-                pass
-
-            # Offline fallback via ffmpeg flite filter
-            txt_tmp = output_path.with_suffix(".txt")
-            txt_tmp.write_text(text, encoding="utf-8")
-            cmd = f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={txt_tmp}:voice=slt" -c:a libmp3lame -b:a 192k {output_path}'
-            res_flite = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            txt_tmp.unlink(missing_ok=True)
-            if res_flite.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
-                return ToolResult(success=True, data={"audio_path": str(output_path)})
-            return ToolResult(success=False, error=f"edge-tts and flite failed: {res_flite.stderr}")
+                    return ToolResult(success=True, data={"audio_path": str(output_path), "provider": "edge", "voice": voice})
+                return ToolResult(success=False, error=f"edge-tts failed: {(res.stderr or '')[-400:]}")
+            except Exception as exc:
+                return ToolResult(success=False, error=f"edge-tts failed: {exc}")
 
         # Look up tool from OpenMontage registry or instantiate
         try:
@@ -537,6 +535,8 @@ class NarrationOrchestrator:
                     if delta <= tolerance_seconds:
                         break
                 except Exception:
+                    if rate is None:
+                        candidate_failed = True
                     continue
 
             if best_entry:

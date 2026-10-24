@@ -186,6 +186,36 @@ class FixedNicheStoryboardDirector:
         c2 = claim_ids[1] if len(claim_ids) > 1 else c1
         c3 = claim_ids[2] if len(claim_ids) > 2 else c2
 
+        # Per-family dynamic narration templates
+        if family == "context_memory":
+            b1_narration = f"Why does your AI coding agent forget project rules between sessions?"
+            b2_narration = "You give it strict repository instructions, but on the next run, it starts from zero."
+            b3_narration = "Here is why: conversation context lives in ephemeral memory, while durable repo instructions require explicit load hooks."
+            b4_narration = "The remedy is simple: define an immutable AGENTS.md guide and enforce mandatory session preflight."
+            b5_narration = "Verify it locally by checking that every newly spawned agent quotes the repository boundary before writing code."
+            b6_narration = "Always verify state persistence across restarts rather than assuming conversational memory survives."
+        elif family == "agent_tool_use":
+            b1_narration = f"Why do tool calls fail when an AI coding agent executes MCP functions?"
+            b2_narration = "A single mismatch between tool JSON schema and runtime payload causes immediate failure."
+            b3_narration = "The root cause is strict schema validation: agents often output string arguments instead of structured JSON objects."
+            b4_narration = "The verified fix: validate tool input against the JSON schema and provide automatic schema repair filters."
+            b5_narration = "Verify the remedy by executing mock MCP tool calls and checking that schema mismatch errors drop to zero."
+            b6_narration = "Strict schema adherence and sandbox isolation are mandatory for reliable agent tool execution."
+        elif family == "debugging_reliability":
+            b1_narration = f"Why do AI agent pull requests pass generated tests but break continuous integration?"
+            b2_narration = "Agents write code that passes mock assertions while introducing regression defects into the main suite."
+            b3_narration = "The underlying mechanism is test pollution: isolated unit tests miss environment flags and multi-file dependencies."
+            b4_narration = "The fix is automated regression verification: require reproducing failures before applying patches."
+            b5_narration = "Verify the fix by running full contract test suites in clean, isolated sandbox environments."
+            b6_narration = "Always require repro tests with verified assertions before trusting automated agent bug repairs."
+        else:
+            b1_narration = f"How do engineers identify and fix failures in {title}?"
+            b2_narration = f"In production environments, unhandled failure modes can deadlock agent reasoning loops."
+            b3_narration = f"Understanding the architectural mechanism prevents subtle failures from propagating downstream."
+            b4_narration = f"Applying disciplined engineering patterns ensures deterministic behavior across execution environments."
+            b5_narration = "Verify the implementation with automated reproduction tests and strict boundary assertions."
+            b6_narration = "Autonomous agent systems require rigorous validation before deployment to production repositories."
+
         # 6-beat recipe from VIDEO_PLAYBOOK.md
         beats_spec = [
             {
@@ -194,7 +224,7 @@ class FixedNicheStoryboardDirector:
                 "start_s": 0.0,
                 "end_s": 3.0,
                 "story_function": "problem_hook",
-                "narration": f"Why does your AI coding agent forget project rules between sessions?",
+                "narration": b1_narration,
                 "claim_ids": [c1],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -208,7 +238,7 @@ class FixedNicheStoryboardDirector:
                 "start_s": 3.0,
                 "end_s": 10.0,
                 "story_function": "developer_impact",
-                "narration": "You give it strict repository instructions, but on the next run, it starts from zero.",
+                "narration": b2_narration,
                 "claim_ids": [c1],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -222,10 +252,10 @@ class FixedNicheStoryboardDirector:
                 "start_s": 10.0,
                 "end_s": 25.0,
                 "story_function": "architectural_mechanism",
-                "narration": "Here is why: conversation context lives in ephemeral memory, while durable repo instructions require explicit load hooks.",
+                "narration": b3_narration,
                 "claim_ids": [c2],
                 "visual_kind": "svg_diagram",
-                "evidence_class": "authentic_proof",
+                "evidence_class": "conceptual_diagram",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b03_mechanism",
                 "expected_screen_state": "Technical lifecycle diagram showing ephemeral context vs durable files",
@@ -236,7 +266,7 @@ class FixedNicheStoryboardDirector:
                 "start_s": 25.0,
                 "end_s": 42.0,
                 "story_function": "verified_fix",
-                "narration": "The remedy is simple: define an immutable AGENTS.md guide and enforce mandatory session preflight.",
+                "narration": b4_narration,
                 "claim_ids": [c2, c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -250,10 +280,10 @@ class FixedNicheStoryboardDirector:
                 "start_s": 42.0,
                 "end_s": 58.0,
                 "story_function": "verification_checklist",
-                "narration": "Verify it locally by checking that every newly spawned agent quotes the repository boundary before writing code.",
+                "narration": b5_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
-                "evidence_class": "authentic_proof",
+                "evidence_class": "conceptual_diagram",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b05_verify",
                 "expected_screen_state": "Verification checklist: pass/fail criteria",
@@ -264,7 +294,7 @@ class FixedNicheStoryboardDirector:
                 "start_s": 58.0,
                 "end_s": target_duration,
                 "story_function": "payoff_and_caveat",
-                "narration": "Always verify state persistence across restarts rather than assuming conversational memory survives.",
+                "narration": b6_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -340,11 +370,15 @@ class FixedNicheStoryboardDirector:
         if size < 500:
             return False, f"Sampled frame is blank or corrupt (size={size} bytes < 500)"
 
-        raw_bytes = frame_path.read_bytes()
-        # Basic pixel variance check without requiring heavy external image libraries
-        non_zero = sum(1 for b in raw_bytes[:1000] if b > 15)
-        if non_zero < 20:
-            return False, "Sampled frame is blank or uniform black (insufficient pixel variance)"
+        try:
+            from PIL import Image, ImageStat
+            with Image.open(frame_path) as img:
+                variance = ImageStat.Stat(img.convert("L")).stddev[0] ** 2
+        except Exception as exc:
+            return False, f"Sampled frame is corrupt: {exc}"
+
+        if variance < min_variance:
+            return False, f"Sampled frame is blank or uniform (variance={variance:.2f} < {min_variance})"
 
         return True, "Valid nonblank frame"
 

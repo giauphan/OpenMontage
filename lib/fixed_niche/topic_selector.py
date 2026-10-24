@@ -110,12 +110,19 @@ class FixedNicheTopicSelector:
         if self._transport is not None:
             prompt = self.build_prompt(candidate_pool)
             res = self._transport(prompt)
-            if res.returncode == 0:
-                try:
-                    parsed = json.loads(res.stdout)
-                    return self.validate_selection(parsed, candidate_pool)
-                except Exception as e:
-                    logger.warning(f"Failed to parse transport selection output: {e}")
+            if res.returncode != 0:
+                return {
+                    "status": OutcomeStatus.SYSTEM_ERROR.value,
+                    "niche_id": self.policy.niche_id,
+                    "selected_candidate_id": None,
+                    "projects_created": 0,
+                    "reason": f"selector transport exit {res.returncode}",
+                }
+            try:
+                parsed = json.loads(res.stdout)
+            except json.JSONDecodeError as e:
+                raise CandidateBoundSelectionError(f"Selector returned non-JSON output: {e}") from e
+            return self.validate_selection(parsed, candidate_pool)
 
         # Deterministic top-ranked selection when transport not provided or for offline tests
         top_cand = candidate_pool[0]

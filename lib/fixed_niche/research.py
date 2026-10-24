@@ -44,7 +44,10 @@ class DemoExecutionProtocol:
         env_vars: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Run an isolated test command under strict timeout and environment recording."""
-        env = dict(os.environ)
+        # Security: sanitize environment to prevent leaking secrets/tokens
+        allowed_keys = ("PATH", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT", "COMSPEC")
+        env = {k: os.environ[k] for k in allowed_keys if k in os.environ}
+        env["HOME"] = str(self.working_dir)
         if env_vars:
             env.update(env_vars)
 
@@ -186,10 +189,11 @@ class FixedNicheResearcher:
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         cid = candidate.get("id") or candidate.get("candidate_id") or "cand_01"
-        url = candidate.get("canonical_url") or candidate.get("url") or "https://docs.anthropic.com/claude/context-window"
+        url = candidate.get("canonical_url") or candidate.get("url")
         title = candidate.get("title", "AI Agent Engineering Explainer")
         body = candidate.get("body") or candidate.get("summary") or ""
         publisher = candidate.get("publisher", "Official Documentation")
+        published_at = candidate.get("published_at_utc") or candidate.get("published_at")
 
         # 1. Topic brief sidecar
         topic_brief = {
@@ -207,6 +211,9 @@ class FixedNicheResearcher:
         topic_brief_path.write_text(json.dumps(topic_brief, indent=2), encoding="utf-8")
 
         # 2. Claim ledger
+        claim_confidence = "verified" if url else "unverified"
+        claim_class = ClaimClassification.DOCUMENTED.value if url else ClaimClassification.INFERRED.value
+
         claim_ledger = {
             "schema_version": "1.0",
             "project_id": cid,
@@ -216,35 +223,35 @@ class FixedNicheResearcher:
                 {
                     "claim_id": "C001",
                     "statement": f"Observed failure symptom: {title}",
-                    "confidence": "verified",
-                    "classification": ClaimClassification.DOCUMENTED.value,
+                    "confidence": claim_confidence,
+                    "classification": claim_class,
                     "scope": {"market": "US", "locale": "en-US"},
                     "source": {
                         "canonical_url": url,
                         "publisher": publisher,
-                        "published_at": candidate.get("published_at_utc") or "2026-01-01T00:00:00Z",
+                        "published_at": published_at,
                     },
                 },
                 {
                     "claim_id": "C002",
                     "statement": "Architectural root cause in agent session or tool execution boundary",
-                    "confidence": "verified",
-                    "classification": ClaimClassification.DOCUMENTED.value,
+                    "confidence": claim_confidence,
+                    "classification": claim_class,
                     "source": {
                         "canonical_url": url,
                         "publisher": publisher,
-                        "published_at": candidate.get("published_at_utc") or "2026-01-01T00:00:00Z",
+                        "published_at": published_at,
                     },
                 },
                 {
                     "claim_id": "C003",
                     "statement": "Actionable verification checklist for developers to confirm fix in their repo",
-                    "confidence": "verified",
-                    "classification": ClaimClassification.DOCUMENTED.value,
+                    "confidence": claim_confidence,
+                    "classification": claim_class,
                     "source": {
                         "canonical_url": url,
                         "publisher": publisher,
-                        "published_at": candidate.get("published_at_utc") or "2026-01-01T00:00:00Z",
+                        "published_at": published_at,
                     },
                 },
             ],

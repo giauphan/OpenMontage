@@ -75,8 +75,9 @@ class LockedNichePolicy:
             )
 
 
-DEFAULT_POLICY_PATH = Path("config/niches/us-ai-agent-engineering.locked.yaml")
-DEFAULT_SCHEMA_PATH = Path("schemas/niches/locked_niche.schema.json")
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_POLICY_PATH = _REPO_ROOT / "config/niches/us-ai-agent-engineering.locked.yaml"
+DEFAULT_SCHEMA_PATH = _REPO_ROOT / "schemas/niches/locked_niche.schema.json"
 
 
 def load_locked_policy(
@@ -91,7 +92,8 @@ def load_locked_policy(
     - Exact constants: niche_id, status, allow flags must match owner lock.
     - SHA256 checksum computed on exact bytes loaded from disk.
     """
-    path = Path(policy_path or os.environ.get("FIXED_NICHE_CONFIG_PATH", DEFAULT_POLICY_PATH))
+    env_path = os.environ.get("FIXED_NICHE_CONFIG_PATH")
+    path = Path(policy_path or (Path(env_path) if env_path else DEFAULT_POLICY_PATH))
     schema_file = Path(schema_path or DEFAULT_SCHEMA_PATH)
 
     # Security: Path traversal protection

@@ -47,21 +47,14 @@ class FixedNicheQAValidator:
         audio_path = project_dir / "assets" / "narration.mp3"
         video_path = project_dir / "renders" / "final_short_en_US_9x16.mp4"
 
-        # Check audio integrity
-        if app_data.get("audio_sha256") and audio_path.is_file():
-            current_audio_sha = self.compute_sha256(audio_path)
-            if current_audio_sha.lower() != str(app_data["audio_sha256"]).lower():
+        for key, path, status in (
+            ("audio_sha256", audio_path, "INVALIDATED_BY_AUDIO_MUTATION"),
+            ("video_sha256", video_path, "INVALIDATED_BY_VIDEO_TAMPERING"),
+        ):
+            expected = app_data.get(key)
+            if not expected or not path.is_file() or self.compute_sha256(path).lower() != str(expected).lower():
                 app_data["approved"] = False
-                app_data["status"] = "INVALIDATED_BY_AUDIO_MUTATION"
-                app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
-                return False
-
-        # Check video integrity
-        if app_data.get("video_sha256") and video_path.is_file():
-            current_video_sha = self.compute_sha256(video_path)
-            if current_video_sha.lower() != str(app_data["video_sha256"]).lower():
-                app_data["approved"] = False
-                app_data["status"] = "INVALIDATED_BY_VIDEO_TAMPERING"
+                app_data["status"] = status if expected and path.is_file() else "INVALIDATED_MISSING_SIGNATURE"
                 app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
                 return False
 

@@ -91,15 +91,15 @@ class FixedNicheScopeGate:
     # Positive topic family keyword patterns
     FAMILY_PATTERNS = {
         "context_memory": [
-            re.compile(r"\b(context\s+window|context\s+loss|memory|session\s+persistence|session\s+resumption|retrieval|repo\s+map|ast\s+repo|tree-sitter|prompt\s+caching|context\s+compression)\b", re.I),
-            re.compile(r"\b(forget\s+project|loses?\s+project|requirements\s+between\s+sessions|durable\s+state|context\s+replay)\b", re.I),
+            re.compile(r"\b(context\s+window|context\s+loss|memory|session\s+persist(ence|s)?|session\s+resum(es|ption|ing)|resum(es?|ing)\s+from|retrieval|repo\s+map|ast\s+repo|tree-sitter|prompt\s+caching|context\s+compression|context\s+tokens?)\b", re.I),
+            re.compile(r"\b(forget\s+project|loses?\s+project|loses?\s+context|requirements\s+between\s+sessions|durable\s+state|context\s+replay|agent\s+session)\b", re.I),
         ],
         "agent_tool_use": [
-            re.compile(r"\b(mcp|model\s+context\s+protocol|tool\s+call(ing)?|function\s+call|tool\s+schema|schema\s+mismatch|stdio\s+vs\s+sse|sandbox\s+docker|permission\s+boundar(y|ies))\b", re.I),
-            re.compile(r"\b(tool\s+routing|tool\s+execution|file\s+access\s+graph|untrusted\s+agent\s+code)\b", re.I),
+            re.compile(r"\b(mcp|lsp|language\s+server|model\s+context\s+protocol|tool\s+call(ing)?|function\s+call|tool\s+schema|schema\s+mismatch|stdio\s+vs\s+sse|sandbox\s+docker|permission\s+boundar(y|ies))\b", re.I),
+            re.compile(r"\b(tool\s+routing|tool\s+execution|file\s+access\s+graph|untrusted\s+agent\s+code|flaky\s+(\w+\s+)?tools?|retry\s+storms?)\b", re.I),
         ],
         "debugging_reliability": [
-            re.compile(r"\b(regression|ci\s+patch|flaky\s+tool|retry\s+storm|mock\s+drift|test-driven\s+repair|hallucinated\s+diff|unified\s+diff|patch\s+fail(s|ed|ure)?)\b", re.I),
+            re.compile(r"\b(regression|ci\s+patch|flaky(\s+\w+)?\s+tools?|retry\s+storms?|deadlock|mock\s+drift|test-driven\s+repair|hallucinated\s+diffs?|unified\s+diffs?|patch\s+(fail(s|ed|ure)?|generation|repair)|diff\s+syntax)\b", re.I),
             re.compile(r"\b(passes?\s+generated\s+tests?\s+but\s+causes?|reproducible\s+failure|unhandled\s+lsp|lsp\s+specification)\b", re.I),
         ],
         "agent_evaluation": [
@@ -180,33 +180,30 @@ class FixedNicheScopeGate:
         matched_family = None
         matched_tags: List[str] = []
 
-        # Check explicit topic_family hint if already verified in fixture
         explicit_fam = candidate.get("topic_family")
         valid_fam_ids = {f.id for f in self.policy.allowed_topic_families}
 
-        if explicit_fam and explicit_fam in valid_fam_ids:
-            matched_family = explicit_fam
-
-        if not matched_family:
-            for fam_id, patterns in self.FAMILY_PATTERNS.items():
-                for pat in patterns:
-                    if pat.search(text):
-                        matched_family = fam_id
-                        matched_tags.append(pat.pattern)
-                        break
-                if matched_family:
+        text_matches: Dict[str, str] = {}
+        for fam_id, patterns in self.FAMILY_PATTERNS.items():
+            for pat in patterns:
+                if pat.search(text):
+                    text_matches.setdefault(fam_id, pat.pattern)
                     break
 
-        # Check tags defined in policy
-        if not matched_family:
+        # Check tags defined in policy if no family patterns matched
+        if not text_matches:
             for fam in self.policy.allowed_topic_families:
                 for tag in fam.tags:
                     if re.search(r"\b" + re.escape(tag) + r"\b", text, re.I):
-                        matched_family = fam.id
-                        matched_tags.append(tag)
+                        text_matches.setdefault(fam.id, tag)
                         break
-                if matched_family:
-                    break
+
+        if explicit_fam in valid_fam_ids and explicit_fam in text_matches:
+            matched_family = explicit_fam
+            matched_tags.append(text_matches[explicit_fam])
+        elif text_matches:
+            matched_family, tag = next(iter(text_matches.items()))
+            matched_tags.append(tag)
 
         if not matched_family:
             trace = ScopeTrace(

@@ -337,11 +337,16 @@ class FixedNicheVideoRunner:
         # Generate initial validation status & approval record
         claim_ledger_path = self.project_dir / "artifacts" / "claim_ledger.json"
         ledger_sha = FixedNicheResearcher.compute_file_sha(claim_ledger_path)
+        audio_path = self.project_dir / "assets" / "narration.mp3"
+        audio_sha = FixedNicheResearcher.compute_file_sha(audio_path) if audio_path.is_file() else None
+        video_sha = FixedNicheResearcher.compute_file_sha(output_mp4) if output_mp4.is_file() else None
 
         app_record = {
             "approved": True,
             "status": "APPROVED_FOR_PRIVATE_CANARY",
             "claim_ledger_sha256": ledger_sha,
+            "audio_sha256": audio_sha,
+            "video_sha256": video_sha,
             "target_aspect": "9:16",
             "target_duration": target_dur,
             "policy_sha256": self.policy.policy_sha256,

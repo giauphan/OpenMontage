@@ -122,6 +122,9 @@ def main(argv: list[str] | None = None) -> int:
             provider = best["provider"]
             voice = best["voice"]
             settings["speed"] = best.get("speed", 1.0)
+            if best.get("rate"):
+                settings["rate"] = best["rate"]
+            fallback_chain = None
             print(f"Tech voice fit selected: {best['label']} speed={settings['speed']} (dur: {best['duration']:.2f}s, delta: {best['delta']:.2f}s, rtf: {best['rtf']:.3f})")
 
     try:
