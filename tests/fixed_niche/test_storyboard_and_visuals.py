@@ -138,7 +138,7 @@ def test_storyboard_validations_and_distinct_beat_artwork(tmp_path: Path):
     with pytest.raises(ValueError, match="target_duration"):
         director.generate_storyboard(topic, claims, tmp_path / "p2", target_duration=55.0)
 
-    # 3. All 6 beats produce distinct SVGs
+    # 3. All 6 beats produce distinct SVGs and single claim does not duplicate in B04
     res = director.generate_storyboard(topic, claims, tmp_path / "p3", target_duration=72.0)
     svg_contents = [
         (tmp_path / "p3" / "assets" / "visuals" / f"{b['asset_id']}.svg").read_text()
@@ -146,3 +146,12 @@ def test_storyboard_validations_and_distinct_beat_artwork(tmp_path: Path):
     ]
     assert len(svg_contents) == 6
     assert len(set(svg_contents)) == 6, "Every beat must generate distinct artwork matching its screen state"
+    assert res["visual_plan"]["beats"][3]["claim_ids"] == ["C01"]
+
+    # 4. Multi-claim coverage (4+ claims are all preserved in proof map)
+    multi_claims = [{"claim_id": f"C0{i}", "statement": f"Claim {i}"} for i in range(1, 6)]
+    res_multi = director.generate_storyboard(topic, multi_claims, tmp_path / "p4", target_duration=70.0)
+    covered = set()
+    for beat in res_multi["proof_map"]["beats"]:
+        covered.update(beat["claim_ids"])
+    assert covered == {"C01", "C02", "C03", "C04", "C05"}, "All surplus claims must be retained in proof map"

@@ -69,8 +69,19 @@ class FixedNicheStoryboardDirector:
     ) -> str:
         """Generate high-contrast, informative vector geometry tailored to the engineering concept and screen state."""
         fam = topic_family.lower()
-        fam_label = fam.replace("_", " ").upper()
-        safe_title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        fam_label = (
+            fam.replace("_", " ")
+            .upper()
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        safe_title = (
+            title[:65]
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
 
         if beat_num == 1:
             accent, badge = "#ef4444", f"{fam_label} // FAILURE HOOK"
@@ -78,7 +89,7 @@ class FixedNicheStoryboardDirector:
                 f'  <rect x="60" y="110" width="840" height="270" rx="16" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
                 f'  <circle cx="110" cy="156" r="10" fill="#ef4444"/>\n'
                 f'  <rect x="130" y="140" width="160" height="32" rx="6" fill="#7f1d1d"/><text x="210" y="162" fill="#fca5a5" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">FAILURE SYMPTOM</text>\n'
-                f'  <text x="90" y="210" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">{safe_title[:65]}</text>\n'
+                f'  <text x="90" y="210" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">{safe_title}</text>\n'
                 f'  <text x="90" y="245" fill="#94a3b8" font-family="sans-serif" font-size="15">Autonomous coding agent halts unexpectedly in active developer workspace.</text>\n'
                 f'  <rect x="90" y="280" width="780" height="65" rx="8" fill="#1e293b"/><text x="120" y="318" fill="#ef4444" font-family="monospace" font-size="14">✕ CRITICAL: Execution deadlock at session boundary</text>\n'
             )
@@ -247,6 +258,7 @@ class FixedNicheStoryboardDirector:
         c1 = claim_ids[0]
         c2 = claim_ids[1] if len(claim_ids) > 1 else c1
         c3 = claim_ids[2] if len(claim_ids) > 2 else c2
+        extra_claim_ids = claim_ids[3:]
 
         # Per-family dynamic narration templates
         if family == "context_memory":
@@ -329,7 +341,7 @@ class FixedNicheStoryboardDirector:
                 "end_s": 42.0,
                 "story_function": "verified_fix",
                 "narration": b4_narration,
-                "claim_ids": [c2, c3],
+                "claim_ids": list(dict.fromkeys([c2, c3, *extra_claim_ids])),
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
                 "is_proof_bearing": True,

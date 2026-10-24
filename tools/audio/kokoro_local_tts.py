@@ -6,12 +6,15 @@ Restricts concurrency to 1 to protect 2-vCPU systems from CPU thrashing.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from tools.base_tool import (
     BaseTool,
@@ -152,8 +155,8 @@ class KokoroLocalTTS(BaseTool):
                 if dur > 0:
                     os.replace(tmp_out, output_path)
                     return True, dur, None
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Kokoro HTTP backend failed: %s", exc)
 
         # 2. Try direct local kokoro_onnx inference with cached ONNX weights
         try:
@@ -198,8 +201,8 @@ class KokoroLocalTTS(BaseTool):
                     finally:
                         tmp_wav.unlink(missing_ok=True)
                         tmp_mp3.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Kokoro ONNX backend failed: %s", exc)
 
         # 3. Try Python kokoro module directly if installed
         try:
@@ -234,7 +237,7 @@ class KokoroLocalTTS(BaseTool):
                 finally:
                     tmp_wav.unlink(missing_ok=True)
                     tmp_mp3.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Kokoro PyTorch backend failed: %s", exc)
 
         return False, 0.0, "No Kokoro backend (HTTP service or library) could synthesize the requested audio"
