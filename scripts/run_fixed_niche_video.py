@@ -368,8 +368,8 @@ class FixedNicheVideoRunner:
 
     def synthesize_narration(
         self,
-        provider: str = "flite",
-        voice: str = "slt",
+        provider: Optional[str] = None,
+        voice: Optional[str] = None,
         speed: float = 1.0,
     ) -> Path:
         """Synthesize final speech track using existing NarrationOrchestrator."""
@@ -380,6 +380,13 @@ class FixedNicheVideoRunner:
         text = text_path.read_text(encoding="utf-8")
         out_audio = self.project_dir / "assets" / "narration.mp3"
         out_audio.parent.mkdir(parents=True, exist_ok=True)
+
+        if provider is None:
+            from tools.audio.kokoro_local_tts import is_kokoro_available
+            provider = "kokoro" if is_kokoro_available() else "flite"
+
+        if voice is None:
+            voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
 
         res = self.orchestrator.synthesize(
             text=text,
@@ -533,6 +540,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--candidate-id", required=True, help="Candidate ID to produce")
     parser.add_argument("--project-dir", required=False, help="Custom project output directory")
     parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format (locked to shorts)")
+    parser.add_argument("--provider", default=None, help="TTS provider (kokoro, flite, edge, pocket18, omniroute)")
+    parser.add_argument("--voice", default=None, help="TTS voice override")
+    parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
     parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
     parser.add_argument("--title", default="Why coding agents lose project requirements between sessions")
     parser.add_argument("--topic-family", default="context_memory")
@@ -559,7 +569,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.dry_run or stage_res.get("status") != "STAGED_READY":
         return 0 if stage_res.get("status") == "STAGED_READY" else 1
 
-    runner.synthesize_narration(provider="flite", voice="slt")
+    runner.synthesize_narration(provider=args.provider, voice=args.voice, speed=args.speed)
     render_res = runner.render()
     print(json.dumps(render_res, indent=2))
     return 0
