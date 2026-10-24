@@ -15,15 +15,15 @@ class TestToolRegistryParity:
     """Parity tests for tool discovery and registry API."""
 
     def test_discovery_baseline(self):
-        """Registry must discover exactly 109 tools without unhandled exceptions."""
+        """Registry must discover exactly 112 tools without unhandled exceptions."""
         reg = ToolRegistry()
         discovered = reg.discover()
         assert len(discovered) == len(set(discovered)), (
             f"Duplicate tool names detected during discovery before registration: "
             f"{len(discovered)} != {len(set(discovered))}"
         )
-        assert len(reg._tools) == 109, f"Expected exactly 109 tools, found {len(reg._tools)}"
-        assert len(discovered) == 109, f"Expected exactly 109 discovered names, found {len(discovered)}"
+        assert len(reg._tools) == 112, f"Expected exactly 112 tools, found {len(reg._tools)}"
+        assert len(discovered) == 112, f"Expected exactly 112 discovered names, found {len(discovered)}"
 
         # Compare discovered tools and public metadata against pinned baseline
         import json

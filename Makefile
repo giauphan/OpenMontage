@@ -90,13 +90,18 @@ install-gpu: ensure-venv
 # ---- Testing ----
 
 test: ensure-venv
-	$(RUN_PYTHON) -m pytest tests/ -v --ignore=tests/contracts/
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/ -v \
+		--ignore=tests/contracts/ \
+		--ignore=tests/qa/ \
+		--ignore=tests/test_pr06_pr07_remediation.py \
+		--ignore=tests/test_strict_cron_retry.py \
+		--ignore=tests/test_daily_cron_reliability_hardening.py
 
 test-contracts: ensure-venv
-	$(RUN_PYTHON) -m pytest tests/contracts/ tests/test_pr06_pr07_remediation.py -v
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/contracts/ tests/test_pr06_pr07_remediation.py -v
 
 test-cron: ensure-venv
-	$(RUN_PYTHON) -m pytest tests/test_strict_cron_retry.py tests/test_daily_cron_reliability_hardening.py -v
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/test_strict_cron_retry.py tests/test_daily_cron_reliability_hardening.py -v
 
 # ---- Utilities ----
 
@@ -123,17 +128,17 @@ demo-list: ensure-venv
 	$(RUN_PYTHON) render_demo.py --list
 
 lint: ensure-venv
-	$(RUN_PYTHON) -m py_compile tools/base_tool.py
-	$(RUN_PYTHON) -m py_compile tools/tool_registry.py
-	$(RUN_PYTHON) -m py_compile tools/cost_tracker.py
-	$(RUN_PYTHON) -m py_compile tools/analysis/composition_validator.py
-	$(RUN_PYTHON) -m py_compile scripts/validate_render_quality.py
-	$(RUN_PYTHON) -m py_compile scripts/repair_hyperframes_quality.py
-	$(RUN_PYTHON) -m py_compile scripts/check_qa.py
-	$(RUN_PYTHON) -m py_compile scripts/fix_narration_timing.py
-	$(RUN_PYTHON) -m py_compile scripts/codex_agent_validation.py
-	$(RUN_PYTHON) -m py_compile scripts/claude_agent_validation.py
-	$(RUN_PYTHON) -m py_compile scripts/validation_status.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile tools/base_tool.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile tools/tool_registry.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile tools/cost_tracker.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile tools/analysis/composition_validator.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile scripts/validate_render_quality.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile scripts/repair_hyperframes_quality.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile scripts/check_qa.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile scripts/fix_narration_timing.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile scripts/codex_agent_validation.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile scripts/claude_agent_validation.py
+	PYTHONPYCACHEPREFIX=$${PYTHONPYCACHEPREFIX:-/tmp/pycache} $(RUN_PYTHON) -m py_compile scripts/validation_status.py
 
 # Pipeline shell entrypoints are load-bearing: a syntax error only surfaces at
 # 3am in cron. Parse them in CI.

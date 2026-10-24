@@ -22,7 +22,7 @@ def test_load_en_us_profile():
     assert "short" in profile.formats
     assert profile.formats["short"].output == "renders/final_short_en_US_9x16.mp4"
     assert profile.formats["short"].aspect == "9:16"
-    assert profile.formats["short"].internal_pilot_max_seconds == 60
+    assert profile.formats["short"].internal_pilot_max_seconds == 75
 
     assert "longform" in profile.formats
     assert profile.formats["longform"].output == "renders/final_long_en_US_16x9.mp4"

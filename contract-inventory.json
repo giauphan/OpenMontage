@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "tool_count": 109,
+    "tool_count": 112,
     "pipeline_count": 14
   },
   "tools": {
@@ -2058,6 +2058,72 @@
       ],
       "render_engines": []
     },
+    "kokoro_local_tts": {
+      "name": "kokoro_local_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "kokoro",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.kokoro_local_tts",
+      "class_name": "KokoroLocalTTS",
+      "dependencies": [],
+      "supports": {},
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to convert to speech"
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "Kokoro voice ID (e.g. am_michael, af_sarah)",
+            "default": "am_michael"
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2.0,
+            "default": 1.0
+          },
+          "output_path": {
+            "type": "string",
+            "description": "Target path for output mp3 audio file"
+          },
+          "service_url": {
+            "type": "string",
+            "description": "Local Kokoro service URL",
+            "default": "http://127.0.0.1:8880/v1/audio/speech"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "audio_path": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "number"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string"
+          }
+        }
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "text-to-speech"
+      ],
+      "render_engines": []
+    },
     "music_gen": {
       "name": "music_gen",
       "version": "0.1.0",
@@ -2174,6 +2240,81 @@
       "fallback_tools": [],
       "agent_skills": [
         "music"
+      ],
+      "render_engines": []
+    },
+    "omniroute_tts": {
+      "name": "omniroute_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "omniroute",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.omniroute_tts",
+      "class_name": "OmniRouteTTS",
+      "dependencies": [],
+      "supports": {},
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to convert to speech"
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "Voice identifier (e.g. rachel, alloy)",
+            "default": "rachel"
+          },
+          "model_id": {
+            "type": "string",
+            "description": "OmniRoute model alias (e.g. el/eleven_multilingual_v2)",
+            "default": "el/eleven_multilingual_v2"
+          },
+          "output_path": {
+            "type": "string",
+            "description": "Target path for output mp3 audio file"
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.25,
+            "maximum": 4.0,
+            "default": 1.0
+          },
+          "api_key": {
+            "type": "string",
+            "description": "Optional override for OMNIROUTE_API_KEY"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Optional override for OMNIROUTE_BASE_URL"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "audio_path": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "number"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "text-to-speech",
+        "elevenlabs"
       ],
       "render_engines": []
     },
@@ -2365,6 +2506,75 @@
       ],
       "agent_skills": [
         "music"
+      ],
+      "render_engines": []
+    },
+    "pocket_local_tts": {
+      "name": "pocket_local_tts",
+      "version": "0.1.0",
+      "capability": "tts",
+      "provider": "pocket18",
+      "tier": "ToolTier.VOICE",
+      "status": "unknown",
+      "module": "tools.audio.pocket_local_tts",
+      "class_name": "PocketLocalTTS",
+      "dependencies": [],
+      "supports": {},
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to convert to speech"
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "Pocket voice ID (default: alba)",
+            "default": "alba"
+          },
+          "model_variant": {
+            "type": "string",
+            "description": "Pocket variant (default: english_18m_2026-10)",
+            "default": "english_18m_2026-10"
+          },
+          "output_path": {
+            "type": "string",
+            "description": "Target path for output mp3 audio file"
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2.0,
+            "default": 1.0
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "audio_path": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "number"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "voice": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
+      "fallback_tools": [],
+      "agent_skills": [
+        "text-to-speech"
       ],
       "render_engines": []
     },
@@ -2586,8 +2796,11 @@
         "elevenlabs_tts",
         "google_tts",
         "kling_tts",
+        "kokoro_local_tts",
+        "omniroute_tts",
         "openai_tts",
-        "piper_tts"
+        "piper_tts",
+        "pocket_local_tts"
       ],
       "agent_skills": [
         "text-to-speech",
