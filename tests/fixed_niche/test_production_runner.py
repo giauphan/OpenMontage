@@ -3,8 +3,10 @@ Covers matrix IDs: RENDER-001, RENDER-002, RENDER-003.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+import subprocess
 import time
 import pytest
 
@@ -115,3 +117,94 @@ def test_dynamic_project_isolation(tmp_path: Path):
     assert brief_b["topic_id"] == "cand_beta"
     assert brief_a["topic_family"] == "context_memory"
     assert brief_b["topic_family"] == "agent_tool_use"
+
+
+def test_runner_rejects_unsupported_format(tmp_path: Path):
+    """Ensure runner rejects any format other than short/shorts."""
+    with pytest.raises(ValueError, match="strictly locked to 'short'"):
+        FixedNicheVideoRunner(project_dir=tmp_path / "p1", candidate_id="c1", format_kind="longform")
+
+
+def test_runner_stages_srt_captions_and_validates_script_sha(tmp_path: Path):
+    """Ensure build_and_stage_project produces valid captions.srt and exact script SHA256 in assets manifest."""
+    proj_dir = tmp_path / "caption_test_proj"
+    runner = FixedNicheVideoRunner(project_dir=proj_dir, candidate_id="cand_caps")
+    topic = {
+        "candidate_id": "cand_caps",
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "viewer_question": "Why do coding agents forget requirements?",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+    }
+    res = runner.build_and_stage_project(topic=topic, dry_run=True)
+    assert res["status"] == "STAGED_READY"
+
+    # Verify captions.srt
+    srt_path = proj_dir / "artifacts" / "captions.srt"
+    assert srt_path.is_file()
+    srt_content = srt_path.read_text(encoding="utf-8")
+    assert "00:00:00,000 --> " in srt_content
+    assert len(srt_content.strip().split("\n\n")) == 6
+
+    # Verify script SHA256 in assets manifest matches actual script_en_US.json
+    script_bytes = (proj_dir / "artifacts" / "script_en_US.json").read_bytes()
+    expected_sha = hashlib.sha256(script_bytes).hexdigest()
+    assets_manifest = json.loads((proj_dir / "artifacts" / "news_visual_assets.json").read_text(encoding="utf-8"))
+    assert assets_manifest["script_sha256"] == expected_sha
+
+
+def test_render_rejects_missing_audio_in_production(tmp_path: Path):
+    """In production renders, missing narration audio must raise FileNotFoundError rather than silently faking audio."""
+    proj_dir = tmp_path / "no_audio_proj"
+    proj_dir.mkdir()
+    with pytest.raises(FileNotFoundError, match="Narration audio file missing"):
+        render_project_composition(project_dir=proj_dir, allow_synthetic_audio=False)
+
+
+def test_render_rejects_narration_exceeding_target_duration(tmp_path: Path):
+    """If narration audio exceeds target duration, render must fail closed to prevent speech truncation."""
+    proj_dir = tmp_path / "long_audio_proj"
+    audio_path = proj_dir / "assets" / "narration.mp3"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    # Generate 10-second silent mp3
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+         "-t", "10", "-c:a", "libmp3lame", str(audio_path)],
+        check=True,
+    )
+    # Attempting to render with duration_seconds=5.0 must raise ValueError
+    with pytest.raises(ValueError, match="exceeds target duration"):
+        render_project_composition(project_dir=proj_dir, duration_seconds=5.0)
+
+
+def test_render_qa_gate_fails_closed_on_corrupt_video(tmp_path: Path, monkeypatch):
+    """If ffprobe fails or output video is corrupt, approval.json must record QA_FAILED and approved=False."""
+    proj_dir = tmp_path / "qa_fail_proj"
+    runner = FixedNicheVideoRunner(project_dir=proj_dir, candidate_id="cand_fail")
+    topic = {
+        "candidate_id": "cand_fail",
+        "title": "Why coding agents fail on cyclic dependencies",
+        "topic_family": "agent_tool_use",
+        "viewer_question": "Why do cycles break agents?",
+    }
+    runner.build_and_stage_project(topic=topic, dry_run=True)
+
+    # Monkeypatch render_project_composition to write an invalid 0-byte video
+    def fake_render(project_dir, composition_name, output_mp4, duration_seconds):
+        output_mp4.parent.mkdir(parents=True, exist_ok=True)
+        output_mp4.write_bytes(b"")
+        return output_mp4
+
+    monkeypatch.setattr("scripts.run_fixed_niche_video.render_project_composition", fake_render)
+
+    res = runner.render()
+    assert res["status"] == "QA_FAILED"
+
+    approval = json.loads((proj_dir / "approval.json").read_text(encoding="utf-8"))
+    assert approval["approved"] is False
+    assert approval["status"] == "QA_FAILED"
+
+    val_status = json.loads((proj_dir / "validation_status.json").read_text(encoding="utf-8"))
+    assert val_status["strict_quality_pass"] is False
+    assert val_status["status"] == "QA_FAILED"
+

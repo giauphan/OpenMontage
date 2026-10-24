@@ -63,14 +63,26 @@ def resolve_visual_assets(
     visuals_dir.mkdir(parents=True, exist_ok=True)
 
     seen_asset_ids = set()
+    fallback_asset_ids = set()
     for beat in visual_plan.get("beats", []):
         beat_id = beat.get("id") or beat.get("beat_id")
         asset_ids = beat.get("asset_ids", [])
         if not asset_ids and beat.get("asset_id"):
             asset_ids = [beat["asset_id"]]
 
+        is_proof_bearing = bool(
+            beat.get("is_proof_bearing")
+            or beat.get("evidence_class") in ("authentic_proof", "conceptual_diagram", "primary_proof")
+        )
+
         for asset_id in asset_ids:
             if asset_id in seen_asset_ids:
+                if (enforce_meaningful_visuals or os.environ.get("FIXED_NICHE_MODE") == "1") and is_proof_bearing and asset_id in fallback_asset_ids:
+                    from lib.fixed_niche.storyboard import MeaningfulVisualError
+                    raise MeaningfulVisualError(
+                        f"Placeholder SVG fallback forbidden for proof-bearing beat {beat_id!r} ({asset_id}). "
+                        "A concrete explanatory graphic is required."
+                    )
                 # Update existing asset beat_ids
                 for a in assets_manifest["assets"]:
                     if a["asset_id"] == asset_id and beat_id not in a["beat_ids"]:
@@ -87,10 +99,6 @@ def resolve_visual_assets(
                     break
 
             if not found_file:
-                is_proof_bearing = bool(
-                    beat.get("is_proof_bearing")
-                    or beat.get("evidence_class") in ("authentic_proof", "conceptual_diagram", "primary_proof")
-                )
                 if (enforce_meaningful_visuals or os.environ.get("FIXED_NICHE_MODE") == "1") and is_proof_bearing:
                     from lib.fixed_niche.storyboard import MeaningfulVisualError
                     raise MeaningfulVisualError(
@@ -116,6 +124,7 @@ def resolve_visual_assets(
                     )
                     cand_path.write_text(svg_content, encoding="utf-8")
                     found_file = f"assets/visuals/{cand_name}"
+                    fallback_asset_ids.add(asset_id)
                 else:
                     raise FileNotFoundError(
                         f"Asset {asset_id!r} required by beat {beat_id!r} not found in {visuals_dir}"

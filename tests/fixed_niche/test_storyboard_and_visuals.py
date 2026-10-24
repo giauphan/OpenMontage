@@ -155,3 +155,41 @@ def test_storyboard_validations_and_distinct_beat_artwork(tmp_path: Path):
     for beat in res_multi["proof_map"]["beats"]:
         covered.update(beat["claim_ids"])
     assert covered == {"C01", "C02", "C03", "C04", "C05"}, "All surplus claims must be retained in proof map"
+
+
+def test_resolver_rejects_fallback_asset_reused_in_proof_bearing_beat(tmp_path: Path):
+    """When a non-proof beat triggers a fallback SVG, a later proof beat reusing that asset ID must be rejected."""
+    project_dir = tmp_path / "reused_asset_proj"
+    project_dir.mkdir()
+    visuals_dir = project_dir / "assets" / "visuals"
+    visuals_dir.mkdir(parents=True)
+
+    plan = {
+        "beats": [
+            {
+                "beat_id": "B01",
+                "script_section_id": "S01",
+                "asset_id": "shared_diagram",
+                "story_function": "intro_icon",
+                "visual_kind": "contextual_icon",
+                "evidence_class": "background_context",
+                "is_proof_bearing": False,
+                "fallback_policy": "use_builtin_verified_icon_diagram",
+            },
+            {
+                "beat_id": "B02",
+                "script_section_id": "S02",
+                "asset_id": "shared_diagram",
+                "story_function": "architecture_diagram",
+                "visual_kind": "svg_diagram",
+                "evidence_class": "conceptual_diagram",
+                "is_proof_bearing": True,
+                "claim_ids": ["C01"],
+            },
+        ]
+    }
+
+    with pytest.raises(MeaningfulVisualError) as exc:
+        resolve_assets_for_plan(project_dir, plan, enforce_meaningful_visuals=True)
+    assert "Placeholder SVG fallback forbidden for proof-bearing beat 'B02'" in str(exc.value)
+
