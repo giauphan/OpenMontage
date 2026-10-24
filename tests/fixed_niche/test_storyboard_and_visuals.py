@@ -122,3 +122,27 @@ def test_visual_003_bogus_terminal_screenshot_fails_validation(tmp_path: Path):
     is_valid, reason = director.validate_beat_asset(beat, project_dir=tmp_path)
     assert is_valid is False
     assert "terminal screenshot requires verified demo provenance" in reason.lower()
+
+
+def test_storyboard_validations_and_distinct_beat_artwork(tmp_path: Path):
+    """Ensure storyboard rejects empty claims, rejects invalid duration, and produces distinct artwork."""
+    director = FixedNicheStoryboardDirector()
+    topic = {"candidate_id": "cand_01", "title": "Test Title", "topic_family": "context_memory"}
+
+    # 1. Reject empty claims
+    with pytest.raises(ValueError, match="claims list is empty"):
+        director.generate_storyboard(topic, [], tmp_path / "p1", target_duration=70.0)
+
+    # 2. Reject duration outside 65-75s
+    claims = [{"claim_id": "C01", "statement": "Test claim"}]
+    with pytest.raises(ValueError, match="target_duration"):
+        director.generate_storyboard(topic, claims, tmp_path / "p2", target_duration=55.0)
+
+    # 3. All 6 beats produce distinct SVGs
+    res = director.generate_storyboard(topic, claims, tmp_path / "p3", target_duration=72.0)
+    svg_contents = [
+        (tmp_path / "p3" / "assets" / "visuals" / f"{b['asset_id']}.svg").read_text()
+        for b in res["visual_plan"]["beats"]
+    ]
+    assert len(svg_contents) == 6
+    assert len(set(svg_contents)) == 6, "Every beat must generate distinct artwork matching its screen state"

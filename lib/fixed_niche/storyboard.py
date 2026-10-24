@@ -67,103 +67,152 @@ class FixedNicheStoryboardDirector:
         title: str,
         beat_num: int,
     ) -> str:
-        """Generate high-contrast, informative vector geometry tailored to the engineering concept."""
-        # 960x540 base canvas
-        if topic_family == "context_memory":
-            return (
-                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540">\n'
-                f'  <rect width="960" height="540" fill="#0b1120"/>\n'
-                f'  <!-- Header / Topic Badge -->\n'
-                f'  <rect x="40" y="30" width="260" height="36" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>\n'
-                f'  <text x="170" y="53" fill="#38bdf8" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">CONTEXT LIFECYCLE</text>\n'
-                f'  <!-- Session A Box -->\n'
-                f'  <rect x="60" y="120" width="360" height="260" rx="16" fill="#0f172a" stroke="#64748b" stroke-width="2"/>\n'
-                f'  <text x="90" y="160" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">SESSION A (ACTIVE CONTEXT)</text>\n'
-                f'  <rect x="90" y="190" width="300" height="40" rx="8" fill="#1e293b"/>\n'
-                f'  <text x="110" y="215" fill="#94a3b8" font-family="sans-serif" font-size="14">• Project Requirements Loaded</text>\n'
-                f'  <rect x="90" y="245" width="300" height="40" rx="8" fill="#1e293b"/>\n'
-                f'  <text x="110" y="270" fill="#94a3b8" font-family="sans-serif" font-size="14">• Active Working Memory (8k tokens)</text>\n'
-                f'  <rect x="90" y="300" width="300" height="40" rx="8" fill="#1e293b"/>\n'
-                f'  <text x="110" y="325" fill="#38bdf8" font-family="sans-serif" font-size="14">• Current Task Goals</text>\n'
-                f'  <!-- Session Boundary / Loss Arrow -->\n'
-                f'  <path d="M 440 250 L 520 250" stroke="#ef4444" stroke-width="4" stroke-dasharray="8 6"/>\n'
-                f'  <polygon points="520,242 536,250 520,258" fill="#ef4444"/>\n'
-                f'  <text x="480" y="235" fill="#ef4444" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">SESSION RESET</text>\n'
-                f'  <text x="480" y="280" fill="#fca5a5" font-family="sans-serif" font-size="12" text-anchor="middle">(Context Lost)</text>\n'
-                f'  <!-- Session B Box -->\n'
-                f'  <rect x="540" y="120" width="360" height="260" rx="16" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
-                f'  <text x="570" y="160" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">SESSION B (NEW CHAT)</text>\n'
-                f'  <rect x="570" y="190" width="300" height="40" rx="8" fill="#1e293b"/>\n'
-                f'  <text x="590" y="215" fill="#ef4444" font-family="sans-serif" font-size="14">✕ Ephemeral Context: Forgotten</text>\n'
-                f'  <rect x="570" y="245" width="300" height="80" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="2"/>\n'
-                f'  <text x="590" y="275" fill="#22c55e" font-family="sans-serif" font-size="14" font-weight="bold">✓ Solution: Durable Repo Config</text>\n'
-                f'  <text x="590" y="305" fill="#94a3b8" font-family="sans-serif" font-size="12">Explicitly read from AGENTS.md</text>\n'
-                f'  <!-- Bottom Callout -->\n'
-                f'  <rect x="60" y="420" width="840" height="60" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1"/>\n'
-                f'  <text x="480" y="455" fill="#e2e8f0" font-family="sans-serif" font-size="16" text-anchor="middle">'
-                f'Verify with: <tspan fill="#38bdf8" font-family="monospace">git status &amp;&amp; cat AGENTS.md</tspan></text>\n'
-                f'</svg>'
+        """Generate high-contrast, informative vector geometry tailored to the engineering concept and screen state."""
+        fam = topic_family.lower()
+        fam_label = fam.replace("_", " ").upper()
+        safe_title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        if beat_num == 1:
+            accent, badge = "#ef4444", f"{fam_label} // FAILURE HOOK"
+            body = (
+                f'  <rect x="60" y="110" width="840" height="270" rx="16" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
+                f'  <circle cx="110" cy="156" r="10" fill="#ef4444"/>\n'
+                f'  <rect x="130" y="140" width="160" height="32" rx="6" fill="#7f1d1d"/><text x="210" y="162" fill="#fca5a5" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">FAILURE SYMPTOM</text>\n'
+                f'  <text x="90" y="210" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">{safe_title[:65]}</text>\n'
+                f'  <text x="90" y="245" fill="#94a3b8" font-family="sans-serif" font-size="15">Autonomous coding agent halts unexpectedly in active developer workspace.</text>\n'
+                f'  <rect x="90" y="280" width="780" height="65" rx="8" fill="#1e293b"/><text x="120" y="318" fill="#ef4444" font-family="monospace" font-size="14">✕ CRITICAL: Execution deadlock at session boundary</text>\n'
             )
-        elif topic_family == "agent_tool_use":
-            return (
-                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540">\n'
-                f'  <rect width="960" height="540" fill="#0b1120"/>\n'
-                f'  <rect x="40" y="30" width="260" height="36" rx="8" fill="#1e293b" stroke="#a855f7" stroke-width="1.5"/>\n'
-                f'  <text x="170" y="53" fill="#a855f7" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">TOOL SCHEMA VALIDATION</text>\n'
-                f'  <rect x="60" y="110" width="390" height="280" rx="14" fill="#0f172a" stroke="#64748b" stroke-width="2"/>\n'
-                f'  <text x="90" y="145" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">MCP Tool Definition</text>\n'
-                f'  <text x="90" y="180" fill="#38bdf8" font-family="monospace" font-size="13">"properties": &#123;</text>\n'
-                f'  <text x="110" y="210" fill="#94a3b8" font-family="monospace" font-size="13">"command": &#123; "type": "string" &#125;,</text>\n'
-                f'  <text x="110" y="240" fill="#94a3b8" font-family="monospace" font-size="13">"timeout": &#123; "type": "integer" &#125;</text>\n'
-                f'  <text x="90" y="270" fill="#38bdf8" font-family="monospace" font-size="13">&#125;, "required": ["command"]</text>\n'
-                f'  <!-- Arrow to client call -->\n'
-                f'  <path d="M 465 250 L 505 250" stroke="#f59e0b" stroke-width="3"/>\n'
-                f'  <polygon points="505,244 517,250 505,256" fill="#f59e0b"/>\n'
-                f'  <!-- Payload box -->\n'
-                f'  <rect x="520" y="110" width="380" height="280" rx="14" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
-                f'  <text x="550" y="145" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">Agent Tool Payload</text>\n'
-                f'  <text x="550" y="180" fill="#ef4444" font-family="monospace" font-size="13">&#123; "cmd": "pytest tests/" &#125;</text>\n'
-                f'  <text x="550" y="220" fill="#fca5a5" font-family="sans-serif" font-size="14">✕ Schema Error: Missing required property: command</text>\n'
-                f'  <rect x="550" y="270" width="320" height="80" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="1.5"/>\n'
-                f'  <text x="570" y="300" fill="#22c55e" font-family="sans-serif" font-size="14" font-weight="bold">✓ Repair Strategy:</text>\n'
-                f'  <text x="570" y="328" fill="#94a3b8" font-family="monospace" font-size="12">payload["command"] = payload.pop("cmd")</text>\n'
-                f'</svg>'
+        elif beat_num == 2:
+            accent, badge = "#f59e0b", f"{fam_label} // DEVELOPER IMPACT"
+            body = (
+                f'  <rect x="60" y="115" width="240" height="230" rx="14" fill="#0f172a" stroke="#64748b" stroke-width="2"/>\n'
+                f'  <text x="180" y="155" fill="#f8fafc" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">1. User Instructions</text>\n'
+                f'  <text x="180" y="190" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">Repository Constraints</text>\n'
+                f'  <text x="180" y="220" fill="#38bdf8" font-family="monospace" font-size="12" text-anchor="middle">Architectural Rules</text>\n'
+                f'  <path d="M 310 230 L 370 230" stroke="#f59e0b" stroke-width="3"/><polygon points="370,224 382,230 370,236" fill="#f59e0b"/>\n'
+                f'  <rect x="390" y="115" width="240" height="230" rx="14" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
+                f'  <text x="510" y="155" fill="#ef4444" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">2. Reasoning Storm</text>\n'
+                f'  <text x="510" y="190" fill="#fca5a5" font-family="sans-serif" font-size="13" text-anchor="middle">Lost context / Flaky tool</text>\n'
+                f'  <text x="510" y="220" fill="#ef4444" font-family="monospace" font-size="12" text-anchor="middle">Token Burn Rate 10x</text>\n'
+                f'  <path d="M 640 230 L 700 230" stroke="#ef4444" stroke-width="3"/><polygon points="700,224 712,230 700,236" fill="#ef4444"/>\n'
+                f'  <rect x="720" y="115" width="180" height="230" rx="14" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
+                f'  <text x="810" y="155" fill="#ef4444" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">3. Deadlock</text>\n'
+                f'  <circle cx="810" cy="235" r="20" fill="#ef4444"/><text x="810" y="243" fill="#ffffff" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">✕</text>\n'
+            )
+        elif beat_num == 3:
+            accent = "#38bdf8"
+            badge = f"{fam_label} // ARCHITECTURAL MECHANISM"
+            if fam == "context_memory":
+                body = (
+                    f'  <rect x="60" y="115" width="360" height="250" rx="14" fill="#0f172a" stroke="#64748b" stroke-width="2"/>\n'
+                    f'  <text x="90" y="150" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">SESSION A (ACTIVE CONTEXT)</text>\n'
+                    f'  <rect x="90" y="175" width="300" height="35" rx="6" fill="#1e293b"/>\n'
+                    f'  <text x="110" y="198" fill="#94a3b8" font-family="sans-serif" font-size="13">• Project Requirements Loaded</text>\n'
+                    f'  <rect x="90" y="220" width="300" height="35" rx="6" fill="#1e293b"/>\n'
+                    f'  <text x="110" y="243" fill="#94a3b8" font-family="sans-serif" font-size="13">• Active Working Memory (8k tokens)</text>\n'
+                    f'  <path d="M 435 240 L 515 240" stroke="#ef4444" stroke-width="4" stroke-dasharray="8 6"/>\n'
+                    f'  <polygon points="515,232 531,240 515,248" fill="#ef4444"/><text x="475" y="225" fill="#ef4444" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">SESSION RESET</text>\n'
+                    f'  <rect x="535" y="115" width="365" height="250" rx="14" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
+                    f'  <text x="560" y="150" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">SESSION B (NEW CHAT)</text>\n'
+                    f'  <rect x="560" y="175" width="310" height="35" rx="6" fill="#1e293b"/><text x="580" y="198" fill="#ef4444" font-family="sans-serif" font-size="13">✕ Ephemeral Context: Forgotten</text>\n'
+                    f'  <rect x="560" y="220" width="310" height="60" rx="6" fill="#1e293b"/>\n'
+                    f'  <text x="580" y="245" fill="#94a3b8" font-family="sans-serif" font-size="12">Prompt instructions do not survive across process restarts.</text>\n'
+                )
+            elif fam == "agent_tool_use":
+                body = (
+                    f'  <rect x="60" y="115" width="390" height="260" rx="14" fill="#0f172a" stroke="#64748b" stroke-width="2"/>\n'
+                    f'  <text x="90" y="145" fill="#f8fafc" font-family="sans-serif" font-size="17" font-weight="bold">MCP Tool Definition</text>\n'
+                    f'  <text x="90" y="180" fill="#38bdf8" font-family="monospace" font-size="13">"properties": &#123; "command": &#123;"type": "string"&#125; &#125;</text>\n'
+                    f'  <path d="M 465 245 L 505 245" stroke="#f59e0b" stroke-width="3"/><polygon points="505,239 517,245 505,251" fill="#f59e0b"/>\n'
+                    f'  <rect x="520" y="115" width="380" height="260" rx="14" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
+                    f'  <text x="550" y="145" fill="#f8fafc" font-family="sans-serif" font-size="17" font-weight="bold">Agent Tool Payload</text>\n'
+                    f'  <text x="550" y="180" fill="#ef4444" font-family="monospace" font-size="13">&#123; "cmd": "pytest tests/" &#125;</text>\n'
+                    f'  <text x="550" y="220" fill="#fca5a5" font-family="sans-serif" font-size="13">✕ Schema Mismatch: Missing command</text>\n'
+                )
+            else:
+                body = (
+                    f'  <rect x="80" y="125" width="360" height="240" rx="12" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>\n'
+                    f'  <text x="260" y="165" fill="#38bdf8" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">1. Local Execution</text>\n'
+                    f'  <circle cx="260" cy="240" r="16" fill="#22c55e"/><text x="260" y="246" fill="#0f172a" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">✓</text>\n'
+                    f'  <line x1="450" y1="240" x2="510" y2="240" stroke="#64748b" stroke-width="3"/>\n'
+                    f'  <rect x="520" y="125" width="360" height="240" rx="12" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
+                    f'  <text x="700" y="165" fill="#ef4444" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">2. CI Environment</text>\n'
+                    f'  <circle cx="700" cy="240" r="16" fill="#ef4444"/><text x="700" y="246" fill="#f8fafc" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">✕</text>\n'
+                )
+        elif beat_num == 4:
+            accent = "#22c55e"
+            badge = f"{fam_label} // VERIFIED REMEDY"
+            if fam == "context_memory":
+                body = (
+                    f'  <rect x="60" y="115" width="840" height="260" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>\n'
+                    f'  <circle cx="80" cy="155" r="10" fill="#22c55e"/><path d="M 76 155 L 79 158 L 85 152" stroke="#ffffff" stroke-width="2" fill="none"/>\n'
+                    f'  <rect x="100" y="140" width="240" height="30" rx="6" fill="#14532d"/><text x="220" y="160" fill="#86efac" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">DURABLE REPOSITORY CONFIG</text>\n'
+                    f'  <text x="90" y="205" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">Store Instructions in Tracked Repo Files</text>\n'
+                    f'  <rect x="90" y="225" width="780" height="110" rx="8" fill="#1e293b"/>\n'
+                    f'  <text x="110" y="255" fill="#38bdf8" font-family="monospace" font-size="13"># AGENTS.md — Preflight Hook for Spawning Agents</text>\n'
+                    f'  <text x="110" y="280" fill="#22c55e" font-family="monospace" font-size="13">1. Mandatory: Read AGENTS.md before taking any action</text>\n'
+                    f'  <text x="110" y="305" fill="#e2e8f0" font-family="monospace" font-size="13">2. Verify repository boundary with git status</text>\n'
+                )
+            elif fam == "agent_tool_use":
+                body = (
+                    f'  <rect x="60" y="115" width="840" height="260" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>\n'
+                    f'  <circle cx="80" cy="155" r="10" fill="#22c55e"/><path d="M 76 155 L 79 158 L 85 152" stroke="#ffffff" stroke-width="2" fill="none"/>\n'
+                    f'  <rect x="100" y="140" width="240" height="30" rx="6" fill="#14532d"/><text x="220" y="160" fill="#86efac" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">SCHEMA REPAIR ADAPTER</text>\n'
+                    f'  <text x="90" y="205" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">Automatic Parameter Mapping &amp; Sanitization</text>\n'
+                    f'  <rect x="90" y="225" width="780" height="110" rx="8" fill="#1e293b"/>\n'
+                    f'  <text x="110" y="255" fill="#38bdf8" font-family="monospace" font-size="13">def adapt_tool_inputs(payload: dict, schema: dict) -&gt; dict:</text>\n'
+                    f'  <text x="130" y="280" fill="#22c55e" font-family="monospace" font-size="13">if "cmd" in payload and "command" not in payload: payload["command"] = payload.pop("cmd")</text>\n'
+                )
+            else:
+                body = (
+                    f'  <rect x="60" y="115" width="840" height="260" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>\n'
+                    f'  <circle cx="80" cy="155" r="10" fill="#22c55e"/><path d="M 76 155 L 79 158 L 85 152" stroke="#ffffff" stroke-width="2" fill="none"/>\n'
+                    f'  <rect x="100" y="140" width="260" height="30" rx="6" fill="#14532d"/><text x="230" y="160" fill="#86efac" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">OFFLINE REPRODUCTION HARNESS</text>\n'
+                    f'  <text x="90" y="205" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">Reproduce Failures Deterministically Before Patching</text>\n'
+                    f'  <rect x="90" y="225" width="780" height="110" rx="8" fill="#1e293b"/>\n'
+                    f'  <text x="110" y="255" fill="#38bdf8" font-family="monospace" font-size="13">def test_reproduce_failure_with_mock_environment():</text>\n'
+                    f'  <text x="130" y="280" fill="#22c55e" font-family="monospace" font-size="13">with pytest.raises(ExpectedFailureError): execute_pipeline_under_test(mock_inputs)</text>\n'
+                )
+        elif beat_num == 5:
+            accent = "#22c55e"
+            badge = f"{fam_label} // VERIFICATION CHECKLIST"
+            body = (
+                f'  <rect x="60" y="110" width="840" height="280" rx="16" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>\n'
+                f'  <rect x="90" y="135" width="220" height="28" rx="6" fill="#14532d"/><text x="200" y="154" fill="#86efac" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">PASS / FAIL AUDIT CRITERIA</text>\n'
+                f'  <circle cx="110" cy="195" r="13" fill="#22c55e"/><text x="110" y="201" fill="#0f172a" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">✓</text>\n'
+                f'  <text x="135" y="200" fill="#f8fafc" font-family="sans-serif" font-size="15" font-weight="bold">1. Isolated Reproduction Harness Executed</text>\n'
+                f'  <circle cx="110" cy="250" r="13" fill="#22c55e"/><text x="110" y="256" fill="#0f172a" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">✓</text>\n'
+                f'  <text x="135" y="255" fill="#f8fafc" font-family="sans-serif" font-size="15" font-weight="bold">2. Schema Boundary Validation Passed</text>\n'
+                f'  <circle cx="110" cy="305" r="13" fill="#22c55e"/><text x="110" y="311" fill="#0f172a" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">✓</text>\n'
+                f'  <text x="135" y="310" fill="#f8fafc" font-family="sans-serif" font-size="15" font-weight="bold">3. Zero Silent Regressions Across Clean Restarts</text>\n'
             )
         else:
-            # Generic engineering schematic with boxes, causal flow, check marks
-            return (
-                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540">\n'
-                f'  <rect width="960" height="540" fill="#0b1120"/>\n'
-                f'  <rect x="40" y="30" width="320" height="36" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>\n'
-                f'  <text x="200" y="53" fill="#38bdf8" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">AGENT VERIFICATION PIPELINE</text>\n'
-                f'  <!-- Node 1: Request -->\n'
-                f'  <rect x="80" y="150" width="220" height="180" rx="12" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>\n'
-                f'  <text x="190" y="195" fill="#38bdf8" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">1. Local Patch</text>\n'
-                f'  <text x="190" y="235" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">Agent Unit Tests Pass</text>\n'
-                f'  <circle cx="190" cy="275" r="18" fill="#22c55e"/>\n'
-                f'  <text x="190" y="281" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">✓</text>\n'
-                f'  <!-- Causal Arrow -->\n'
-                f'  <line x1="300" y1="240" x2="360" y2="240" stroke="#64748b" stroke-width="3"/>\n'
-                f'  <!-- Node 2: CI Boundary -->\n'
-                f'  <rect x="370" y="150" width="220" height="180" rx="12" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>\n'
-                f'  <text x="480" y="195" fill="#ef4444" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">2. CI Execution</text>\n'
-                f'  <text x="480" y="235" fill="#fca5a5" font-family="sans-serif" font-size="13" text-anchor="middle">Hidden Mock Drift</text>\n'
-                f'  <circle cx="480" cy="275" r="18" fill="#ef4444"/>\n'
-                f'  <text x="480" y="281" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">✕</text>\n'
-                f'  <!-- Causal Arrow -->\n'
-                f'  <line x1="590" y1="240" x2="650" y2="240" stroke="#64748b" stroke-width="3"/>\n'
-                f'  <!-- Node 3: Durable Verification -->\n'
-                f'  <rect x="660" y="150" width="220" height="180" rx="12" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>\n'
-                f'  <text x="770" y="195" fill="#22c55e" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">3. Verified Fix</text>\n'
-                f'  <text x="770" y="235" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">Deterministic Harness</text>\n'
-                f'  <circle cx="770" cy="275" r="18" fill="#22c55e"/>\n'
-                f'  <text x="770" y="281" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">✓</text>\n'
-                f'  <!-- Bottom diagnostic note -->\n'
-                f'  <rect x="80" y="380" width="800" height="60" rx="10" fill="#1e293b"/>\n'
-                f'  <text x="480" y="415" fill="#cbd5e1" font-family="sans-serif" font-size="14" text-anchor="middle">'
-                f'Stage {beat_num}: Isolating failure mode to prevent silent regression.</text>\n'
-                f'</svg>'
+            accent = "#38bdf8"
+            badge = f"{fam_label} // SUMMARY PAYOFF &amp; SCOPE"
+            body = (
+                f'  <rect x="60" y="110" width="840" height="280" rx="16" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>\n'
+                f'  <circle cx="80" cy="150" r="10" fill="#38bdf8"/><path d="M 76 150 L 79 153 L 85 147" stroke="#0f172a" stroke-width="2" fill="none"/>\n'
+                f'  <text x="105" y="155" fill="#38bdf8" font-family="sans-serif" font-size="19" font-weight="bold">ENGINEERING SUMMARY</text>\n'
+                f'  <rect x="90" y="170" width="460" height="90" rx="10" fill="#1e293b"/>\n'
+                f'  <text x="110" y="200" fill="#f8fafc" font-family="sans-serif" font-size="14" font-weight="bold">Core Production Principle:</text>\n'
+                f'  <text x="110" y="225" fill="#94a3b8" font-family="sans-serif" font-size="12">Never trust conversational context or unverified assertions.</text>\n'
+                f'  <rect x="570" y="170" width="300" height="90" rx="10" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>\n'
+                f'  <text x="590" y="200" fill="#f59e0b" font-family="sans-serif" font-size="12" font-weight="bold">SCOPE &amp; VERSION CAVEAT</text>\n'
+                f'  <text x="590" y="225" fill="#e2e8f0" font-family="sans-serif" font-size="12">Applies to Claude Code, Codex, and MCP v1+</text>\n'
+                f'  <rect x="90" y="280" width="780" height="70" rx="10" fill="#1e293b"/>\n'
+                f'  <text x="110" y="315" fill="#22c55e" font-family="sans-serif" font-size="14" font-weight="bold">Always enforce verification boundaries in code and CI.</text>\n'
             )
+
+        return (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540">\n'
+            f'  <rect width="960" height="540" fill="#0b1120"/>\n'
+            f'  <rect x="40" y="30" width="340" height="36" rx="8" fill="#1e293b" stroke="{accent}" stroke-width="1.5"/>\n'
+            f'  <text x="210" y="53" fill="{accent}" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">{badge}</text>\n'
+            f'{body}'
+            f'  <rect x="60" y="420" width="840" height="60" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1"/>\n'
+            f'  <text x="480" y="455" fill="#e2e8f0" font-family="sans-serif" font-size="15" text-anchor="middle">Stage {beat_num} of 6 — Practical AI Agent Engineering</text>\n'
+            f'</svg>'
+        )
 
     def generate_storyboard(
         self,
@@ -173,6 +222,17 @@ class FixedNicheStoryboardDirector:
         target_duration: float = 72.0,
     ) -> Dict[str, Any]:
         """Generate a 6-beat, 65-75s visual plan and video proof map."""
+        if not (65.0 <= target_duration <= 75.0):
+            raise ValueError(
+                f"target_duration {target_duration}s is invalid; must be between 65.0 and 75.0 seconds as defined by policy."
+            )
+
+        if not claims:
+            raise ValueError("Cannot generate storyboard: claims list is empty; proof map requires verified claims.")
+        claim_ids = [c["claim_id"] for c in claims if isinstance(c, dict) and c.get("claim_id")]
+        if not claim_ids:
+            raise ValueError("Cannot generate storyboard: supplied claims contain no valid claim_id.")
+
         project_dir = Path(project_dir)
         visuals_dir = project_dir / "assets" / "visuals"
         visuals_dir.mkdir(parents=True, exist_ok=True)
@@ -184,8 +244,7 @@ class FixedNicheStoryboardDirector:
         title = topic.get("title", "AI Agent Engineering Explainer")
         question = topic.get("viewer_question") or f"Why does this fail: {title}?"
 
-        claim_ids = [c.get("claim_id", f"C00{i+1}") for i, c in enumerate(claims)]
-        c1 = claim_ids[0] if len(claim_ids) > 0 else "C001"
+        c1 = claim_ids[0]
         c2 = claim_ids[1] if len(claim_ids) > 1 else c1
         c3 = claim_ids[2] if len(claim_ids) > 2 else c2
 
