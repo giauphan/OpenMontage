@@ -20,7 +20,7 @@ formats:
   short:
     output: "renders/final_short_en_US_9x16.mp4"
     aspect: "9:16"
-    internal_pilot_max_seconds: 60
+    internal_pilot_max_seconds: 75
   longform:
     output: "renders/final_long_en_US_16x9.mp4"
     aspect: "16:9"

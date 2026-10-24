@@ -143,7 +143,46 @@ class KokoroLocalTTS(BaseTool):
         except Exception:
             pass
 
-        # 2. Try Python kokoro module directly if installed
+        # 2. Try direct local kokoro_onnx inference with cached ONNX weights
+        try:
+            import kokoro_onnx
+            import soundfile as sf
+            import re
+            import numpy as np
+            for m_path, v_path in [
+                ("/home/ubuntu/.cache/hyperframes/tts/models/kokoro-v1.0.onnx", "/home/ubuntu/.cache/hyperframes/tts/voices/voices-v1.0.bin"),
+                (str(Path.home() / ".cache/hyperframes/tts/models/kokoro-v1.0.onnx"), str(Path.home() / ".cache/hyperframes/tts/voices/voices-v1.0.bin")),
+            ]:
+                if Path(m_path).is_file() and Path(v_path).is_file():
+                    kokoro_model = kokoro_onnx.Kokoro(m_path, v_path)
+                    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+                    if not sentences:
+                        sentences = [text]
+                    all_samples = []
+                    sample_rate = 24000
+                    for s in sentences:
+                        s_samples, sr = kokoro_model.create(s, voice=voice_id, speed=speed)
+                        sample_rate = sr
+                        all_samples.append(s_samples)
+                        # 0.2s pause between sentences
+                        all_samples.append(np.zeros(int(sr * 0.2), dtype=np.float32))
+
+                    combined = np.concatenate(all_samples)
+                    tmp_wav = output_path.with_suffix(".tmp.wav")
+                    sf.write(str(tmp_wav), combined, sample_rate)
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp_wav), "-c:a", "libmp3lame", "-b:a", "192k", str(output_path)],
+                        check=True
+                    )
+                    if tmp_wav.exists():
+                        tmp_wav.unlink()
+                    dur = probe_audio_duration(output_path)
+                    if dur > 0:
+                        return True, dur, None
+        except Exception:
+            pass
+
+        # 3. Try Python kokoro module directly if installed
         try:
             from kokoro import KPipeline
             import soundfile as sf
@@ -173,18 +212,32 @@ class KokoroLocalTTS(BaseTool):
         except Exception:
             pass
 
-        # 3. Fallback to Edge-TTS or Flite local synthesis for test/mock parity
+        # 4. Fallback to Edge-TTS or Flite local synthesis for test/mock parity
         voice_en = "en-US-ChristopherNeural"
         tmp_mp3 = output_path.with_suffix(".tmp.mp3")
-        res = subprocess.run(
-            ["edge-tts", "--voice", voice_en, "--text", text, "--write-media", str(tmp_mp3)],
-            capture_output=True,
-            text=True
-        )
-        if res.returncode == 0 and tmp_mp3.exists():
-            dur = probe_audio_duration(tmp_mp3)
+        try:
+            res = subprocess.run(
+                ["edge-tts", "--voice", voice_en, "--text", text, "--write-media", str(tmp_mp3)],
+                capture_output=True,
+                text=True
+            )
+            if res.returncode == 0 and tmp_mp3.exists():
+                dur = probe_audio_duration(tmp_mp3)
+                if dur > 0:
+                    os.replace(tmp_mp3, output_path)
+                    return True, dur, None
+        except Exception:
+            pass
+
+        # Offline fallback via flite
+        txt_tmp = output_path.with_suffix(".txt")
+        txt_tmp.write_text(text, encoding="utf-8")
+        cmd = f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={txt_tmp}:voice=slt" -c:a libmp3lame -b:a 192k {output_path}'
+        res_flite = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        txt_tmp.unlink(missing_ok=True)
+        if res_flite.returncode == 0 and output_path.exists():
+            dur = probe_audio_duration(output_path)
             if dur > 0:
-                os.replace(tmp_mp3, output_path)
                 return True, dur, None
 
         return False, 0.0, "No Kokoro backend (HTTP service or library) could synthesize the requested audio"

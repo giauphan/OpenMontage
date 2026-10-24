@@ -1,0 +1,146 @@
+"""Tests for Phase 7: Three independent offline E2E rehearsals (A, B, C) and private canary safety.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import pytest
+
+from lib.fixed_niche.policy import load_locked_policy, OutcomeStatus
+from lib.fixed_niche.gate import FixedNicheScopeGate
+from lib.fixed_niche.topic_selector import FixedNicheTopicSelector
+from lib.fixed_niche.research import FixedNicheResearcher, DemoExecutionProtocol
+from lib.fixed_niche.qa import FixedNicheQAValidator
+from scripts.run_fixed_niche_video import FixedNicheVideoRunner
+
+
+def test_rehearsal_a_evergreen_concept_video_e2e(tmp_path: Path):
+    """Rehearsal A: Passing evergreen concept video through full offline production pipeline."""
+    project_id = "rehearsal_a_context_lifecycle"
+    project_dir = tmp_path / project_id
+
+    topic = {
+        "candidate_id": project_id,
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "viewer_question": "Why can an AI coding agent forget project rules between sessions?",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "publisher": "Anthropic Docs",
+        "content_kind": "evergreen_explainer",
+    }
+
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=project_id)
+
+    # 1. Build and stage
+    stage_res = runner.build_and_stage_project(topic=topic)
+    assert stage_res["status"] == "STAGED_READY"
+    assert (project_dir / "artifacts" / "fixed_niche_scope.json").is_file()
+    assert (project_dir / "artifacts" / "topic_brief.json").is_file()
+    assert (project_dir / "artifacts" / "claim_ledger.json").is_file()
+    assert (project_dir / "artifacts" / "news_visual_plan.json").is_file()
+    assert (project_dir / "artifacts" / "video_proof_map.json").is_file()
+
+    # 2. Voice synthesis
+    audio_path = runner.synthesize_narration(provider="flite", voice="slt")
+    assert audio_path.is_file()
+    assert audio_path.stat().st_size > 1000
+
+    # 3. Render video
+    render_res = runner.render()
+    assert render_res["status"] == "VIDEO_READY_FOR_PRIVATE_REVIEW"
+    output_mp4 = Path(render_res["rendered_mp4"])
+    assert output_mp4.is_file()
+    assert output_mp4.stat().st_size > 5000
+
+    # 4. Verify sampled frames
+    frames_dir = project_dir / "renders" / "frame_samples"
+    assert frames_dir.is_dir()
+    sampled_frames = list(frames_dir.glob("*.png"))
+    assert len(sampled_frames) >= 4
+
+    # 5. Independent QA audit
+    qa_validator = FixedNicheQAValidator()
+    qa_report = qa_validator.audit_fixed_niche_deliverable(project_dir, expected_duration=72.0)
+    assert qa_report["strict_quality_pass"] is True
+    assert qa_report["blockers_count"] == 0
+
+    # 6. Cryptographic approval check
+    assert qa_validator.verify_audio_and_release_integrity(project_dir) is True
+
+
+def test_rehearsal_b_reproduced_demo_experiment_video_e2e(tmp_path: Path):
+    """Rehearsal B: Passing genuine mock-experiment video with verified sandbox demo results."""
+    project_id = "rehearsal_b_mcp_schema_repro"
+    project_dir = tmp_path / project_id
+    project_dir.mkdir(parents=True)
+
+    # 1. Execute isolated sandbox reproduction
+    demo_protocol = DemoExecutionProtocol(working_dir=project_dir)
+    demo_cmd = 'python3 -c \'import json; payload={"cmd": "ls"}; schema={"required": ["command"]}; print("Schema validation failed: missing command") if "command" not in payload else print("ok")\''
+    demo_res = demo_protocol.run_isolated_command(command=demo_cmd)
+    assert demo_res["exit_code"] == 0
+    assert "Schema validation failed" in demo_res["stdout"]
+
+    # Write demo artifacts
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "demo_protocol.json").write_text(json.dumps({"command": demo_cmd}, indent=2))
+    (artifacts_dir / "demo_results.json").write_text(json.dumps(demo_res, indent=2))
+
+    topic = {
+        "candidate_id": project_id,
+        "title": "MCP function call fails because tool JSON schema mismatches payload",
+        "topic_family": "agent_tool_use",
+        "viewer_question": "Why does this MCP tool call fail?",
+        "canonical_url": "https://modelcontextprotocol.io/specification/tools",
+        "publisher": "MCP Specification",
+        "content_kind": "reproduced_demo",
+    }
+
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=project_id)
+    stage_res = runner.build_and_stage_project(topic=topic)
+    assert stage_res["status"] == "STAGED_READY"
+
+    # Verify script claims with demo results present
+    script_data = json.loads((artifacts_dir / "script_en_US.json").read_text())
+    script_data["sections"][0]["narration"] = "In our lab test, we verified the tool schema mismatch."
+    researcher = FixedNicheResearcher()
+    valid, reason = researcher.verify_script_claims(
+        script_data,
+        claim_ledger=[{"claim_id": "C001"}],
+        demo_results=demo_res,
+    )
+    assert valid is True
+
+    # Render and audit
+    runner.synthesize_narration(provider="flite", voice="slt")
+    render_res = runner.render()
+    assert render_res["status"] == "VIDEO_READY_FOR_PRIVATE_REVIEW"
+
+    qa_validator = FixedNicheQAValidator()
+    qa_report = qa_validator.audit_fixed_niche_deliverable(project_dir)
+    assert qa_report["strict_quality_pass"] is True
+
+
+def test_rehearsal_c_rejected_off_niche_no_topic_day_e2e(tmp_path: Path):
+    """Rehearsal C: Rejected off-niche/no-topic day yields NO_ELIGIBLE_TOPIC with zero side-effects."""
+    off_niche_pool = [
+        {"id": "cand_crypto_01", "title": "Buy bitcoin now with automated AI trading bot"},
+        {"id": "cand_celeb_02", "title": "Celebrity tech billionaire luxury vacation photos"},
+        {"id": "cand_phone_03", "title": "New smartphone camera review with AI zoom"},
+    ]
+
+    gate = FixedNicheScopeGate()
+    eligible_candidates = [c for c in off_niche_pool if gate.evaluate_candidate(c).is_eligible]
+    assert len(eligible_candidates) == 0
+
+    selector = FixedNicheTopicSelector()
+    selection_res = selector.select_topic(eligible_candidates)
+
+    assert selection_res["status"] == OutcomeStatus.NO_ELIGIBLE_TOPIC.value
+    assert selection_res.get("selected_candidate_id") is None
+    assert selection_res.get("projects_created") == 0
+
+    # Assert zero project directories created in tmp_path
+    created_dirs = [d for d in tmp_path.iterdir() if d.is_dir()]
+    assert len(created_dirs) == 0

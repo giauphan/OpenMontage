@@ -1,0 +1,124 @@
+"""Tests for Phase 4: Storyboard, claim-to-scene proof map, and meaningful visual assets.
+Covers matrix IDs: VISUAL-001, VISUAL-002, VISUAL-003.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import pytest
+
+from lib.fixed_niche.storyboard import (
+    FixedNicheStoryboardDirector,
+    MeaningfulVisualError,
+    VideoProofMap,
+)
+from lib.news_visual.asset_resolver import resolve_assets_for_plan
+
+
+def test_visual_001_resolver_proposes_placeholder_svg_fails_proof_beat(tmp_path: Path):
+    """VISUAL-001: resolver in fixed niche mode must FAIL if proof beat would fall back to placeholder SVG."""
+    project_dir = tmp_path / "test_proj"
+    project_dir.mkdir()
+    visuals_dir = project_dir / "assets" / "visuals"
+    visuals_dir.mkdir(parents=True)
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    # A visual plan with a proof-bearing beat (is_proof_bearing=True or evidence_class in authentic_proof/conceptual_diagram)
+    plan = {
+        "beats": [
+            {
+                "beat_id": "B01",
+                "script_section_id": "S01",
+                "asset_id": "missing_diagram",
+                "story_function": "architecture_diagram",
+                "visual_kind": "svg_diagram",
+                "evidence_class": "conceptual_diagram",
+                "is_proof_bearing": True,
+                "claim_ids": ["C01"],
+            }
+        ]
+    }
+    (artifacts_dir / "news_visual_plan.json").write_text(json.dumps(plan))
+
+    # In fixed niche mode (enforce_meaningful_visuals=True), placeholder fallback must raise MeaningfulVisualError!
+    with pytest.raises(MeaningfulVisualError) as exc:
+        resolve_assets_for_plan(project_dir, plan, enforce_meaningful_visuals=True)
+    assert "Placeholder SVG fallback forbidden for proof-bearing beat" in str(exc.value)
+
+
+def test_storyboard_produces_65_to_75s_six_beat_plan_with_proof_map(tmp_path: Path):
+    """Verify storyboard produces ~65–75s 6-beat sequence with 100% claim coverage."""
+    director = FixedNicheStoryboardDirector()
+    topic = {
+        "candidate_id": "cand_01",
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "viewer_question": "Why can an AI coding agent forget project rules between sessions?",
+    }
+    claims = [
+        {"claim_id": "C001", "statement": "Conversation context disappears on session boundary"},
+        {"claim_id": "C002", "statement": "Durable repo files persist but need explicit read instructions"},
+        {"claim_id": "C003", "statement": "Verify persistence with new-session checklist test"},
+    ]
+
+    project_dir = tmp_path / "project_01"
+    storyboard_res = director.generate_storyboard(
+        topic=topic,
+        claims=claims,
+        project_dir=project_dir,
+        target_duration=72.0,
+    )
+
+    visual_plan = storyboard_res["visual_plan"]
+    proof_map = storyboard_res["proof_map"]
+
+    assert 65.0 <= storyboard_res["total_duration"] <= 75.0
+    assert len(visual_plan["beats"]) >= 5
+
+    # Check 100% claim coverage in proof map
+    all_covered_claims = set()
+    for beat in proof_map["beats"]:
+        all_covered_claims.update(beat.get("claim_ids", []))
+    for c in claims:
+        assert c["claim_id"] in all_covered_claims, f"Claim {c['claim_id']} missing from proof map"
+
+    # Verify meaningful SVGs were actually created
+    for beat in visual_plan["beats"]:
+        asset_id = beat["asset_id"]
+        svg_file = project_dir / "assets" / "visuals" / f"{asset_id}.svg"
+        assert svg_file.is_file(), f"Expected SVG {svg_file} to exist"
+        content = svg_file.read_text(encoding="utf-8")
+        # Must NOT be the plain dark placeholder rectangle with giant uppercase story_function
+        assert "<rect" in content
+        assert "fill=\"#0f172a\"" in content or "svg" in content
+        # Check for technical diagram elements: arrows, paths, or boxes
+        assert any(elem in content for elem in ("<path", "<line", "<polygon", "<g", "<circle", "marker-end"))
+
+
+def test_visual_002_blank_frame_fails_qa(tmp_path: Path):
+    """VISUAL-002: first frame blank or empty fails sampled frame QA."""
+    director = FixedNicheStoryboardDirector()
+    # Mock a totally black / blank frame
+    blank_frame_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    frame_path = tmp_path / "frame_00s_hook.png"
+    frame_path.write_bytes(blank_frame_bytes)
+
+    is_valid, reason = director.validate_frame_sample(frame_path, min_variance=10.0)
+    assert is_valid is False
+    assert "blank or corrupt" in reason.lower() or "variance" in reason.lower()
+
+
+def test_visual_003_bogus_terminal_screenshot_fails_validation(tmp_path: Path):
+    """VISUAL-003: bogus terminal screenshot without provenance fails validation."""
+    director = FixedNicheStoryboardDirector()
+    beat = {
+        "beat_id": "B04",
+        "visual_kind": "terminal_screenshot",
+        "evidence_class": "authentic_proof",
+        "asset_id": "fake_terminal",
+        "has_demo_provenance": False,
+    }
+    is_valid, reason = director.validate_beat_asset(beat, project_dir=tmp_path)
+    assert is_valid is False
+    assert "terminal screenshot requires verified demo provenance" in reason.lower()

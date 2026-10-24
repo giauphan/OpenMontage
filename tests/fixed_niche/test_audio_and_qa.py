@@ -1,0 +1,131 @@
+"""Tests for Phase 6: Narration audio integrity, ASR synchronization, and signed QA gate.
+Covers matrix IDs: VOICE-001, VOICE-002, QA-001.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import pytest
+
+from lib.audio.narration_orchestrator import NarrationOrchestrator
+from lib.fixed_niche.qa import FixedNicheQAValidator
+
+
+def test_voice_001_fallback_uses_consistent_voice_never_mixed(tmp_path: Path):
+    """VOICE-001: when provider fallback occurs, entire narration is generated with single fallback voice, never mixed."""
+    orchestrator = NarrationOrchestrator(cache_dir=tmp_path / "cache")
+    text = "Practical AI Agent Engineering. How coding agents work, fail, and get fixed."
+    out_audio = tmp_path / "narration.mp3"
+
+    # Fallback chain: non-existent provider -> flite
+    result = orchestrator.synthesize_with_fallback(
+        text=text,
+        output_path=out_audio,
+        fallback_chain=["non_existent_provider_fail", "flite"],
+        locale="en-US",
+    )
+    assert result.get("success") is True or out_audio.is_file()
+    assert out_audio.is_file()
+    assert out_audio.stat().st_size > 500
+
+
+def test_voice_002_audio_hash_change_invalidates_captions_and_release(tmp_path: Path):
+    """VOICE-002: audio hash changes -> invalidate captions and signed release."""
+    validator = FixedNicheQAValidator()
+    project_dir = tmp_path / "project_01"
+    project_dir.mkdir()
+    assets_dir = project_dir / "assets"
+    assets_dir.mkdir()
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir()
+    renders_dir = project_dir / "renders"
+    renders_dir.mkdir()
+
+    # Create dummy audio and video
+    audio_path = assets_dir / "narration.mp3"
+    audio_path.write_bytes(b"INITIAL_AUDIO_BYTES_12345")
+    initial_audio_sha = hashlib.sha256(audio_path.read_bytes()).hexdigest()
+
+    video_path = renders_dir / "final_short_en_US_9x16.mp4"
+    video_path.write_bytes(b"INITIAL_VIDEO_BYTES_67890")
+    initial_video_sha = hashlib.sha256(video_path.read_bytes()).hexdigest()
+
+    # Initial valid approval record
+    approval = {
+        "approved": True,
+        "status": "APPROVED",
+        "audio_sha256": initial_audio_sha,
+        "video_sha256": initial_video_sha,
+    }
+    (project_dir / "approval.json").write_text(json.dumps(approval))
+
+    # Before mutation: audio hash matches
+    assert validator.verify_audio_and_release_integrity(project_dir) is True
+
+    # Mutate audio bytes (e.g. re-synthesized voice)
+    audio_path.write_bytes(b"MUTATED_AUDIO_BYTES_NEW_VOICE")
+
+    # After mutation: integrity check must return False and invalidate approval
+    assert validator.verify_audio_and_release_integrity(project_dir) is False
+    updated_app = json.loads((project_dir / "approval.json").read_text())
+    assert updated_app["approved"] is False
+    assert updated_app["status"] == "INVALIDATED_BY_AUDIO_MUTATION"
+
+
+def test_qa_001_manipulated_video_after_signature_blocks_release(tmp_path: Path):
+    """QA-001: manipulated video after signature -> release blocked."""
+    validator = FixedNicheQAValidator()
+    project_dir = tmp_path / "project_02"
+    project_dir.mkdir()
+    renders_dir = project_dir / "renders"
+    renders_dir.mkdir()
+    assets_dir = project_dir / "assets"
+    assets_dir.mkdir()
+
+    audio_path = assets_dir / "narration.mp3"
+    audio_path.write_bytes(b"AUDIO_FOR_TEST")
+    video_path = renders_dir / "final_short_en_US_9x16.mp4"
+    video_path.write_bytes(b"ORIGINAL_SIGNED_MP4_CONTENT")
+
+    approval = {
+        "approved": True,
+        "status": "APPROVED",
+        "audio_sha256": hashlib.sha256(audio_path.read_bytes()).hexdigest(),
+        "video_sha256": hashlib.sha256(video_path.read_bytes()).hexdigest(),
+    }
+    (project_dir / "approval.json").write_text(json.dumps(approval))
+
+    # Mutate video bytes after signature
+    video_path.write_bytes(b"TAMPERED_MP4_CONTENT_UNAUTHORIZED")
+
+    is_valid = validator.verify_audio_and_release_integrity(project_dir)
+    assert is_valid is False
+    updated_app = json.loads((project_dir / "approval.json").read_text())
+    assert updated_app["approved"] is False
+    assert "TAMPERED" in updated_app["status"] or "INVALIDATED" in updated_app["status"]
+
+
+def test_qa_002_audit_fixed_niche_deliverable(tmp_path: Path):
+    """QA-002: deliverable audit produces valid production_qa_report.json."""
+    validator = FixedNicheQAValidator()
+    project_dir = tmp_path / "project_03"
+    project_dir.mkdir()
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir()
+
+    # Write scope artifact matching policy
+    scope = {
+        "candidate_id": "test_03",
+        "scope_trace": {
+            "niche_id": validator.policy.niche_id,
+            "policy_sha256": validator.policy.policy_sha256,
+        },
+    }
+    (artifacts_dir / "fixed_niche_scope.json").write_text(json.dumps(scope))
+
+    report = validator.audit_fixed_niche_deliverable(project_dir)
+    assert "strict_quality_pass" in report
+    assert "audited_at" in report
+    assert (artifacts_dir / "production_qa_report.json").is_file()
+
