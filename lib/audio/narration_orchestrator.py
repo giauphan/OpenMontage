@@ -358,27 +358,42 @@ class NarrationOrchestrator:
                 **(settings or {})
             })
 
+        # Direct flite provider (ultra-lightweight, low CPU/RAM, offline)
+        if provider_name.lower() == "flite":
+            flite_voice = voice if voice in ("slt", "rms", "awb", "kal", "kal16") else "slt"
+            txt_tmp = output_path.with_suffix(".txt")
+            txt_tmp.write_text(text, encoding="utf-8")
+            esc = str(txt_tmp).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+            cmd = [
+                "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+                "-i", f"flite=textfile='{esc}':voice={flite_voice}",
+                "-af", "highpass=f=80,lowpass=f=7500,volume=1.5,loudnorm",
+                "-c:a", "libmp3lame", "-b:a", "192k", str(output_path),
+            ]
+            timeout_s = max(30, int(len(text) / 15))
+            try:
+                res_flite = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+                if res_flite.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+                    return ToolResult(success=True, data={"audio_path": str(output_path), "provider": "flite", "voice": flite_voice})
+                return ToolResult(success=False, error=f"flite failed: {res_flite.stderr}")
+            except Exception as exc:
+                return ToolResult(success=False, error=f"flite failed: {exc}")
+            finally:
+                txt_tmp.unlink(missing_ok=True)
+
         # Default provider invocation
-        if provider_name.lower() in ("edge", "flite"):
+        if provider_name.lower() in ("edge",):
             args = ["edge-tts", "--voice", voice, "--text", text, "--write-media", str(output_path)]
             if settings and settings.get("rate"):
                 args += ["--rate", str(settings["rate"])]
+            timeout_s = max(30, int(len(text) / 15))
             try:
-                res = subprocess.run(args, capture_output=True, text=True)
+                res = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s)
                 if res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
-                    return ToolResult(success=True, data={"audio_path": str(output_path)})
-            except Exception:
-                pass
-
-            # Offline fallback via ffmpeg flite filter
-            txt_tmp = output_path.with_suffix(".txt")
-            txt_tmp.write_text(text, encoding="utf-8")
-            cmd = f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={txt_tmp}:voice=slt" -c:a libmp3lame -b:a 192k {output_path}'
-            res_flite = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            txt_tmp.unlink(missing_ok=True)
-            if res_flite.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
-                return ToolResult(success=True, data={"audio_path": str(output_path)})
-            return ToolResult(success=False, error=f"edge-tts and flite failed: {res_flite.stderr}")
+                    return ToolResult(success=True, data={"audio_path": str(output_path), "provider": "edge", "voice": voice})
+                return ToolResult(success=False, error=f"edge-tts failed: {(res.stderr or '')[-400:]}")
+            except Exception as exc:
+                return ToolResult(success=False, error=f"edge-tts failed: {exc}")
 
         # Look up tool from OpenMontage registry or instantiate
         try:
@@ -437,3 +452,111 @@ class NarrationOrchestrator:
                     time.sleep(0.05 * attempt)
 
         raise RuntimeError(f"All narration providers in fallback chain failed ({chain}). Last error: {last_error}")
+
+    def evaluate_tech_voice_fit(
+        self,
+        text: str,
+        target_seconds: float,
+        tolerance_seconds: float = 3.0,
+        locale: str = "en-US",
+        candidates: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate tech voice candidates to determine the optimal voice and speed factor
+        that fits the target project duration within tolerance while minimizing server CPU load.
+        """
+        enable_heavy = os.environ.get("ENABLE_HEAVY_TTS", "0") == "1"
+        default_candidates = [
+            {"provider": "flite", "voice": "slt", "label": "Flite (slt, Ultra-Low CPU/RAM)"},
+            {"provider": "flite", "voice": "rms", "label": "Flite (rms, Male Tech Tone)"},
+            {"provider": "pocket18", "voice": os.environ.get("TTS_POCKET_VOICE", "alba"), "label": "Pocket TTS 18M (alba, Low-CPU)"},
+            {"provider": "edge", "voice": "en-US-ChristopherNeural", "label": "Edge-TTS (Christopher, Broadcast Tech)"},
+            {"provider": "omniroute", "voice": "rachel", "label": "OmniRoute (rachel, Expressive Cloud)"},
+        ]
+        if enable_heavy:
+            default_candidates.append(
+                {"provider": "kokoro", "voice": os.environ.get("TTS_KOKORO_VOICE", "am_michael"), "label": "Kokoro-82M (am_michael, CPU)"}
+            )
+        tech_candidates = candidates or default_candidates
+
+        rates = [None, "+5%", "-5%", "+10%", "-10%", "+15%", "-15%", "+20%", "+25%"]
+        evaluations = []
+        tmp_eval = self.cache_dir / "tmp_eval_fit.mp3"
+
+        for cand in tech_candidates:
+            provider = cand["provider"]
+            voice = cand["voice"]
+            best_entry = None
+
+            # Skip rate sweep for providers that do not support rate/speed adjustments (e.g. flite)
+            cand_rates = [None] if provider.lower() in ("flite",) else rates
+
+            candidate_failed = False
+            for rate in cand_rates:
+                if candidate_failed:
+                    break
+                speed = 1.0
+                if rate:
+                    clean_rate = str(rate).replace("%", "").strip()
+                    if clean_rate.startswith("+"):
+                        speed = 1.0 + float(clean_rate[1:]) / 100.0
+                    elif clean_rate.startswith("-"):
+                        speed = 1.0 - float(clean_rate[1:]) / 100.0
+                    else:
+                        speed = 1.0 + float(clean_rate) / 100.0
+
+                settings = {"rate": rate, "speed": speed}
+                t0 = time.time()
+                try:
+                    res = self.synthesize(
+                        text=text,
+                        output_path=tmp_eval,
+                        locale=locale,
+                        provider=provider,
+                        voice=voice,
+                        settings=settings,
+                        allow_fallback=False,
+                    )
+                    elapsed = time.time() - t0
+                    dur = res.get("duration_seconds", 0.0)
+                    if dur <= 0:
+                        if rate is None:
+                            candidate_failed = True
+                        continue
+                    delta = abs(dur - target_seconds)
+                    rtf = elapsed / dur if dur > 0 else 999.0
+                    entry = {
+                        "provider": provider,
+                        "voice": voice,
+                        "label": cand.get("label", f"{provider}:{voice}"),
+                        "rate": rate,
+                        "speed": speed,
+                        "duration": dur,
+                        "target_seconds": target_seconds,
+                        "delta": round(delta, 3),
+                        "within_tolerance": delta <= tolerance_seconds,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "rtf": round(rtf, 4),
+                        "server_fit_score": round(1.0 / (1.0 + delta + rtf), 4),
+                    }
+                    if best_entry is None or delta < best_entry["delta"]:
+                        best_entry = entry
+                    if delta <= tolerance_seconds:
+                        break
+                except Exception:
+                    if rate is None:
+                        candidate_failed = True
+                    continue
+
+            if best_entry:
+                evaluations.append(best_entry)
+
+        if tmp_eval.exists():
+            tmp_eval.unlink(missing_ok=True)
+
+        evaluations.sort(key=lambda x: (not x["within_tolerance"], x["delta"], x["rtf"]))
+        return {
+            "best_fit": evaluations[0] if evaluations else None,
+            "evaluations": evaluations,
+            "target_seconds": target_seconds,
+            "tolerance_seconds": tolerance_seconds,
+        }

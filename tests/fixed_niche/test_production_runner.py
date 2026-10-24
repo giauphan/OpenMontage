@@ -1,0 +1,210 @@
+"""Tests for Phase 5: Per-project dynamic production runner and media rendering.
+Covers matrix IDs: RENDER-001, RENDER-002, RENDER-003.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import time
+import pytest
+
+from lib.audio.narration_orchestrator import MediaCpuLock
+from scripts.run_fixed_niche_video import (
+    FixedNicheVideoRunner,
+    render_project_composition,
+)
+
+
+def test_render_001_generic_runner_project_id_different_from_sample(tmp_path: Path):
+    """RENDER-001: generic runner project ID different from sample -> output in correct dynamic project, no hardcoded sample assets."""
+    custom_project_id = "test_agent_dynamic_99"
+    project_dir = tmp_path / custom_project_id
+    project_dir.mkdir(parents=True)
+
+    runner = FixedNicheVideoRunner(
+        project_dir=project_dir,
+        candidate_id=custom_project_id,
+        format_kind="short",
+    )
+
+    # Prepare project artifacts
+    topic = {
+        "candidate_id": custom_project_id,
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "viewer_question": "Why can an AI coding agent forget project rules between sessions?",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+    }
+    result = runner.build_and_stage_project(topic=topic, dry_run=True)
+
+    assert result["status"] == "STAGED_READY"
+    assert (project_dir / "project.json").is_file()
+    assert (project_dir / "artifacts" / "fixed_niche_scope.json").is_file()
+    assert (project_dir / "artifacts" / "topic_brief.json").is_file()
+    assert (project_dir / "artifacts" / "claim_ledger.json").is_file()
+    assert (project_dir / "artifacts" / "news_visual_plan.json").is_file()
+    assert (project_dir / "artifacts" / "video_proof_map.json").is_file()
+    assert (project_dir / "assets" / "visuals").is_dir()
+
+    # Verify no hardcoded sample paths were used
+    proj_json = json.loads((project_dir / "project.json").read_text())
+    assert proj_json["project_id"] == custom_project_id
+    assert "us_ai_short_01" not in str(project_dir)
+
+
+def test_render_002_sixty_five_to_seventy_five_seconds_duration(tmp_path: Path):
+    """RENDER-002: 65–75s US pilot -> target duration within [65.0, 75.0] range."""
+    custom_project_id = "test_agent_dur_72"
+    project_dir = tmp_path / custom_project_id
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=custom_project_id)
+    dur = runner.get_target_duration()
+    assert 65.0 <= dur <= 75.0
+
+
+def test_render_003_shared_media_lock_serializes_heavy_work(tmp_path: Path):
+    """RENDER-003: two concurrent jobs on Phoenix -> shared media lock serializes heavy work."""
+    lock_file = tmp_path / "media_cpu.lock"
+
+    lock1 = MediaCpuLock(lock_path=lock_file, timeout_seconds=1.0)
+    lock2 = MediaCpuLock(lock_path=lock_file, timeout_seconds=1.0)
+
+    # First acquisition succeeds
+    with lock1:
+        assert lock_file.exists()
+        # Second acquisition with 0.1s timeout must raise TimeoutError or block
+        with pytest.raises(TimeoutError):
+            with MediaCpuLock(lock_path=lock_file, timeout_seconds=0.1):
+                pass
+
+    # After lock1 releases, lock2 can acquire cleanly
+    with lock2:
+        assert lock_file.exists()
+
+
+def test_dynamic_project_isolation(tmp_path: Path):
+    """Ensure Project A and Project B render to distinct output directories with no cross-contamination."""
+    proj_a = tmp_path / "project_alpha"
+    proj_b = tmp_path / "project_beta"
+
+    runner_a = FixedNicheVideoRunner(project_dir=proj_a, candidate_id="cand_alpha")
+    runner_b = FixedNicheVideoRunner(project_dir=proj_b, candidate_id="cand_beta")
+
+    topic_a = {
+        "candidate_id": "cand_alpha",
+        "title": "Why coding agents lose context",
+        "topic_family": "context_memory",
+        "viewer_question": "Why does memory disappear?",
+    }
+    topic_b = {
+        "candidate_id": "cand_beta",
+        "title": "MCP schema mismatch errors",
+        "topic_family": "agent_tool_use",
+        "viewer_question": "Why do tool calls fail?",
+    }
+
+    res_a = runner_a.build_and_stage_project(topic=topic_a, dry_run=True)
+    res_b = runner_b.build_and_stage_project(topic=topic_b, dry_run=True)
+
+    assert res_a["status"] == "STAGED_READY"
+    assert res_b["status"] == "STAGED_READY"
+
+    # Verify assets and briefs are distinct
+    brief_a = json.loads((proj_a / "artifacts" / "topic_brief.json").read_text())
+    brief_b = json.loads((proj_b / "artifacts" / "topic_brief.json").read_text())
+    assert brief_a["topic_id"] == "cand_alpha"
+    assert brief_b["topic_id"] == "cand_beta"
+    assert brief_a["topic_family"] == "context_memory"
+    assert brief_b["topic_family"] == "agent_tool_use"
+
+
+def test_runner_rejects_unsupported_format(tmp_path: Path):
+    """Ensure runner rejects any format other than short/shorts."""
+    with pytest.raises(ValueError, match="strictly locked to 'short'"):
+        FixedNicheVideoRunner(project_dir=tmp_path / "p1", candidate_id="c1", format_kind="longform")
+
+
+def test_runner_stages_srt_captions_and_validates_script_sha(tmp_path: Path):
+    """Ensure build_and_stage_project produces valid captions.srt and exact script SHA256 in assets manifest."""
+    proj_dir = tmp_path / "caption_test_proj"
+    runner = FixedNicheVideoRunner(project_dir=proj_dir, candidate_id="cand_caps")
+    topic = {
+        "candidate_id": "cand_caps",
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "viewer_question": "Why do coding agents forget requirements?",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+    }
+    res = runner.build_and_stage_project(topic=topic, dry_run=True)
+    assert res["status"] == "STAGED_READY"
+
+    # Verify captions.srt
+    srt_path = proj_dir / "artifacts" / "captions.srt"
+    assert srt_path.is_file()
+    srt_content = srt_path.read_text(encoding="utf-8")
+    assert "00:00:00,000 --> " in srt_content
+    assert len(srt_content.strip().split("\n\n")) == 6
+
+    # Verify script SHA256 in assets manifest matches actual script_en_US.json
+    script_bytes = (proj_dir / "artifacts" / "script_en_US.json").read_bytes()
+    expected_sha = hashlib.sha256(script_bytes).hexdigest()
+    assets_manifest = json.loads((proj_dir / "artifacts" / "news_visual_assets.json").read_text(encoding="utf-8"))
+    assert assets_manifest["script_sha256"] == expected_sha
+
+
+def test_render_rejects_missing_audio_in_production(tmp_path: Path):
+    """In production renders, missing narration audio must raise FileNotFoundError rather than silently faking audio."""
+    proj_dir = tmp_path / "no_audio_proj"
+    proj_dir.mkdir()
+    with pytest.raises(FileNotFoundError, match="Narration audio file missing"):
+        render_project_composition(project_dir=proj_dir, allow_synthetic_audio=False)
+
+
+def test_render_rejects_narration_exceeding_target_duration(tmp_path: Path):
+    """If narration audio exceeds target duration, render must fail closed to prevent speech truncation."""
+    proj_dir = tmp_path / "long_audio_proj"
+    audio_path = proj_dir / "assets" / "narration.mp3"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    # Generate 10-second silent mp3
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+         "-t", "10", "-c:a", "libmp3lame", str(audio_path)],
+        check=True,
+    )
+    # Attempting to render with duration_seconds=5.0 must raise ValueError
+    with pytest.raises(ValueError, match="exceeds target duration"):
+        render_project_composition(project_dir=proj_dir, duration_seconds=5.0)
+
+
+def test_render_qa_gate_fails_closed_on_corrupt_video(tmp_path: Path, monkeypatch):
+    """If ffprobe fails or output video is corrupt, approval.json must record QA_FAILED and approved=False."""
+    proj_dir = tmp_path / "qa_fail_proj"
+    runner = FixedNicheVideoRunner(project_dir=proj_dir, candidate_id="cand_fail")
+    topic = {
+        "candidate_id": "cand_fail",
+        "title": "Why coding agents fail on cyclic dependencies",
+        "topic_family": "agent_tool_use",
+        "viewer_question": "Why do cycles break agents?",
+    }
+    runner.build_and_stage_project(topic=topic, dry_run=True)
+
+    # Monkeypatch render_project_composition to write an invalid 0-byte video
+    def fake_render(project_dir, composition_name, output_mp4, duration_seconds):
+        output_mp4.parent.mkdir(parents=True, exist_ok=True)
+        output_mp4.write_bytes(b"")
+        return output_mp4
+
+    monkeypatch.setattr("scripts.run_fixed_niche_video.render_project_composition", fake_render)
+
+    res = runner.render()
+    assert res["status"] == "QA_FAILED"
+
+    approval = json.loads((proj_dir / "approval.json").read_text(encoding="utf-8"))
+    assert approval["approved"] is False
+    assert approval["status"] == "QA_FAILED"
+
+    val_status = json.loads((proj_dir / "validation_status.json").read_text(encoding="utf-8"))
+    assert val_status["strict_quality_pass"] is False
+    assert val_status["status"] == "QA_FAILED"
+

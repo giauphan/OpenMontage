@@ -508,3 +508,123 @@ class TestAsrCachingAndPipelineCompat:
         dc_path = ROOT / "docker-compose.yml"
         content = dc_path.read_text(encoding="utf-8")
         assert "cpus:" in content or "deploy:" in content or "cpu_quota" in content
+
+
+# ============================================================================
+# Phase P7: Tech Voice Project & Server Fit Tests
+# ============================================================================
+
+class TestTechVoiceFit:
+    """Tests verifying tech voice fitting for project targets and server constraints."""
+
+    def test_fix_narration_timing_supports_tech_voices(self, tmp_path):
+        """synth() handles tech voices (am_michael, alba, rachel) via orchestrator."""
+        from scripts.fix_narration_timing import synth
+
+        with patch("lib.audio.narration_orchestrator.NarrationOrchestrator.synthesize") as mock_synth:
+            mock_synth.return_value = {
+                "success": True,
+                "duration_seconds": 68.5,
+                "output_path": str(tmp_path / "out.mp3"),
+            }
+            # Test Kokoro tech voice
+            rc, err = synth("am_michael", "Autonomous agents require tool sandboxing.", tmp_path / "kokoro.mp3", "+5%", locale="en-US")
+            assert rc == 0
+            assert mock_synth.call_args[1]["provider"] == "kokoro"
+            assert mock_synth.call_args[1]["voice"] == "am_michael"
+            assert mock_synth.call_args[1]["settings"]["speed"] == 1.05
+
+            # Test Pocket18 tech voice
+            rc, err = synth("alba", "Modern AI pipelines use deterministic evaluation.", tmp_path / "pocket.mp3", "-10%", locale="en-US")
+            assert rc == 0
+            assert mock_synth.call_args[1]["provider"] == "pocket18"
+            assert mock_synth.call_args[1]["voice"] == "alba"
+            assert mock_synth.call_args[1]["settings"]["speed"] == 0.90
+
+    def test_try_tech_voices_fit_evaluates_candidates_and_server_load(self, tmp_path):
+        """try_tech_voices_fit sweeps rates across candidates and picks closest fit."""
+        from scripts.fix_narration_timing import try_tech_voices_fit
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "assets").mkdir()
+
+        # Mock synth and probe_duration to simulate Kokoro landing at 71.2s for +5% rate
+        def mock_probe(p):
+            return 71.2
+
+        with patch("scripts.fix_narration_timing.synth", return_value=(0, "")) as mock_s, \
+             patch("scripts.fix_narration_timing.probe_duration", side_effect=mock_probe):
+            res = try_tech_voices_fit(
+                project=proj,
+                text="Benchmarking production AI coding agent architectures.",
+                target=70.0,
+                tolerance=3.0,
+                locale="en-US",
+                candidates=[{"provider": "kokoro", "voice": "am_michael", "label": "Kokoro Tech"}]
+            )
+            assert res["best_fit"] is not None
+            best = res["best_fit"]
+            assert best["provider"] == "kokoro"
+            assert best["within_tolerance"] is True
+            assert abs(best["duration"] - 70.0) <= 3.0
+
+    def test_orchestrator_evaluate_tech_voice_fit(self, tmp_path):
+        """NarrationOrchestrator.evaluate_tech_voice_fit ranks candidates by project fit and RTF."""
+        from lib.audio.narration_orchestrator import NarrationOrchestrator
+
+        orch = NarrationOrchestrator(cache_dir=tmp_path / "cache")
+
+        def mock_synth(text, output_path, locale, provider, voice, settings, allow_fallback):
+            dur = 69.8 if provider == "kokoro" else 76.5
+            return {"success": True, "duration_seconds": dur, "output_path": str(output_path)}
+
+        with patch.object(orch, "synthesize", side_effect=mock_synth):
+            res = orch.evaluate_tech_voice_fit(
+                text="Autonomous AI agent tool execution verification.",
+                target_seconds=70.0,
+                tolerance_seconds=2.0,
+                locale="en-US",
+                candidates=[
+                    {"provider": "edge", "voice": "en-US-ChristopherNeural", "label": "Edge"},
+                    {"provider": "kokoro", "voice": "am_michael", "label": "Kokoro"},
+                ]
+            )
+            best = res["best_fit"]
+            assert best is not None
+            assert best["provider"] == "kokoro"
+            assert best["within_tolerance"] is True
+            assert best["server_fit_score"] > 0
+
+    def test_narration_cli_try_tech_voices_flag(self, tmp_path):
+        """tools.audio.narration_cli supports --try-tech-voices to fit target project duration."""
+        from tools.audio.narration_cli import main
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "artifacts").mkdir()
+        (proj / "assets").mkdir()
+        (proj / "artifacts" / "narration_en_US_text.txt").write_text("Testing tech voice fitting CLI.", encoding="utf-8")
+        out_mp3 = proj / "assets" / "narration.mp3"
+
+        def mock_eval_fit(text, target_seconds, tolerance_seconds, locale):
+            return {
+                "best_fit": {
+                    "provider": "kokoro",
+                    "voice": "am_michael",
+                    "label": "Kokoro-82M",
+                    "speed": 1.05,
+                    "duration": 69.5,
+                    "delta": 0.5,
+                    "rtf": 0.03,
+                }
+            }
+
+        def mock_synth(text, output_path, locale, provider, voice, model=None, settings=None):
+            return {"success": True, "duration_seconds": 69.5, "cache_hit": False}
+
+        with patch("lib.audio.narration_orchestrator.NarrationOrchestrator.evaluate_tech_voice_fit", side_effect=mock_eval_fit), \
+             patch("lib.audio.narration_orchestrator.NarrationOrchestrator.synthesize", side_effect=mock_synth):
+            rc = main([str(proj), "--try-tech-voices", "--target-seconds", "70.0", "--locale", "en-US", "--output", str(out_mp3)])
+            assert rc == 0
+

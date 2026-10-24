@@ -19,7 +19,9 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -88,15 +90,135 @@ def hyperframes_command() -> list[str]:
             return ["node", str(candidate)]
     raise SystemExit("ERROR: hyperframes CLI not found (install it or add it to PATH)")
 
-def synth(voice, text, out: Path, rate: str, locale: str = "en-US"):
+def synth(voice, text, out: Path, rate: str | None = None, locale: str = "en-US", provider: str | None = None):
     if not voice:
         return 1, "--voice: voice identifier is required"
     clean_text = prepare_narration(text) if locale.startswith("vi") else text
-    args = ["edge-tts", "--voice", voice, "--text", clean_text, "--write-media", str(out)]
-    if rate:
-        args += ["--rate", rate]
-    r = subprocess.run(args, capture_output=True, text=True)
-    return r.returncode, (r.stderr or "")[-400:]
+
+    # If explicit edge provider or standard Neural voice without explicit non-edge provider,
+    # invoke edge-tts directly via subprocess for backward compatibility.
+    is_edge_voice = (provider == "edge") or (not provider and ("Neural" in str(voice) or str(voice).startswith("en-US-") or str(voice).startswith("vi-VN-")))
+    if is_edge_voice:
+        args = ["edge-tts", "--voice", voice, "--text", clean_text, "--write-media", str(out)]
+        if rate:
+            args += ["--rate", rate]
+        r = subprocess.run(args, capture_output=True, text=True)
+        return r.returncode, (r.stderr or "")[-400:]
+
+    # For other tech voices (Kokoro, Pocket, OmniRoute, etc.), use NarrationOrchestrator
+    try:
+        from lib.audio.narration_orchestrator import NarrationOrchestrator
+        orchestrator = NarrationOrchestrator()
+        actual_provider = provider
+        if not actual_provider:
+            v_lower = str(voice).lower()
+            if v_lower.startswith("am_") or v_lower.startswith("af_") or "kokoro" in v_lower:
+                actual_provider = "kokoro"
+            elif "alba" in v_lower or "pocket" in v_lower:
+                actual_provider = "pocket18"
+            elif "rachel" in v_lower or "omniroute" in v_lower:
+                actual_provider = "omniroute"
+            else:
+                actual_provider = "edge"
+
+        speed = 1.0
+        if rate:
+            clean_rate = str(rate).replace("%", "").strip()
+            if clean_rate.startswith("+"):
+                speed = 1.0 + float(clean_rate[1:]) / 100.0
+            elif clean_rate.startswith("-"):
+                speed = 1.0 - float(clean_rate[1:]) / 100.0
+            else:
+                speed = 1.0 + float(clean_rate) / 100.0
+
+        settings = {"rate": rate, "speed": speed}
+        res = orchestrator.synthesize(
+            text=text,
+            output_path=out,
+            locale=locale,
+            provider=actual_provider,
+            voice=voice,
+            settings=settings,
+        )
+        if res.get("success"):
+            return 0, ""
+        return 1, res.get("error", "Narration synthesis failed")
+    except Exception as exc:
+        return 1, str(exc)
+
+
+TECH_VOICE_CANDIDATES = [
+    {"provider": "edge", "voice": "en-US-ChristopherNeural", "label": "Edge-TTS (Christopher - Tech Broadcast)"},
+    {"provider": "kokoro", "voice": "am_michael", "label": "Kokoro-82M (am_michael - Clear Tech Voice, Local CPU)"},
+    {"provider": "pocket18", "voice": "alba", "label": "Pocket TTS 18M (alba - Modern Tech Explainer, Tiny CPU)"},
+    {"provider": "omniroute", "voice": "rachel", "label": "OmniRoute (rachel - Expressive AI Tech Voice)"},
+]
+
+
+def try_tech_voices_fit(
+    project: Path,
+    text: str,
+    target: float,
+    tolerance: float,
+    locale: str = "en-US",
+    candidates: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Try through tech voice candidates to find the best fit for project duration and server resources."""
+    import time
+    candidates = candidates or TECH_VOICE_CANDIDATES
+    results = []
+    tmp_out = project / "assets" / "tmp_tech_voice_fit.mp3"
+    tmp_out.parent.mkdir(parents=True, exist_ok=True)
+
+    rates = [None, "+5%", "-5%", "+10%", "-10%", "+15%", "-15%", "+20%", "+25%", "+30%"]
+
+    for cand in candidates:
+        provider = cand["provider"]
+        voice = cand["voice"]
+        label = cand.get("label", f"{provider}:{voice}")
+        best_cand_fit = None
+
+        for rate in rates:
+            t0 = time.time()
+            rc, err = synth(voice, text, tmp_out, rate, locale=locale, provider=provider)
+            elapsed = time.time() - t0
+            if rc != 0:
+                continue
+            dur = probe_duration(tmp_out)
+            if dur <= 0:
+                continue
+            delta = abs(dur - target)
+            rtf = elapsed / dur if dur > 0 else 999.0
+            fit_entry = {
+                "provider": provider,
+                "voice": voice,
+                "label": label,
+                "rate": rate,
+                "duration": dur,
+                "target": target,
+                "delta": delta,
+                "within_tolerance": delta <= tolerance,
+                "elapsed_seconds": round(elapsed, 3),
+                "rtf": round(rtf, 4),
+            }
+            if best_cand_fit is None or delta < best_cand_fit["delta"]:
+                best_cand_fit = fit_entry
+            if delta <= tolerance:
+                # Found a rate that fits project perfectly
+                break
+
+        if best_cand_fit:
+            results.append(best_cand_fit)
+
+    if tmp_out.exists():
+        tmp_out.unlink()
+
+    # Sort results by within_tolerance DESC, then delta ASC, then RTF ASC (server efficiency)
+    results.sort(key=lambda r: (not r["within_tolerance"], r["delta"], r["rtf"]))
+    return {
+        "best_fit": results[0] if results else None,
+        "all_evaluations": results,
+    }
 
 def main():
     ap = argparse.ArgumentParser()
@@ -104,6 +226,8 @@ def main():
     ap.add_argument("--target", type=float, default=None)
     ap.add_argument("--tolerance", type=float, default=3.0)
     ap.add_argument("--voice", default=None)
+    ap.add_argument("--provider", default=None, help="TTS provider override (kokoro, pocket18, omniroute, edge, elevenlabs)")
+    ap.add_argument("--try-tech-voices", action="store_true", help="Try candidate tech voices to find the best fit for project duration and server resources")
     ap.add_argument("--max-rate", default="+40%")
     ap.add_argument(
         "--reels-only",
@@ -151,24 +275,37 @@ def main():
     narration = project / "assets" / narration_name
     tmp = project / "assets" / f"{narration_name}.synth.mp3"
 
-    # Try increasing or decreasing speed until it fits, starting at natural.
-    rates = [None] + [f"-{p}%" for p in range(5, 26, 5)] + [f"+{p}%" for p in range(5, 41, 5)]
     chosen = None
-    for rate in rates:
-        warn(f"synth rate={rate or 'natural'}")
-        rc, err = synth(voice, text, tmp, rate, locale=locale)
-        if rc != 0:
-            warn("edge-tts error: " + err)
-            continue
-        dur = probe_duration(tmp)
-        warn(f"  duration={dur:.3f}s target={args.target:.1f}s tolerance={args.tolerance:.1f}s")
-        if dur > 0 and abs(dur - args.target) <= args.tolerance:
-            chosen = (rate, dur)
-            break
+    if args.try_tech_voices and is_english_locale(locale):
+        warn(f"Evaluating candidate tech voices to fit project target {args.target:.1f}s (tolerance {args.tolerance:.1f}s)...")
+        fit_eval = try_tech_voices_fit(project, text, args.target, args.tolerance, locale=locale)
+        best = fit_eval.get("best_fit")
+        if best:
+            warn(f"Best tech voice fit: {best['label']} rate={best['rate'] or 'natural'} -> dur={best['duration']:.2f}s (delta={best['delta']:.2f}s, rtf={best['rtf']:.3f})")
+            voice = best["voice"]
+            args.provider = best["provider"]
+            rc, err = synth(voice, text, tmp, best["rate"], locale=locale, provider=args.provider)
+            if rc == 0:
+                chosen = (best["rate"], best["duration"])
+
+    if chosen is None:
+        # Try increasing or decreasing speed until it fits, starting at natural.
+        rates = [None] + [f"-{p}%" for p in range(5, 26, 5)] + [f"+{p}%" for p in range(5, 41, 5)]
+        for rate in rates:
+            warn(f"synth rate={rate or 'natural'}")
+            rc, err = synth(voice, text, tmp, rate, locale=locale, provider=args.provider)
+            if rc != 0:
+                warn(f"synth error ({args.provider or 'default'}): " + err)
+                continue
+            dur = probe_duration(tmp)
+            warn(f"  duration={dur:.3f}s target={args.target:.1f}s tolerance={args.tolerance:.1f}s")
+            if dur > 0 and abs(dur - args.target) <= args.tolerance:
+                chosen = (rate, dur)
+                break
     if chosen is None:
         # Keep the closest natural reading and record the gap; do not fail silently.
         warn("no rate fit within tolerance; using closest natural and letting QA decide")
-        rc, err = synth(voice, text, tmp, None, locale=locale)
+        rc, err = synth(voice, text, tmp, None, locale=locale, provider=args.provider)
         if rc != 0:
             raise SystemExit("ERROR: baseline synth failed: " + err)
         dur = probe_duration(tmp)

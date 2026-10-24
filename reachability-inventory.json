@@ -1,8 +1,8 @@
 {
   "metadata": {
-    "total_files": 1972,
-    "unknown_count": 67,
-    "active_count": 1905
+    "total_files": 2199,
+    "unknown_count": 89,
+    "active_count": 2110
   },
   "reachability": {
     ".agents/skills/acestep/SKILL.md": {
@@ -5081,6 +5081,30 @@
         "project configuration / documentation / workflow / skill"
       ]
     },
+    ".agents/skills/us-agent-engineering-video/SKILL.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
+    ".agents/skills/us-agent-engineering-video/references/CODEBASE_INTEGRATION_AND_RENDER_CHECKLIST.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
+    ".agents/skills/us-agent-engineering-video/references/TOPIC_AND_EVIDENCE_RULES.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
+    ".agents/skills/us-agent-engineering-video/references/VIDEO_PLAYBOOK.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
     ".agents/skills/vercel-composition-patterns/AGENTS.md": {
       "status": "ACTIVE",
       "reasons": [
@@ -6299,6 +6323,12 @@
         "static asset or configuration without recorded reference"
       ]
     },
+    ".coderabbit.yaml": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
     ".dockerignore": {
       "status": "UNKNOWN",
       "reasons": [
@@ -6389,6 +6419,12 @@
         "project configuration / documentation / workflow / skill"
       ]
     },
+    ".github/workflows/build.yml": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
     ".github/workflows/ci.yml": {
       "status": "ACTIVE",
       "reasons": [
@@ -6455,6 +6491,12 @@
         "project configuration / documentation / workflow / skill"
       ]
     },
+    "Dockerfile.test": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
     "LICENSE": {
       "status": "ACTIVE",
       "reasons": [
@@ -6486,6 +6528,732 @@
       ]
     },
     "README_zh-CN.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/BASELINE_AND_CODE_MAP.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/CHANNEL_PREFLIGHT_AND_SCHEDULER.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/CHANNEL_STUDIO_REBRAND_CHECKLIST.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/EDITORIAL_QA_REPORT.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/GO_NO_GO.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/LOCALIZATION_REVIEW.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/REQUIREMENTS_LEDGER.csv": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/ROLLBACK_RUNBOOK.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/ROOTCAUSE_AND_FIX_LEDGER.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/TEST_REPORT.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/THREE_REHEARSALS.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/VISUAL_EVIDENCE_AND_QA.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/artifacts/captions_en_US.srt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/artifacts/claim_ledger.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/artifacts/narration_en_US_text.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/artifacts/research_brief.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/artifacts/script_en_US.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/assets/music-bg.mp3": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/assets/narration.mp3": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/project.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/publish_metadata.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/renders/ffprobe.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/renders/frame_samples/frame_00s_hook.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/renders/frame_samples/frame_04s_point.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/renders/frame_samples/frame_08s_proof.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-longform-en-us-02/renders/frame_samples/frame_14s_payoff.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/artifacts/captions_en_US.srt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/artifacts/claim_ledger.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/artifacts/narration_en_US_text.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/artifacts/research_brief.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/artifacts/script_en_US.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/assets/narration.mp3": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/project.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/publish_metadata.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/renders/ffprobe.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/renders/frame_samples/frame_00s_hook.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/renders/frame_samples/frame_03s_point.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/renders/frame_samples/frame_07s_proof.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/canaries/canary-short-en-us-01/renders/frame_samples/frame_11s_payoff.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/approval.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/captions_en_US.ass": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/captions_en_US.srt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/claim_ledger.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/narration_en_US_text.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/research_brief.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/script_en_US.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/source_snapshots/acm_surveys_568525.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/source_snapshots/arxiv_2308_00352.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/source_snapshots/arxiv_2310_06770.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/artifacts/source_snapshots/dora_2024_report.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/assets/audio/.keep": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/assets/narration.mp3": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/hyperframes/index.html": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/project.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/publish_metadata.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/.keep": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/ffprobe.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/final_long_en_US_16x9.mp4": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_01_ch1_prompt_bottleneck.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_02_ch2_memory_hierarchy.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_03_ch3_tool_sandboxing.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_04_ch4_checkpoints.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_05_ch5_supervisors.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_06_ch6_quality_gates.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_07_ch7_cost_circuits.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/renders/frame_samples/frame_08_ch8_zero_mutation.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_longform_02/validation_status.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/approval.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/captions_en_US.ass": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/captions_en_US.srt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/claim_ledger.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/narration_en_US_text.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/research_brief.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/script_en_US.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/source_snapshots/arxiv_2308_00352.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/source_snapshots/arxiv_2310_06770.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/artifacts/source_snapshots/dora_2024_report.txt": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/assets/audio/.keep": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/assets/narration.mp3": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/events.jsonl": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/hyperframes/index.html": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/project.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/publish_metadata.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/.keep": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/ffprobe.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/final_short_en_US_9x16.mp4": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/frame_samples/frame_00s_hook.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/frame_samples/frame_15s_benchmark.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/frame_samples/frame_30s_evidence.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/frame_samples/frame_45s_architecture.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/renders/frame_samples/frame_60s_takeaway.png": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/us-migration/production_deliverables/us_ai_short_01/validation_status.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/.openmontage-rehearsal-root.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/logs/daily_news_rehearsal_report.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/logs/failure-observation.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/logs/recovery-observation.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/logs/rehearsal-en-alpha-01.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/logs/rehearsal-en-alpha-02.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/logs/rehearsal-en-alpha-03.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_01/manifest.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/.openmontage-rehearsal-root.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/logs/daily_news_rehearsal_report.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/logs/failure-observation.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/logs/recovery-observation.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/logs/rehearsal-en-bravo-01.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/logs/rehearsal-en-bravo-02.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/logs/rehearsal-en-bravo-03.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_02/manifest.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/.openmontage-rehearsal-root.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/logs/daily_news_rehearsal_report.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/logs/failure-observation.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/logs/recovery-observation.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/logs/rehearsal-en-charlie-01.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/logs/rehearsal-en-charlie-02.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/logs/rehearsal-en-charlie-03.log": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/rehearsals/rehearsal_03/manifest.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/us-migration/snapshots/publish_schedule.snapshot.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "artifacts/verification/BUG_REPRODUCTION_AND_VERIFICATION_REPORT.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/verification/bug_reproduction_ledger.json": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "artifacts/verification/verification_report.json": {
       "status": "UNKNOWN",
       "reasons": [
         "static asset or configuration without recorded reference"
@@ -6546,6 +7314,24 @@
       ]
     },
     "assets/sponsors/bloome.png": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "assets/visuals/demonode_device.svg": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "assets/visuals/local_vs_cloud.svg": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "assets/visuals/npu_architecture.svg": {
       "status": "ACTIVE",
       "reasons": [
         "referenced static asset or configuration"
@@ -6618,6 +7404,24 @@
       ]
     },
     "config.yaml": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "config/audience_profiles/en-US.yaml": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "config/audience_profiles/vi-VN.yaml": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "config/niches/us-ai-agent-engineering.locked.yaml": {
       "status": "ACTIVE",
       "reasons": [
         "referenced static asset or configuration"
@@ -6845,6 +7649,30 @@
         "referenced in config/docs/scripts"
       ]
     },
+    "lib/artifact_paths.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/audience_profile.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/audio/__init__.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced in config/docs/scripts"
+      ]
+    },
+    "lib/audio/narration_orchestrator.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
     "lib/checkpoint.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -6906,6 +7734,54 @@
       ]
     },
     "lib/events.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/fixed_niche/__init__.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced in config/docs/scripts"
+      ]
+    },
+    "lib/fixed_niche/gate.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/fixed_niche/policy.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/fixed_niche/qa.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/fixed_niche/ranker.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/fixed_niche/research.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/fixed_niche/storyboard.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/fixed_niche/topic_selector.py": {
       "status": "ACTIVE",
       "reasons": [
         "statically imported"
@@ -6996,6 +7872,12 @@
       ]
     },
     "lib/hyperframes_style_bridge.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/language_validation.py": {
       "status": "ACTIVE",
       "reasons": [
         "statically imported"
@@ -7169,6 +8051,54 @@
         "statically imported"
       ]
     },
+    "lib/news_visual/__init__.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced in config/docs/scripts"
+      ]
+    },
+    "lib/news_visual/asset_resolver.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/news_visual/compiled_plan.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced in config/docs/scripts"
+      ]
+    },
+    "lib/news_visual/hyperframes_adapter.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/news_visual/plan_contract.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/news_visual/qa.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/news_visual/scene_layouts.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "lib/news_visual/source_binding.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
     "lib/paths.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -7191,6 +8121,12 @@
       "status": "ACTIVE",
       "reasons": [
         "referenced in config/docs/scripts"
+      ]
+    },
+    "lib/qa_signing.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
       ]
     },
     "lib/scoring.py": {
@@ -7323,24 +8259,6 @@
       "status": "ACTIVE",
       "reasons": [
         "project configuration / documentation / workflow / skill"
-      ]
-    },
-    "plan/archive/2026-09-30-cron-auth-and-maintenance-audit-review-draft.md": {
-      "status": "UNKNOWN",
-      "reasons": [
-        "static asset or configuration without recorded reference"
-      ]
-    },
-    "plan/archive/2026-10-01-codex-host-docker-config-alignment-review-draft.md": {
-      "status": "UNKNOWN",
-      "reasons": [
-        "static asset or configuration without recorded reference"
-      ]
-    },
-    "plan/completed/OPENMONTAGE_ARCHITECTURE_MIGRATION_PLAN.md": {
-      "status": "UNKNOWN",
-      "reasons": [
-        "static asset or configuration without recorded reference"
       ]
     },
     "remotion-composer/SCENE_TYPES.md": {
@@ -7667,6 +8585,12 @@
         "project configuration / documentation / workflow / skill"
       ]
     },
+    "schemas/artifacts/claim_ledger.schema.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
     "schemas/artifacts/cost_log.schema.json": {
       "status": "ACTIVE",
       "reasons": [
@@ -7763,6 +8687,12 @@
         "project configuration / documentation / workflow / skill"
       ]
     },
+    "schemas/audience_profile.schema.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
     "schemas/checkpoints/__init__.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -7829,6 +8759,24 @@
         "project configuration / documentation / workflow / skill"
       ]
     },
+    "schemas/news/news_visual_assets.schema.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
+    "schemas/news/news_visual_plan.schema.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
+    "schemas/news/news_visual_qa_report.schema.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
     "schemas/news/normalized_news_candidate.schema.json": {
       "status": "ACTIVE",
       "reasons": [
@@ -7836,6 +8784,12 @@
       ]
     },
     "schemas/news/raw_news_item.schema.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "project configuration / documentation / workflow / skill"
+      ]
+    },
+    "schemas/niches/locked_niche.schema.json": {
       "status": "ACTIVE",
       "reasons": [
         "project configuration / documentation / workflow / skill"
@@ -7878,15 +8832,21 @@
       ]
     },
     "scripts/architecture_inventory.py": {
-      "status": "ACTIVE",
+      "status": "UNKNOWN",
       "reasons": [
-        "referenced in config/docs/scripts"
+        "unresolved python source file without static import or recorded reference"
       ]
     },
     "scripts/atelier_snapshots.py": {
       "status": "ACTIVE",
       "reasons": [
         "referenced in config/docs/scripts"
+      ]
+    },
+    "scripts/auth_youtube.py": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "unresolved python source file without static import or recorded reference"
       ]
     },
     "scripts/backlot_screenshot_stage.py": {
@@ -7911,6 +8871,12 @@
       "status": "ACTIVE",
       "reasons": [
         "statically imported"
+      ]
+    },
+    "scripts/benchmark_tts_cpu.py": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "unresolved python source file without static import or recorded reference"
       ]
     },
     "scripts/bind_news_evidence.py": {
@@ -7950,9 +8916,9 @@
       ]
     },
     "scripts/check_qa.py": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "unresolved python source file without static import or recorded reference"
+        "statically imported"
       ]
     },
     "scripts/check_tiktok_cookies.py": {
@@ -7992,9 +8958,9 @@
       ]
     },
     "scripts/fix_narration_timing.py": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "unresolved python source file without static import or recorded reference"
+        "statically imported"
       ]
     },
     "scripts/force_publish_clear_uniqueness.py": {
@@ -8006,10 +8972,22 @@
     "scripts/generate_news_captions.py": {
       "status": "ACTIVE",
       "reasons": [
-        "referenced in config/docs/scripts"
+        "statically imported"
+      ]
+    },
+    "scripts/generate_scene_graphics.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
       ]
     },
     "scripts/generate_vn_subtitles.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "scripts/independent_editorial_qa.py": {
       "status": "ACTIVE",
       "reasons": [
         "statically imported"
@@ -8081,7 +9059,19 @@
         "referenced in config/docs/scripts"
       ]
     },
+    "scripts/prepare_news_visuals.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced in config/docs/scripts"
+      ]
+    },
     "scripts/prompts/director_generate.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "scripts/prompts/director_generate_en_US.prompt.md": {
       "status": "ACTIVE",
       "reasons": [
         "referenced static asset or configuration"
@@ -8093,7 +9083,55 @@
         "referenced static asset or configuration"
       ]
     },
+    "scripts/prompts/director_retry_en_US.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
     "scripts/prompts/director_system.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "scripts/prompts/director_system_en_US.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "scripts/prompts/director_templated_generate.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "scripts/prompts/director_templated_generate_en_US.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "scripts/prompts/director_templated_system.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "scripts/prompts/director_templated_system_en_US.prompt.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "scripts/prompts/fixed_us_topic_selection.prompt.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "scripts/prompts/fixed_us_video_director.prompt.md": {
       "status": "ACTIVE",
       "reasons": [
         "referenced static asset or configuration"
@@ -8136,9 +9174,9 @@
       ]
     },
     "scripts/publish_today.py": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "unresolved python source file without static import or recorded reference"
+        "referenced in config/docs/scripts"
       ]
     },
     "scripts/qa_daily_news_replay.py": {
@@ -8154,6 +9192,12 @@
       ]
     },
     "scripts/rehearse_daily_news_offline.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "scripts/render_verified_deliverables.py": {
       "status": "ACTIVE",
       "reasons": [
         "statically imported"
@@ -8189,6 +9233,12 @@
         "referenced static asset or configuration"
       ]
     },
+    "scripts/run_fixed_niche_video.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
     "scripts/run_full_publish_pipeline.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -8211,6 +9261,12 @@
       "status": "ACTIVE",
       "reasons": [
         "referenced static asset or configuration"
+      ]
+    },
+    "scripts/run_us_ai_director_pipeline.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
       ]
     },
     "scripts/run_youtube_schedule.sh": {
@@ -8244,9 +9300,9 @@
       ]
     },
     "scripts/schedule_youtube_slots.py": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "unresolved python source file without static import or recorded reference"
+        "referenced in config/docs/scripts"
       ]
     },
     "scripts/schedule_youtube_today.py": {
@@ -8261,6 +9317,12 @@
         "unresolved python source file without static import or recorded reference"
       ]
     },
+    "scripts/test_pipeline_docker.sh": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
     "scripts/update_composition.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -8268,12 +9330,18 @@
       ]
     },
     "scripts/validate_display_language.py": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "unresolved python source file without static import or recorded reference"
+        "referenced in config/docs/scripts"
       ]
     },
     "scripts/validate_news_evidence.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced in config/docs/scripts"
+      ]
+    },
+    "scripts/validate_news_visuals.py": {
       "status": "ACTIVE",
       "reasons": [
         "referenced in config/docs/scripts"
@@ -8591,7 +9659,19 @@
         "referenced static asset or configuration"
       ]
     },
+    "skills/meta/analytics-and-experiments.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
     "skills/meta/animation-runtime-selector.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "skills/meta/audience-and-culture-us.md": {
       "status": "ACTIVE",
       "reasons": [
         "referenced static asset or configuration"
@@ -8615,10 +9695,46 @@
         "referenced static asset or configuration"
       ]
     },
+    "skills/meta/claim-bound-visual-director.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
     "skills/meta/creative-intake.md": {
       "status": "UNKNOWN",
       "reasons": [
         "static asset or configuration without recorded reference"
+      ]
+    },
+    "skills/meta/cultural-localization-en-us.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "skills/meta/en-us-voice-and-captions.md": {
+      "status": "UNKNOWN",
+      "reasons": [
+        "static asset or configuration without recorded reference"
+      ]
+    },
+    "skills/meta/factcheck-and-claim-ledger.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "skills/meta/hook-and-script-storytelling.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
+    "skills/meta/independent-qa-reviewer.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
       ]
     },
     "skills/meta/onboarding.md": {
@@ -9329,6 +10445,12 @@
         "referenced static asset or configuration"
       ]
     },
+    "sonar-project.properties": {
+      "status": "ACTIVE",
+      "reasons": [
+        "referenced static asset or configuration"
+      ]
+    },
     "styles/anime-ghibli.yaml": {
       "status": "ACTIVE",
       "reasons": [
@@ -9372,9 +10494,9 @@
       ]
     },
     "templates/news/_schemas/base.schema.json": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "static asset or configuration without recorded reference"
+        "referenced static asset or configuration"
       ]
     },
     "templates/news/catalog.json": {
@@ -9402,9 +10524,9 @@
       ]
     },
     "templates/news/packages/news-debate/fixtures/short_story_1.json": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "static asset or configuration without recorded reference"
+        "referenced static asset or configuration"
       ]
     },
     "templates/news/packages/news-debate/hyperframes/index.html": {
@@ -9432,9 +10554,9 @@
       ]
     },
     "templates/news/packages/news-evidence/fixtures/short_story_1.json": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "static asset or configuration without recorded reference"
+        "referenced static asset or configuration"
       ]
     },
     "templates/news/packages/news-evidence/hyperframes/index.html": {
@@ -9462,9 +10584,9 @@
       ]
     },
     "templates/news/packages/news-explainer/fixtures/short_story_1.json": {
-      "status": "UNKNOWN",
+      "status": "ACTIVE",
       "reasons": [
-        "static asset or configuration without recorded reference"
+        "referenced static asset or configuration"
       ]
     },
     "templates/news/packages/news-explainer/hyperframes/index.html": {
@@ -9624,6 +10746,12 @@
       ]
     },
     "tests/contracts/test_dashscope_tools.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/contracts/test_director_en_us_wiring.py": {
       "status": "ACTIVE",
       "reasons": [
         "test file"
@@ -10121,6 +11249,54 @@
         "test file"
       ]
     },
+    "tests/fixed_niche/conftest.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixed_niche/test_audio_and_qa.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixed_niche/test_e2e_rehearsals.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixed_niche/test_gate_and_selector.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixed_niche/test_policy.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixed_niche/test_production_runner.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixed_niche/test_research_and_demo.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixed_niche/test_storyboard_and_visuals.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
     "tests/fixtures/__init__.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -10128,6 +11304,12 @@
       ]
     },
     "tests/fixtures/architecture/sanitized_composition_input.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/fixtures/fixed_niche_cases.yaml": {
       "status": "ACTIVE",
       "reasons": [
         "test file"
@@ -10163,6 +11345,18 @@
         "test file"
       ]
     },
+    "tests/lib/test_artifact_paths.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/lib/test_audience_profile.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
     "tests/lib/test_checkpoint_noncanonical_stage.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -10187,6 +11381,12 @@
         "test file"
       ]
     },
+    "tests/lib/test_language_validation.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
     "tests/lib/test_music_policy.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -10206,6 +11406,120 @@
       ]
     },
     "tests/news_templates/test_materialize_and_provenance.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/conftest.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/fixtures/README.md": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/fixtures/approved_test_claims.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/fixtures/demo_brief.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/fixtures/demo_script_vi.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/fixtures/demonode_visual_explainer.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/fixtures/demonode_visual_explainer_full.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/fixtures/rejected_test_claims.json": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_claim_to_visual_release_gate.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_css_scene_preservation.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_director_mode_contract.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_legacy_flag_off.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_news_visual_quality.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_publish_safety.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_template_media_binding.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_visual_asset_resolution.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_visual_provenance_integrity.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_visual_qa_false_positives.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/news_visual/test_visual_render_integration.py": {
       "status": "ACTIVE",
       "reasons": [
         "test file"
@@ -10464,6 +11778,12 @@
       ]
     },
     "tests/test_strict_scheduling_pipeline.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/test_tts_cpu_integration.py": {
       "status": "ACTIVE",
       "reasons": [
         "test file"
@@ -10811,6 +12131,18 @@
         "test file"
       ]
     },
+    "tests/tools/test_youtube_publisher.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
+    "tests/us_migration/test_us_migration_suite.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "test file"
+      ]
+    },
     "tools/__init__.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -11069,6 +12401,12 @@
         "statically imported"
       ]
     },
+    "tools/audio/kokoro_local_tts.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
     "tools/audio/music_gen.py": {
       "status": "ACTIVE",
       "reasons": [
@@ -11076,6 +12414,18 @@
       ]
     },
     "tools/audio/music_library.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "tools/audio/narration_cli.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
+    "tools/audio/omniroute_tts.py": {
       "status": "ACTIVE",
       "reasons": [
         "statically imported"
@@ -11097,6 +12447,12 @@
       "status": "ACTIVE",
       "reasons": [
         "registered tool module in ToolRegistry"
+      ]
+    },
+    "tools/audio/pocket_local_tts.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
       ]
     },
     "tools/audio/suno_music.py": {
@@ -11345,10 +12701,16 @@
         "statically imported"
       ]
     },
+    "tools/news/fixed_niche_sources.py": {
+      "status": "ACTIVE",
+      "reasons": [
+        "statically imported"
+      ]
+    },
     "tools/news/news_pipeline_cli.py": {
       "status": "ACTIVE",
       "reasons": [
-        "referenced in config/docs/scripts"
+        "statically imported"
       ]
     },
     "tools/news/newsnow_adapter.py": {
@@ -11366,7 +12728,7 @@
     "tools/news/template_provenance.py": {
       "status": "ACTIVE",
       "reasons": [
-        "referenced in config/docs/scripts"
+        "statically imported"
       ]
     },
     "tools/news/template_selector.py": {

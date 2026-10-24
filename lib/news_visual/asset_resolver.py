@@ -48,24 +48,41 @@ def validate_asset_file(project_dir: Path, rel_file_path: str) -> Tuple[bool, Op
 def resolve_visual_assets(
     project_dir: Path,
     visual_plan: Dict[str, Any],
-    script_sha256: str,
-    visual_plan_sha256: str,
+    script_sha256: str = "",
+    visual_plan_sha256: str = "",
+    enforce_meaningful_visuals: bool = False,
 ) -> Dict[str, Any]:
     """Resolve, validate, and build news_visual_assets.json manifest from plan and local files."""
     assets_manifest: Dict[str, Any] = {
         "version": "1.0",
-        "script_sha256": script_sha256,
-        "visual_plan_sha256": visual_plan_sha256,
+        "script_sha256": script_sha256 or "0" * 64,
+        "visual_plan_sha256": visual_plan_sha256 or "0" * 64,
         "assets": []
     }
     visuals_dir = project_dir / "assets" / "visuals"
     visuals_dir.mkdir(parents=True, exist_ok=True)
 
     seen_asset_ids = set()
+    fallback_asset_ids = set()
     for beat in visual_plan.get("beats", []):
-        beat_id = beat.get("id")
-        for asset_id in beat.get("asset_ids", []):
+        beat_id = beat.get("id") or beat.get("beat_id")
+        asset_ids = beat.get("asset_ids", [])
+        if not asset_ids and beat.get("asset_id"):
+            asset_ids = [beat["asset_id"]]
+
+        is_proof_bearing = bool(
+            beat.get("is_proof_bearing")
+            or beat.get("evidence_class") in ("authentic_proof", "conceptual_diagram", "primary_proof")
+        )
+
+        for asset_id in asset_ids:
             if asset_id in seen_asset_ids:
+                if (enforce_meaningful_visuals or os.environ.get("FIXED_NICHE_MODE") == "1") and is_proof_bearing and asset_id in fallback_asset_ids:
+                    from lib.fixed_niche.storyboard import MeaningfulVisualError
+                    raise MeaningfulVisualError(
+                        f"Placeholder SVG fallback forbidden for proof-bearing beat {beat_id!r} ({asset_id}). "
+                        "A concrete explanatory graphic is required."
+                    )
                 # Update existing asset beat_ids
                 for a in assets_manifest["assets"]:
                     if a["asset_id"] == asset_id and beat_id not in a["beat_ids"]:
@@ -82,6 +99,13 @@ def resolve_visual_assets(
                     break
 
             if not found_file:
+                if (enforce_meaningful_visuals or os.environ.get("FIXED_NICHE_MODE") == "1") and is_proof_bearing:
+                    from lib.fixed_niche.storyboard import MeaningfulVisualError
+                    raise MeaningfulVisualError(
+                        f"Placeholder SVG fallback forbidden for proof-bearing beat {beat_id!r} ({asset_id}). "
+                        "A concrete explanatory graphic is required."
+                    )
+
                 # If diagram or icon, generate built-in deterministic fallback if allowed
                 kind = beat.get("visual_kind", "svg_diagram")
                 fallback_policy = beat.get("fallback_policy", "use_builtin_verified_icon_diagram")
@@ -100,6 +124,7 @@ def resolve_visual_assets(
                     )
                     cand_path.write_text(svg_content, encoding="utf-8")
                     found_file = f"assets/visuals/{cand_name}"
+                    fallback_asset_ids.add(asset_id)
                 else:
                     raise FileNotFoundError(
                         f"Asset {asset_id!r} required by beat {beat_id!r} not found in {visuals_dir}"
@@ -149,3 +174,8 @@ def resolve_visual_assets(
         raise ValueError(f"Visual assets manifest failed schema validation: {msg}")
 
     return assets_manifest
+
+
+# Alias for compatibility with fixed niche pipeline
+resolve_assets_for_plan = resolve_visual_assets
+

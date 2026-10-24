@@ -23,7 +23,14 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STAGE_DIR = REPO_ROOT / ".backlot" / "screenshot-stage"
+default_stage = REPO_ROOT / ".backlot" / "screenshot-stage"
+try:
+    stage_writable = os.access(default_stage, os.W_OK) if default_stage.exists() else os.access(REPO_ROOT, os.W_OK)
+except Exception:
+    stage_writable = False
+if not stage_writable:
+    default_stage = Path("/tmp/openmontage_screenshot_stage")
+STAGE_DIR = Path(os.environ.get("OPENMONTAGE_STAGE_DIR", str(default_stage)))
 SHOTS_DIR = REPO_ROOT / "docs" / "images" / "backlot"
 PORT = 4790
 

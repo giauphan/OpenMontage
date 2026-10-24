@@ -20,6 +20,10 @@ jobs:
   validate:
     name: Validate Python
     runs-on: ubuntu-latest
+    env:
+      OTEL_SDK_DISABLED: "true"
+      WANDB_MODE: "offline"
+      OPENMONTAGE_CACHE_DIR: "/tmp/openmontage_cache"
 
     steps:
       - name: Checkout repository

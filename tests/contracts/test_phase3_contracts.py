@@ -696,8 +696,11 @@ class TestCapabilityMetadata:
             "elevenlabs",
             "google_tts",
             "kling_official",
+            "kokoro",
+            "omniroute",
             "openai",
             "piper",
+            "pocket18",
         }
 
 

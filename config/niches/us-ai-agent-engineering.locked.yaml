@@ -1,0 +1,85 @@
+schema_version: '1.0'
+niche_id: us-ai-agent-engineering
+status: LOCKED_BY_OWNER
+owner_change_required: true
+allow_agent_niche_discovery: false
+allow_agent_niche_switch: false
+allow_agent_edit_policy: false
+market: US
+locale: en-US
+channel_positioning:
+  name: 'Practical AI Agent Engineering'
+  promise: 'How coding agents work, fail, and get fixed — with verified examples and understandable diagrams.'
+  primary_viewer: 'US developers and technical builders using coding agents in real software projects'
+  viewer_level: intermediate
+  content_boundary: 'AI coding-agent internals, reliability, debugging, secure tool use, context and memory, reproducible agent testing and operational costs.'
+allowed_topic_families:
+  - id: context_memory
+    tags: [context windows, memory, session persistence, retrieval, repo context]
+  - id: agent_tool_use
+    tags: [tool calling, MCP, permissions, tool routing, sandbox execution]
+  - id: debugging_reliability
+    tags: [failed tests, regressions, validation, retries, fallbacks, hallucinated patches]
+  - id: agent_evaluation
+    tags: [reproducible benchmarks, test design, reliability metrics, cost estimation]
+  - id: agent_architecture
+    tags: [single agent, multi-agent, orchestration, checkpoints, handoffs]
+allowed_formats: [explain_mechanism, failure_anatomy, verified_comparison, source_backed_update]
+blocked_topics:
+  - generic_ai_news
+  - model_launch_without_agent_impact
+  - ai_art_image_video_generation
+  - generic_make_money_online
+  - celebrity_gossip
+  - politics
+  - crypto_trading
+  - general_tech_hardware
+  - unrelated_security_news
+  - unverified_product_rankings
+  - fabricated_benchmark_or_demo
+  - unrelated_vibe_coding_showcase
+content_rules:
+  topic_must_match_fixed_niche: true
+  one_viewer_question_per_short: true
+  primary_sources_required: true
+  source_based_explainer_without_demo_allowed: true
+  claim_firsthand_test_only_with_actual_test_artifacts: true
+  show_real_logs_only_when_verified: true
+  allow_illustrative_diagrams_if_labeled: true
+  generic_background_without_claim_match_forbidden: true
+  unavailable_evidence_action: SKIP
+  insufficient_topic_action: NO_ELIGIBLE_TOPIC
+  fallback_to_another_niche: false
+  news_requires_real_event_date: true
+  existing_release_approvals_must_invalidate_on_change: true
+source_policy:
+  discovery: [newsnow_hackernews, newsnow_github, newsnow_producthunt, vendor_release_notes, official_docs_changes, github_issues]
+  primary_evidence: [official_documentation, official_changelog, pinned_repository_source, release_notes, published_research, local_repro_log]
+  community_signal_only: [hacker_news_comments, reddit, stack_overflow]
+  require_canonical_url: true
+  require_published_date_for_news: true
+  forbid_made_up_release_dates: true
+video_contract:
+  shorts:
+    target_duration_seconds: [65, 75]
+    output: renders/final_short_en_US_9x16.mp4
+    target_aspect: '9:16'
+    note: 'Existing en-US profile caps at 60 s while renderer requires >=60 s; migrate en-US profile/schema to 75 s with tests first.'
+  longform:
+    enabled_initially: false
+    target_minutes: [6, 10]
+    output: renders/final_long_en_US_16x9.mp4
+  visuals: [verified_product_screenshot, genuine_terminal_log, source_backed_svg, concept_illustration_labeled, timeline, before_after_diagram]
+  voice_locale: en-US
+  captions_from_final_audio: true
+  preserve_voice_consistency: true
+production:
+  generate_video_only: true
+  auto_publish: false
+  private_canary_only_after_approval: true
+  max_parallel_render: 1
+  max_parallel_asr: 1
+  avoid_local_tts_during_render: true
+  never_force_daily_quota: true
+  operator_config_hash_required: true
+  no_runtime_policy_mutation: true

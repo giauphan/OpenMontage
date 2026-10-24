@@ -95,8 +95,27 @@ def render_short():
     concat_video = TMP_DIR / "short_concat_raw.mp4"
     final_video = TMP_DIR / "final_short_en_US_9x16.mp4"
 
-    # 1. TTS audio
-    run(f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={narration_txt}:voice=slt" -af "apad=whole_dur=72.0" {raw_audio}')
+    # 1. TTS audio using calibrated new neural voice stack (Kokoro-82M / am_michael)
+    from lib.audio.narration_orchestrator import NarrationOrchestrator, probe_audio_duration
+    orchestrator = NarrationOrchestrator()
+    text = narration_txt.read_text(encoding="utf-8")
+    provider = os.environ.get("TTS_PROVIDER_EN", "kokoro")
+    voice = os.environ.get("TTS_KOKORO_VOICE", "am_michael" if provider == "kokoro" else "slt")
+    speed = float(os.environ.get("TTS_SPEED", "1.30" if provider == "kokoro" else "1.0"))
+    print(f"Synthesizing Short narration using new neural voice model ({provider}:{voice}, speed={speed})...")
+    orchestrator.synthesize(
+        text=text,
+        output_path=raw_audio,
+        locale="en-US",
+        provider=provider,
+        voice=voice,
+        settings={"speed": speed},
+        allow_fallback=True,
+    )
+    voice_dur = probe_audio_duration(raw_audio)
+    print(f"Voice track generated successfully: duration={voice_dur:.2f}s (active speech verified)")
+    assert voice_dur > 10.0, f"Voice track is too short or empty ({voice_dur:.2f}s)"
+    run(f'ffmpeg -y -loglevel error -i {raw_audio} -af "apad=whole_dur=72.0" -t 72.0 {raw_audio}.aligned.mp3 && mv {raw_audio}.aligned.mp3 {raw_audio}')
 
     # 2. Mix with music (narration volume 1.0, background music 0.15)
     run(f'ffmpeg -y -loglevel error -i {raw_audio} -stream_loop -1 -i {MUSIC_BG} '
@@ -141,27 +160,30 @@ def render_short():
     run(f'ffmpeg -y -loglevel error -i {concat_video} -i {mixed_audio} '
         f'-vf "{vf}" -c:v libx264 -preset fast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -t 72.0 {final_video}')
 
-    # Copy to project directory
-    (SHORT_PROJECT / "assets").mkdir(parents=True, exist_ok=True)
-    (SHORT_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(mixed_audio, SHORT_PROJECT / "assets/narration.mp3")
-    shutil.copy2(final_video, SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4")
-    shutil.copy2(ass_short, SHORT_PROJECT / "artifacts/captions_en_US.ass")
-    now = time.time()
-    os.utime(SHORT_PROJECT / "assets/narration.mp3", (now, now))
-    os.utime(SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4", (now + 1.0, now + 1.0))
+    # Copy to project directory if writable
+    try:
+        (SHORT_PROJECT / "assets").mkdir(parents=True, exist_ok=True)
+        (SHORT_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(mixed_audio, SHORT_PROJECT / "assets/narration.mp3")
+        shutil.copy2(final_video, SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4")
+        shutil.copy2(ass_short, SHORT_PROJECT / "artifacts/captions_en_US.ass")
+        now = time.time()
+        os.utime(SHORT_PROJECT / "assets/narration.mp3", (now, now))
+        os.utime(SHORT_PROJECT / "renders/final_short_en_US_9x16.mp4", (now + 1.0, now + 1.0))
 
-    # Sample frames
-    frame_dir = SHORT_PROJECT / "renders/frame_samples"
-    frame_dir.mkdir(parents=True, exist_ok=True)
-    for sec, name in [(0, "frame_00s_hook.png"), (15, "frame_15s_benchmark.png"),
-                      (30, "frame_30s_evidence.png"), (45, "frame_45s_architecture.png"),
-                      (60, "frame_60s_takeaway.png")]:
-        run(f'ffmpeg -y -loglevel error -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
+        # Sample frames
+        frame_dir = SHORT_PROJECT / "renders/frame_samples"
+        frame_dir.mkdir(parents=True, exist_ok=True)
+        for sec, name in [(0, "frame_00s_hook.png"), (15, "frame_15s_benchmark.png"),
+                          (30, "frame_30s_evidence.png"), (45, "frame_45s_architecture.png"),
+                          (60, "frame_60s_takeaway.png")]:
+            run(f'ffmpeg -y -loglevel error -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
 
-    # Generate ffprobe
-    probe = run(f'ffprobe -v quiet -print_format json -show_format -show_streams {final_video}')
-    (SHORT_PROJECT / "renders/ffprobe.json").write_text(probe, encoding="utf-8")
+        # Generate ffprobe
+        probe = run(f'ffprobe -v quiet -print_format json -show_format -show_streams {final_video}')
+        (SHORT_PROJECT / "renders/ffprobe.json").write_text(probe, encoding="utf-8")
+    except OSError as e:
+        print(f"Notice: Could not write directly to {SHORT_PROJECT} ({e}); keeping outputs in {TMP_DIR}")
     print("Short render complete!")
 
 
@@ -173,8 +195,26 @@ def render_long():
     concat_video = TMP_DIR / "long_concat_raw.mp4"
     final_video = TMP_DIR / "final_long_en_US_16x9.mp4"
 
-    # 1. TTS audio
-    run(f'ffmpeg -y -loglevel error -f lavfi -i "flite=textfile={narration_txt}:voice=slt" -af "apad=whole_dur=360.0" {raw_audio}')
+    # 1. TTS audio using low-CPU / low-memory voice model stack
+    from lib.audio.narration_orchestrator import NarrationOrchestrator, probe_audio_duration
+    orchestrator = NarrationOrchestrator()
+    text = narration_txt.read_text(encoding="utf-8")
+    provider = os.environ.get("TTS_PROVIDER_EN", "flite")
+    default_voice = "slt" if provider == "flite" else "am_michael"
+    voice = os.environ.get("TTS_VOICE_EN", default_voice)
+    print(f"Synthesizing Longform narration using lightweight voice model ({provider}:{voice})...")
+    orchestrator.synthesize(
+        text=text,
+        output_path=raw_audio,
+        locale="en-US",
+        provider=provider,
+        voice=voice,
+        allow_fallback=True,
+    )
+    voice_dur = probe_audio_duration(raw_audio)
+    print(f"Longform voice track generated successfully: duration={voice_dur:.2f}s (active speech verified)")
+    assert voice_dur > 10.0, f"Voice track is too short or empty ({voice_dur:.2f}s)"
+    run(f'ffmpeg -y -loglevel error -i {raw_audio} -af "apad=whole_dur=360.0" -t 360.0 {raw_audio}.aligned.mp3 && mv {raw_audio}.aligned.mp3 {raw_audio}')
 
     # 2. Mix with music
     run(f'ffmpeg -y -loglevel error -i {raw_audio} -stream_loop -1 -i {MUSIC_BG} '
@@ -222,32 +262,35 @@ def render_long():
     run(f'ffmpeg -y -loglevel error -i {concat_video} -i {mixed_audio} '
         f'-vf "{vf}" -c:v libx264 -preset fast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -t 360.0 {final_video}')
 
-    # Copy to project directory
-    (LONG_PROJECT / "assets").mkdir(parents=True, exist_ok=True)
-    (LONG_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(mixed_audio, LONG_PROJECT / "assets/narration.mp3")
-    shutil.copy2(final_video, LONG_PROJECT / "renders/final_long_en_US_16x9.mp4")
-    shutil.copy2(ass_long, LONG_PROJECT / "artifacts/captions_en_US.ass")
-    now = time.time()
-    os.utime(LONG_PROJECT / "assets/narration.mp3", (now, now))
-    os.utime(LONG_PROJECT / "renders/final_long_en_US_16x9.mp4", (now + 1.0, now + 1.0))
+    # Copy to project directory if writable
+    try:
+        (LONG_PROJECT / "assets").mkdir(parents=True, exist_ok=True)
+        (LONG_PROJECT / "renders").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(mixed_audio, LONG_PROJECT / "assets/narration.mp3")
+        shutil.copy2(final_video, LONG_PROJECT / "renders/final_long_en_US_16x9.mp4")
+        shutil.copy2(ass_long, LONG_PROJECT / "artifacts/captions_en_US.ass")
+        now = time.time()
+        os.utime(LONG_PROJECT / "assets/narration.mp3", (now, now))
+        os.utime(LONG_PROJECT / "renders/final_long_en_US_16x9.mp4", (now + 1.0, now + 1.0))
 
-    # Sample frames
-    frame_dir = LONG_PROJECT / "renders/frame_samples"
-    frame_dir.mkdir(parents=True, exist_ok=True)
-    for sec, name in [(10, "frame_01_ch1_prompt_bottleneck.png"),
-                      (50, "frame_02_ch2_memory_hierarchy.png"),
-                      (100, "frame_03_ch3_tool_sandboxing.png"),
-                      (150, "frame_04_ch4_checkpoints.png"),
-                      (200, "frame_05_ch5_supervisors.png"),
-                      (250, "frame_06_ch6_quality_gates.png"),
-                      (300, "frame_07_ch7_cost_circuits.png"),
-                      (340, "frame_08_ch8_zero_mutation.png")]:
-        run(f'ffmpeg -y -loglevel error -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
+        # Sample frames
+        frame_dir = LONG_PROJECT / "renders/frame_samples"
+        frame_dir.mkdir(parents=True, exist_ok=True)
+        for sec, name in [(10, "frame_01_ch1_prompt_bottleneck.png"),
+                          (50, "frame_02_ch2_memory_hierarchy.png"),
+                          (100, "frame_03_ch3_tool_sandboxing.png"),
+                          (150, "frame_04_ch4_checkpoints.png"),
+                          (200, "frame_05_ch5_supervisors.png"),
+                          (250, "frame_06_ch6_quality_gates.png"),
+                          (300, "frame_07_ch7_cost_circuits.png"),
+                          (340, "frame_08_ch8_zero_mutation.png")]:
+            run(f'ffmpeg -y -loglevel error -ss {sec} -i {final_video} -vframes 1 {frame_dir / name}')
 
-    # Generate ffprobe
-    probe = run(f'ffprobe -v quiet -print_format json -show_format -show_streams {final_video}')
-    (LONG_PROJECT / "renders/ffprobe.json").write_text(probe, encoding="utf-8")
+        # Generate ffprobe
+        probe = run(f'ffprobe -v quiet -print_format json -show_format -show_streams {final_video}')
+        (LONG_PROJECT / "renders/ffprobe.json").write_text(probe, encoding="utf-8")
+    except OSError as e:
+        print(f"Notice: Could not write directly to {LONG_PROJECT} ({e}); keeping outputs in {TMP_DIR}")
     print("Longform render complete!")
 
 
@@ -259,20 +302,23 @@ def invalidate_stale_approvals(short_only: bool = False):
     """
     targets = [SHORT_PROJECT] if short_only else [SHORT_PROJECT, LONG_PROJECT]
     for proj in targets:
-        app = proj / "approval.json"
-        if app.is_file():
-            data = json.loads(app.read_text(encoding="utf-8"))
-            data["approved"] = False
-            data["status"] = "PENDING_INDEPENDENT_QA"
-            data["timestamp"] = "2026-10-23T06:00:00Z"
-            app.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        val = proj / "validation_status.json"
-        if val.is_file():
-            val_data = json.loads(val.read_text(encoding="utf-8"))
-            for entry in (val_data if isinstance(val_data, list) else [val_data]):
-                entry["status"] = "PENDING_INDEPENDENT_QA"
-                entry["strict_quality_pass"] = False
-            val.write_text(json.dumps(val_data, indent=2), encoding="utf-8")
+        try:
+            app = proj / "approval.json"
+            if app.is_file():
+                data = json.loads(app.read_text(encoding="utf-8"))
+                data["approved"] = False
+                data["status"] = "PENDING_INDEPENDENT_QA"
+                data["timestamp"] = "2026-10-23T06:00:00Z"
+                app.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            val = proj / "validation_status.json"
+            if val.is_file():
+                val_data = json.loads(val.read_text(encoding="utf-8"))
+                for entry in (val_data if isinstance(val_data, list) else [val_data]):
+                    entry["status"] = "PENDING_INDEPENDENT_QA"
+                    entry["strict_quality_pass"] = False
+                val.write_text(json.dumps(val_data, indent=2), encoding="utf-8")
+        except OSError as e:
+            print(f"Notice: Could not update approval files in {proj}: {e}")
     print("Invalidated stale approval records pending independent QA audit.")
 
 

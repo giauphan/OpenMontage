@@ -35,6 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reels", action="store_true", help="Synthesize reels-specific narration")
     parser.add_argument("--speed", type=float, default=1.0, help="Speaking speed factor")
     parser.add_argument("--fallback-chain", default=None, help="Comma-separated provider fallback chain")
+    parser.add_argument("--try-tech-voices", action="store_true", help="Try tech voices to find the best fit for project duration and server resources")
+    parser.add_argument("--target-seconds", type=float, default=None, help="Target duration in seconds for voice fitting")
+    parser.add_argument("--tolerance-seconds", type=float, default=3.0, help="Acceptable duration tolerance in seconds")
     args = parser.parse_args(argv)
 
     project_dir = args.project_dir.resolve()
@@ -105,6 +108,24 @@ def main(argv: list[str] | None = None) -> int:
     orchestrator = NarrationOrchestrator()
     voice = args.voice or orchestrator.resolve_default_voice(locale, provider)
     settings = {"speed": args.speed}
+
+    if args.try_tech_voices and is_en:
+        target_s = args.target_seconds or (60.0 if args.reels else 70.0)
+        eval_res = orchestrator.evaluate_tech_voice_fit(
+            text=text,
+            target_seconds=target_s,
+            tolerance_seconds=args.tolerance_seconds,
+            locale=locale,
+        )
+        best = eval_res.get("best_fit")
+        if best:
+            provider = best["provider"]
+            voice = best["voice"]
+            settings["speed"] = best.get("speed", 1.0)
+            if best.get("rate"):
+                settings["rate"] = best["rate"]
+            fallback_chain = None
+            print(f"Tech voice fit selected: {best['label']} speed={settings['speed']} (dur: {best['duration']:.2f}s, delta: {best['delta']:.2f}s, rtf: {best['rtf']:.3f})")
 
     try:
         if fallback_chain and len(fallback_chain) > 1:
