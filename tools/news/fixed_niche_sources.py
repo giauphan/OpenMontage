@@ -57,6 +57,11 @@ class NormalizedSourceItem:
     license_permission: str
     source_snapshot: Optional[str] = None
     snapshot_sha256: Optional[str] = None
+    symptom: Optional[str] = None
+    root_cause: Optional[str] = None
+    remedy: Optional[str] = None
+    evidence_excerpt: Optional[str] = None
+    independent_fact_check: Optional[Dict[str, Any]] = None
 
 
 class FixedNicheSourceAdapter:
@@ -136,6 +141,11 @@ class FixedNicheSourceAdapter:
             license_permission=str(raw_item.get("license_permission") or "public_documentation"),
             source_snapshot=str(snap) if snap else None,
             snapshot_sha256=str(snap_sha) if snap_sha else None,
+            symptom=raw_item.get("symptom"),
+            root_cause=raw_item.get("root_cause"),
+            remedy=raw_item.get("remedy"),
+            evidence_excerpt=raw_item.get("evidence_excerpt"),
+            independent_fact_check=raw_item.get("independent_fact_check"),
         )
 
     def to_candidate_dict(self, item: NormalizedSourceItem) -> Dict[str, Any]:
@@ -162,6 +172,16 @@ class FixedNicheSourceAdapter:
             d["source_snapshot"] = item.source_snapshot
         if item.snapshot_sha256:
             d["snapshot_sha256"] = item.snapshot_sha256
+        if item.symptom:
+            d["symptom"] = item.symptom
+        if item.root_cause:
+            d["root_cause"] = item.root_cause
+        if item.remedy:
+            d["remedy"] = item.remedy
+        if item.evidence_excerpt:
+            d["evidence_excerpt"] = item.evidence_excerpt
+        if item.independent_fact_check:
+            d["independent_fact_check"] = item.independent_fact_check
         return d
 
     def discover_production_candidates(

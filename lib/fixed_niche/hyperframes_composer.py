@@ -330,9 +330,12 @@ def render_ffmpeg_composition(
 
     svg_assets = sorted(list(visuals_dir.glob("*.svg"))) if visuals_dir.is_dir() else []
 
+    dar_str = "9/16" if (width < height) else "16/9"
+    aspect_flag = "9:16" if (width < height) else "16:9"
     vf = (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=#0b1120,"
+        f"setsar=1/1,setdar={dar_str},"
         f"format=yuv420p"
     )
 
@@ -379,6 +382,7 @@ def render_ffmpeg_composition(
             "-f", "concat", "-safe", "0", "-i", str(concat_list),
             "-i", str(audio_path),
             "-vf", vf,
+            "-aspect", aspect_flag,
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
             "-c:a", "aac", "-b:a", "192k",
             "-t", str(render_dur),
@@ -400,6 +404,7 @@ def render_ffmpeg_composition(
             "-f", "concat", "-safe", "0", "-i", str(concat_list),
             "-i", str(audio_path),
             "-vf", vf,
+            "-aspect", aspect_flag,
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
             "-c:a", "aac", "-b:a", "192k",
             "-t", str(render_dur),
@@ -413,6 +418,7 @@ def render_ffmpeg_composition(
             "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
             "-i", str(audio_path),
             "-vf", vf,
+            "-aspect", aspect_flag,
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
             "-c:a", "aac", "-b:a", "192k",
             "-t", str(render_dur),

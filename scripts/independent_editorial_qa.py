@@ -37,7 +37,10 @@ SCHEMA_PATH = ROOT / "schemas/artifacts/claim_ledger.schema.json"
 
 APPROVED_DOMAINS = (
     "arxiv.org", "dl.acm.org", "dora.dev", "ieee.org", "usenix.org",
-    "github.com", "openreview.net", "semanticscholar.org", "doi.org"
+    "github.com", "openreview.net", "semanticscholar.org", "doi.org",
+    "docs.anthropic.com", "docs.github.com", "modelcontextprotocol.io",
+    "microsoft.github.io", "openai.com", "git-scm.com", "tree-sitter.github.io",
+    "docs.docker.com", "docs.pytest.org", "langchain.com",
 )
 APPROVED_HOSTNAMES = APPROVED_DOMAINS
 
@@ -343,7 +346,7 @@ def audit_project(
 
     script_data = json.loads(script_path.read_text(encoding="utf-8"))
     narration_text = narration_path.read_text(encoding="utf-8")
-    script_full_text = " ".join(s["text"] for s in script_data.get("scenes", script_data.get("sections", [])))
+    script_full_text = " ".join(s.get("text") or s.get("narration", "") for s in script_data.get("scenes", script_data.get("sections", [])))
 
     claims_audit = []
     for c in claims:

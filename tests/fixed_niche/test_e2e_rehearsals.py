@@ -152,3 +152,123 @@ def test_rehearsal_c_rejected_off_niche_no_topic_day_e2e(tmp_path: Path):
     # Assert zero project directories created in tmp_path
     created_dirs = [d for d in tmp_path.iterdir() if d.is_dir()]
     assert len(created_dirs) == 0
+
+
+def test_ai_director_pipeline_full_dynamic_8_stages_e2e(tmp_path: Path):
+    """End-to-End Test: Full 8-stage dynamic AI Director pipeline run from empty workspace."""
+    from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
+    from scripts.run_us_ai_director_pipeline import run_us_ai_director_pipeline
+
+    adapter = FixedNicheSourceAdapter()
+    candidates = adapter.discover_production_candidates()
+    assert len(candidates) > 0, "No production candidates found"
+    cand = candidates[0]
+
+    project_dir = tmp_path / "dynamic_director_short"
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", "cand_01"), format_kind="short")
+    staged = runner.build_and_stage_project(topic=cand)
+    assert staged["status"] == "STAGED_READY"
+
+    # Execute all 8 stages
+    pipeline_res = run_us_ai_director_pipeline(
+        project_dir=project_dir,
+        format_type="short",
+        render_mode="full",
+    )
+
+    assert pipeline_res["status"] == "SUCCESS"
+    assert len(pipeline_res["stages"]) == 8
+    for stage_info in pipeline_res["stages"]:
+        assert stage_info["status"] == "PASS", f"Stage {stage_info['stage']} failed: {stage_info.get('details')}"
+
+    # Verify deliverable artifacts
+    renders_dir = project_dir / "renders"
+    video_path = renders_dir / "final_short_en_US_9x16.mp4"
+    assert video_path.is_file()
+    assert video_path.stat().st_size > 50000
+
+    frame_samples = list((renders_dir / "frame_samples").glob("*.png"))
+    assert len(frame_samples) >= 3
+
+    assert (project_dir / "artifacts" / "captions_en_US.srt").is_file()
+    assert (project_dir / "assets" / "narration.mp3").is_file()
+    assert (project_dir / "artifacts" / "video_proof_map.json").is_file()
+
+    # Verify cryptographically signed supervisor approval
+    approval_path = project_dir / "approval.json"
+    assert approval_path.is_file()
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    assert approval.get("status", "").lower() == "approved"
+    assert "signature" in approval and len(approval["signature"]) == 64
+
+
+def test_ai_director_pipeline_rejects_unverified_claim_negative(tmp_path: Path):
+    """Negative Test: AI Director Stage 3 rejects unverified/unapproved claims."""
+    from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
+    from scripts.run_us_ai_director_pipeline import stage_3_editorial_grounding, StageExecutionError
+
+    adapter = FixedNicheSourceAdapter()
+    cand = adapter.discover_production_candidates()[0]
+
+    project_dir = tmp_path / "negative_unverified_claim"
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", "cand_01"), format_kind="short")
+    runner.build_and_stage_project(topic=cand)
+
+    # Corrupt claim ledger to mark claim as unapproved
+    ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger["claims"][0]["verdict"] = "REJECTED"
+    ledger["claims"][0]["confidence"] = "unverified"
+    ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+
+    with pytest.raises(StageExecutionError, match="Stage 3 failed: claim C001 has unapproved verdict"):
+        stage_3_editorial_grounding(project_dir)
+
+
+def test_ai_director_pipeline_rejects_tampered_snapshot_negative(tmp_path: Path):
+    """Negative Test: AI Director Stage 1 rejects tampered or mismatched source snapshot."""
+    from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
+    from scripts.run_us_ai_director_pipeline import stage_1_research_and_sources, StageExecutionError
+
+    adapter = FixedNicheSourceAdapter()
+    cand = adapter.discover_production_candidates()[0]
+
+    project_dir = tmp_path / "negative_tampered_snapshot"
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", "cand_01"), format_kind="short")
+    runner.build_and_stage_project(topic=cand)
+
+    # Tamper with snapshot file text
+    snap_path = project_dir / "artifacts" / "source_snapshot.txt"
+    snap_path.write_text("Tampered snapshot content invalidating sha256 digest.", encoding="utf-8")
+
+    with pytest.raises(StageExecutionError, match="Stage 1 failed: claim C001 snapshot SHA mismatch"):
+        stage_1_research_and_sources(project_dir)
+
+
+def test_ai_director_pipeline_rejects_unsubstantiated_numeric_claim_negative(tmp_path: Path):
+    """Negative Test: AI Director Stage 3 rejects numbers in script spans not substantiated by excerpt."""
+    from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
+    from scripts.run_us_ai_director_pipeline import stage_3_editorial_grounding, StageExecutionError
+
+    adapter = FixedNicheSourceAdapter()
+    cand = adapter.discover_production_candidates()[0]
+
+    project_dir = tmp_path / "negative_numeric_grounding"
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", "cand_01"), format_kind="short")
+    runner.build_and_stage_project(topic=cand)
+
+    ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    # Introduce an unsubstantiated number into script_spans
+    ledger["claims"][0]["script_spans"] = ["Autonomous coding agent failed in 99.9% of production invocations."]
+    ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+
+    # Invalidate script text with the same statement
+    script_path = project_dir / "artifacts" / "script_en_US.json"
+    script = json.loads(script_path.read_text(encoding="utf-8"))
+    script["sections"][0]["narration"] = "Autonomous coding agent failed in 99.9% of production invocations."
+    script_path.write_text(json.dumps(script, indent=2), encoding="utf-8")
+
+    with pytest.raises(StageExecutionError, match="not substantiated by excerpt"):
+        stage_3_editorial_grounding(project_dir)
+
