@@ -399,6 +399,124 @@ def test_claim_grounding_rejects_unit_mismatch_and_unrelated_negative():
     assert res7["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
     assert "GPT-4o" in res7["grounding_sentence"]
 
+    # 8. Contradictory claim test (câu trái nghĩa): statement says latency decreased, snapshot says latency increased
+    stmt8 = "Agent evaluation benchmark showed decreased latency on complex workflows"
+    snap8 = "Agent evaluation benchmark showed increased latency on complex workflows."
+    res8 = verify_independent_claim(statement=stmt8, snapshot_text=snap8)
+    assert res8["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res8["attestation"]
+
+    # 9. Unrelated quote in candidate_excerpt: fallback to real grounding sentence, rejecting unrelated excerpt
+    stmt9 = "Context window limitations cause agents to forget project requirements"
+    snap9 = "Claude context window limitations cause agents to forget project requirements over time. The release was published on Tuesday morning."
+    unrelated_excerpt = "The release was published on Tuesday morning."
+    res9 = verify_independent_claim(
+        statement=stmt9,
+        snapshot_text=snap9,
+        candidate_excerpt=unrelated_excerpt,
+    )
+    assert res9["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "Claude context window limitations" in res9["grounding_sentence"]
+    assert res9["grounding_sentence"] != unrelated_excerpt
+
+    # 10. Snapshot only contains unrelated quote without statement support
+    stmt10 = "Context window limitations cause agents to forget project requirements"
+    snap10 = "The release was published on Tuesday morning by the team."
+    res10 = verify_independent_claim(
+        statement=stmt10,
+        snapshot_text=snap10,
+        candidate_excerpt=snap10,
+    )
+    assert res10["verification_status"] == "UNVERIFIED"
+
+    # 11. Negation contradiction test: statement says increased, snapshot says did not increase
+    stmt11 = "Agent latency increased across developer benchmark workflows"
+    snap11 = "Agent latency did not increase across developer benchmark workflows."
+    res11 = verify_independent_claim(statement=stmt11, snapshot_text=snap11)
+    assert res11["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res11["attestation"]
+
+    # 12. Inflected reduce contradiction test: statement says increased, snapshot says reduced
+    stmt12 = "Agent latency increased across developer benchmark workflows"
+    snap12 = "Agent latency reduced across developer benchmark workflows after optimization."
+    res12 = verify_independent_claim(statement=stmt12, snapshot_text=snap12)
+    assert res12["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res12["attestation"]
+
+    # 13. Multi-metric polarity reversal: model increased latency and decreased accuracy vs reversed
+    stmt13 = "The architecture increased latency and decreased accuracy on complex benchmarks"
+    snap13 = "The architecture decreased latency and increased accuracy on complex benchmarks."
+    res13 = verify_independent_claim(statement=stmt13, snapshot_text=snap13)
+    assert res13["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res13["attestation"]
+
+    # 14. Negative contraction can't: statement says increased, snapshot says can't increase
+    stmt14 = "Agent latency increased across developer benchmark workflows"
+    snap14 = "Agent latency can't increase across developer benchmark workflows."
+    res14 = verify_independent_claim(statement=stmt14, snapshot_text=snap14)
+    assert res14["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res14["attestation"]
+
+    # 15. Negative contraction don't: statement says succeed, snapshot says don't succeed
+    stmt15 = "Agent benchmark workflows succeed on multi-turn software tasks"
+    snap15 = "Agent benchmark workflows don't succeed on multi-turn software tasks."
+    res15 = verify_independent_claim(statement=stmt15, snapshot_text=snap15)
+    assert res15["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res15["attestation"]
+
+    # 16. Non-reversal qualifier 'barely': qualifies rather than reverses, grounds statement
+    stmt16 = "Agent latency increased across developer benchmark workflows"
+    snap16 = "Agent latency barely increased across developer benchmark workflows under load."
+    res16 = verify_independent_claim(statement=stmt16, snapshot_text=snap16)
+    assert res16["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "barely increased" in res16["grounding_sentence"]
+
+    # 17. Clause boundary negation: 'did not decrease; it increased' supports increase
+    stmt17 = "Agent latency increased across developer benchmark workflows"
+    snap17 = "Agent latency did not decrease; it increased across developer benchmark workflows."
+    res17 = verify_independent_claim(statement=stmt17, snapshot_text=snap17)
+    assert res17["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "did not decrease; it increased" in res17["grounding_sentence"]
+
+    # 18. Multi-sentence candidate_excerpt with contradiction: latency decreased in first sentence must not be masked by second sentence
+    stmt18 = "Agent latency increased across developer benchmark workflows"
+    snap18 = "Agent latency decreased across developer benchmark workflows. Accuracy increased on benchmark tasks."
+    res18 = verify_independent_claim(
+        statement=stmt18,
+        snapshot_text=snap18,
+        candidate_excerpt=snap18,
+    )
+    assert res18["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res18["attestation"]
+
+    # 19. Multi-sentence snapshot with different metric in second sentence does not falsely contradict supported statement
+    stmt19 = "Latency increased for production users across software benchmarks"
+    snap19 = "Latency increased for production users across software benchmarks. Battery usage dropped."
+    res19 = verify_independent_claim(statement=stmt19, snapshot_text=snap19)
+    assert res19["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "Latency increased for production users" in res19["grounding_sentence"]
+
+    # 20. Words starting with polarity roots like 'failover', 'password', 'allowance' do not report false contradiction
+    stmt20 = "Tests pass on benchmark tasks across software repositories"
+    snap20 = "Failover handling and tests pass on benchmark tasks across software repositories."
+    res20 = verify_independent_claim(statement=stmt20, snapshot_text=snap20)
+    assert res20["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "tests pass on benchmark tasks" in res20["grounding_sentence"]
+
+    # 21. Inflected verb 'dropped' triggers polarity contradiction against 'increased'
+    stmt21 = "Agent latency increased across developer benchmark workflows"
+    snap21 = "Agent latency dropped across developer benchmark workflows."
+    res21 = verify_independent_claim(statement=stmt21, snapshot_text=snap21)
+    assert res21["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res21["attestation"]
+
+    # 22. Multi-sentence snapshot where sentence 1 supports claim and sentence 2 mentions unrelated decrease
+    stmt22 = "Latency increased for production users"
+    snap22 = "Latency rose sharply for production users. Error rates decreased for production users after the patch."
+    res22 = verify_independent_claim(statement=stmt22, snapshot_text=snap22)
+    assert res22["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "Latency rose sharply for production users" in res22["grounding_sentence"]
+
 
 def test_claim_grounding_rejects_fabricated_snapshot_and_provenance_negative(tmp_path: Path):
     """Negative Test: verify_independent_claim and Stage 1 reject fabricated snapshots and invalid provenance."""
@@ -448,6 +566,24 @@ def test_claim_grounding_rejects_fabricated_snapshot_and_provenance_negative(tmp
     fab_ledger = json.loads(fab_arts["claim_ledger"].read_text(encoding="utf-8"))
     assert fab_ledger["claims"], "Expected a claim to test rejection"
     assert all(c["verdict"] == "REJECTED" for c in fab_ledger["claims"])
+
+    # 4. Wrong source / unapproved domain: snapshot from unapproved blog must NOT be anchored as authentic primary
+    blog_text = "Blog post detailing agent architecture patterns."
+    cand_unapproved_domain = {
+        "candidate_id": "cand_unapproved",
+        "title": "Why memory expires",
+        "canonical_url": "https://untrusted-blog.xyz/posts/agent-memory",
+        "source_snapshot": blog_text,
+        "snapshot_sha256": hashlib.sha256(blog_text.encode("utf-8")).hexdigest(),
+    }
+    r_unapproved = FixedNicheResearcher()
+    unapproved_arts = r_unapproved.build_topic_artifacts(cand_unapproved_domain, project_dir=tmp_path / "proj_unapproved")
+    unapproved_prov = json.loads((tmp_path / "proj_unapproved" / "artifacts" / "snapshot_provenance.json").read_text(encoding="utf-8"))
+    assert unapproved_prov["is_authentic_primary"] is False
+    assert unapproved_prov["domain_policy_status"] == "UNVERIFIED_DOMAIN"
+    unapproved_ledger = json.loads(unapproved_arts["claim_ledger"].read_text(encoding="utf-8"))
+    assert unapproved_ledger["claims"], "Expected claims to test rejection"
+    assert all(c["verdict"] == "REJECTED" for c in unapproved_ledger["claims"])
 
 
 

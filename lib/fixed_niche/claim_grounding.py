@@ -5,6 +5,115 @@ import re
 from typing import Any, Dict, Optional
 
 
+POLARITY_PAIRS = (
+    ("increas", "decreas"),
+    ("increas", "reduc"),
+    ("increas", "drop"),
+    ("succeed", "fail"),
+    ("success", "fail"),
+    ("enabl", "disabl"),
+    ("allow", "prevent"),
+    ("allow", "block"),
+    ("permit", "prohibit"),
+    ("pass", "fail"),
+    ("improv", "degrad"),
+    ("accelerat", "decelerat"),
+    ("rise", "drop"),
+    ("rose", "drop"),
+    ("rise", "fall"),
+)
+
+ALL_POLARITY_ROOTS = tuple(sorted({r for pair in POLARITY_PAIRS for r in pair}, key=len, reverse=True))
+
+_ROOT_RE = re.compile(
+    r"^(" + "|".join(map(re.escape, ALL_POLARITY_ROOTS)) + r")(?:e|es|ed|ing|s|ion|ions|ure|ures|ment|ful|fully|ped|ping|tion|tions|ement)?$"
+)
+
+
+def _polarity_root(word: str) -> Optional[str]:
+    """Extract canonical polarity root if word matches allowed inflection suffixes."""
+    m = _ROOT_RE.match(word)
+    return m.group(1) if m else None
+
+NEGATION_RE = re.compile(
+    r"\b(?:not|never|no|neither|nor|without|cannot|can[\'’]?t|don[\'’]?t|didn[\'’]?t|doesn[\'’]?t|wasn[\'’]?t|isn[\'’]?t|aren[\'’]?t|won[\'’]?t|wouldn[\'’]?t|couldn[\'’]?t|shouldn[\'’]?t|haven[\'’]?t|hasn[\'’]?t)\b",
+    re.IGNORECASE,
+)
+
+STOP_WORDS = {
+    "this", "that", "with", "from", "your", "what", "when", "where", "which", "into", "over",
+    "across", "been", "have", "were", "model", "agent", "system", "using", "these", "those"
+}
+
+
+def _extract_polarity_associations(text: str) -> list[dict[str, Any]]:
+    """Extract (metric, root, is_negated) associations per clause, isolating predicate-metric scopes."""
+    clauses = re.split(r"[,;]|(?<=[.!?])\s+|(?:\b(?:while|but|and|whereas|although)\b)", text, flags=re.IGNORECASE)
+    assocs: list[dict[str, Any]] = []
+    for clause in clauses:
+        words = re.findall(r"[a-zA-Z\'’]+", clause.lower())
+        for i, w in enumerate(words):
+            found_root = _polarity_root(w)
+            if not found_root:
+                continue
+
+            # Check negation up to 3 words back in the same clause without crossing another predicate
+            start_idx = max(0, i - 3)
+            prior_words = words[start_idx:i]
+            has_intervening_pred = any(bool(_polarity_root(pw)) for pw in prior_words)
+            is_negated = False if has_intervening_pred else any(bool(NEGATION_RE.match(pw)) for pw in prior_words)
+
+            context_metrics = [
+                words[k]
+                for k in range(len(words))
+                if k != i
+                and len(words[k]) >= 4
+                and words[k] not in STOP_WORDS
+                and not bool(_polarity_root(words[k]))
+            ]
+
+            if not context_metrics:
+                assocs.append({"metric": "__all__", "root": found_root, "negated": is_negated})
+            else:
+                for m in context_metrics:
+                    assocs.append({"metric": m, "root": found_root, "negated": is_negated})
+    return assocs
+
+
+def _has_contradiction(statement: str, sentence: str) -> bool:
+    """Check if the sentence asserts direct opposite polarity or negated predicate for claimed metrics."""
+    stmt_assocs = _extract_polarity_associations(statement)
+    if not stmt_assocs:
+        return False
+    sent_assocs = _extract_polarity_associations(sentence)
+    if not sent_assocs:
+        return False
+
+    compared: set[str] = set()
+    contradicted: set[str] = set()
+    for s in stmt_assocs:
+        m = s["metric"]
+        matching_sent = [sent for sent in sent_assocs if sent["metric"] == m or sent["metric"] == "__all__" or m == "__all__"]
+        if not matching_sent:
+            continue
+        compared.add(m)
+        # If the sentence explicitly supports this assertion (matching root & negation), no contradiction on this metric
+        has_direct_support = any(sent["root"] == s["root"] and sent["negated"] == s["negated"] for sent in matching_sent)
+        if has_direct_support:
+            continue
+        for sent in matching_sent:
+            if s["root"] == sent["root"] and s["negated"] != sent["negated"]:
+                contradicted.add(m)
+                break
+            if (
+                ((s["root"], sent["root"]) in POLARITY_PAIRS or (sent["root"], s["root"]) in POLARITY_PAIRS)
+                and (s["negated"] == sent["negated"])
+            ):
+                contradicted.add(m)
+                break
+    return bool(contradicted) and len(contradicted) >= min(2, len(compared))
+
+
 def _stem_word(w: str) -> str:
     """Extract root stem for suffix-insensitive matching."""
     for suffix in ('ing', 'tions', 'tion', 'ence', 'ance', 'ized', 'izing', 'ize', 'ive', 'ed', 'es', 's'):
@@ -85,33 +194,55 @@ def verify_independent_claim(
                 "attestation": f"Ungrounded quantitative figure '{q}' not found in source snapshot.",
             }
 
-    # 2. Extract sentences
+    # 2. Extract claimed polarity metrics and content words
+    stmt_assocs = _extract_polarity_associations(statement)
+    stmt_metrics = {a["metric"] for a in stmt_assocs if a["metric"] != "__all__"}
+
+    # Extract sentences
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", snap_str) if len(s.strip()) >= 15]
     if not sentences:
         sentences = [snap_str]
 
-    words = set(re.findall(r"[a-zA-Z]{4,}", statement.lower())) - {
-        "this", "that", "with", "from", "your", "what", "when", "where", "which", "into", "over"
+    polarity_verbs = {
+        w.lower()
+        for pair in POLARITY_PAIRS
+        for r in pair
+        for w in (r, r + "e", r + "es", r + "ed", r + "ing", r + "s", r + "ion", r + "tions", r + "ment", r + "ped", r + "ping")
     }
+    words = set(re.findall(r"[a-zA-Z]{4,}", statement.lower())) - STOP_WORDS - polarity_verbs
+    if not words:
+        words = set(re.findall(r"[a-zA-Z]{4,}", statement.lower())) - {
+            "this", "that", "with", "from", "your", "what", "when", "where", "which", "into", "over"
+        }
 
     min_matches = 1 if len(words) <= 1 else 2
 
     # 3. Find candidate grounding sentence that actually supports the statement
     grounding_sentence = ""
+    had_contradiction = False
     if candidate_excerpt and candidate_excerpt.strip() in snap_str:
-        norm_excerpt = _strip_thousands(candidate_excerpt.strip().lower())
-        excerpt_matches = sum(1 for w in words if _matches_text(w, norm_excerpt))
-        quant_ok = all(
-            bool(re.search(_quantity_regex(q), norm_excerpt, re.IGNORECASE))
-            for q in stat_quantities
-        )
-        if excerpt_matches >= min_matches and quant_ok:
-            grounding_sentence = candidate_excerpt.strip()
+        if _has_contradiction(statement, candidate_excerpt):
+            had_contradiction = True
+        else:
+            norm_excerpt = _strip_thousands(candidate_excerpt.strip().lower())
+            excerpt_matches = sum(1 for w in words if _matches_text(w, norm_excerpt))
+            metrics_ok = not stmt_metrics or any(_matches_text(m, norm_excerpt) for m in stmt_metrics)
+            quant_ok = all(
+                bool(re.search(_quantity_regex(q), norm_excerpt, re.IGNORECASE))
+                for q in stat_quantities
+            )
+            if excerpt_matches >= min_matches and metrics_ok and quant_ok:
+                grounding_sentence = candidate_excerpt.strip()
 
     if not grounding_sentence:
         best_score = 0
         best_sent = ""
         for sent in sentences:
+            if _has_contradiction(statement, sent):
+                had_contradiction = True
+                continue
+            if stmt_metrics and not any(_matches_text(m, sent) for m in stmt_metrics):
+                continue
             norm_sent = _strip_thousands(sent)
             matches = sum(1 for w in words if _matches_text(w, sent))
             if stat_quantities and not all(
@@ -127,13 +258,18 @@ def verify_independent_claim(
             grounding_sentence = best_sent
 
     if not grounding_sentence or grounding_sentence not in snap_str:
+        rejection_reason = (
+            "Direct semantic polarity contradiction detected between statement and snapshot passage."
+            if had_contradiction
+            else "Failed to identify evidence passage supporting the statement in snapshot."
+        )
         return {
             "verified_by": "FixedNicheFactCheckEngine",
             "verification_method": "ALGORITHMIC_SEMANTIC_GROUNDING",
             "verification_status": "UNVERIFIED",
             "grounding_sentence": "",
             "primary_domain": domain,
-            "attestation": "Failed to identify evidence passage supporting the statement in snapshot.",
+            "attestation": rejection_reason,
         }
 
     verified_entity = "FixedNicheFactCheckEngine"
