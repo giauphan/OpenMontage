@@ -63,6 +63,7 @@ def render_project_composition(
     output_mp4: Optional[Path] = None,
     duration_seconds: float = 72.0,
     allow_synthetic_audio: bool = False,
+    burn_captions: bool = False,
 ) -> Path:
     """Render a dynamic project composition without hardcoded sample paths.
 
@@ -141,20 +142,21 @@ def render_project_composition(
             f"format=yuv420p"
         )
 
-        # Include styled captions if present (prefer ASS with PlayRes & caption safe zone)
+        # Include styled captions only when burn_captions is explicitly enabled
         ass_path = project_dir / "artifacts" / "captions.ass"
         srt_path = project_dir / "artifacts" / "captions.srt"
-        if ass_path.is_file():
-            esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
-            vf += f",ass='{esc_ass}'"
-        elif srt_path.is_file():
-            esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-            vf += (
-                f",subtitles='{esc_srt}':force_style="
-                f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
-                f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
-                f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
-            )
+        if burn_captions:
+            if ass_path.is_file():
+                esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+                vf += f",ass='{esc_ass}'"
+            elif srt_path.is_file():
+                esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
+                vf += (
+                    f",subtitles='{esc_srt}':force_style="
+                    f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
+                    f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
+                    f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
+                )
 
         if beats:
             # Scale beat slide durations to match exact render duration so there is zero silent tail
@@ -216,17 +218,18 @@ def render_project_composition(
         else:
             # Fallback test pattern
             vf_pat = f"scale={width}:{height},format=yuv420p"
-            if ass_path.is_file():
-                esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
-                vf_pat += f",ass='{esc_ass}'"
-            elif srt_path.is_file():
-                esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-                vf_pat += (
-                    f",subtitles='{esc_srt}':force_style="
-                    f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
-                    f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
-                    f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
-                )
+            if burn_captions:
+                if ass_path.is_file():
+                    esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+                    vf_pat += f",ass='{esc_ass}'"
+                elif srt_path.is_file():
+                    esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
+                    vf_pat += (
+                        f",subtitles='{esc_srt}':force_style="
+                        f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
+                        f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
+                        f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
+                    )
             cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={duration_seconds}:r=30",
@@ -529,7 +532,7 @@ class FixedNicheVideoRunner:
 
         return out_audio
 
-    def render(self) -> Dict[str, Any]:
+    def render(self, burn_captions: bool = False) -> Dict[str, Any]:
         """Render final 9:16 video and perform strict signed QA gating."""
         target_dur = self.get_target_duration()
         output_mp4 = self.project_dir / "renders" / "final_short_en_US_9x16.mp4"
@@ -538,12 +541,21 @@ class FixedNicheVideoRunner:
         # Enforce shorts duration contract: select audio_dur within [65.0, 75.0], fallback to target_dur
         render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else target_dur
 
-        render_project_composition(
-            project_dir=self.project_dir,
-            composition_name="hyperframes_reels",
-            output_mp4=output_mp4,
-            duration_seconds=render_dur,
-        )
+        if burn_captions:
+            render_project_composition(
+                project_dir=self.project_dir,
+                composition_name="hyperframes_reels",
+                output_mp4=output_mp4,
+                duration_seconds=render_dur,
+                burn_captions=True,
+            )
+        else:
+            render_project_composition(
+                project_dir=self.project_dir,
+                composition_name="hyperframes_reels",
+                output_mp4=output_mp4,
+                duration_seconds=render_dur,
+            )
 
         # Probe output video using argument list (prevent CWE-78)
         probe_cmd = [
@@ -672,6 +684,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--voice", default=None, help="TTS voice override")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
     parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
+    parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video (default: False, clean video)")
     parser.add_argument("--title", default="Why coding agents lose project requirements between sessions")
     parser.add_argument("--topic-family", default="context_memory")
     parser.add_argument("--canonical-url", default="https://docs.anthropic.com/claude/context-window")
@@ -698,7 +711,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if stage_res.get("status") == "STAGED_READY" else 1
 
     runner.synthesize_narration(provider=args.provider, voice=args.voice, speed=args.speed)
-    render_res = runner.render()
+    render_res = runner.render(burn_captions=args.burn_captions)
     print(json.dumps(render_res, indent=2))
     return 0
 

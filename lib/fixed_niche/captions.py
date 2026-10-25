@@ -178,6 +178,7 @@ def generate_captions_srt(cues: List[Dict[str, Any]]) -> str:
 
 def generate_captions_ass(
     cues: List[Dict[str, Any]],
+    words: Optional[List[Dict[str, Any]]] = None,
     width: int = 1080,
     height: int = 1920,
     font_name: str = "DejaVu Sans",
@@ -188,14 +189,44 @@ def generate_captions_ass(
     """Format cues as styled Advanced SubStation Alpha (.ass) text.
 
     Positions subtitles in the bottom caption rail (MarginV 240) with high-contrast
-    bright white text and dark outline to prevent screen takeover.
+    text. When ASR words are supplied, emits \\k karaoke tags to follow the voice in real time.
     """
     dialogues: List[str] = []
-    for c in cues:
-        start_ass = format_ass_timestamp(c["start_s"])
-        end_ass = format_ass_timestamp(c["end_s"])
-        text = c["text"].strip().replace("{", "\\{").replace("}", "\\}")
-        dialogues.append(f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{text}")
+
+    if words:
+        # Group words into short phrase lines matching cue boundaries with karaoke timing
+        lines: List[List[Dict[str, Any]]] = []
+        chunk: List[Dict[str, Any]] = []
+        for i, w in enumerate(words):
+            word_text = w.get("word", "").strip()
+            if not word_text:
+                continue
+            chunk.append(w)
+            ends_punct = any(word_text.endswith(p) for p in (".", "?", "!", ";"))
+            has_pause = (i + 1 < len(words) and float(words[i + 1].get("start", 0.0)) - float(w.get("end", 0.0)) > 0.45)
+            if len(chunk) >= 5 or ends_punct or has_pause or i == len(words) - 1:
+                lines.append(chunk)
+                chunk = []
+
+        for line in lines:
+            start_s = float(line[0].get("start", 0.0))
+            end_s = float(line[-1].get("end", 0.0)) + 0.05
+            start_ass = format_ass_timestamp(start_s)
+            end_ass = format_ass_timestamp(end_s)
+            k_parts = []
+            for w in line:
+                w_start = float(w.get("start", 0.0))
+                w_end = float(w.get("end", 0.0))
+                w_centis = max(1, int(round((w_end - w_start) * 100)))
+                w_text = w.get("word", "").strip().replace("{", "\\{").replace("}", "\\}")
+                k_parts.append(f"{{\\k{w_centis}}}{w_text}")
+            dialogues.append(f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{' '.join(k_parts)}")
+    else:
+        for c in cues:
+            start_ass = format_ass_timestamp(c["start_s"])
+            end_ass = format_ass_timestamp(c["end_s"])
+            text = c["text"].strip().replace("{", "\\{").replace("}", "\\}")
+            dialogues.append(f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{text}")
 
     header = f"""[Script Info]
 Title: OpenMontage Synchronized Captions
@@ -207,7 +238,7 @@ PlayResY: {height}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H000B0F19,&H80000000,-1,0,0,0,100,100,0,0,1,3.0,0,{alignment},80,80,{margin_v},1
+Style: Default,{font_name},{font_size},&H0000FFFF,&H00FFFFFF,&H000B0F19,&H80000000,-1,0,0,0,100,100,0,0,1,3.0,0,{alignment},80,80,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -254,5 +285,5 @@ def build_and_align_captions(
         logger.info("Generated %d beat-clause chunked subtitle cues", len(cues))
 
     srt_content = generate_captions_srt(cues)
-    ass_content = generate_captions_ass(cues, width=width, height=height)
+    ass_content = generate_captions_ass(cues, words=raw_words if "raw_words" in locals() else None, width=width, height=height)
     return srt_content, ass_content, cues
