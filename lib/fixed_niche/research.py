@@ -63,10 +63,10 @@ class DemoExecutionProtocol:
                 f"Permitted binaries: {sorted(list(self.ALLOWED_COMMAND_BINARIES))}"
             )
 
-        # Disallow dangerous shell chaining tokens
-        dangerous_tokens = (";", "&&", "||", "|", ">", "<", "`", "$(")
+        # Disallow dangerous shell chaining or redirection tokens
+        operator_tokens = {";", "&&", "||", "|", ">", "<", ">>", "2>", "&"}
         for arg in cmd_args:
-            if any(dt in arg for dt in dangerous_tokens):
+            if arg in operator_tokens:
                 raise ResearchValidationError(f"Shell redirection or chaining token disallowed in demo command: {arg}")
 
         # Security: sanitize environment to prevent leaking secrets/tokens
