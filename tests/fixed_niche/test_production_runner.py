@@ -194,7 +194,7 @@ def test_render_qa_gate_fails_closed_on_corrupt_video(tmp_path: Path, monkeypatc
     runner.build_and_stage_project(topic=topic, dry_run=True)
 
     # Monkeypatch render_project_composition to write an invalid 0-byte video
-    def fake_render(project_dir, composition_name, output_mp4, duration_seconds):
+    def fake_render(project_dir, composition_name, output_mp4, duration_seconds, **kwargs):
         output_mp4.parent.mkdir(parents=True, exist_ok=True)
         output_mp4.write_bytes(b"")
         return output_mp4
@@ -217,7 +217,7 @@ def test_cli_returns_nonzero_when_qa_fails(tmp_path: Path, monkeypatch):
     """Ensure scripts.run_fixed_niche_video.main returns exit code 1 when QA fails."""
     from scripts.run_fixed_niche_video import main
 
-    def fake_render(project_dir, composition_name, output_mp4, duration_seconds):
+    def fake_render(project_dir, composition_name, output_mp4, duration_seconds, **kwargs):
         output_mp4.parent.mkdir(parents=True, exist_ok=True)
         output_mp4.write_bytes(b"")
         return output_mp4
@@ -231,6 +231,35 @@ def test_cli_returns_nonzero_when_qa_fails(tmp_path: Path, monkeypatch):
         "--provider", "flite",
     ])
     assert exit_code == 1
+
+
+def test_cli_auto_select_production_isolation_without_fixtures(tmp_path: Path, monkeypatch, capsys):
+    """Ensure --auto-select in production mode does not load test fixtures implicitly."""
+    from scripts.run_fixed_niche_video import main
+
+    # In production without feed or fixtures, auto-select must return 0 with NO_ELIGIBLE_TOPIC
+    exit_code = main([
+        "--auto-select",
+        "--project-dir", str(tmp_path / "prod_auto_proj"),
+    ])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "NO_ELIGIBLE_TOPIC" in captured.out
+    assert not (tmp_path / "prod_auto_proj").exists()
+
+
+def test_cli_auto_select_with_use_test_fixtures(tmp_path: Path, capsys):
+    """Ensure --use-test-fixtures explicitly allows loading fixture pool."""
+    from scripts.run_fixed_niche_video import main
+
+    exit_code = main([
+        "--auto-select",
+        "--use-test-fixtures",
+        "--project-dir", str(tmp_path / "fixtures_auto_proj"),
+        "--dry-run",
+    ])
+    assert exit_code == 0
+    assert (tmp_path / "fixtures_auto_proj" / "project.json").is_file()
 
 
 def test_off_niche_candidate_leaves_no_disk_artifacts(tmp_path: Path):
@@ -284,10 +313,15 @@ def test_qa_approval_record_contains_supervisor_signature(tmp_path: Path):
         project_dir=proj_dir,
         candidate_id="cand_signed",
     )
+    import hashlib
+    snap_text = "Context window limitations require serializing state across independent coding sessions."
     topic = {
         "candidate_id": "cand_signed",
         "title": "Why coding agents lose project requirements between sessions",
         "topic_family": "context_memory",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "source_snapshot": snap_text,
+        "snapshot_sha256": hashlib.sha256(snap_text.encode("utf-8")).hexdigest(),
     }
     runner.build_and_stage_project(topic)
     runner.synthesize_narration(provider="flite")
@@ -303,5 +337,45 @@ def test_qa_approval_record_contains_supervisor_signature(tmp_path: Path):
     assert app_data["signature_algorithm"] == "HMAC-SHA256"
     is_valid, reason = verify_approval_record(app_data, project_id="cand_signed")
     assert is_valid is True, f"Signature verification failed: {reason}"
+
+
+def test_runner_supports_renderer_selection(tmp_path: Path, monkeypatch):
+    """Ensure runner passes renderer choice to render_project_composition."""
+    from scripts.run_fixed_niche_video import FixedNicheVideoRunner
+    import subprocess
+
+    called_renderers = []
+
+    def fake_render(project_dir, composition_name, output_mp4, duration_seconds, **kwargs):
+        called_renderers.append(kwargs.get("renderer"))
+        output_mp4.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+            "color=c=black:s=1080x1920:d=1:r=30", "-f", "lavfi", "-i",
+            "anullsrc=r=44100:cl=stereo", "-t", "1", "-c:v", "libx264",
+            "-c:a", "aac", str(output_mp4),
+        ], check=True)
+        return output_mp4
+
+    monkeypatch.setattr("scripts.run_fixed_niche_video.render_project_composition", fake_render)
+
+    proj_dir = tmp_path / "renderer_test_proj"
+    runner = FixedNicheVideoRunner(project_dir=proj_dir, candidate_id="cand_rend")
+    topic = {
+        "candidate_id": "cand_rend",
+        "title": "Why coding agents crash on recursion",
+        "topic_family": "agent_tool_use",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "source_snapshot": "Recursion limits in coding agents cause call stack overflows.",
+    }
+    runner.build_and_stage_project(topic=topic, dry_run=True)
+    (proj_dir / "assets").mkdir(parents=True, exist_ok=True)
+    (proj_dir / "assets" / "narration.mp3").write_bytes(b"dummy")
+
+    runner.render(renderer="hyperframes")
+    assert called_renderers == ["hyperframes"]
+
+    runner.render(renderer="ffmpeg")
+    assert called_renderers == ["hyperframes", "ffmpeg"]
 
 

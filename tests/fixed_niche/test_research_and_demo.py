@@ -122,9 +122,18 @@ def test_demo_protocol_runs_in_isolated_sandbox_with_audit(tmp_path: Path):
     with pytest.raises(ResearchValidationError, match="Shell redirection or chaining token disallowed"):
         protocol.run_isolated_command("python3 -c 'pass' ; rm -rf /")
 
+    # Must reject access to sensitive system directories
+    with pytest.raises(ResearchValidationError, match="Access to restricted system directory disallowed"):
+        protocol.run_isolated_command("cat /etc/passwd")
+
+    # Must reject path traversal escaping sandbox
+    with pytest.raises(ResearchValidationError, match="Path traversal outside sandbox"):
+        protocol.run_isolated_command("cat ../../../sensitive.txt")
+
 
 def test_build_topic_artifacts_distinguishes_verified_vs_unverified(tmp_path: Path):
-    """Claims must not be blindly marked verified unless verified_source / snapshot exists."""
+    """Claims must not be blindly marked verified unless verified snapshot exists and matches SHA."""
+    import hashlib
     researcher = FixedNicheResearcher()
 
     # Case A: URL only without snapshot -> unverified
@@ -137,14 +146,41 @@ def test_build_topic_artifacts_distinguishes_verified_vs_unverified(tmp_path: Pa
     ledger_a = json.loads(art_a["claim_ledger"].read_text(encoding="utf-8"))
     assert all(c["confidence"] == "unverified" for c in ledger_a["claims"])
 
-    # Case B: Verified source snapshot provided -> verified
+    # Case B: verified_source: True without snapshot -> remains unverified!
+    cand_fake_flag = {
+        "candidate_id": "cand_fake",
+        "title": "Why memory expires",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "verified_source": True,
+    }
+    art_b = researcher.build_topic_artifacts(cand_fake_flag, project_dir=tmp_path / "proj_b")
+    ledger_b = json.loads(art_b["claim_ledger"].read_text(encoding="utf-8"))
+    assert all(c["confidence"] == "unverified" for c in ledger_b["claims"])
+
+    # Case C: Genuine source snapshot provided with matching SHA256 -> verified
+    snap_text = "Context window limitations require serializing state to durable files."
+    snap_sha = hashlib.sha256(snap_text.encode("utf-8")).hexdigest()
     cand_verified = {
         "candidate_id": "cand_v",
         "title": "Why memory expires",
         "canonical_url": "https://docs.anthropic.com/claude/context-window",
-        "verified_source": True,
-        "snapshot_sha256": "abc12345",
+        "source_snapshot": snap_text,
+        "snapshot_sha256": snap_sha,
     }
-    art_b = researcher.build_topic_artifacts(cand_verified, project_dir=tmp_path / "proj_b")
-    ledger_b = json.loads(art_b["claim_ledger"].read_text(encoding="utf-8"))
-    assert all(c["confidence"] == "verified" for c in ledger_b["claims"])
+    art_c = researcher.build_topic_artifacts(cand_verified, project_dir=tmp_path / "proj_c")
+    ledger_c = json.loads(art_c["claim_ledger"].read_text(encoding="utf-8"))
+    assert all(c["confidence"] == "verified" for c in ledger_c["claims"])
+    assert (tmp_path / "proj_c" / "artifacts" / "source_snapshot.txt").is_file()
+    assert (tmp_path / "proj_c" / "artifacts" / "source_snapshot.txt").read_text(encoding="utf-8") == snap_text
+
+    # Case D: Mismatched snapshot SHA256 -> unverified
+    cand_mismatch = {
+        "candidate_id": "cand_mismatch",
+        "title": "Why memory expires",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "source_snapshot": snap_text,
+        "snapshot_sha256": "fake_sha_does_not_match",
+    }
+    art_d = researcher.build_topic_artifacts(cand_mismatch, project_dir=tmp_path / "proj_d")
+    ledger_d = json.loads(art_d["claim_ledger"].read_text(encoding="utf-8"))
+    assert all(c["confidence"] == "unverified" for c in ledger_d["claims"])

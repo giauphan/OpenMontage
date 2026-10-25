@@ -146,6 +146,59 @@ class FixedNicheQAValidator:
             except Exception as e:
                 findings.append({"category": "DURATION", "severity": "warning", "message": f"Could not parse ffprobe duration: {e}"})
 
+        # 5. Claim ledger & Source snapshot provenance audit
+        claim_ledger_file = project_dir / "artifacts" / "claim_ledger.json"
+        snapshot_file = project_dir / "artifacts" / "source_snapshot.txt"
+        proof_map_file = project_dir / "artifacts" / "video_proof_map.json"
+
+        if not claim_ledger_file.is_file():
+            findings.append({"category": "EVIDENCE", "severity": "blocker", "message": "Missing claim_ledger.json"})
+        else:
+            try:
+                ledger_data = json.loads(claim_ledger_file.read_text(encoding="utf-8"))
+                claims = ledger_data.get("claims", [])
+                claim_by_id = {c.get("claim_id"): c for c in claims}
+
+                for c in claims:
+                    cid = c.get("claim_id")
+                    if c.get("confidence") == "verified":
+                        if not snapshot_file.is_file():
+                            findings.append({
+                                "category": "SNAPSHOT_PROVENANCE",
+                                "severity": "blocker",
+                                "message": f"Claim {cid} marked verified but source_snapshot.txt missing on disk",
+                            })
+                        else:
+                            actual_sha = hashlib.sha256(snapshot_file.read_bytes()).hexdigest()
+                            expected_sha = c.get("snapshot_sha256")
+                            if expected_sha and actual_sha.lower() != str(expected_sha).lower():
+                                findings.append({
+                                    "category": "SNAPSHOT_PROVENANCE",
+                                    "severity": "blocker",
+                                    "message": f"Claim {cid} snapshot SHA256 mismatch: expected {expected_sha}, got {actual_sha}",
+                                })
+
+                # Audit proof-bearing beats against verified claims
+                if proof_map_file.is_file():
+                    try:
+                        proof_data = json.loads(proof_map_file.read_text(encoding="utf-8"))
+                        for pb in proof_data.get("beats", []):
+                            bid = pb.get("beat_id")
+                            is_proof_bearing = pb.get("is_proof_bearing", False) or pb.get("requires_real_demo", False)
+                            cids = pb.get("claim_ids") or ([pb.get("claim_id")] if pb.get("claim_id") else [])
+                            for ref_cid in cids:
+                                ref_claim = claim_by_id.get(ref_cid)
+                                if is_proof_bearing and (not ref_claim or ref_claim.get("confidence") != "verified"):
+                                    findings.append({
+                                        "category": "UNVERIFIED_CLAIM_IN_PROOF_BEAT",
+                                        "severity": "blocker",
+                                        "message": f"Proof-bearing beat '{bid}' references unverified claim '{ref_cid}' without snapshot provenance",
+                                    })
+                    except Exception as pe:
+                        findings.append({"category": "EVIDENCE", "severity": "warning", "message": f"Proof map audit error: {pe}"})
+            except Exception as e:
+                findings.append({"category": "EVIDENCE", "severity": "blocker", "message": f"Malformed claim ledger: {e}"})
+
         blockers = [f for f in findings if f.get("severity") == "blocker"]
         strict_pass = len(blockers) == 0
 

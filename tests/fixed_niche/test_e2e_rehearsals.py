@@ -2,6 +2,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import pytest
@@ -16,9 +17,11 @@ from scripts.run_fixed_niche_video import FixedNicheVideoRunner
 
 def test_rehearsal_a_evergreen_concept_video_e2e(tmp_path: Path):
     """Rehearsal A: Passing evergreen concept video through full offline production pipeline."""
+    import hashlib
     project_id = "rehearsal_a_context_lifecycle"
     project_dir = tmp_path / project_id
 
+    snap_text = "Context window limitations require durable disk file persistence across independent agent sessions."
     topic = {
         "candidate_id": project_id,
         "title": "Why coding agents lose project requirements between sessions",
@@ -27,6 +30,8 @@ def test_rehearsal_a_evergreen_concept_video_e2e(tmp_path: Path):
         "canonical_url": "https://docs.anthropic.com/claude/context-window",
         "publisher": "Anthropic Docs",
         "content_kind": "evergreen_explainer",
+        "source_snapshot": snap_text,
+        "snapshot_sha256": hashlib.sha256(snap_text.encode("utf-8")).hexdigest(),
     }
 
     runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=project_id)
@@ -87,6 +92,7 @@ def test_rehearsal_b_reproduced_demo_experiment_video_e2e(tmp_path: Path):
     (artifacts_dir / "demo_protocol.json").write_text(json.dumps({"command": demo_cmd}, indent=2))
     (artifacts_dir / "demo_results.json").write_text(json.dumps(demo_res, indent=2))
 
+    demo_snap = "Model Context Protocol JSON-RPC specification requires tool call parameters to validate against declared schema."
     topic = {
         "candidate_id": project_id,
         "title": "MCP function call fails because tool JSON schema mismatches payload",
@@ -95,6 +101,8 @@ def test_rehearsal_b_reproduced_demo_experiment_video_e2e(tmp_path: Path):
         "canonical_url": "https://modelcontextprotocol.io/specification/tools",
         "publisher": "MCP Specification",
         "content_kind": "reproduced_demo",
+        "source_snapshot": demo_snap,
+        "snapshot_sha256": hashlib.sha256(demo_snap.encode("utf-8")).hexdigest(),
     }
 
     runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=project_id)

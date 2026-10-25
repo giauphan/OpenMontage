@@ -10,9 +10,14 @@ Enforces strict compliance with HyperFrames Core composition contracts:
 from __future__ import annotations
 
 import html as html_mod
+import json
+import logging
 from pathlib import Path
 import shutil
+import subprocess
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 GSAP_CDN_URL = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"
@@ -244,3 +249,168 @@ def materialize_hyperframes_project(
         result_paths[comp_name] = index_file
 
     return result_paths
+
+
+def render_hyperframes_composition(
+    comp_dir: Path,
+    output_mp4: Path,
+    *,
+    quality: str = "draft",
+    timeout_seconds: float = 600.0,
+    burn_captions: bool = False,
+    ass_path: Optional[Path] = None,
+) -> Path:
+    """Render HyperFrames composition using `npx hyperframes render`.
+
+    If burn_captions is True and ass_path exists, burns subtitles into output.
+    """
+    comp_dir = Path(comp_dir).resolve()
+    output_mp4 = Path(output_mp4).resolve()
+    output_mp4.parent.mkdir(parents=True, exist_ok=True)
+
+    raw_mp4 = output_mp4 if not burn_captions else output_mp4.with_suffix(".raw.mp4")
+    cmd = [
+        "npx", "hyperframes", "render",
+        str(comp_dir),
+        "-o", str(raw_mp4),
+        "--quality", quality,
+    ]
+    logger.info("Executing HyperFrames render: %s", " ".join(cmd))
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
+    if res.returncode != 0:
+        raise RuntimeError(f"HyperFrames render failed (exit {res.returncode}): {res.stderr or res.stdout}")
+
+    if burn_captions and ass_path and ass_path.is_file():
+        esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+        burn_cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", str(raw_mp4),
+            "-vf", f"ass='{esc_ass}'",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+            "-c:a", "copy",
+            str(output_mp4),
+        ]
+        subprocess.run(burn_cmd, check=True)
+        raw_mp4.unlink(missing_ok=True)
+
+    return output_mp4
+
+
+def render_ffmpeg_composition(
+    project_dir: Path,
+    output_mp4: Path,
+    render_dur: float,
+    width: int = 1080,
+    height: int = 1920,
+    burn_captions: bool = False,
+) -> Path:
+    """Render composition via FFmpeg concat demuxer for fast offline/CI execution."""
+    project_dir = Path(project_dir).resolve()
+    output_mp4 = Path(output_mp4).resolve()
+    output_mp4.parent.mkdir(parents=True, exist_ok=True)
+    visuals_dir = project_dir / "assets" / "visuals"
+    audio_path = project_dir / "assets" / "narration.mp3"
+    renders_dir = output_mp4.parent
+
+    visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
+    beats: List[Dict[str, Any]] = []
+    if visual_plan_file.is_file():
+        try:
+            plan_json = json.loads(visual_plan_file.read_text(encoding="utf-8"))
+            beats = plan_json.get("beats", [])
+        except Exception as e:
+            logger.warning(f"Could not load news_visual_plan.json: {e}")
+
+    svg_assets = sorted(list(visuals_dir.glob("*.svg"))) if visuals_dir.is_dir() else []
+
+    vf = (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=#0b1120,"
+        f"format=yuv420p"
+    )
+
+    ass_path = project_dir / "artifacts" / "captions.ass"
+    srt_path = project_dir / "artifacts" / "captions.srt"
+    if burn_captions:
+        if ass_path.is_file():
+            esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+            vf += f",ass='{esc_ass}'"
+        elif srt_path.is_file():
+            esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
+            vf += (
+                f",subtitles='{esc_srt}':force_style="
+                f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
+                f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
+                f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
+            )
+
+    if beats:
+        planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
+        scale = (render_dur / planned_total) if planned_total > 0 else 1.0
+
+        concat_list = renders_dir / "slides_concat.txt"
+        with concat_list.open("w", encoding="utf-8") as f:
+            for b in beats:
+                beat_dur = max(0.1, (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale)
+                aid = b.get("asset_id") or (b.get("asset_ids", [""])[0] if b.get("asset_ids") else "")
+                svg_cand = visuals_dir / f"{aid}.svg"
+                if not svg_cand.is_file():
+                    matches = list(visuals_dir.glob(f"{aid}.*"))
+                    svg_cand = matches[0] if matches else (svg_assets[0] if svg_assets else None)
+                if svg_cand and svg_cand.is_file():
+                    f.write(f"file '{svg_cand.resolve()}'\n")
+                    f.write(f"duration {beat_dur:.3f}\n")
+            if svg_assets:
+                last_aid = beats[-1].get("asset_id") or (beats[-1].get("asset_ids", [""])[0] if beats[-1].get("asset_ids") else "")
+                last_svg = visuals_dir / f"{last_aid}.svg"
+                if not last_svg.is_file():
+                    last_svg = svg_assets[-1]
+                f.write(f"file '{last_svg.resolve()}'\n")
+
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-i", str(audio_path),
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+            "-c:a", "aac", "-b:a", "192k",
+            "-t", str(render_dur),
+            str(output_mp4),
+        ]
+        subprocess.run(cmd, check=True)
+        concat_list.unlink(missing_ok=True)
+    elif svg_assets:
+        slide_dur = render_dur / len(svg_assets)
+        concat_list = renders_dir / "slides_concat.txt"
+        with concat_list.open("w", encoding="utf-8") as f:
+            for svg in svg_assets:
+                f.write(f"file '{svg.resolve()}'\n")
+                f.write(f"duration {slide_dur:.2f}\n")
+            f.write(f"file '{svg_assets[-1].resolve()}'\n")
+
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-i", str(audio_path),
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+            "-c:a", "aac", "-b:a", "192k",
+            "-t", str(render_dur),
+            str(output_mp4),
+        ]
+        subprocess.run(cmd, check=True)
+        concat_list.unlink(missing_ok=True)
+    else:
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
+            "-i", str(audio_path),
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+            "-c:a", "aac", "-b:a", "192k",
+            "-t", str(render_dur),
+            str(output_mp4),
+        ]
+        subprocess.run(cmd, check=True)
+
+    return output_mp4

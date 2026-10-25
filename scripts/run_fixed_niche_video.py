@@ -39,22 +39,13 @@ from lib.audio.narration_orchestrator import NarrationOrchestrator, MediaCpuLock
 logger = logging.getLogger(__name__)
 
 
-def format_srt_timestamp(seconds: float) -> str:
-    """Format float seconds as HH:MM:SS,mmm for SubRip subtitles."""
-    hrs = int(seconds // 3600)
-    mins = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int(round((seconds - int(seconds)) * 1000))
-    if millis >= 1000:
-        millis = 999
-    return f"{hrs:02d}:{mins:02d}:{secs:02d},{millis:03d}"
-
-
-def generate_srt_from_beats(beats: List[Dict[str, Any]]) -> str:
-    """Generate SRT caption content matching storyboard beat boundaries."""
-    from lib.fixed_niche.captions import generate_cues_from_beats, generate_captions_srt
-    cues = generate_cues_from_beats(beats)
-    return generate_captions_srt(cues)
+from lib.fixed_niche.captions import format_srt_timestamp, generate_srt_from_beats
+from lib.fixed_niche.hyperframes_composer import (
+    materialize_hyperframes_project,
+    render_hyperframes_composition,
+    render_ffmpeg_composition,
+)
+from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
 
 
 def render_project_composition(
@@ -64,8 +55,9 @@ def render_project_composition(
     duration_seconds: float = 72.0,
     allow_synthetic_audio: bool = False,
     burn_captions: bool = False,
+    renderer: str = "auto",
 ) -> Path:
-    """Render a dynamic project composition without hardcoded sample paths.
+    """Render a dynamic project composition via HyperFrames or FFmpeg.
 
     Protected by MediaCpuLock to serialize heavy render workloads.
     """
@@ -81,10 +73,7 @@ def render_project_composition(
 
     lock = MediaCpuLock(timeout_seconds=300.0)
     with lock:
-        visuals_dir = project_dir / "assets" / "visuals"
         audio_path = project_dir / "assets" / "narration.mp3"
-
-        # Determine canvas resolution
         is_vertical = "reels" in composition_name or "9x16" in str(output_mp4)
         width, height = (1080, 1920) if is_vertical else (1920, 1080)
 
@@ -122,125 +111,32 @@ def render_project_composition(
         # Determine actual render duration strictly matching narration audio if valid within shorts contract
         render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else duration_seconds
 
-        # Load visual plan beats if present for storyboard-aligned timing
-        visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
-        beats: List[Dict[str, Any]] = []
-        if visual_plan_file.is_file():
-            try:
-                plan_json = json.loads(visual_plan_file.read_text(encoding="utf-8"))
-                beats = plan_json.get("beats", [])
-            except Exception as e:
-                logger.warning(f"Could not load news_visual_plan.json: {e}")
+        # Dispatch renderer: auto, hyperframes, or ffmpeg
+        chosen_renderer = renderer.lower() if renderer else "auto"
+        if chosen_renderer == "auto":
+            env_renderer = os.environ.get("OPENMONTAGE_RENDERER", "").lower()
+            chosen_renderer = env_renderer if env_renderer in ("hyperframes", "ffmpeg") else "ffmpeg"
 
-        # Gather visual SVG assets
-        svg_assets = sorted(list(visuals_dir.glob("*.svg"))) if visuals_dir.is_dir() else []
-
-        # Base filtergraph for scaling and letterboxing
-        vf = (
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=#0b1120,"
-            f"format=yuv420p"
-        )
-
-        # Include styled captions only when burn_captions is explicitly enabled
-        ass_path = project_dir / "artifacts" / "captions.ass"
-        srt_path = project_dir / "artifacts" / "captions.srt"
-        if burn_captions:
-            if ass_path.is_file():
-                esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
-                vf += f",ass='{esc_ass}'"
-            elif srt_path.is_file():
-                esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-                vf += (
-                    f",subtitles='{esc_srt}':force_style="
-                    f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
-                    f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
-                    f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
-                )
-
-        if beats:
-            # Scale beat slide durations to match exact render duration so there is zero silent tail
-            planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
-            scale = (render_dur / planned_total) if planned_total > 0 else 1.0
-
-            concat_list = renders_dir / "slides_concat.txt"
-            with concat_list.open("w", encoding="utf-8") as f:
-                for b in beats:
-                    beat_dur = max(0.1, (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale)
-                    aid = b.get("asset_id") or (b.get("asset_ids", [""])[0] if b.get("asset_ids") else "")
-                    svg_cand = visuals_dir / f"{aid}.svg"
-                    if not svg_cand.is_file():
-                        matches = list(visuals_dir.glob(f"{aid}.*"))
-                        svg_cand = matches[0] if matches else (svg_assets[0] if svg_assets else None)
-                    if svg_cand and svg_cand.is_file():
-                        f.write(f"file '{svg_cand.resolve()}'\n")
-                        f.write(f"duration {beat_dur:.3f}\n")
-                if svg_assets:
-                    last_aid = beats[-1].get("asset_id") or (beats[-1].get("asset_ids", [""])[0] if beats[-1].get("asset_ids") else "")
-                    last_svg = visuals_dir / f"{last_aid}.svg"
-                    if not last_svg.is_file():
-                        last_svg = svg_assets[-1]
-                    f.write(f"file '{last_svg.resolve()}'\n")
-
-            cmd = [
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-f", "concat", "-safe", "0", "-i", str(concat_list),
-                "-i", str(audio_path),
-                "-vf", vf,
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-                "-c:a", "aac", "-b:a", "192k",
-                "-t", str(render_dur),
-                str(output_mp4),
-            ]
-            subprocess.run(cmd, check=True)
-            concat_list.unlink(missing_ok=True)
-        elif svg_assets:
-            slide_dur = render_dur / len(svg_assets)
-            concat_list = renders_dir / "slides_concat.txt"
-            with concat_list.open("w", encoding="utf-8") as f:
-                for svg in svg_assets:
-                    f.write(f"file '{svg.resolve()}'\n")
-                    f.write(f"duration {slide_dur:.2f}\n")
-                f.write(f"file '{svg_assets[-1].resolve()}'\n")
-
-            cmd = [
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-f", "concat", "-safe", "0", "-i", str(concat_list),
-                "-i", str(audio_path),
-                "-vf", vf,
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-                "-c:a", "aac", "-b:a", "192k",
-                "-t", str(render_dur),
-                str(output_mp4),
-            ]
-            subprocess.run(cmd, check=True)
-            concat_list.unlink(missing_ok=True)
+        if chosen_renderer == "hyperframes":
+            comp_dir = project_dir / composition_name
+            if not (comp_dir / "index.html").is_file():
+                comp_dir = project_dir / "hyperframes"
+            ass_path = project_dir / "artifacts" / "captions.ass"
+            return render_hyperframes_composition(
+                comp_dir=comp_dir,
+                output_mp4=output_mp4,
+                burn_captions=burn_captions,
+                ass_path=ass_path if burn_captions else None,
+            )
         else:
-            # Fallback test pattern
-            vf_pat = f"scale={width}:{height},format=yuv420p"
-            if burn_captions:
-                if ass_path.is_file():
-                    esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
-                    vf_pat += f",ass='{esc_ass}'"
-                elif srt_path.is_file():
-                    esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-                    vf_pat += (
-                        f",subtitles='{esc_srt}':force_style="
-                        f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
-                        f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
-                        f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
-                    )
-            cmd = [
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={duration_seconds}:r=30",
-                "-i", str(audio_path),
-                "-vf", vf_pat,
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-                "-c:a", "aac", "-b:a", "192k",
-                "-t", str(duration_seconds),
-                str(output_mp4),
-            ]
-            subprocess.run(cmd, check=True)
+            return render_ffmpeg_composition(
+                project_dir=project_dir,
+                output_mp4=output_mp4,
+                render_dur=render_dur,
+                width=width,
+                height=height,
+                burn_captions=burn_captions,
+            )
 
     return output_mp4
 
@@ -522,7 +418,7 @@ class FixedNicheVideoRunner:
 
         return out_audio
 
-    def render(self, burn_captions: bool = False) -> Dict[str, Any]:
+    def render(self, burn_captions: bool = False, renderer: str = "auto") -> Dict[str, Any]:
         """Render final 9:16 video and perform strict signed QA gating."""
         target_dur = self.get_target_duration()
         output_mp4 = self.project_dir / "renders" / "final_short_en_US_9x16.mp4"
@@ -531,21 +427,14 @@ class FixedNicheVideoRunner:
         # Enforce shorts duration contract: select audio_dur within [65.0, 75.0], fallback to target_dur
         render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else target_dur
 
-        if burn_captions:
-            render_project_composition(
-                project_dir=self.project_dir,
-                composition_name="hyperframes_reels",
-                output_mp4=output_mp4,
-                duration_seconds=render_dur,
-                burn_captions=True,
-            )
-        else:
-            render_project_composition(
-                project_dir=self.project_dir,
-                composition_name="hyperframes_reels",
-                output_mp4=output_mp4,
-                duration_seconds=render_dur,
-            )
+        render_project_composition(
+            project_dir=self.project_dir,
+            composition_name="hyperframes_reels",
+            output_mp4=output_mp4,
+            duration_seconds=render_dur,
+            burn_captions=burn_captions,
+            renderer=renderer,
+        )
 
         # Probe output video using argument list (prevent CWE-78)
         probe_cmd = [
@@ -699,6 +588,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--candidate-id", required=False, default=None, help="Candidate ID to produce")
     parser.add_argument("--auto-select", action="store_true", default=False, help="Automatically discover, filter, and score top in-scope candidate")
     parser.add_argument("--candidates-file", required=False, default=None, help="Path to YAML/JSON candidates pool file")
+    parser.add_argument("--use-test-fixtures", action="store_true", default=False, help="Explicitly allow loading test fixtures for testing/rehearsals")
+    parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Video composition renderer (auto, hyperframes, ffmpeg)")
     parser.add_argument("--project-dir", required=False, help="Custom project output directory")
     parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format (locked to shorts)")
     parser.add_argument("--provider", default=None, help="TTS provider (kokoro, flite, edge, pocket18, omniroute)")
@@ -720,28 +611,40 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.auto_select or not candidate_id:
         candidates_pool: List[Dict[str, Any]] = []
-        c_file = Path(args.candidates_file) if args.candidates_file else (ROOT / "tests/fixtures/fixed_niche_cases.yaml")
-        if c_file.is_file():
-            try:
-                import yaml
-                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-            except Exception as e:
-                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
+        if args.candidates_file:
+            c_file = Path(args.candidates_file)
+            if c_file.is_file():
+                try:
+                    import yaml
+                    raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                    candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+                except Exception as e:
+                    logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
+        elif args.use_test_fixtures:
+            c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
+            if c_file.is_file():
+                try:
+                    import yaml
+                    raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                    candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+                except Exception as e:
+                    logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
+        else:
+            adapter = FixedNicheSourceAdapter()
+            candidates_pool = adapter.discover_production_candidates()
 
         eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
         if not eligible:
-            print(json.dumps({"status": "NO_ELIGIBLE_TOPIC", "message": "Zero eligible topics found; no project staged."}, indent=2))
+            print(json.dumps({
+                "status": "NO_ELIGIBLE_TOPIC",
+                "message": "Zero eligible topics found in candidate pool; no project staged.",
+            }, indent=2))
             return 0
 
         from lib.fixed_niche.ranker import FixedNicheTopicScorer
         scorer = FixedNicheTopicScorer()
-        scored = sorted(
-            eligible,
-            key=lambda c: (scorer.score_problem_payoff(c) * 0.30 + scorer.score_evidence_verifiability(c) * 0.25 + scorer.score_visual_feasibility(c) * 0.20),
-            reverse=True,
-        )
-        top_cand = scored[0]
+        ranked = scorer.rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
+        top_cand = ranked[0] if ranked else eligible[0]
         candidate_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
         topic = dict(top_cand)
         topic["candidate_id"] = candidate_id
@@ -774,7 +677,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if stage_res.get("status") == "STAGED_READY" else 1
 
     runner.synthesize_narration(provider=args.provider, voice=args.voice, speed=args.speed)
-    render_res = runner.render(burn_captions=args.burn_captions)
+    render_res = runner.render(burn_captions=args.burn_captions, renderer=args.renderer)
     print(json.dumps(render_res, indent=2))
     return 0 if render_res.get("status") == "VIDEO_READY_FOR_PRIVATE_REVIEW" else 1
 

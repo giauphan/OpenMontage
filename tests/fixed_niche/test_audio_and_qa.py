@@ -129,3 +129,86 @@ def test_qa_002_audit_fixed_niche_deliverable(tmp_path: Path):
     assert "audited_at" in report
     assert (artifacts_dir / "production_qa_report.json").is_file()
 
+
+def test_qa_unverified_claim_in_proof_beat_fails_strict_audit(tmp_path: Path):
+    """QA audit strictly fails when a proof-bearing beat relies on an unverified claim."""
+    validator = FixedNicheQAValidator()
+    project_dir = tmp_path / "project_unverified_proof"
+    project_dir.mkdir()
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir()
+
+    (artifacts_dir / "fixed_niche_scope.json").write_text(json.dumps({
+        "candidate_id": "test_unv",
+        "scope_trace": {
+            "niche_id": validator.policy.niche_id,
+            "policy_sha256": validator.policy.policy_sha256,
+        },
+    }))
+
+    # Claim is unverified
+    claim_ledger = {
+        "claims": [
+            {"claim_id": "C001", "statement": "Unverified symptom", "confidence": "unverified"},
+            {"claim_id": "C002", "statement": "Unverified root cause", "confidence": "unverified"},
+        ]
+    }
+    (artifacts_dir / "claim_ledger.json").write_text(json.dumps(claim_ledger))
+
+    # Proof map has proof-bearing beat referencing unverified C002
+    proof_map = {
+        "beats": [
+            {
+                "beat_id": "B03",
+                "is_proof_bearing": True,
+                "claim_ids": ["C002"],
+                "story_function": "architectural_mechanism",
+            }
+        ]
+    }
+    (artifacts_dir / "video_proof_map.json").write_text(json.dumps(proof_map))
+
+    report = validator.audit_fixed_niche_deliverable(project_dir)
+    assert report["strict_quality_pass"] is False
+    assert any(f["category"] == "UNVERIFIED_CLAIM_IN_PROOF_BEAT" for f in report["findings"])
+
+
+def test_qa_missing_or_mismatched_source_snapshot_fails_strict_audit(tmp_path: Path):
+    """QA audit strictly fails when verified claims lack source_snapshot.txt or SHA256 mismatches."""
+    validator = FixedNicheQAValidator()
+    project_dir = tmp_path / "project_bad_snapshot"
+    project_dir.mkdir()
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir()
+
+    (artifacts_dir / "fixed_niche_scope.json").write_text(json.dumps({
+        "candidate_id": "test_snap",
+        "scope_trace": {
+            "niche_id": validator.policy.niche_id,
+            "policy_sha256": validator.policy.policy_sha256,
+        },
+    }))
+
+    claim_ledger = {
+        "claims": [
+            {
+                "claim_id": "C001",
+                "statement": "Verified symptom",
+                "confidence": "verified",
+                "snapshot_sha256": "expected_sha_123",
+            }
+        ]
+    }
+    (artifacts_dir / "claim_ledger.json").write_text(json.dumps(claim_ledger))
+
+    # Case A: Missing source_snapshot.txt
+    report_a = validator.audit_fixed_niche_deliverable(project_dir)
+    assert report_a["strict_quality_pass"] is False
+    assert any(f["category"] == "SNAPSHOT_PROVENANCE" for f in report_a["findings"])
+
+    # Case B: Present file but SHA256 mismatch
+    (artifacts_dir / "source_snapshot.txt").write_text("Mismatched content bytes")
+    report_b = validator.audit_fixed_niche_deliverable(project_dir)
+    assert report_b["strict_quality_pass"] is False
+    assert any(f["category"] == "SNAPSHOT_PROVENANCE" for f in report_b["findings"])
+

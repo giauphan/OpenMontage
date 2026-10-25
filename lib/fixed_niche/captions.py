@@ -176,6 +176,12 @@ def generate_captions_srt(cues: List[Dict[str, Any]]) -> str:
     return "\n".join(blocks)
 
 
+def generate_srt_from_beats(beats: List[Dict[str, Any]]) -> str:
+    """Generate SRT caption content matching storyboard beat boundaries."""
+    cues = generate_cues_from_beats(beats)
+    return generate_captions_srt(cues)
+
+
 def generate_captions_ass(
     cues: List[Dict[str, Any]],
     words: Optional[List[Dict[str, Any]]] = None,

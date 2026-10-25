@@ -69,16 +69,50 @@ class DemoExecutionProtocol:
             if arg in operator_tokens:
                 raise ResearchValidationError(f"Shell redirection or chaining token disallowed in demo command: {arg}")
 
+        # Disallow path traversal or access to sensitive system directories
+        sensitive_prefixes = ("/etc", "/root", "/sys", "/proc", "/dev", "/boot")
+        for arg in cmd_args:
+            if any(arg == p or arg.startswith(p + "/") for p in sensitive_prefixes):
+                raise ResearchValidationError(f"Access to restricted system directory disallowed: {arg}")
+            if ".." in arg:
+                try:
+                    resolved_cand = (self.working_dir / arg).resolve()
+                    if not str(resolved_cand).startswith(str(self.working_dir.resolve())):
+                        raise ResearchValidationError(f"Path traversal outside sandbox working directory disallowed: {arg}")
+                except ResearchValidationError:
+                    raise
+                except Exception:
+                    raise ResearchValidationError(f"Invalid path argument in demo command: {arg}")
+
         # Security: sanitize environment to prevent leaking secrets/tokens
-        allowed_keys = ("PATH", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT", "COMSPEC")
+        allowed_keys = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT", "COMSPEC")
         env = {k: os.environ[k] for k in allowed_keys if k in os.environ}
         env["HOME"] = str(self.working_dir)
+        sandbox_tmp = self.working_dir / ".sandbox_tmp"
+        sandbox_tmp.mkdir(parents=True, exist_ok=True)
+        env["TMPDIR"] = str(sandbox_tmp)
         if env_vars:
             env.update(env_vars)
 
         env_signature = hashlib.sha256(
             f"{os.uname().sysname}|{os.uname().machine}|{command}".encode("utf-8")
         ).hexdigest()
+
+        def _apply_sandbox_limits():
+            """Enforce POSIX resource limits and process group isolation."""
+            try:
+                import resource
+                resource.setrlimit(resource.RLIMIT_CPU, (timeout_seconds + 5, timeout_seconds + 10))
+                max_as = 2 * 1024 * 1024 * 1024
+                resource.setrlimit(resource.RLIMIT_AS, (max_as, max_as))
+                max_fsize = 50 * 1024 * 1024
+                resource.setrlimit(resource.RLIMIT_FSIZE, (max_fsize, max_fsize))
+            except (ValueError, OSError, AttributeError):
+                pass
+            try:
+                os.setpgrp()
+            except (AttributeError, OSError):
+                pass
 
         start_time = time.time()
         try:
@@ -90,6 +124,7 @@ class DemoExecutionProtocol:
                 text=True,
                 timeout=timeout_seconds,
                 env=env,
+                preexec_fn=_apply_sandbox_limits,
             )
             elapsed = time.time() - start_time
             return {
@@ -236,13 +271,61 @@ class FixedNicheResearcher:
         topic_brief_path.write_text(json.dumps(topic_brief, indent=2), encoding="utf-8")
 
         # 2. Claim ledger: Require verifiable ground truth, not automatic verified mark
-        has_snapshot = bool(candidate.get("source_snapshot") or candidate.get("snapshot_sha256") or candidate.get("verified_source"))
-        claim_confidence = "verified" if (url and has_snapshot) else "unverified"
-        claim_class = ClaimClassification.DOCUMENTED.value if (url and has_snapshot) else ClaimClassification.INFERRED.value
+        # Genuine snapshot provenance verification:
+        # 1) Must have actual snapshot text or file on disk
+        # 2) Must match snapshot_sha256 if recorded
+        # 3) `verified_source: true` without snapshot is strictly rejected
+        snap_content = candidate.get("source_snapshot")
+        if not snap_content and candidate.get("source_snapshot_path"):
+            cand_sp = Path(candidate["source_snapshot_path"])
+            if cand_sp.is_file():
+                snap_content = cand_sp.read_text(encoding="utf-8")
+
+        has_verified_snapshot = False
+        actual_snap_sha = None
+
+        if snap_content and str(snap_content).strip():
+            content_str = str(snap_content).strip()
+            actual_snap_sha = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
+            recorded_sha = candidate.get("snapshot_sha256")
+            if recorded_sha:
+                if actual_snap_sha.lower() == str(recorded_sha).lower():
+                    has_verified_snapshot = True
+                    (artifacts_dir / "source_snapshot.txt").write_text(content_str, encoding="utf-8")
+                else:
+                    logger.warning(
+                        f"Snapshot SHA mismatch for candidate {cid}: expected {recorded_sha}, calculated {actual_snap_sha}"
+                    )
+            else:
+                has_verified_snapshot = True
+                (artifacts_dir / "source_snapshot.txt").write_text(content_str, encoding="utf-8")
+
+        is_safe_primary = bool(url and self.source_adapter.is_safe_url(url))
+        claim_confidence = "verified" if (is_safe_primary and has_verified_snapshot) else "unverified"
+        claim_class = ClaimClassification.DOCUMENTED.value if (is_safe_primary and has_verified_snapshot) else ClaimClassification.INFERRED.value
 
         symptom = candidate.get("symptom") or f"Observed failure symptom: {title}"
         root_cause = candidate.get("root_cause") or candidate.get("mechanism") or f"Architectural root cause in {candidate.get('topic_family', 'agent execution boundary')}"
         remedy = candidate.get("remedy") or candidate.get("fix") or "Actionable verification checklist for developers to confirm fix in their repo"
+
+        def _make_claim(claim_id: str, statement: str) -> Dict[str, Any]:
+            c: Dict[str, Any] = {
+                "claim_id": claim_id,
+                "statement": statement,
+                "confidence": claim_confidence,
+                "classification": claim_class,
+                "source": {
+                    "canonical_url": url,
+                    "publisher": publisher,
+                    "published_at": published_at,
+                },
+            }
+            if claim_id == "C001":
+                c["scope"] = {"market": "US", "locale": "en-US"}
+            if claim_confidence == "verified" and actual_snap_sha:
+                c["snapshot_sha256"] = actual_snap_sha
+                c["source_snapshot_path"] = "artifacts/source_snapshot.txt"
+            return c
 
         claim_ledger = {
             "schema_version": "1.0",
@@ -250,40 +333,9 @@ class FixedNicheResearcher:
             "locale": "en-US",
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "claims": [
-                {
-                    "claim_id": "C001",
-                    "statement": symptom,
-                    "confidence": claim_confidence,
-                    "classification": claim_class,
-                    "scope": {"market": "US", "locale": "en-US"},
-                    "source": {
-                        "canonical_url": url,
-                        "publisher": publisher,
-                        "published_at": published_at,
-                    },
-                },
-                {
-                    "claim_id": "C002",
-                    "statement": root_cause,
-                    "confidence": claim_confidence,
-                    "classification": claim_class,
-                    "source": {
-                        "canonical_url": url,
-                        "publisher": publisher,
-                        "published_at": published_at,
-                    },
-                },
-                {
-                    "claim_id": "C003",
-                    "statement": remedy,
-                    "confidence": claim_confidence,
-                    "classification": claim_class,
-                    "source": {
-                        "canonical_url": url,
-                        "publisher": publisher,
-                        "published_at": published_at,
-                    },
-                },
+                _make_claim("C001", symptom),
+                _make_claim("C002", root_cause),
+                _make_claim("C003", remedy),
             ],
         }
         claim_ledger_path = artifacts_dir / "claim_ledger.json"

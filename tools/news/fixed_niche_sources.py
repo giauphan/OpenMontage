@@ -149,3 +149,38 @@ class FixedNicheSourceAdapter:
             "is_evergreen": item.is_evergreen,
             "content_kind": "evergreen_explainer" if item.is_evergreen else "news",
         }
+
+    def discover_production_candidates(
+        self,
+        sources_feed_path: Optional[Path] = None,
+    ) -> List[Dict[str, Any]]:
+        """Discover production candidates from official feeds without test fixture pollution.
+
+        Reads from authorized primary feeds or an explicit sources_feed_path.
+        Returns an empty list if no primary production feeds are configured.
+        """
+        from pathlib import Path
+        feed_paths: List[Path] = []
+        if sources_feed_path:
+            feed_paths.append(Path(sources_feed_path))
+        else:
+            default_feed = Path("config/sources/production_agent_engineering_feed.json")
+            if default_feed.is_file():
+                feed_paths.append(default_feed)
+
+        candidates: List[Dict[str, Any]] = []
+        for fp in feed_paths:
+            if not fp.is_file():
+                continue
+            try:
+                data = json.loads(fp.read_text(encoding="utf-8"))
+                items = data.get("items", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                for raw in items:
+                    norm = self.normalize_source_item(raw)
+                    if norm:
+                        candidates.append(self.to_candidate_dict(norm))
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Failed parsing production feed %s: %s", fp, e)
+
+        return candidates

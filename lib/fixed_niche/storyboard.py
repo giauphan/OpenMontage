@@ -483,6 +483,7 @@ class FixedNicheStoryboardDirector:
                 "end_s": beat["end_s"],
                 "claim_ids": beat["claim_ids"],
                 "proof_kind": beat["evidence_class"],
+                "is_proof_bearing": beat.get("is_proof_bearing", False),
                 "visual_asset_ids": [f"{beat['asset_id']}.svg"],
                 "requires_real_demo": False,
                 "is_illustration": True,

@@ -9,6 +9,7 @@ positive_cases:
     publisher: 'Anthropic Docs'
     content_kind: evergreen_explainer
     viewer_job: 'Keep project requirements durable across independent agent sessions'
+    source_snapshot: 'Claude context window limitations require persisting requirements and state to disk files across sessions.'
   - id: pos_02_mcp_schema_mismatch
     title: 'MCP function call fails because tool JSON schema mismatches payload'
     body: 'Detailed debugging of Model Context Protocol tool definitions and strict schema validation errors.'
@@ -17,6 +18,7 @@ positive_cases:
     publisher: 'MCP Specification'
     content_kind: evergreen_explainer
     viewer_job: 'Align tool JSON schemas to prevent runtime agent execution failure'
+    source_snapshot: 'Model Context Protocol JSON-RPC specification requires tool call parameters to validate against declared JSON schema.'
   - id: pos_03_ci_patch_regression
     title: 'An agent patch passes generated tests but causes a regression in CI'
     body: 'Analyzing test pollution, missing environment variables, and hidden mock dependencies in agent patches.'
