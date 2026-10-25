@@ -154,20 +154,25 @@ def test_rehearsal_c_rejected_off_niche_no_topic_day_e2e(tmp_path: Path):
     assert len(created_dirs) == 0
 
 
-def test_ai_director_pipeline_full_dynamic_8_stages_e2e(tmp_path: Path):
-    """End-to-End Test: Full 8-stage dynamic AI Director pipeline run from empty workspace."""
+@pytest.mark.parametrize("cand_idx", [0, 1, 2])
+def test_ai_director_pipeline_full_dynamic_8_stages_e2e(tmp_path: Path, cand_idx: int):
+    """End-to-End Test: Full 8-stage dynamic AI Director pipeline across 3 independent production topics."""
     from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
     from scripts.run_us_ai_director_pipeline import run_us_ai_director_pipeline
 
     adapter = FixedNicheSourceAdapter()
     candidates = adapter.discover_production_candidates()
-    assert len(candidates) > 0, "No production candidates found"
-    cand = candidates[0]
+    assert len(candidates) >= 3, "Insufficient production candidates found"
+    cand = candidates[cand_idx]
 
-    project_dir = tmp_path / "dynamic_director_short"
-    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", "cand_01"), format_kind="short")
+    project_dir = tmp_path / f"dynamic_director_short_{cand_idx}"
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", f"cand_{cand_idx}"), format_kind="short")
     staged = runner.build_and_stage_project(topic=cand)
     assert staged["status"] == "STAGED_READY"
+
+    # Verify topic_family correctly preserved from feed candidate
+    brief = json.loads((project_dir / "artifacts" / "topic_brief.json").read_text(encoding="utf-8"))
+    assert brief.get("topic_family") == cand.get("topic_family")
 
     # Execute all 8 stages
     pipeline_res = run_us_ai_director_pipeline(
@@ -214,14 +219,22 @@ def test_ai_director_pipeline_rejects_unverified_claim_negative(tmp_path: Path):
     runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", "cand_01"), format_kind="short")
     runner.build_and_stage_project(topic=cand)
 
-    # Corrupt claim ledger to mark claim as unapproved
+    # 1. Corrupt verdict to REJECTED with verified confidence
     ledger_path = project_dir / "artifacts" / "claim_ledger.json"
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     ledger["claims"][0]["verdict"] = "REJECTED"
+    ledger["claims"][0]["confidence"] = "verified"
+    ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+
+    with pytest.raises(StageExecutionError, match="Stage 3 failed: claim C001 has unapproved verdict 'REJECTED'"):
+        stage_3_editorial_grounding(project_dir)
+
+    # 2. Corrupt confidence to unverified with APPROVED verdict
+    ledger["claims"][0]["verdict"] = "APPROVED"
     ledger["claims"][0]["confidence"] = "unverified"
     ledger_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
 
-    with pytest.raises(StageExecutionError, match="Stage 3 failed: claim C001 has unapproved verdict"):
+    with pytest.raises(StageExecutionError, match="Stage 3 failed: claim C001 has unverified confidence 'unverified'"):
         stage_3_editorial_grounding(project_dir)
 
 

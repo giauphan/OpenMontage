@@ -117,6 +117,16 @@ class FixedNicheQAValidator:
                                     "severity": "blocker",
                                     "message": f"Beat '{beat.get('beat_id')}' contains placeholder title rectangle",
                                 })
+                            # Detect ungrounded statistics or performance multipliers in visual text
+                            import re
+                            text_elements = re.findall(r'<text[^>]*>(.*?)</text>', content)
+                            for t in text_elements:
+                                if re.search(r'\b\d+x\b', t, re.IGNORECASE) or re.search(r'\b\d+k\s+tokens?\b', t, re.IGNORECASE):
+                                    findings.append({
+                                        "category": "UNGROUNDED_VISUAL_STATISTIC",
+                                        "severity": "blocker",
+                                        "message": f"Beat '{beat.get('beat_id')}' contains ungrounded visual statistic: '{t.strip()}'",
+                                    })
             except Exception as e:
                 findings.append({"category": "VISUAL", "severity": "blocker", "message": f"Visual plan audit error: {e}"})
 

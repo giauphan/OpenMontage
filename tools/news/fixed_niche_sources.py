@@ -57,6 +57,7 @@ class NormalizedSourceItem:
     license_permission: str
     source_snapshot: Optional[str] = None
     snapshot_sha256: Optional[str] = None
+    topic_family: Optional[str] = None
     symptom: Optional[str] = None
     root_cause: Optional[str] = None
     remedy: Optional[str] = None
@@ -141,6 +142,7 @@ class FixedNicheSourceAdapter:
             license_permission=str(raw_item.get("license_permission") or "public_documentation"),
             source_snapshot=str(snap) if snap else None,
             snapshot_sha256=str(snap_sha) if snap_sha else None,
+            topic_family=raw_item.get("topic_family"),
             symptom=raw_item.get("symptom"),
             root_cause=raw_item.get("root_cause"),
             remedy=raw_item.get("remedy"),
@@ -168,6 +170,8 @@ class FixedNicheSourceAdapter:
             "is_evergreen": item.is_evergreen,
             "content_kind": "evergreen_explainer" if item.is_evergreen else "news",
         }
+        if item.topic_family:
+            d["topic_family"] = item.topic_family
         if item.source_snapshot:
             d["source_snapshot"] = item.source_snapshot
         if item.snapshot_sha256:

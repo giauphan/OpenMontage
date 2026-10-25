@@ -109,6 +109,20 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
                 raise StageExecutionError(
                     f"Stage 1 failed: claim {cid} evidence excerpt is not verbatim in snapshot {target_snap.name}"
                 )
+
+            # Verify independent fact check metadata and attestation
+            fact_check = source.get("independent_fact_check") or claim.get("independent_fact_check")
+            if fact_check:
+                v_status = fact_check.get("verification_status")
+                if v_status != "INDEPENDENT_FACT_CHECK_VERIFIED":
+                    raise StageExecutionError(
+                        f"Stage 1 failed: claim {cid} fact check status is '{v_status}', expected 'INDEPENDENT_FACT_CHECK_VERIFIED'"
+                    )
+                verified_by = fact_check.get("verified_by")
+                if not verified_by or len(str(verified_by).strip()) < 5:
+                    raise StageExecutionError(
+                        f"Stage 1 failed: claim {cid} independent fact check missing verified_by entity"
+                    )
             verified_sources += 1
 
     return {"verified_claims": len(claims), "verified_snapshots": verified_sources}
@@ -194,9 +208,12 @@ def stage_3_editorial_grounding(project_dir: Path) -> dict:
     for claim in ledger.get("claims", []):
         cid = claim.get("claim_id")
         verdict = claim.get("verdict", "")
-        # Accept APPROVED verdict or verified confidence
-        if verdict != "APPROVED" and claim.get("confidence") != "verified":
+        confidence = claim.get("confidence", "")
+        # Require BOTH APPROVED verdict and verified confidence (fail-closed)
+        if verdict != "APPROVED":
             raise StageExecutionError(f"Stage 3 failed: claim {cid} has unapproved verdict '{verdict}'")
+        if confidence != "verified":
+            raise StageExecutionError(f"Stage 3 failed: claim {cid} has unverified confidence '{confidence}'")
 
         # Check that script spans are grounded in evidence excerpts
         excerpt = claim.get("evidence_excerpt", "")
