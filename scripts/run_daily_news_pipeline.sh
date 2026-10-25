@@ -559,6 +559,15 @@ DIRECTOR_ATTEMPT=1
 validate_current_director_artifacts() {
   local output status
   local cutoff_ns="${DIRECTOR_SESSION_START_NS:-${DIRECTOR_ATTEMPT_START_NS:-0}}"
+  if [ "$cutoff_ns" -gt 0 ] 2>/dev/null; then
+    if "$PY" -c 'import pathlib,sys
+root = pathlib.Path(sys.argv[1]); cutoff = int(sys.argv[2])
+scripts = [root / "artifacts" / name for name in ("script_en_US.json", "script_vi.json", "script.json")]
+raise SystemExit(0 if any(p.is_file() and p.stat().st_mtime_ns >= cutoff for p in scripts) else 1)' \
+        "$PROJECT_DIR" "$cutoff_ns"; then
+      "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
+    fi
+  fi
   output=$("$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" \
     --min-mtime-ns "$cutoff_ns" --require-compositions 2>&1)
   status=$?
