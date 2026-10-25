@@ -70,3 +70,41 @@ def test_repair_binds_narration_to_fallback_root_when_composition_id_missing(tmp
     assert '<audio id="narration"' in patched
     assert 'data-composition-id="main"' in patched
 
+
+def test_repair_accepts_dot_notation_timeline_registration_and_en_us_landscape_defaults(tmp_path):
+    project_dir = tmp_path / "cand_en_test"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    (artifacts_dir / "script_en_US.json").write_text('{"locale": "en-US", "sections": []}', encoding="utf-8")
+    comp_dir = project_dir / "hyperframes"
+    comp_dir.mkdir(parents=True)
+    assets_dir = comp_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    for font_name in repair.REQUIRED_FONTS:
+        (assets_dir / font_name).write_bytes(b"font")
+
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>body { font-family: 'BeVietnamPro'; overflow: hidden; }</style>
+</head>
+<body>
+    <main id="stage">
+        <section class="scene" data-scene="0" data-start="0" data-end="10"><h1>Test</h1></section>
+    </main>
+    <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+        window.__timelines.main = tl;
+    </script>
+</body>
+</html>"""
+    comp = comp_dir / "index.html"
+    comp.write_text(html, encoding="utf-8")
+    repair.patch_html(comp, 10.0, strict=True)
+    patched = comp.read_text(encoding="utf-8")
+    assert 'data-width="1920"' in patched
+    assert 'data-height="1080"' in patched
+    assert repair.validate_html(comp) == []
+
+

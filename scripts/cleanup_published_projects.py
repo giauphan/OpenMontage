@@ -144,7 +144,16 @@ def clear_project_trash(root: Path, *, apply: bool = False, store=None, min_age_
                     except Exception:
                         is_failed_validation = True
 
-                has_renders = (directory / "renders" / "final_reels_vi_9x16.mp4").is_file()
+                renders_dir = directory / "renders"
+                has_renders = any(
+                    (renders_dir / rname).is_file()
+                    for rname in (
+                        "final_reels_vi_9x16.mp4",
+                        "final_full_vi_9x16.mp4",
+                        "final_short_en_US_9x16.mp4",
+                        "final_long_en_US_16x9.mp4",
+                    )
+                )
                 has_meta = (directory / "publish_metadata.json").is_file()
 
                 # If validation failed, or if it has no metadata and no renders (abandoned early research)

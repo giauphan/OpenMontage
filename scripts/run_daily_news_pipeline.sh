@@ -1356,6 +1356,19 @@ fi
 
 done
 
+# Clean up any unused batch candidate directories from this run that were never rendered
+if [ -z "$REHEARSAL_MANIFEST" ]; then
+  for CID in "${PROJECT_IDS[@]}"; do
+    CDIR="$ROOT/projects/$CID"
+    if [ -d "$CDIR" ] && [ ! -f "$CDIR/publish_metadata.json" ]; then
+      if ! compgen -G "$CDIR/renders/*.mp4" >/dev/null 2>&1; then
+        echo "[$(date -u +%FT%TZ)] Removing unused unrendered batch candidate directory: $CID"
+        rm -rf "$CDIR"
+      fi
+    fi
+  done
+fi
+
 # Step 5: (Removed atomic activation; now handled strictly by run_strict_docker_publish.sh's queue-next-day stage)
 cd "$ROOT"
 

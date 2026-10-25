@@ -120,6 +120,14 @@ def probe_duration(path: Path) -> float:
 
 def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False) -> None:
     html = path.read_text(encoding="utf-8")
+    locale = "vi-VN"
+    try:
+        from lib.artifact_paths import resolve_project_locale
+        locale = resolve_project_locale(path.parent.parent)
+    except Exception:
+        pass
+    is_landscape = locale == "en-US" and path.parent.name == "hyperframes"
+    default_width, default_height = (1920, 1080) if is_landscape else (PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
 
     # Calculate original duration of scenes to avoid incorrectly skipping timeline alignment
     # when data-duration is missing or stale on the root element
@@ -152,7 +160,7 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             initial_dur = max_end if max_end > 0 else narration_duration
             stage_open = (
                 f'<div id="stage" class="composition" data-composition-id="main" '
-                f'data-start="0" data-duration="{initial_dur:.3f}" data-width="1080" data-height="1920">\n'
+                f'data-start="0" data-duration="{initial_dur:.3f}" data-width="{default_width}" data-height="{default_height}">\n'
             )
             stage_close = "\n</div>\n"
             inner_scenes = html[start_pos:end_pos]
@@ -160,7 +168,7 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             html = html[:start_pos] + stage_open + inner_scenes + stage_close + html[end_pos:]
             root_open = re.search(r"<div\b[^>]*id=[\"']stage[\"'][^>]*>", html)
             if "#stage" not in html and "<style>" in html:
-                stage_css = "\n        #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif; }\n"
+                stage_css = f"\n        #stage {{ position: relative; width: {default_width}px; height: {default_height}px; overflow: hidden; background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif; }}\n"
                 html = html.replace("<style>", "<style>" + stage_css, 1)
         else:
             root_open = re.search(r"<div\b[^>]*>", html)
@@ -172,9 +180,9 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         if "data-composition-id" not in new_tag:
             new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-composition-id="main"', 1)
         if "data-width" not in new_tag:
-            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-width="1080"', 1)
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-width="{default_width}"', 1)
         if "data-height" not in new_tag:
-            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-height="1920"', 1)
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-height="{default_height}"', 1)
         if "data-duration" not in new_tag:
             initial_dur = max_end if max_end > 0 else narration_duration
             new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-duration="{initial_dur:.3f}"', 1)
@@ -584,7 +592,11 @@ def _validate_seek_safety(path: Path, html: str) -> None:
         if not isinstance(composition_id, str) or "data-no-timeline" in attrs:
             continue
         registration = re.compile(
-            r"window\s*\.\s*__timelines\s*\[\s*(['\"])" + re.escape(composition_id) + r"\1\s*\]"
+            r"window\s*\.\s*__timelines\s*(?:\[\s*(['\"])"
+            + re.escape(composition_id)
+            + r"\1\s*\]|\.\s*"
+            + re.escape(composition_id)
+            + r"\b)"
         )
         registered = any(
             code[match.start():match.start() + len("window")].strip().startswith("window")

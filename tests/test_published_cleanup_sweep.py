@@ -256,3 +256,20 @@ def test_clear_project_trash_removes_quarantined_and_errored(sandbox):
     assert active_cand.exists()
     assert cand_recent.exists()
 
+
+def test_clear_project_trash_preserves_en_us_rendered_projects(sandbox):
+    import os
+    import time
+    root, _ = sandbox
+    past_ts = time.time() - 3600 * 3
+
+    cand_en = root / "projects" / "cand_en_rendered"
+    renders = cand_en / "renders"
+    renders.mkdir(parents=True)
+    (renders / "final_short_en_US_9x16.mp4").write_bytes(b"mp4")
+    os.utime(cand_en, (past_ts, past_ts))
+
+    assert cleanup.clear_project_trash(root, apply=True, min_age_minutes=120) == 0
+    assert cand_en.exists()
+
+
