@@ -67,6 +67,17 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
     snapshot_dir = project_dir / "artifacts" / "source_snapshots"
     verified_sources = 0
 
+    # Read snapshot provenance sidecar if present
+    prov_file = project_dir / "artifacts" / "snapshot_provenance.json"
+    prov_data = None
+    if prov_file.is_file():
+        try:
+            prov_data = json.loads(prov_file.read_text(encoding="utf-8"))
+            if not isinstance(prov_data, dict):
+                raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json")
+        except (ValueError, OSError):
+            raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json")
+
     for idx, claim in enumerate(claims):
         cid = claim.get("claim_id", f"claim_{idx}")
         source = claim.get("source", {})
@@ -132,6 +143,21 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
                     raise StageExecutionError(
                         f"Stage 1 failed: claim {cid} grounding_sentence is not verbatim in snapshot {target_snap.name}"
                     )
+
+            # Verify snapshot provenance record for matching snapshot
+            if prov_data is not None:
+                described_snap = prov_data.get("snapshot_file", "source_snapshot.txt")
+                if target_snap.name != described_snap:
+                    raise StageExecutionError(
+                        f"Stage 1 failed: snapshot provenance describes '{described_snap}', not '{target_snap.name}'"
+                    )
+                recorded_prov_sha = prov_data.get("content_sha256")
+                if recorded_prov_sha != actual_sha:
+                    raise StageExecutionError(
+                        f"Stage 1 failed: snapshot provenance sha mismatch ({str(recorded_prov_sha)[:16]} != {actual_sha[:16]})"
+                    )
+                if not prov_data.get("is_authentic_primary"):
+                    raise StageExecutionError("Stage 1 failed: snapshot provenance indicates unauthentic source")
             verified_sources += 1
 
     return {"verified_claims": len(claims), "verified_snapshots": verified_sources}

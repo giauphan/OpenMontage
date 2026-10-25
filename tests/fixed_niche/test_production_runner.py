@@ -337,6 +337,8 @@ def test_qa_approval_record_contains_supervisor_signature(tmp_path: Path):
         "title": "Why coding agents lose project requirements between sessions",
         "topic_family": "context_memory",
         "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "publisher": "Anthropic Docs",
+        "retrieval_method": "OFFLINE_VERIFIED_PRIMARY_MIRROR",
         "source_snapshot": snap_text,
         "snapshot_sha256": hashlib.sha256(snap_text.encode("utf-8")).hexdigest(),
     }

@@ -29,6 +29,7 @@ def test_rehearsal_a_evergreen_concept_video_e2e(tmp_path: Path):
         "viewer_question": "Why can an AI coding agent forget project rules between sessions?",
         "canonical_url": "https://docs.anthropic.com/claude/context-window",
         "publisher": "Anthropic Docs",
+        "retrieval_method": "OFFLINE_VERIFIED_PRIMARY_MIRROR",
         "content_kind": "evergreen_explainer",
         "source_snapshot": snap_text,
         "snapshot_sha256": hashlib.sha256(snap_text.encode("utf-8")).hexdigest(),
@@ -100,6 +101,7 @@ def test_rehearsal_b_reproduced_demo_experiment_video_e2e(tmp_path: Path):
         "viewer_question": "Why does this MCP tool call fail?",
         "canonical_url": "https://modelcontextprotocol.io/specification/tools",
         "publisher": "MCP Specification",
+        "retrieval_method": "OFFLINE_VERIFIED_PRIMARY_MIRROR",
         "content_kind": "reproduced_demo",
         "source_snapshot": demo_snap,
         "snapshot_sha256": hashlib.sha256(demo_snap.encode("utf-8")).hexdigest(),
@@ -305,10 +307,9 @@ def test_qa_validator_rejects_ungrounded_visual_statistics_negative(tmp_path: Pa
     }
     (artifacts_dir / "news_visual_plan.json").write_text(json.dumps(visual_plan, indent=2), encoding="utf-8")
 
-    # 2. Write an SVG containing ungrounded multiplier and percentage
+    # 2. Write an SVG containing ONLY a percentage (testing regex with no trailing word boundary)
     svg_content = """<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
         <rect width="1080" height="1920" fill="#1e293b"/>
-        <text x="100" y="200" fill="#ffffff" font-size="40">Unsubstantiated 10x Performance Boost</text>
         <text x="100" y="300" fill="#ffffff" font-size="40">Resolution rate 99.5%</text>
     </svg>"""
     (visuals_dir / "stat_beat_01.svg").write_text(svg_content, encoding="utf-8")
@@ -319,6 +320,135 @@ def test_qa_validator_rejects_ungrounded_visual_statistics_negative(tmp_path: Pa
     assert report["strict_quality_pass"] is False
     stat_findings = [f for f in report["findings"] if f.get("category") == "UNGROUNDED_VISUAL_STATISTIC"]
     assert len(stat_findings) >= 1
-    assert "contains ungrounded visual statistic" in stat_findings[0]["message"]
+    assert "contains ungrounded visual statistic: 'Resolution rate 99.5%'" in stat_findings[0]["message"]
+
+    # 3. Now substantiate the 99.5% statistic in claim_ledger.json
+    ledger = {
+        "schema_version": "1.0",
+        "project_id": "negative_visual_stat",
+        "locale": "en-US",
+        "created_at": "2026-10-25T12:00:00Z",
+        "claims": [
+            {
+                "claim_id": "C001",
+                "statement": "Benchmark evaluation confirms resolution rate 99.5% on unit test harness",
+                "confidence": "verified",
+                "scope": {"market": "US"},
+                "source": {"canonical_url": "https://github.com/swe-bench/SWE-bench", "publisher": "SWE-bench", "published_at": "2026-10-25", "retrieved_at": "2026-10-25T12:00:00Z"},
+                "verdict": "APPROVED",
+                "evidence_excerpt": "Resolution rate 99.5%",
+            }
+        ]
+    }
+    (artifacts_dir / "claim_ledger.json").write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+    report2 = qa_validator.audit_fixed_niche_deliverable(project_dir)
+    stat_findings2 = [f for f in report2["findings"] if f.get("category") == "UNGROUNDED_VISUAL_STATISTIC"]
+    assert len(stat_findings2) == 0, "Substantiated statistic should not be rejected"
+
+
+def test_claim_grounding_rejects_unit_mismatch_and_unrelated_negative():
+    """Negative Test: verify_independent_claim rejects unit mismatches and unrelated evidence."""
+    from lib.fixed_niche.claim_grounding import verify_independent_claim
+
+    # 1. Statement says 50%, but snapshot only contains 50 ms
+    stmt = "Autonomous coding agent latency fell 50% across benchmarks"
+    snap = "Latency fell 50 ms when running in local sandbox mode."
+    res = verify_independent_claim(statement=stmt, snapshot_text=snap)
+    assert res["verification_status"] == "UNVERIFIED"
+    assert "Ungrounded quantitative figure '50%'" in res["attestation"]
+
+    # 2. Statement completely unrelated to snapshot
+    stmt2 = "Kubernetes ingress controller routes traffic to worker pods"
+    snap2 = "Claude context window limitations require persisting requirements to disk."
+    res2 = verify_independent_claim(statement=stmt2, snapshot_text=snap2)
+    assert res2["verification_status"] == "UNVERIFIED"
+    assert "Failed to identify evidence passage" in res2["attestation"]
+
+    # 3. Statement says 100m tokens, but snapshot only contains 100 ms
+    stmt3 = "Model evaluated 100m tokens across context window tests"
+    snap3 = "Model evaluated execution in 100 ms across context window tests."
+    res3 = verify_independent_claim(statement=stmt3, snapshot_text=snap3)
+    assert res3["verification_status"] == "UNVERIFIED"
+    assert "Ungrounded quantitative figure '100m tokens'" in res3["attestation"]
+
+    # 4. Positive test: "3 steps" where "steps" starts with 's' verifies successfully without false unit extraction
+    stmt4 = "Workflow requires 3 steps to configure permission boundary"
+    snap4 = "Security architecture requires 3 steps to configure permission boundary in sandbox."
+    res4 = verify_independent_claim(statement=stmt4, snapshot_text=snap4)
+    assert res4["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "3 steps" in res4["grounding_sentence"]
+
+    # 5. Decimal boundary test: statement says 5%, snapshot contains 99.5%
+    stmt5 = "Model resolution rate was 5% on unit test harness"
+    snap5 = "Model benchmark evaluation confirms resolution rate reached 99.5% on unit test harness."
+    res5 = verify_independent_claim(statement=stmt5, snapshot_text=snap5)
+    assert res5["verification_status"] == "UNVERIFIED"
+    assert "Ungrounded quantitative figure '5%'" in res5["attestation"]
+
+    # 6. Bare k/m/b quantity suffix test: 200K context window verifies without false unit split
+    stmt6 = "Claude Sonnet provides a 200K context window for agent sessions"
+    snap6 = "Claude Sonnet provides a 200K context window for agent sessions across independent invocations."
+    res6 = verify_independent_claim(statement=stmt6, snapshot_text=snap6)
+    assert res6["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "200K" in res6["grounding_sentence"]
+
+    # 7. Model alphanumeric identifier test: GPT-4o does not trigger false '4' quantity extraction
+    stmt7 = "Benchmarked agent execution using GPT-4o model on software tasks"
+    snap7 = "Official evaluation reports benchmarked agent execution using GPT-4o model on software tasks."
+    res7 = verify_independent_claim(statement=stmt7, snapshot_text=snap7)
+    assert res7["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
+    assert "GPT-4o" in res7["grounding_sentence"]
+
+
+def test_claim_grounding_rejects_fabricated_snapshot_and_provenance_negative(tmp_path: Path):
+    """Negative Test: verify_independent_claim and Stage 1 reject fabricated snapshots and invalid provenance."""
+    from lib.fixed_niche.claim_grounding import verify_independent_claim
+    from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
+    from scripts.run_us_ai_director_pipeline import stage_1_research_and_sources, StageExecutionError
+
+    # 1. Empty/fabricated snapshot content
+    res = verify_independent_claim(
+        statement="Autonomous coding agent reverts user instructions",
+        snapshot_text="   \n  ",
+    )
+    assert res["verification_status"] == "UNVERIFIED"
+
+    # 2. Stage 1 rejects tampered snapshot provenance
+    adapter = FixedNicheSourceAdapter()
+    cand = adapter.discover_production_candidates()[0]
+
+    project_dir = tmp_path / "negative_provenance"
+    runner = FixedNicheVideoRunner(project_dir=project_dir, candidate_id=cand.get("id", "cand_01"), format_kind="short")
+    runner.build_and_stage_project(topic=cand)
+
+    # Tamper with snapshot_provenance.json
+    prov_path = project_dir / "artifacts" / "snapshot_provenance.json"
+    prov = json.loads(prov_path.read_text(encoding="utf-8"))
+    prov["is_authentic_primary"] = False
+    prov_path.write_text(json.dumps(prov, indent=2), encoding="utf-8")
+
+    with pytest.raises(StageExecutionError, match="snapshot provenance indicates unauthentic source"):
+        stage_1_research_and_sources(project_dir)
+
+    # 3. Fabricated snapshot text without origin evidence must NOT be anchored as authentic primary
+    fabricated_text = "Fabricated agent memory snapshot text claiming high performance."
+    cand_fabricated = {
+        "candidate_id": "cand_fab",
+        "title": "Why memory expires",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "source_snapshot": fabricated_text,
+        "snapshot_sha256": hashlib.sha256(fabricated_text.encode("utf-8")).hexdigest(),
+    }
+    r_fab = FixedNicheResearcher()
+    fab_arts = r_fab.build_topic_artifacts(cand_fabricated, project_dir=tmp_path / "proj_fab")
+    fab_prov = json.loads((tmp_path / "proj_fab" / "artifacts" / "snapshot_provenance.json").read_text(encoding="utf-8"))
+    assert fab_prov["is_authentic_primary"] is False
+    assert fab_prov["retrieval_method"] == "UNVERIFIED_CAPTURE"
+    assert fab_prov["domain_policy_status"] == "UNVERIFIED_DOMAIN"
+    fab_ledger = json.loads(fab_arts["claim_ledger"].read_text(encoding="utf-8"))
+    assert fab_ledger["claims"], "Expected a claim to test rejection"
+    assert all(c["verdict"] == "REJECTED" for c in fab_ledger["claims"])
+
+
 
 

@@ -99,10 +99,41 @@ class FixedNicheQAValidator:
             except Exception as e:
                 findings.append({"category": "SCOPE", "severity": "blocker", "message": f"Malformed scope artifact: {e}"})
 
-        # 2. Meaningful visual audit
+        # 2. Meaningful visual audit with evidence substantiation
         visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
         if visual_plan_file.is_file():
             try:
+                import re
+                num = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?'
+                stat_patterns = [
+                    rf'[-+]?\b{num}x\b',
+                    rf'[-+]?\b{num}%',
+                    rf'[-+]?\b{num}[kmb]?\s+tokens?\b',
+                    rf'[-+]?\b{num}\s*(?:ms|req/s|rps|ops/sec)\b',
+                ]
+                combined_stat_re = re.compile("|".join(f"(?:{p})" for p in stat_patterns), re.IGNORECASE)
+
+                # Extract normalized approved statistics strictly from approved claims in claim ledger
+                approved_claims_with_stats = []
+                ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+                if ledger_path.is_file():
+                    try:
+                        l_data = json.loads(ledger_path.read_text(encoding="utf-8"))
+                        for c in l_data.get("claims", []):
+                            if c.get("verdict") == "APPROVED":
+                                c_stats = set()
+                                for text_field in (c.get("statement", ""), c.get("evidence_excerpt", "")):
+                                    for m in combined_stat_re.finditer(text_field):
+                                        c_stats.add(re.sub(r"[\s,]+", "", m.group(0)).lower().lstrip("+-"))
+                                if c_stats:
+                                    approved_claims_with_stats.append({
+                                        "claim_id": c.get("claim_id"),
+                                        "stats": c_stats,
+                                        "text_corpus": f"{c.get('statement', '')} {c.get('evidence_excerpt', '')}".lower(),
+                                    })
+                    except Exception:
+                        pass
+
                 plan_data = json.loads(visual_plan_file.read_text(encoding="utf-8"))
                 for beat in plan_data.get("beats", []):
                     aid = beat.get("asset_id")
@@ -118,23 +149,32 @@ class FixedNicheQAValidator:
                                     "message": f"Beat '{beat.get('beat_id')}' contains placeholder title rectangle",
                                 })
                             # Detect ungrounded statistics or performance multipliers in visual text
-                            import re
-                            stat_patterns = [
-                                r'\b\d+(?:\.\d+)?x\b',
-                                r'\b\d+(?:\.\d+)?%\b',
-                                r'\b\d+(?:\.\d+)?[kmb]?\s+tokens?\b',
-                                r'\b\d+(?:\.\d+)?\s*(?:ms|req/s|rps|ops/sec)\b',
-                            ]
-                            combined_stat_re = re.compile("|".join(f"(?:{p})" for p in stat_patterns), re.IGNORECASE)
                             text_elements = re.findall(r'<text[^>]*>(.*?)</text>', content, re.DOTALL)
                             for t in text_elements:
                                 clean_t = re.sub(r'<[^>]+>', '', t).strip()
-                                if combined_stat_re.search(clean_t):
-                                    findings.append({
-                                        "category": "UNGROUNDED_VISUAL_STATISTIC",
-                                        "severity": "blocker",
-                                        "message": f"Beat '{beat.get('beat_id')}' contains ungrounded visual statistic: '{clean_t}'",
-                                    })
+                                for stat_match in combined_stat_re.finditer(clean_t):
+                                    stat_val = re.sub(r"[\s,]+", "", stat_match.group(0)).lower().lstrip("+-")
+                                    matching_claims = [c for c in approved_claims_with_stats if stat_val in c["stats"]]
+                                    if not matching_claims:
+                                        findings.append({
+                                            "category": "UNGROUNDED_VISUAL_STATISTIC",
+                                            "severity": "blocker",
+                                            "message": f"Beat '{beat.get('beat_id')}' contains ungrounded visual statistic: '{clean_t}' (figure '{stat_val}' not substantiated in approved claims)",
+                                        })
+                                    else:
+                                        metric_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', clean_t.lower())) - {
+                                            "this", "that", "with", "from", "your", "what", "when", "where", "which"
+                                        }
+                                        has_context_support = any(
+                                            any(w in c["text_corpus"] for w in metric_words)
+                                            for c in matching_claims
+                                        ) if metric_words else True
+                                        if not has_context_support:
+                                            findings.append({
+                                                "category": "UNGROUNDED_VISUAL_STATISTIC",
+                                                "severity": "blocker",
+                                                "message": f"Beat '{beat.get('beat_id')}' contains visual statistic '{clean_t}' where metric context does not match supporting claim",
+                                            })
             except Exception as e:
                 findings.append({"category": "VISUAL", "severity": "blocker", "message": f"Visual plan audit error: {e}"})
 
@@ -232,6 +272,7 @@ class FixedNicheQAValidator:
             "blockers_count": len(blockers),
             "findings": findings,
             "audited_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "artifact_persisted": True,
         }
 
         # Write production_qa_report.json
@@ -239,7 +280,8 @@ class FixedNicheQAValidator:
             qa_report_path = project_dir / "artifacts" / "production_qa_report.json"
             qa_report_path.parent.mkdir(parents=True, exist_ok=True)
             qa_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        except OSError:
-            pass
+        except OSError as e:
+            report["artifact_persisted"] = False
+            report["artifact_persistence_warning"] = f"Could not persist production_qa_report.json: {e}"
 
         return report

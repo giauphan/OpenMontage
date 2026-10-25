@@ -13,7 +13,7 @@
       "is_evergreen": true,
       "license_permission": "public_documentation",
       "topic_family": "context_memory",
-      "symptom": "Autonomous coding agent reverts user instructions and forgets architecture rules when starting a new session turn",
+      "symptom": "Autonomous coding agent reverts user requirements and forgets architecture rules when starting a new session turn",
       "root_cause": "Context window limits cause conversation truncation; unbounded multi-turn dialog loses project requirements without file serialization",
       "remedy": "Serialize architectural constraints and progress ledger to version-controlled markdown artifacts read at session startup",
       "evidence_excerpt": "Claude context window limitations require persisting requirements and state to disk files across sessions.",

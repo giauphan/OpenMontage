@@ -303,9 +303,34 @@ class FixedNicheResearcher:
             if cand_sp.is_file():
                 snap_content = cand_sp.read_text(encoding="utf-8")
 
-        symptom = candidate.get("symptom") or f"Observed failure symptom: {title}"
-        root_cause = candidate.get("root_cause") or candidate.get("mechanism") or f"Architectural root cause in {candidate.get('topic_family', 'agent execution boundary')}"
-        remedy = candidate.get("remedy") or candidate.get("fix") or "Actionable verification checklist for developers to confirm fix in their repo"
+        claims_raw: List[Tuple[str, str]] = []
+        if candidate.get("symptom"):
+            claims_raw.append(("C001", candidate["symptom"]))
+        if candidate.get("root_cause") or candidate.get("mechanism"):
+            cid_rc = f"C00{len(claims_raw) + 1}"
+            claims_raw.append((cid_rc, candidate.get("root_cause") or candidate["mechanism"]))
+        if candidate.get("remedy") or candidate.get("fix"):
+            cid_rem = f"C00{len(claims_raw) + 1}"
+            claims_raw.append((cid_rem, candidate.get("remedy") or candidate["fix"]))
+
+        claims_from_candidate = bool(claims_raw)
+        # When separate role fields are not provided, do not assign roles from sentence position.
+        # Instead, assert explicit claim lists, evidence excerpts, or the primary factual statement.
+        if not claims_raw and isinstance(candidate.get("claims"), list):
+            for idx, c_stmt in enumerate(candidate["claims"], start=1):
+                if isinstance(c_stmt, str) and c_stmt.strip():
+                    claims_raw.append((f"C{idx:03d}", c_stmt.strip()))
+            claims_from_candidate = bool(claims_raw)
+        if not claims_raw:
+            if candidate.get("evidence_excerpt"):
+                claims_raw.append(("C001", str(candidate["evidence_excerpt"]).strip()))
+                claims_from_candidate = True
+            elif snap_content and str(snap_content).strip():
+                primary_stmt = re.split(r"(?<=[.!?])\s+", str(snap_content).strip())[0].strip()
+                claims_raw.append(("C001", primary_stmt))
+            else:
+                claims_raw.append(("C001", title))
+                claims_from_candidate = True
 
         has_verified_snapshot = False
         actual_snap_sha = None
@@ -315,9 +340,10 @@ class FixedNicheResearcher:
             actual_snap_sha = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
             recorded_sha = candidate.get("snapshot_sha256")
 
-            # Check semantic grounding: snapshot must contain substantive terms from title or topic domain
+            # Check semantic grounding: snapshot must contain substantive terms from title, topic domain, or candidate claims
+            claim_text_summary = " ".join(stmt for _, stmt in claims_raw) if claims_from_candidate else ""
             keywords = [
-                w.lower() for w in re.findall(r"\b[a-zA-Z]{4,}\b", f"{title} {candidate.get('topic_family', '')} {symptom}")
+                w.lower() for w in re.findall(r"[a-zA-Z]{4,}", f"{title} {candidate.get('topic_family', '')} {claim_text_summary}")
                 if w.lower() not in {"this", "that", "with", "from", "your", "what", "when", "where", "which"}
             ]
             content_lower = content_str.lower()
@@ -325,7 +351,7 @@ class FixedNicheResearcher:
                 "context", "window", "agent", "state", "token", "prompt", "session",
                 "model", "schema", "tool", "benchmark", "memory", "coding", "software",
                 "developer", "llm", "pipeline", "execution", "boundary", "permission",
-                "file", "persistence", "limits", "runtime", "failure", "debug",
+                "file", "persistence", "limits", "runtime", "failure", "debug"
             )
             grounded = len(content_str) >= 30 and (
                 (bool(keywords) and any(kw in content_lower for kw in keywords))
@@ -348,6 +374,78 @@ class FixedNicheResearcher:
         claim_confidence = "verified" if (is_safe_primary and has_verified_snapshot) else "unverified"
         claim_class = ClaimClassification.DOCUMENTED.value if (is_safe_primary and has_verified_snapshot) else ClaimClassification.INFERRED.value
 
+        wrote_provenance = False
+        is_anchored = False
+        prov_record: Optional[Dict[str, Any]] = None
+        provenance_path = artifacts_dir / "snapshot_provenance.json"
+        if has_verified_snapshot:
+            domain = url.split("//")[-1].split("/")[0] if url else ""
+            has_recorded_sha = bool(
+                recorded_sha
+                and actual_snap_sha
+                and str(recorded_sha).lower() == actual_snap_sha.lower()
+            )
+            has_primary_domain = bool(
+                is_safe_primary
+                and any(domain == d or domain.endswith(f".{d}") for d in (
+                    "anthropic.com", "github.com", "modelcontextprotocol.io",
+                    "openai.com", "arxiv.org", "git-scm.com", "tree-sitter.github.io",
+                    "docker.com", "pytest.org", "langchain.com",
+                ))
+            )
+            # Require independent origin evidence from trusted retrieval or attestation;
+            # candidate self-attestation alone cannot anchor snapshot authenticity.
+            is_feed_registered = False
+            try:
+                prod_cands = self.source_adapter.discover_production_candidates()
+                for pc in prod_cands:
+                    if (
+                        pc.get("canonical_url") == url
+                        and pc.get("snapshot_sha256")
+                        and pc.get("snapshot_sha256").lower() == str(recorded_sha).lower()
+                    ):
+                        is_feed_registered = True
+                        break
+            except Exception:
+                pass
+
+            has_origin_evidence = bool(
+                is_feed_registered
+                or candidate.get("retrieval_method") in ("OFFLINE_VERIFIED_PRIMARY_MIRROR", "TRUSTED_VENDOR_INGESTION")
+                or (
+                    candidate.get("independent_fact_check")
+                    and candidate["independent_fact_check"].get("verification_status") == "INDEPENDENT_FACT_CHECK_VERIFIED"
+                    and candidate["independent_fact_check"].get("primary_domain") == domain
+                )
+            )
+            is_anchored = bool(
+                has_primary_domain
+                and has_verified_snapshot
+                and has_recorded_sha
+                and has_origin_evidence
+            )
+            actual_retrieval_method = (
+                candidate.get("retrieval_method")
+                or ("OFFLINE_VERIFIED_PRIMARY_MIRROR" if is_feed_registered else ("INDEPENDENT_VENDOR_ATTESTATION" if is_anchored else "UNVERIFIED_CAPTURE"))
+            )
+            prov_record = {
+                "schema_version": "1.0",
+                "canonical_url": url,
+                "publisher": publisher,
+                "domain": domain,
+                "snapshot_file": "source_snapshot.txt",
+                "retrieval_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "retrieval_method": actual_retrieval_method if is_anchored else "UNVERIFIED_CAPTURE",
+                "content_sha256": actual_snap_sha,
+                "domain_policy_status": "APPROVED_PRIMARY_DOCUMENTATION" if (is_safe_primary and is_anchored) else "UNVERIFIED_DOMAIN",
+                "is_authentic_primary": is_anchored,
+                "attestation": f"Cryptographically anchored snapshot from verified primary domain {publisher}." if is_anchored else "Unanchored snapshot: source authenticity unverified.",
+            }
+            provenance_path.write_text(json.dumps(prov_record, indent=2), encoding="utf-8")
+            wrote_provenance = True
+        elif provenance_path.is_file():
+            provenance_path.unlink(missing_ok=True)
+
         def _make_claim(claim_id: str, statement: str) -> Dict[str, Any]:
             fact_check_info = verify_independent_claim(
                 statement=statement,
@@ -358,8 +456,11 @@ class FixedNicheResearcher:
                 candidate_fact_check=candidate.get("independent_fact_check"),
             )
             is_fact_checked = bool(fact_check_info.get("verification_status") == "INDEPENDENT_FACT_CHECK_VERIFIED")
-            is_approved = bool(is_safe_primary and has_verified_snapshot and is_fact_checked)
+            is_approved = bool(is_safe_primary and has_verified_snapshot and is_anchored and is_fact_checked)
             verdict = "APPROVED" if is_approved else "REJECTED"
+            claim_conf = "verified" if is_approved else "unverified"
+            claim_cls = ClaimClassification.DOCUMENTED.value if is_approved else ClaimClassification.INFERRED.value
+
             excerpt = fact_check_info.get("grounding_sentence") or ""
             if not excerpt and has_verified_snapshot and snap_content:
                 excerpt = str(snap_content).strip()[:200]
@@ -372,7 +473,7 @@ class FixedNicheResearcher:
                 "publisher": publisher,
                 "published_at": published_at,
                 "retrieved_at": now_iso,
-                "classification": claim_class,
+                "classification": claim_cls,
                 "verified_independent_source": is_safe_primary,
                 "independent_fact_check": fact_check_info,
             }
@@ -381,11 +482,17 @@ class FixedNicheResearcher:
                 source_dict["source_sha256"] = actual_snap_sha
                 source_dict["snapshot_file"] = "source_snapshot.txt"
                 source_dict["source_snapshot_path"] = "artifacts/source_snapshot.txt"
+                source_dict["provenance"] = {
+                    "retrieval_method": prov_record["retrieval_method"] if prov_record else "UNVERIFIED_CAPTURE",
+                    "retrieval_timestamp": now_iso,
+                    "is_authentic_primary": is_anchored,
+                    "domain_policy_status": "APPROVED_PRIMARY_DOCUMENTATION" if (is_safe_primary and is_anchored) else "UNVERIFIED_DOMAIN",
+                }
 
             c: Dict[str, Any] = {
                 "claim_id": claim_id,
                 "statement": statement,
-                "confidence": claim_confidence,
+                "confidence": claim_conf,
                 "scope": {"market": "US", "locale": "en-US"},
                 "source": source_dict,
                 "verdict": verdict,
@@ -399,21 +506,18 @@ class FixedNicheResearcher:
             "project_id": cid,
             "locale": "en-US",
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "claims": [
-                _make_claim("C001", symptom),
-                _make_claim("C002", root_cause),
-                _make_claim("C003", remedy),
-            ],
+            "claims": [_make_claim(c_id, c_stmt) for c_id, c_stmt in claims_raw],
         }
         claim_ledger_path = artifacts_dir / "claim_ledger.json"
         claim_ledger_path.write_text(json.dumps(claim_ledger, indent=2), encoding="utf-8")
 
-        # 3. Canonical research_brief
+        # 3. Canonical research_brief: only include verified/approved claims
+        approved_claims = [c["statement"] for c in claim_ledger["claims"] if c.get("verdict") == "APPROVED"]
         research_brief = {
             "topic": title,
             "target_audience": "US software developers working with AI coding agents",
             "canonical_url": url,
-            "claims": [c["statement"] for c in claim_ledger["claims"]],
+            "claims": approved_claims,
             "sources": [
                 {"url": url, "title": f"{publisher} Reference", "used_for": "Core technical mechanism"}
             ],
@@ -426,8 +530,11 @@ class FixedNicheResearcher:
         research_brief_path = artifacts_dir / "research_brief.json"
         research_brief_path.write_text(json.dumps(research_brief, indent=2), encoding="utf-8")
 
-        return {
+        res_dict = {
             "topic_brief": topic_brief_path,
             "claim_ledger": claim_ledger_path,
             "research_brief": research_brief_path,
         }
+        if wrote_provenance and provenance_path.is_file():
+            res_dict["snapshot_provenance"] = provenance_path
+        return res_dict

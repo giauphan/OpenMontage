@@ -164,6 +164,7 @@ def test_build_topic_artifacts_distinguishes_verified_vs_unverified(tmp_path: Pa
         "candidate_id": "cand_v",
         "title": "Why memory expires",
         "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "retrieval_method": "OFFLINE_VERIFIED_PRIMARY_MIRROR",
         "source_snapshot": snap_text,
         "snapshot_sha256": snap_sha,
     }
