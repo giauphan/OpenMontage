@@ -138,18 +138,18 @@ def _subtitle_blocks(path: Path) -> list[tuple[int, str]]:
     if path.suffix.lower() == ".json":
         data = json.loads(text)
         if isinstance(data, dict):
-            data = data.get("word_timestamps", data.get("segments", data.get("cues", [])))
+            data = data.get("word_timestamps", data.get("segments", data.get("cues", data.get("sections", []))))
         if not isinstance(data, list) or not data:
-            raise ValueError("no subtitle entries")
+            raise ValueError("no subtitle or section entries")
         words = []
         for entry in data:
             if not isinstance(entry, dict):
-                raise ValueError("invalid subtitle entry")
+                raise ValueError("invalid subtitle or section entry")
             value = entry.get("text", entry.get("word"))
             if not isinstance(value, str) or not value.strip():
-                raise ValueError("missing subtitle text")
+                raise ValueError("missing text content")
             words.append(value)
-        # Word-level exports need context, not per-word language detection.
+        # Word-level exports and sections need context, not per-word language detection.
         return [(1, " ".join(words))]
     if path.suffix.lower() in {".ass", ".ssa"}:
         blocks = []

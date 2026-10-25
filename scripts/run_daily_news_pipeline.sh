@@ -667,10 +667,14 @@ if [ "$DIRECTOR_EXIT" -eq 0 ]; then
   if [ "$is_en" -eq 1 ]; then
     echo "Validating en-US cultural localization and display language for $PROJECT_ID..."
     if [ -f "$PROJECT_DIR/artifacts/script_en_US.json" ]; then
-      "$PY" "$ROOT/scripts/validate_display_language.py" --locale en-US "$PROJECT_DIR/artifacts/script_en_US.json" || {
+      if ! "$PY" "$ROOT/scripts/validate_display_language.py" --locale en-US "$PROJECT_DIR/artifacts/script_en_US.json"; then
         echo "ERROR: en-US script failed cultural/language validation for $PROJECT_ID" >&2
-        return 1
-      }
+        "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "cultural_localization" --project-id "$PROJECT_ID" \
+          --error-type "CULTURAL_LOCALIZATION_FAILED" --message "en-US script failed cultural/language validation" || true
+        "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+          "en-US script failed cultural/language validation" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+        continue
+      fi
     fi
   fi
   NEWS_EVIDENCE_LOG="$(mktemp "$ROOT/logs/news_evidence_${PROJECT_ID}_XXXXXX.json")"
