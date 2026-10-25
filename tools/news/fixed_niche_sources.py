@@ -41,6 +41,16 @@ COMMUNITY_SIGNAL_DOMAINS = {
     "stackoverflow.com",
 }
 
+TOPIC_FAMILY_CANONICAL_MAP = {
+    "context_memory": "context_memory",
+    "tool_calling": "agent_tool_use",
+    "agent_tool_use": "agent_tool_use",
+    "debugging_reliability": "debugging_reliability",
+    "benchmarking_evaluation": "agent_evaluation",
+    "agent_evaluation": "agent_evaluation",
+    "agent_architecture": "agent_architecture",
+}
+
 
 @dataclass(frozen=True)
 class NormalizedSourceItem:
@@ -142,7 +152,7 @@ class FixedNicheSourceAdapter:
             license_permission=str(raw_item.get("license_permission") or "public_documentation"),
             source_snapshot=str(snap) if snap else None,
             snapshot_sha256=str(snap_sha) if snap_sha else None,
-            topic_family=raw_item.get("topic_family"),
+            topic_family=TOPIC_FAMILY_CANONICAL_MAP.get(str(raw_item.get("topic_family")).lower(), raw_item.get("topic_family")),
             symptom=raw_item.get("symptom"),
             root_cause=raw_item.get("root_cause"),
             remedy=raw_item.get("remedy"),
@@ -171,7 +181,7 @@ class FixedNicheSourceAdapter:
             "content_kind": "evergreen_explainer" if item.is_evergreen else "news",
         }
         if item.topic_family:
-            d["topic_family"] = item.topic_family
+            d["topic_family"] = TOPIC_FAMILY_CANONICAL_MAP.get(item.topic_family.lower(), item.topic_family)
         if item.source_snapshot:
             d["source_snapshot"] = item.source_snapshot
         if item.snapshot_sha256:

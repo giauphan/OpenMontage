@@ -285,3 +285,40 @@ def test_ai_director_pipeline_rejects_unsubstantiated_numeric_claim_negative(tmp
     with pytest.raises(StageExecutionError, match="not substantiated by excerpt"):
         stage_3_editorial_grounding(project_dir)
 
+
+def test_qa_validator_rejects_ungrounded_visual_statistics_negative(tmp_path: Path):
+    """Negative Test: FixedNicheQAValidator rejects SVGs containing ungrounded visual statistics."""
+    project_dir = tmp_path / "negative_visual_stat"
+    visuals_dir = project_dir / "assets" / "visuals"
+    artifacts_dir = project_dir / "artifacts"
+    visuals_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Create a mock visual plan pointing to an asset
+    visual_plan = {
+        "beats": [
+            {
+                "beat_id": "b01",
+                "asset_id": "stat_beat_01",
+            }
+        ]
+    }
+    (artifacts_dir / "news_visual_plan.json").write_text(json.dumps(visual_plan, indent=2), encoding="utf-8")
+
+    # 2. Write an SVG containing ungrounded multiplier and percentage
+    svg_content = """<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
+        <rect width="1080" height="1920" fill="#1e293b"/>
+        <text x="100" y="200" fill="#ffffff" font-size="40">Unsubstantiated 10x Performance Boost</text>
+        <text x="100" y="300" fill="#ffffff" font-size="40">Resolution rate 99.5%</text>
+    </svg>"""
+    (visuals_dir / "stat_beat_01.svg").write_text(svg_content, encoding="utf-8")
+
+    qa_validator = FixedNicheQAValidator()
+    report = qa_validator.audit_fixed_niche_deliverable(project_dir)
+
+    assert report["strict_quality_pass"] is False
+    stat_findings = [f for f in report["findings"] if f.get("category") == "UNGROUNDED_VISUAL_STATISTIC"]
+    assert len(stat_findings) >= 1
+    assert "contains ungrounded visual statistic" in stat_findings[0]["message"]
+
+

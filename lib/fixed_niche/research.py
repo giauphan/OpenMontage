@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from tools.news.fixed_niche_sources import ALLOWED_PRIMARY_DOMAINS, FixedNicheSourceAdapter
+from lib.fixed_niche.claim_grounding import verify_independent_claim
 
 logger = logging.getLogger(__name__)
 
@@ -348,25 +349,20 @@ class FixedNicheResearcher:
         claim_class = ClaimClassification.DOCUMENTED.value if (is_safe_primary and has_verified_snapshot) else ClaimClassification.INFERRED.value
 
         def _make_claim(claim_id: str, statement: str) -> Dict[str, Any]:
-            is_approved = bool(is_safe_primary and has_verified_snapshot)
+            fact_check_info = verify_independent_claim(
+                statement=statement,
+                snapshot_text=str(snap_content) if snap_content else "",
+                publisher=publisher,
+                canonical_url=url,
+                candidate_excerpt=candidate.get("evidence_excerpt"),
+                candidate_fact_check=candidate.get("independent_fact_check"),
+            )
+            is_fact_checked = bool(fact_check_info.get("verification_status") == "INDEPENDENT_FACT_CHECK_VERIFIED")
+            is_approved = bool(is_safe_primary and has_verified_snapshot and is_fact_checked)
             verdict = "APPROVED" if is_approved else "REJECTED"
-            excerpt = ""
-            if has_verified_snapshot and snap_content:
-                c_str = str(snap_content).strip()
-                cand_excerpt = candidate.get("evidence_excerpt")
-                if cand_excerpt and str(cand_excerpt) in c_str:
-                    excerpt = str(cand_excerpt)
-                else:
-                    sentences = re.split(r"(?<=[.!?])\s+", c_str)
-                    matching = [s for s in sentences if any(w.lower() in s.lower() for w in re.findall(r"\b[a-zA-Z]{4,}\b", statement))]
-                    excerpt = matching[0] if matching else c_str[:200]
-
-            fact_check_info = candidate.get("independent_fact_check") or {
-                "verified_by": f"{publisher} Primary Source Verification",
-                "primary_domain": url.split("//")[-1].split("/")[0] if url else "",
-                "verification_status": "INDEPENDENT_FACT_CHECK_VERIFIED" if is_approved else "UNVERIFIED",
-                "attestation": f"Primary literature from {publisher} verified against local source snapshot.",
-            }
+            excerpt = fact_check_info.get("grounding_sentence") or ""
+            if not excerpt and has_verified_snapshot and snap_content:
+                excerpt = str(snap_content).strip()[:200]
 
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             clean_stmt = statement.rstrip(".")

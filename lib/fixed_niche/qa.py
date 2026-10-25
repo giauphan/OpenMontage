@@ -119,13 +119,21 @@ class FixedNicheQAValidator:
                                 })
                             # Detect ungrounded statistics or performance multipliers in visual text
                             import re
-                            text_elements = re.findall(r'<text[^>]*>(.*?)</text>', content)
+                            stat_patterns = [
+                                r'\b\d+(?:\.\d+)?x\b',
+                                r'\b\d+(?:\.\d+)?%\b',
+                                r'\b\d+(?:\.\d+)?[kmb]?\s+tokens?\b',
+                                r'\b\d+(?:\.\d+)?\s*(?:ms|req/s|rps|ops/sec)\b',
+                            ]
+                            combined_stat_re = re.compile("|".join(f"(?:{p})" for p in stat_patterns), re.IGNORECASE)
+                            text_elements = re.findall(r'<text[^>]*>(.*?)</text>', content, re.DOTALL)
                             for t in text_elements:
-                                if re.search(r'\b\d+x\b', t, re.IGNORECASE) or re.search(r'\b\d+k\s+tokens?\b', t, re.IGNORECASE):
+                                clean_t = re.sub(r'<[^>]+>', '', t).strip()
+                                if combined_stat_re.search(clean_t):
                                     findings.append({
                                         "category": "UNGROUNDED_VISUAL_STATISTIC",
                                         "severity": "blocker",
-                                        "message": f"Beat '{beat.get('beat_id')}' contains ungrounded visual statistic: '{t.strip()}'",
+                                        "message": f"Beat '{beat.get('beat_id')}' contains ungrounded visual statistic: '{clean_t}'",
                                     })
             except Exception as e:
                 findings.append({"category": "VISUAL", "severity": "blocker", "message": f"Visual plan audit error: {e}"})
@@ -227,8 +235,11 @@ class FixedNicheQAValidator:
         }
 
         # Write production_qa_report.json
-        qa_report_path = project_dir / "artifacts" / "production_qa_report.json"
-        qa_report_path.parent.mkdir(parents=True, exist_ok=True)
-        qa_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        try:
+            qa_report_path = project_dir / "artifacts" / "production_qa_report.json"
+            qa_report_path.parent.mkdir(parents=True, exist_ok=True)
+            qa_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
         return report

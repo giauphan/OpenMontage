@@ -123,6 +123,15 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
                     raise StageExecutionError(
                         f"Stage 1 failed: claim {cid} independent fact check missing verified_by entity"
                     )
+                grounding_sentence = fact_check.get("grounding_sentence", "").strip()
+                if not grounding_sentence:
+                    raise StageExecutionError(
+                        f"Stage 1 failed: claim {cid} independent fact check missing grounding_sentence"
+                    )
+                if grounding_sentence not in snap_text:
+                    raise StageExecutionError(
+                        f"Stage 1 failed: claim {cid} grounding_sentence is not verbatim in snapshot {target_snap.name}"
+                    )
             verified_sources += 1
 
     return {"verified_claims": len(claims), "verified_snapshots": verified_sources}
