@@ -104,7 +104,7 @@ class KokoroLocalTTS(BaseTool):
         except ImportError:
             pass
 
-        return ToolStatus.UNCONFIGURED
+        return ToolStatus.UNAVAILABLE
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         text = inputs.get("text", "").strip()
