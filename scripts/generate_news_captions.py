@@ -20,10 +20,25 @@ def get_asr_cache_key(audio_sha: str, locale: str, model_size: str = "small") ->
     return hashlib.sha256(key_src.encode("utf-8")).hexdigest()
 
 
+def _resolve_asr_cache_dir(cache_dir: Path | str | None = None) -> Path:
+    """Resolve ASR cache directory, falling back safely to /tmp if read-only."""
+    if cache_dir is not None:
+        return Path(cache_dir)
+    env_dir = os.environ.get("OPENMONTAGE_CACHE_DIR")
+    if env_dir:
+        return Path(env_dir) / "asr"
+    default_dir = REPO_ROOT / ".cache/asr"
+    try:
+        default_dir.mkdir(parents=True, exist_ok=True)
+        return default_dir
+    except (OSError, PermissionError):
+        fallback_dir = Path("/tmp/openmontage_cache/asr")
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        return fallback_dir
+
+
 def check_asr_cache(cache_key: str, cache_dir: Path | str | None = None) -> dict | None:
-    if cache_dir is None:
-        cache_dir = REPO_ROOT / ".cache/asr"
-    cache_path = Path(cache_dir) / f"{cache_key}.json"
+    cache_path = _resolve_asr_cache_dir(cache_dir) / f"{cache_key}.json"
     if cache_path.is_file():
         try:
             return json.loads(cache_path.read_text(encoding="utf-8"))
@@ -33,14 +48,16 @@ def check_asr_cache(cache_key: str, cache_dir: Path | str | None = None) -> dict
 
 
 def save_asr_cache(cache_key: str, data: dict, cache_dir: Path | str | None = None) -> None:
-    if cache_dir is None:
-        cache_dir = REPO_ROOT / ".cache/asr"
-    cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / f"{cache_key}.json"
-    tmp_path = cache_dir / f"{cache_key}.tmp.json"
-    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp_path, cache_path)
+    try:
+        resolved_dir = _resolve_asr_cache_dir(cache_dir)
+        resolved_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = resolved_dir / f"{cache_key}.json"
+        tmp_path = resolved_dir / f"{cache_key}.tmp.json"
+        tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp_path, cache_path)
+    except (OSError, PermissionError):
+        # Gracefully handle sandbox or container read-only environments
+        pass
 
 
 def generate_captions(audio_path, output_dir, *, transcriber=None, converter=None, locale=None):

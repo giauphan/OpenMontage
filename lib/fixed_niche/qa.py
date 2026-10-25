@@ -51,11 +51,25 @@ class FixedNicheQAValidator:
             ("audio_sha256", audio_path, "INVALIDATED_BY_AUDIO_MUTATION"),
             ("video_sha256", video_path, "INVALIDATED_BY_VIDEO_TAMPERING"),
         ):
-            expected = app_data.get(key)
+            expected = app_data.get(key) or (app_data.get("media_sha256") if key == "video_sha256" else None)
             if not expected or not path.is_file() or self.compute_sha256(path).lower() != str(expected).lower():
                 app_data["approved"] = False
                 app_data["status"] = status if expected and path.is_file() else "INVALIDATED_MISSING_SIGNATURE"
                 app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
+                return False
+
+        if "signature" in app_data:
+            try:
+                from lib.qa_signing import verify_approval_record
+                pid = str(app_data.get("project_id") or project_dir.name)
+                is_valid, reason = verify_approval_record(app_data, project_id=pid)
+                if not is_valid:
+                    app_data["approved"] = False
+                    app_data["status"] = "INVALIDATED_BY_SIGNATURE_FORGERY"
+                    app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
+                    return False
+            except Exception as sig_err:
+                logger.warning(f"Signature verification error: {sig_err}")
                 return False
 
         return True

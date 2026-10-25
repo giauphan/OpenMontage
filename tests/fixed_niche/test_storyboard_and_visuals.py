@@ -193,3 +193,33 @@ def test_resolver_rejects_fallback_asset_reused_in_proof_bearing_beat(tmp_path: 
         resolve_assets_for_plan(project_dir, plan, enforce_meaningful_visuals=True)
     assert "Placeholder SVG fallback forbidden for proof-bearing beat 'B02'" in str(exc.value)
 
+
+def test_dynamic_narration_synthesizes_from_topic_evidence(tmp_path: Path):
+    """Ensure storyboard incorporates custom topic evidence into narration beats."""
+    director = FixedNicheStoryboardDirector()
+    topic = {
+        "candidate_id": "cand_dyn",
+        "title": "Custom Bug Isolation in Multi-Agent Reasoning",
+        "topic_family": "debugging_reliability",
+        "viewer_question": "Why do autonomous coding agents loop indefinitely on cyclical import errors?",
+        "symptom": "agents cycle through repeated edit attempts on mutual module imports",
+        "root_cause": "circular dependency analysis blindness during single-file patch generation",
+        "remedy": "topological sort analysis before dispatching agent file modifications",
+        "verification_step": "pytest tests/test_cyclic_imports.py --topo-check",
+        "key_takeaway": "static dependency boundary validation before executing agent patch pipelines",
+    }
+    claims = [
+        {"claim_id": "C101", "statement": "Mutual import loops freeze multi-turn LLM reasoning"},
+        {"claim_id": "C102", "statement": "Topological dependency sort resolves import order deterministically"},
+    ]
+    res = director.generate_storyboard(topic, claims, tmp_path / "dyn_proj", target_duration=70.0)
+    beats = res["visual_plan"]["beats"]
+
+    assert "Why do autonomous coding agents loop indefinitely on cyclical import errors?" in beats[0]["narration"]
+    assert "mutual module imports" in beats[1]["narration"]
+    assert "circular dependency analysis blindness" in beats[2]["narration"]
+    assert "topological sort analysis" in beats[3]["narration"]
+    assert "test_cyclic_imports.py" in beats[4]["narration"]
+    assert "static dependency boundary validation" in beats[5]["narration"]
+
+

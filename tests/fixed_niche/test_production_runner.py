@@ -232,3 +232,76 @@ def test_cli_returns_nonzero_when_qa_fails(tmp_path: Path, monkeypatch):
     ])
     assert exit_code == 1
 
+
+def test_off_niche_candidate_leaves_no_disk_artifacts(tmp_path: Path):
+    """Ensure off-niche candidate fails scope gate before creating project directories on disk."""
+    proj_dir = tmp_path / "off_niche_ghost_proj"
+    runner = FixedNicheVideoRunner(
+        project_dir=proj_dir,
+        candidate_id="ghost_cand",
+    )
+    off_niche_topic = {
+        "candidate_id": "ghost_cand",
+        "title": "Celebrity gossip about AI influencers",
+        "topic_family": "entertainment",
+    }
+    stage_res = runner.build_and_stage_project(off_niche_topic)
+    assert stage_res["status"] == "REJECTED_OFF_NICHE"
+    assert not proj_dir.exists(), "Off-niche rejection must not leave an empty ghost project directory"
+
+
+def test_hyperframes_composition_is_materialized_with_valid_structure(tmp_path: Path):
+    """Ensure HyperFrames index.html has data-composition-id, data-start, and registered timeline."""
+    proj_dir = tmp_path / "hf_valid_proj"
+    runner = FixedNicheVideoRunner(
+        project_dir=proj_dir,
+        candidate_id="hf_cand",
+    )
+    topic = {
+        "candidate_id": "hf_cand",
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+    }
+    runner.build_and_stage_project(topic)
+
+    reels_index = proj_dir / "hyperframes_reels" / "index.html"
+    assert reels_index.is_file()
+    content = reels_index.read_text(encoding="utf-8")
+    assert 'data-composition-id="main"' in content
+    assert 'data-start="0"' in content
+    assert 'data-width="1080"' in content
+    assert 'data-height="1920"' in content
+    assert 'window.__timelines["main"] = tl;' in content
+    assert 'class="clip"' in content
+
+
+def test_qa_approval_record_contains_supervisor_signature(tmp_path: Path):
+    """Ensure approval.json contains valid HMAC-SHA256 signature from qa_signing."""
+    from lib.qa_signing import verify_approval_record
+
+    proj_dir = tmp_path / "signed_qa_proj"
+    runner = FixedNicheVideoRunner(
+        project_dir=proj_dir,
+        candidate_id="cand_signed",
+    )
+    topic = {
+        "candidate_id": "cand_signed",
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+    }
+    runner.build_and_stage_project(topic)
+    runner.synthesize_narration(provider="flite")
+
+    res = runner.render()
+    assert res["status"] == "VIDEO_READY_FOR_PRIVATE_REVIEW"
+
+    approval_path = proj_dir / "approval.json"
+    assert approval_path.is_file()
+    app_data = json.loads(approval_path.read_text(encoding="utf-8"))
+    assert app_data["approved"] is True
+    assert "signature" in app_data
+    assert app_data["signature_algorithm"] == "HMAC-SHA256"
+    is_valid, reason = verify_approval_record(app_data, project_id="cand_signed")
+    assert is_valid is True, f"Signature verification failed: {reason}"
+
+

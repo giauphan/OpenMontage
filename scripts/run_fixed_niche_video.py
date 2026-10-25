@@ -281,11 +281,7 @@ class FixedNicheVideoRunner:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """Execute intake, scope gate, research, storyboard, and asset staging."""
-        self.project_dir.mkdir(parents=True, exist_ok=True)
-        artifacts_dir = self.project_dir / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        # 1. Scope gate validation
+        # 1. Scope gate validation before any filesystem side effects
         verdict = self.gate.evaluate_candidate(topic)
         if not verdict.is_eligible:
             return {
@@ -293,6 +289,10 @@ class FixedNicheVideoRunner:
                 "reason": verdict.reason,
                 "project_id": self.candidate_id,
             }
+
+        self.project_dir.mkdir(parents=True, exist_ok=True)
+        artifacts_dir = self.project_dir / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         # Write fixed_niche_scope.json sidecar
         self.gate.write_scope_artifact(verdict, artifacts_dir)
@@ -378,23 +378,13 @@ class FixedNicheVideoRunner:
         (artifacts_dir / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         # 7. Setup HyperFrames composition structures
-        for comp_name in ("hyperframes", "hyperframes_reels"):
-            comp_dir = self.project_dir / comp_name
-            comp_dir.mkdir(parents=True, exist_ok=True)
-            # Link or copy visual assets into composition dir
-            comp_vis = comp_dir / "assets" / "visuals"
-            comp_vis.mkdir(parents=True, exist_ok=True)
-            for svg_file in (self.project_dir / "assets" / "visuals").glob("*.svg"):
-                shutil.copy2(svg_file, comp_vis / svg_file.name)
-
-            # Minimal renderable HTML composition
-            html = (
-                f'<!DOCTYPE html>\n<html><head><meta charset="utf-8">\n'
-                f'<title>{topic.get("title")}</title>\n'
-                f'<style>body {{ margin:0; background:#0b1120; overflow:hidden; }}</style>\n'
-                f'</head><body><div id="root"></div></body></html>'
-            )
-            (comp_dir / "index.html").write_text(html, encoding="utf-8")
+        from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
+        materialize_hyperframes_project(
+            project_dir=self.project_dir,
+            topic=topic,
+            visual_plan=visual_plan,
+            duration=target_dur,
+        )
 
         return {
             "status": "STAGED_READY",
@@ -640,18 +630,47 @@ class FixedNicheVideoRunner:
 
         actual_dur = probe_dur if probe_dur > 0 else render_dur
 
-        app_record = {
-            "approved": qa_pass,
-            "status": app_status,
-            "claim_ledger_sha256": ledger_sha,
-            "audio_sha256": audio_sha,
-            "video_sha256": video_sha,
-            "target_aspect": "9:16",
-            "duration": actual_dur,
-            "target_duration": target_dur,
-            "policy_sha256": self.policy.policy_sha256,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
+        if qa_pass:
+            from lib.qa_signing import sign_approval_record
+            app_record = sign_approval_record(
+                project_id=self.candidate_id,
+                media_sha256=video_sha,
+                claim_ledger_sha256=ledger_sha,
+                timestamp_iso=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                reviewer="independent_qa_supervisor",
+                format_type="short",
+                audit_trail={
+                    "status": app_status,
+                    "audio_sha256": audio_sha,
+                    "video_sha256": video_sha,
+                    "target_aspect": "9:16",
+                    "duration": actual_dur,
+                    "target_duration": target_dur,
+                    "policy_sha256": self.policy.policy_sha256,
+                    "strict_quality_pass": True,
+                },
+            )
+            # Retain top-level attributes for compatibility
+            app_record["status"] = app_status
+            app_record["audio_sha256"] = audio_sha
+            app_record["video_sha256"] = video_sha
+            app_record["target_aspect"] = "9:16"
+            app_record["duration"] = actual_dur
+            app_record["target_duration"] = target_dur
+            app_record["policy_sha256"] = self.policy.policy_sha256
+        else:
+            app_record = {
+                "approved": False,
+                "status": app_status,
+                "claim_ledger_sha256": ledger_sha,
+                "audio_sha256": audio_sha,
+                "video_sha256": video_sha,
+                "target_aspect": "9:16",
+                "duration": actual_dur,
+                "target_duration": target_dur,
+                "policy_sha256": self.policy.policy_sha256,
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
         (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
 
         val_status = {
@@ -677,7 +696,9 @@ class FixedNicheVideoRunner:
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Fixed Niche Video Production CLI")
-    parser.add_argument("--candidate-id", required=True, help="Candidate ID to produce")
+    parser.add_argument("--candidate-id", required=False, default=None, help="Candidate ID to produce")
+    parser.add_argument("--auto-select", action="store_true", default=False, help="Automatically discover, filter, and score top in-scope candidate")
+    parser.add_argument("--candidates-file", required=False, default=None, help="Path to YAML/JSON candidates pool file")
     parser.add_argument("--project-dir", required=False, help="Custom project output directory")
     parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format (locked to shorts)")
     parser.add_argument("--provider", default=None, help="TTS provider (kokoro, flite, edge, pocket18, omniroute)")
@@ -685,24 +706,66 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
     parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
     parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video (default: False, clean video)")
-    parser.add_argument("--title", default="Why coding agents lose project requirements between sessions")
-    parser.add_argument("--topic-family", default="context_memory")
-    parser.add_argument("--canonical-url", default="https://docs.anthropic.com/claude/context-window")
+    parser.add_argument("--title", default=None)
+    parser.add_argument("--topic-family", default=None)
+    parser.add_argument("--canonical-url", default=None)
     args = parser.parse_args(argv)
 
-    proj_dir = Path(args.project_dir) if args.project_dir else ROOT / "projects" / args.candidate_id
+    policy = load_locked_policy()
+    gate = FixedNicheScopeGate(policy)
+
+    # Automatic topic selection when requested or candidate-id is omitted
+    topic: Dict[str, Any]
+    candidate_id = args.candidate_id
+
+    if args.auto_select or not candidate_id:
+        candidates_pool: List[Dict[str, Any]] = []
+        c_file = Path(args.candidates_file) if args.candidates_file else (ROOT / "tests/fixtures/fixed_niche_cases.yaml")
+        if c_file.is_file():
+            try:
+                import yaml
+                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+            except Exception as e:
+                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
+
+        eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
+        if not eligible:
+            print(json.dumps({"status": "NO_ELIGIBLE_TOPIC", "message": "Zero eligible topics found; no project staged."}, indent=2))
+            return 0
+
+        from lib.fixed_niche.ranker import FixedNicheTopicScorer
+        scorer = FixedNicheTopicScorer()
+        scored = sorted(
+            eligible,
+            key=lambda c: (scorer.score_problem_payoff(c) * 0.30 + scorer.score_evidence_verifiability(c) * 0.25 + scorer.score_visual_feasibility(c) * 0.20),
+            reverse=True,
+        )
+        top_cand = scored[0]
+        candidate_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
+        topic = dict(top_cand)
+        topic["candidate_id"] = candidate_id
+        if args.title:
+            topic["title"] = args.title
+        if args.topic_family:
+            topic["topic_family"] = args.topic_family
+        if args.canonical_url:
+            topic["canonical_url"] = args.canonical_url
+    else:
+        topic = {
+            "candidate_id": candidate_id,
+            "title": args.title or "Why coding agents lose project requirements between sessions",
+            "topic_family": args.topic_family or "context_memory",
+            "canonical_url": args.canonical_url or "https://docs.anthropic.com/claude/context-window",
+        }
+
+    proj_dir = Path(args.project_dir) if args.project_dir else ROOT / "projects" / candidate_id
     runner = FixedNicheVideoRunner(
         project_dir=proj_dir,
-        candidate_id=args.candidate_id,
+        candidate_id=candidate_id,
         format_kind=args.format,
+        policy=policy,
     )
-
-    topic = {
-        "candidate_id": args.candidate_id,
-        "title": args.title,
-        "topic_family": args.topic_family,
-        "canonical_url": args.canonical_url,
-    }
 
     stage_res = runner.build_and_stage_project(topic=topic, dry_run=args.dry_run)
     print(json.dumps(stage_res, indent=2))

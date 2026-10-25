@@ -225,6 +225,101 @@ class FixedNicheStoryboardDirector:
             f'</svg>'
         )
 
+    def compose_dynamic_narration(
+        self,
+        topic: Dict[str, Any],
+        claims: List[Dict[str, Any]],
+    ) -> Dict[str, str]:
+        """Compose 6-beat evidence-driven narration grounded in topic claims and brief.
+
+        Calibrated to ~125–130 words total for a 65–75 second shorts delivery duration.
+        """
+        family = topic.get("topic_family", "context_memory")
+        title = topic.get("title", "AI Agent Engineering Explainer")
+
+        # Claims extraction
+        statements = [c.get("statement", "") for c in claims if isinstance(c, dict) and c.get("statement")]
+        stmt_0 = statements[0] if len(statements) > 0 else ""
+        stmt_1 = statements[1] if len(statements) > 1 else ""
+        stmt_2 = statements[2] if len(statements) > 2 else ""
+
+        # Beat 1: Hook
+        q = topic.get("viewer_question")
+        if q and len(q.split()) >= 6:
+            b1 = q if q.endswith("?") else f"{q}?"
+        elif title:
+            b1 = f"Why do autonomous coding agents encounter recurring failures with {title.rstrip('.')}?"
+        elif family == "agent_tool_use":
+            b1 = "Why do tool calls fail when an AI coding agent executes Model Context Protocol functions?"
+        elif family == "debugging_reliability":
+            b1 = "Why do AI agent pull requests pass generated tests but break continuous integration builds?"
+        else:
+            b1 = "Why does your AI coding agent forget repository guidelines between sessions?"
+
+        # Beat 2: Developer Impact / Symptom
+        symptom = topic.get("symptom") or (stmt_0 if len(stmt_0.split()) >= 4 else "")
+        if symptom:
+            clean_sym = symptom.rstrip(".")
+            b2 = f"In active development workflows, {clean_sym}. The failure derails multi-turn agent execution before code is delivered."
+        elif family == "agent_tool_use":
+            b2 = "A single type mismatch between the tool schema and the runtime payload causes immediate tool execution failure."
+        elif family == "debugging_reliability":
+            b2 = "Agents generate localized code that satisfies isolated mock assertions while silently introducing breaking regression defects across the broader test suite."
+        else:
+            b2 = "You provide detailed constraints in chat, yet the next agent session resets back to zero."
+
+        # Beat 3: Root Cause / Mechanism
+        mech = topic.get("root_cause") or topic.get("mechanism") or (stmt_1 if len(stmt_1.split()) >= 4 else "")
+        if mech:
+            clean_mech = mech.rstrip(".")
+            b3 = f"The root architectural cause is {clean_mech}. Autonomous models maintain zero persistent context across process restarts unless boundaries are explicitly declared."
+        elif family == "agent_tool_use":
+            b3 = "The underlying mechanism is strict validation in client libraries. Autonomous agents frequently emit stringified arguments or hallucinated keys instead of structured dictionaries conforming to the tool definition."
+        elif family == "debugging_reliability":
+            b3 = "The underlying mechanism is context contamination and test blindness. Unit tests written in isolation overlook system environment flags, asynchronous timing constraints, and multi-package dependency cycles."
+        else:
+            b3 = "The root cause is ephemeral session memory. Large language models maintain zero persistent state across process restarts unless repository instructions are explicitly injected into the agent system prompt on every invocation."
+
+        # Beat 4: Verified Remedy / Architecture Fix
+        rem = topic.get("remedy") or topic.get("fix") or (stmt_2 if len(stmt_2.split()) >= 4 else "")
+        if rem:
+            clean_rem = rem.rstrip(".")
+            b4 = f"The verified engineering remedy is {clean_rem}. Enforce declarative configuration boundaries before executing code mutations."
+        elif family == "agent_tool_use":
+            b4 = "The verified remedy is schema defense. Enforce input schema validation before invoking the server, and provide automatic schema coercion filters that sanitize agent payloads before dispatch."
+        elif family == "debugging_reliability":
+            b4 = "The disciplined engineering remedy is reproduction before remediation. Require agents to author a failing reproduction test verifying the defect before generating any patch."
+        else:
+            b4 = "The engineering remedy is declarative configuration. Define an immutable AGENTS markdown contract at the repository root, and enforce automated preflight checks that load these boundaries before executing any code modifications."
+
+        # Beat 5: Local Verification / Demo Checklist
+        v_step = topic.get("verification_step") or topic.get("demo_command")
+        if v_step and len(v_step.split()) >= 3:
+            clean_step = v_step.rstrip(".")
+            b5 = f"Verify this remedy locally by running {clean_step}, asserting that reproduction tests pass cleanly under isolated sandbox conditions."
+        elif family == "agent_tool_use":
+            b5 = "Verify this remedy locally by executing mock MCP tool calls with malformed payloads, asserting that repair filters recover valid arguments and schema errors drop to zero."
+        elif family == "debugging_reliability":
+            b5 = "Verify this fix by executing the reproduction test against clean main branch baselines, ensuring the defect reproduces and the subsequent patch cleanly resolves it in isolation."
+        else:
+            b5 = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
+
+        # Beat 6: Takeaway & Version Scope
+        takeaway = topic.get("key_takeaway") or topic.get("thesis")
+        if takeaway and len(takeaway.split()) >= 4:
+            clean_ta = takeaway.rstrip(".")
+            b6 = f"Always enforce {clean_ta} in code and CI, rather than trusting conversational memory."
+        elif family == "agent_tool_use":
+            b6 = "Strict schema adherence and defensive payload coercion are mandatory for resilient agent tool integration across production environments."
+        elif family == "debugging_reliability":
+            b6 = "Always require verified reproduction tests and clean contract assertions before trusting automated agent bug repairs in production repositories."
+        else:
+            b6 = "Always enforce deterministic state persistence across sessions in code and CI, rather than assuming conversational memory survives."
+
+        return {
+            "b1": b1, "b2": b2, "b3": b3, "b4": b4, "b5": b5, "b6": b6
+        }
+
     def generate_storyboard(
         self,
         topic: Dict[str, Any],
@@ -260,35 +355,14 @@ class FixedNicheStoryboardDirector:
         c3 = claim_ids[2] if len(claim_ids) > 2 else c2
         extra_claim_ids = claim_ids[3:]
 
-        # Per-family dynamic narration templates (~125-130 words for 65-75s target duration)
-        if family == "context_memory":
-            b1_narration = "Why does your AI coding agent forget repository guidelines between sessions?"
-            b2_narration = "You provide detailed constraints in chat, yet the next agent session resets back to zero."
-            b3_narration = "The root cause is ephemeral session memory. Large language models maintain zero persistent state across process restarts unless repository instructions are explicitly injected into the agent system prompt on every invocation."
-            b4_narration = "The engineering remedy is declarative configuration. Define an immutable AGENTS markdown contract at the repository root, and enforce automated preflight checks that load these boundaries before executing any code modifications."
-            b5_narration = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
-            b6_narration = "Always enforce deterministic state persistence across sessions in code and CI, rather than assuming conversational memory survives."
-        elif family == "agent_tool_use":
-            b1_narration = "Why do tool calls fail when an AI coding agent executes Model Context Protocol functions?"
-            b2_narration = "A single type mismatch between the tool schema and the runtime payload causes immediate tool execution failure."
-            b3_narration = "The underlying mechanism is strict validation in client libraries. Autonomous agents frequently emit stringified arguments or hallucinated keys instead of structured dictionaries conforming to the tool definition."
-            b4_narration = "The verified remedy is schema defense. Enforce input schema validation before invoking the server, and provide automatic schema coercion filters that sanitize agent payloads before dispatch."
-            b5_narration = "Verify this remedy locally by executing mock MCP tool calls with malformed payloads, asserting that repair filters recover valid arguments and schema errors drop to zero."
-            b6_narration = "Strict schema adherence and defensive payload coercion are mandatory for resilient agent tool integration across production environments."
-        elif family == "debugging_reliability":
-            b1_narration = "Why do AI agent pull requests pass generated tests but break continuous integration builds?"
-            b2_narration = "Agents generate localized code that satisfies isolated mock assertions while silently introducing breaking regression defects across the broader test suite."
-            b3_narration = "The underlying mechanism is context contamination and test blindness. Unit tests written in isolation overlook system environment flags, asynchronous timing constraints, and multi-package dependency cycles."
-            b4_narration = "The disciplined engineering remedy is reproduction before remediation. Require agents to author a failing reproduction test verifying the defect before generating any patch."
-            b5_narration = "Verify this fix by executing the reproduction test against clean main branch baselines, ensuring the defect reproduces and the subsequent patch cleanly resolves it in isolation."
-            b6_narration = "Always require verified reproduction tests and clean contract assertions before trusting automated agent bug repairs in production repositories."
-        else:
-            b1_narration = f"How do engineers identify, isolate, and resolve failure modes in {title}?"
-            b2_narration = "In production agent environments, unhandled edge cases quickly deadlock multi-turn reasoning loops and corrupt downstream project artifacts."
-            b3_narration = "The core architectural mechanism stems from implicit assumptions about execution state. When intermediate steps lack explicit schemas or health checks, minor faults compound into total task failure."
-            b4_narration = "The engineering remedy is structured contract enforcement. Define strict boundaries, validate all tool and step inputs defensively, and add deterministic recovery routines before executing mutations."
-            b5_narration = "Verify the implementation by authoring reproducible regression benchmarks, asserting that all boundary assertions hold and edge cases fail safely under isolated sandbox conditions."
-            b6_narration = "Building resilient agent architectures requires continuous verification and defense in depth, rather than relying on unvalidated model assumptions."
+        # Compose evidence-driven narration grounded in topic claims and brief
+        narration_beats = self.compose_dynamic_narration(topic, claims)
+        b1_narration = narration_beats["b1"]
+        b2_narration = narration_beats["b2"]
+        b3_narration = narration_beats["b3"]
+        b4_narration = narration_beats["b4"]
+        b5_narration = narration_beats["b5"]
+        b6_narration = narration_beats["b6"]
 
         # 6-beat recipe from VIDEO_PLAYBOOK.md
         beats_spec = [
