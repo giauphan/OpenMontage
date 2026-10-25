@@ -139,12 +139,16 @@ def test_runner_stages_srt_captions_and_validates_script_sha(tmp_path: Path):
     res = runner.build_and_stage_project(topic=topic, dry_run=True)
     assert res["status"] == "STAGED_READY"
 
-    # Verify captions.srt
+    # Verify captions.srt and styled captions.ass
     srt_path = proj_dir / "artifacts" / "captions.srt"
     assert srt_path.is_file()
     srt_content = srt_path.read_text(encoding="utf-8")
     assert "00:00:00,000 --> " in srt_content
-    assert len(srt_content.strip().split("\n\n")) == 6
+    assert len(srt_content.strip().split("\n\n")) >= 6
+
+    ass_path = proj_dir / "artifacts" / "captions.ass"
+    assert ass_path.is_file()
+    assert "PlayResY: 1920" in ass_path.read_text(encoding="utf-8")
 
     # Verify script SHA256 in assets manifest matches actual script_en_US.json
     script_bytes = (proj_dir / "artifacts" / "script_en_US.json").read_bytes()

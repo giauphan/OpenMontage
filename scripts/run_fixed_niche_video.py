@@ -52,13 +52,9 @@ def format_srt_timestamp(seconds: float) -> str:
 
 def generate_srt_from_beats(beats: List[Dict[str, Any]]) -> str:
     """Generate SRT caption content matching storyboard beat boundaries."""
-    blocks = []
-    for idx, b in enumerate(beats, 1):
-        start_ts = format_srt_timestamp(float(b.get("start_s", 0.0)))
-        end_ts = format_srt_timestamp(float(b.get("end_s", 0.0)))
-        text = b.get("narration", "").strip()
-        blocks.append(f"{idx}\n{start_ts} --> {end_ts}\n{text}\n")
-    return "\n".join(blocks)
+    from lib.fixed_niche.captions import generate_cues_from_beats, generate_captions_srt
+    cues = generate_cues_from_beats(beats)
+    return generate_captions_srt(cues)
 
 
 def render_project_composition(
@@ -145,11 +141,20 @@ def render_project_composition(
             f"format=yuv420p"
         )
 
-        # Include captions if present
+        # Include styled captions if present (prefer ASS with PlayRes & caption safe zone)
+        ass_path = project_dir / "artifacts" / "captions.ass"
         srt_path = project_dir / "artifacts" / "captions.srt"
-        if srt_path.is_file():
+        if ass_path.is_file():
+            esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+            vf += f",ass='{esc_ass}'"
+        elif srt_path.is_file():
             esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-            vf += f",subtitles='{esc_srt}'"
+            vf += (
+                f",subtitles='{esc_srt}':force_style="
+                f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
+                f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
+                f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
+            )
 
         if beats:
             # Scale beat slide durations to match exact render duration so there is zero silent tail
@@ -211,9 +216,17 @@ def render_project_composition(
         else:
             # Fallback test pattern
             vf_pat = f"scale={width}:{height},format=yuv420p"
-            if srt_path.is_file():
+            if ass_path.is_file():
+                esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+                vf_pat += f",ass='{esc_ass}'"
+            elif srt_path.is_file():
                 esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-                vf_pat += f",subtitles='{esc_srt}'"
+                vf_pat += (
+                    f",subtitles='{esc_srt}':force_style="
+                    f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
+                    f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
+                    f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
+                )
             cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={duration_seconds}:r=30",
@@ -337,9 +350,18 @@ class FixedNicheVideoRunner:
 
         full_text = " ".join(s["narration"] for s in script_data["sections"])
         (artifacts_dir / "narration_en_US_text.txt").write_text(full_text, encoding="utf-8")
-        (artifacts_dir / "captions.srt").write_text(
-            generate_srt_from_beats(visual_plan["beats"]), encoding="utf-8"
+
+        from lib.fixed_niche.captions import build_and_align_captions
+        c_width = 1080 if self.format_kind in ("short", "shorts") else 1920
+        c_height = 1920 if self.format_kind in ("short", "shorts") else 1080
+        srt_content, ass_content, _ = build_and_align_captions(
+            beats=visual_plan["beats"],
+            audio_path=None,
+            width=c_width,
+            height=c_height,
         )
+        (artifacts_dir / "captions.srt").write_text(srt_content, encoding="utf-8")
+        (artifacts_dir / "captions.ass").write_text(ass_content, encoding="utf-8")
 
         # 6. Resolve assets with strict meaningful visual enforcement and verified script SHA256
         plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
@@ -454,7 +476,16 @@ class FixedNicheVideoRunner:
                         beats[-1]["end_s"] = round(align_dur, 3)
 
                         # Prepare all reconciled payload dictionaries before writing
-                        captions_content = generate_srt_from_beats(beats)
+                        from lib.fixed_niche.captions import build_and_align_captions
+                        c_width = 1080 if self.format_kind in ("short", "shorts") else 1920
+                        c_height = 1920 if self.format_kind in ("short", "shorts") else 1080
+                        srt_content, ass_content, _ = build_and_align_captions(
+                            beats=beats,
+                            audio_path=out_audio,
+                            width=c_width,
+                            height=c_height,
+                        )
+                        ass_file = self.project_dir / "artifacts" / "captions.ass"
                         beat_map = {b["beat_id"]: b for b in beats}
 
                         script_bytes_to_write = None
@@ -485,7 +516,8 @@ class FixedNicheVideoRunner:
 
                         # Write all verified artifact updates
                         visual_plan_file.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
-                        srt_file.write_text(captions_content, encoding="utf-8")
+                        srt_file.write_text(srt_content, encoding="utf-8")
+                        ass_file.write_text(ass_content, encoding="utf-8")
                         if script_bytes_to_write is not None:
                             script_file.write_bytes(script_bytes_to_write)
                         if assets_json_to_write is not None:
