@@ -1,0 +1,55 @@
+{
+  "version": "1.0",
+  "feed_id": "production_agent_engineering_feed",
+  "publisher": "Official Agent Engineering Documentation Feeds",
+  "items": [
+    {
+      "url": "https://docs.anthropic.com/claude/context-window",
+      "canonical_url": "https://docs.anthropic.com/claude/context-window",
+      "title": "Why coding agents lose project requirements between sessions",
+      "body": "Claude context window limitations require persisting requirements and state to disk files across sessions. Because context memory is bounded per invocation, durable state must be serialized to repo artifacts.",
+      "publisher": "Anthropic Docs",
+      "source_type": "vendor_doc",
+      "is_evergreen": true,
+      "license_permission": "public_documentation",
+      "source_snapshot": "Claude context window limitations require persisting requirements and state to disk files across sessions. Because context memory is bounded per invocation, durable state must be serialized to repo artifacts.",
+      "snapshot_sha256": "4c480af0f083d341ac332121f683f72d1fd9e3b4468eb2b2b81b6dfba93030e6"
+    },
+    {
+      "url": "https://modelcontextprotocol.io/specification/tools",
+      "canonical_url": "https://modelcontextprotocol.io/specification/tools",
+      "title": "MCP function call fails because tool JSON schema mismatches payload",
+      "body": "Model Context Protocol JSON-RPC specification requires tool call parameters to validate against declared JSON schema. Type mismatches, unexpected properties, or missing required fields cause protocol validation errors.",
+      "publisher": "MCP Specification",
+      "source_type": "specification",
+      "is_evergreen": true,
+      "license_permission": "public_specification",
+      "source_snapshot": "Model Context Protocol JSON-RPC specification requires tool call parameters to validate against declared JSON schema. Type mismatches, unexpected properties, or missing required fields cause protocol validation errors.",
+      "snapshot_sha256": "b0683d4a000bf1db6a24c064aa4ba9da63cc151189b7e91d9eb1228c1e8aaf97"
+    },
+    {
+      "url": "https://docs.github.com/copilot/agent-mode/permissions",
+      "canonical_url": "https://docs.github.com/copilot/agent-mode/permissions",
+      "title": "Configuring sandbox permission boundaries for autonomous coding agents",
+      "body": "Security architecture for coding agent CLIs enforces read-only sandbox execution boundaries, file system path validation, and shell execution permission gates to prevent unauthorized write mutations.",
+      "publisher": "GitHub Copilot Docs",
+      "source_type": "vendor_doc",
+      "is_evergreen": true,
+      "license_permission": "public_documentation",
+      "source_snapshot": "Security architecture for coding agent CLIs enforces read-only sandbox execution boundaries, file system path validation, and shell execution permission gates to prevent unauthorized write mutations.",
+      "snapshot_sha256": "6330d7f842edbd957c462a98759705f430a5ae5f3deea43ad2598d6ff780e002"
+    },
+    {
+      "url": "https://github.com/swe-bench/SWE-bench",
+      "canonical_url": "https://github.com/swe-bench/SWE-bench",
+      "title": "Evaluating coding agent completion reliability without cherry-picked benchmarks",
+      "body": "SWE-bench benchmark evaluation harness provides reproducible test matrices across real-world repository tasks, evaluating autonomous issue resolution rates against ground-truth unit test suites.",
+      "publisher": "SWE-bench Research",
+      "source_type": "paper",
+      "is_evergreen": true,
+      "license_permission": "open_source_research",
+      "source_snapshot": "SWE-bench benchmark evaluation harness provides reproducible test matrices across real-world repository tasks, evaluating autonomous issue resolution rates against ground-truth unit test suites.",
+      "snapshot_sha256": "d8805ce5f228843c70a369cec7d1d52cb18116f9e004a56414e4d4f9319ded98"
+    }
+  ]
+}

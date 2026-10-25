@@ -237,6 +237,10 @@ def test_cli_auto_select_production_isolation_without_fixtures(tmp_path: Path, m
     """Ensure --auto-select in production mode does not load test fixtures implicitly."""
     from scripts.run_fixed_niche_video import main
 
+    monkeypatch.setattr(
+        "tools.news.fixed_niche_sources.FixedNicheSourceAdapter.discover_production_candidates",
+        lambda self, **kw: [],
+    )
     # In production without feed or fixtures, auto-select must return 0 with NO_ELIGIBLE_TOPIC
     exit_code = main([
         "--auto-select",
@@ -246,6 +250,19 @@ def test_cli_auto_select_production_isolation_without_fixtures(tmp_path: Path, m
     captured = capsys.readouterr()
     assert "NO_ELIGIBLE_TOPIC" in captured.out
     assert not (tmp_path / "prod_auto_proj").exists()
+
+
+def test_cli_auto_select_with_production_feed(tmp_path: Path):
+    """Ensure --auto-select in production mode discovers candidates from production feed."""
+    from scripts.run_fixed_niche_video import main
+
+    exit_code = main([
+        "--auto-select",
+        "--project-dir", str(tmp_path / "prod_feed_proj"),
+        "--dry-run",
+    ])
+    assert exit_code == 0
+    assert (tmp_path / "prod_feed_proj" / "project.json").is_file()
 
 
 def test_cli_auto_select_with_use_test_fixtures(tmp_path: Path, capsys):

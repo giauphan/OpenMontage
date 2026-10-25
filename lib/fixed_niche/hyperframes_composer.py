@@ -268,6 +268,13 @@ def render_hyperframes_composition(
     output_mp4 = Path(output_mp4).resolve()
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
 
+    # Ensure narration.mp3 exists in comp_dir/assets if present in parent project assets
+    parent_audio = comp_dir.parent / "assets" / "narration.mp3"
+    comp_audio = comp_dir / "assets" / "narration.mp3"
+    if parent_audio.is_file() and (not comp_audio.is_file() or comp_audio.stat().st_size != parent_audio.stat().st_size):
+        comp_audio.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(parent_audio, comp_audio)
+
     raw_mp4 = output_mp4 if not burn_captions else output_mp4.with_suffix(".raw.mp4")
     cmd = [
         "npx", "hyperframes", "render",

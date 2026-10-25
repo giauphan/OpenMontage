@@ -179,7 +179,13 @@ class FixedNicheQAValidator:
                                 })
 
                 # Audit proof-bearing beats against verified claims
-                if proof_map_file.is_file():
+                if not proof_map_file.is_file():
+                    findings.append({
+                        "category": "PROOF_MAP",
+                        "severity": "blocker",
+                        "message": "Missing video_proof_map.json artifact: technical claims must map to beat proofs",
+                    })
+                else:
                     try:
                         proof_data = json.loads(proof_map_file.read_text(encoding="utf-8"))
                         for pb in proof_data.get("beats", []):

@@ -91,6 +91,26 @@ class DemoExecutionProtocol:
         sandbox_tmp = self.working_dir / ".sandbox_tmp"
         sandbox_tmp.mkdir(parents=True, exist_ok=True)
         env["TMPDIR"] = str(sandbox_tmp)
+
+        # Enforce OS-level & Python-level network socket isolation
+        audit_file = sandbox_tmp / "sitecustomize.py"
+        audit_code = (
+            "import sys\n"
+            "def audit_hook(event, args):\n"
+            "    if event in ('socket.connect', 'socket.bind', 'socket.sendto', 'http.client.connect'):\n"
+            "        raise PermissionError(f'Network access blocked in demo sandbox: {event}')\n"
+            "try:\n"
+            "    sys.addaudithook(audit_hook)\n"
+            "except Exception:\n"
+            "    pass\n"
+        )
+        try:
+            audit_file.write_text(audit_code, encoding="utf-8")
+            existing_pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = f"{sandbox_tmp}:{existing_pp}" if existing_pp else str(sandbox_tmp)
+        except Exception:
+            pass
+
         if env_vars:
             env.update(env_vars)
 
@@ -281,6 +301,10 @@ class FixedNicheResearcher:
             if cand_sp.is_file():
                 snap_content = cand_sp.read_text(encoding="utf-8")
 
+        symptom = candidate.get("symptom") or f"Observed failure symptom: {title}"
+        root_cause = candidate.get("root_cause") or candidate.get("mechanism") or f"Architectural root cause in {candidate.get('topic_family', 'agent execution boundary')}"
+        remedy = candidate.get("remedy") or candidate.get("fix") or "Actionable verification checklist for developers to confirm fix in their repo"
+
         has_verified_snapshot = False
         actual_snap_sha = None
 
@@ -288,25 +312,39 @@ class FixedNicheResearcher:
             content_str = str(snap_content).strip()
             actual_snap_sha = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
             recorded_sha = candidate.get("snapshot_sha256")
+
+            # Check semantic grounding: snapshot must contain substantive terms from title or topic domain
+            keywords = [
+                w.lower() for w in re.findall(r"\b[a-zA-Z]{4,}\b", f"{title} {candidate.get('topic_family', '')} {symptom}")
+                if w.lower() not in {"this", "that", "with", "from", "your", "what", "when", "where", "which"}
+            ]
+            content_lower = content_str.lower()
+            domain_terms = (
+                "context", "window", "agent", "state", "token", "prompt", "session",
+                "model", "schema", "tool", "benchmark", "memory", "coding", "software",
+                "developer", "llm", "pipeline", "execution", "boundary", "permission",
+                "file", "persistence", "limits", "runtime", "failure", "debug",
+            )
+            grounded = len(content_str) >= 30 and (
+                (bool(keywords) and any(kw in content_lower for kw in keywords))
+                or any(term in content_lower for term in domain_terms)
+            )
+
             if recorded_sha:
-                if actual_snap_sha.lower() == str(recorded_sha).lower():
+                if actual_snap_sha.lower() == str(recorded_sha).lower() and grounded:
                     has_verified_snapshot = True
                     (artifacts_dir / "source_snapshot.txt").write_text(content_str, encoding="utf-8")
                 else:
                     logger.warning(
-                        f"Snapshot SHA mismatch for candidate {cid}: expected {recorded_sha}, calculated {actual_snap_sha}"
+                        f"Snapshot validation failed for candidate {cid}: sha_match={actual_snap_sha.lower() == str(recorded_sha).lower()} grounded={grounded}"
                     )
-            else:
+            elif grounded:
                 has_verified_snapshot = True
                 (artifacts_dir / "source_snapshot.txt").write_text(content_str, encoding="utf-8")
 
         is_safe_primary = bool(url and self.source_adapter.is_safe_url(url))
         claim_confidence = "verified" if (is_safe_primary and has_verified_snapshot) else "unverified"
         claim_class = ClaimClassification.DOCUMENTED.value if (is_safe_primary and has_verified_snapshot) else ClaimClassification.INFERRED.value
-
-        symptom = candidate.get("symptom") or f"Observed failure symptom: {title}"
-        root_cause = candidate.get("root_cause") or candidate.get("mechanism") or f"Architectural root cause in {candidate.get('topic_family', 'agent execution boundary')}"
-        remedy = candidate.get("remedy") or candidate.get("fix") or "Actionable verification checklist for developers to confirm fix in their repo"
 
         def _make_claim(claim_id: str, statement: str) -> Dict[str, Any]:
             c: Dict[str, Any] = {

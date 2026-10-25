@@ -134,6 +134,7 @@ venv/
 !config/publish_platforms.example.json
 !config/publish_platforms.json.example
 !config/publish_schedule.json
+!config/sources/*.json
 logs
 *.lock
 !uv.lock

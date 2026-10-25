@@ -115,19 +115,43 @@ def render_project_composition(
         chosen_renderer = renderer.lower() if renderer else "auto"
         if chosen_renderer == "auto":
             env_renderer = os.environ.get("OPENMONTAGE_RENDERER", "").lower()
-            chosen_renderer = env_renderer if env_renderer in ("hyperframes", "ffmpeg") else "ffmpeg"
+            if env_renderer in ("hyperframes", "ffmpeg"):
+                chosen_renderer = env_renderer
+            else:
+                # Prioritize HyperFrames when composition exists
+                has_hf = (
+                    (project_dir / composition_name / "index.html").is_file()
+                    or (project_dir / "hyperframes" / "index.html").is_file()
+                )
+                chosen_renderer = "hyperframes" if has_hf else "ffmpeg"
 
         if chosen_renderer == "hyperframes":
             comp_dir = project_dir / composition_name
             if not (comp_dir / "index.html").is_file():
                 comp_dir = project_dir / "hyperframes"
+            if audio_path.is_file():
+                comp_audio = comp_dir / "assets" / "narration.mp3"
+                comp_audio.parent.mkdir(parents=True, exist_ok=True)
+                if not comp_audio.is_file() or comp_audio.stat().st_size != audio_path.stat().st_size:
+                    shutil.copy2(audio_path, comp_audio)
             ass_path = project_dir / "artifacts" / "captions.ass"
-            return render_hyperframes_composition(
-                comp_dir=comp_dir,
-                output_mp4=output_mp4,
-                burn_captions=burn_captions,
-                ass_path=ass_path if burn_captions else None,
-            )
+            try:
+                return render_hyperframes_composition(
+                    comp_dir=comp_dir,
+                    output_mp4=output_mp4,
+                    burn_captions=burn_captions,
+                    ass_path=ass_path if burn_captions else None,
+                )
+            except Exception as hf_err:
+                logger.warning(f"HyperFrames render encountered issue ({hf_err}), falling back to FFmpeg composition")
+                return render_ffmpeg_composition(
+                    project_dir=project_dir,
+                    output_mp4=output_mp4,
+                    render_dur=render_dur,
+                    width=width,
+                    height=height,
+                    burn_captions=burn_captions,
+                )
         else:
             return render_ffmpeg_composition(
                 project_dir=project_dir,

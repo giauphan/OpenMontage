@@ -109,7 +109,43 @@ def stage_2_script_generation(project_dir: Path) -> dict:
     """Stage 2: AI Director script generation & en-US language validation."""
     script_path = project_dir / "artifacts" / "script_en_US.json"
     if not script_path.is_file():
-        raise StageExecutionError(f"Stage 2 failed: script file missing ({script_path})")
+        # Dynamically synthesize script if missing from topic brief and claim ledger
+        brief_file = project_dir / "artifacts" / "topic_brief.json"
+        claims_file = project_dir / "artifacts" / "claim_ledger.json"
+        if brief_file.is_file() and claims_file.is_file():
+            try:
+                topic = json.loads(brief_file.read_text(encoding="utf-8"))
+                claims = json.loads(claims_file.read_text(encoding="utf-8")).get("claims", [])
+                from lib.fixed_niche.storyboard import FixedNicheStoryboardDirector
+                director = FixedNicheStoryboardDirector()
+                res = director.generate_storyboard(topic=topic, claims=claims, project_dir=project_dir)
+                sections = [
+                    {
+                        "section_id": b["script_section_id"],
+                        "beat_id": b["beat_id"],
+                        "start_s": b["start_s"],
+                        "end_s": b["end_s"],
+                        "story_function": b["story_function"],
+                        "narration": b["narration"],
+                        "text": b["narration"],
+                        "claim_ids": b["claim_ids"],
+                    }
+                    for b in res["visual_plan"]["beats"]
+                ]
+                script_data = {
+                    "version": "1.0",
+                    "locale": "en-US",
+                    "title": topic.get("title", "Practical AI Agent Engineering Explainer"),
+                    "target_duration_seconds": 72.0,
+                    "sections": sections,
+                    "scenes": sections,
+                }
+                script_path.parent.mkdir(parents=True, exist_ok=True)
+                script_path.write_text(json.dumps(script_data, indent=2), encoding="utf-8")
+            except Exception as e:
+                raise StageExecutionError(f"Stage 2 failed: dynamic script generation failed: {e}")
+        else:
+            raise StageExecutionError(f"Stage 2 failed: script file missing ({script_path}) and no brief to synthesize from")
 
     try:
         script = json.loads(script_path.read_text(encoding="utf-8"))
@@ -122,7 +158,7 @@ def stage_2_script_generation(project_dir: Path) -> dict:
 
     # Validate prose with EnglishLanguageValidator
     validator = get_language_validator("en-US")
-    full_text = " ".join(s.get("text", "") for s in scenes)
+    full_text = " ".join(s.get("text", "") or s.get("narration", "") for s in scenes)
     errors = validator.validate_prose(full_text)
     if errors:
         raise StageExecutionError(f"Stage 2 failed: en-US prose validation errors: {errors}")
@@ -201,17 +237,42 @@ def stage_4_scene_graphics(project_dir: Path, format_type: str = "short") -> dic
     return {"graphics_count": len(pngs)}
 
 
-def stage_5_speech_synthesis(project_dir: Path) -> dict:
+def stage_5_speech_synthesis(project_dir: Path, provider: str = "flite") -> dict:
     """Stage 5: Speech synthesis & audio mixing verification."""
     narration_txt = project_dir / "artifacts" / "narration_en_US_text.txt"
     if not narration_txt.is_file():
-        raise StageExecutionError(f"Stage 5 failed: narration text file missing ({narration_txt})")
+        script_path = project_dir / "artifacts" / "script_en_US.json"
+        if script_path.is_file():
+            s_data = json.loads(script_path.read_text(encoding="utf-8"))
+            scenes = s_data.get("scenes") or s_data.get("sections") or []
+            lines = [s.get("text") or s.get("narration", "") for s in scenes]
+            narration_txt.parent.mkdir(parents=True, exist_ok=True)
+            narration_txt.write_text("\n".join(lines), encoding="utf-8")
+        else:
+            raise StageExecutionError(f"Stage 5 failed: narration text file missing ({narration_txt})")
 
     audio_file = project_dir / "assets" / "narration.mp3"
     if not audio_file.is_file():
         render_files = list((project_dir / "renders").glob("*.mp4"))
         if not render_files:
-            raise StageExecutionError(f"Stage 5 failed: audio file missing ({audio_file})")
+            try:
+                from lib.audio.narration_orchestrator import NarrationOrchestrator
+                orchestrator = NarrationOrchestrator()
+                text = narration_txt.read_text(encoding="utf-8")
+                audio_file.parent.mkdir(parents=True, exist_ok=True)
+                voice = orchestrator.resolve_default_voice(locale="en-US", provider=provider)
+                res = orchestrator.synthesize(
+                    text=text,
+                    output_path=audio_file,
+                    locale="en-US",
+                    provider=provider,
+                    voice=voice,
+                    allow_fallback=True,
+                )
+                if not res.get("success") or not audio_file.is_file():
+                    raise RuntimeError(res.get("error", "Unknown synthesis failure"))
+            except Exception as e:
+                raise StageExecutionError(f"Stage 5 failed: speech synthesis failed ({e})")
 
     return {"audio_source": str(audio_file) if audio_file.is_file() else "embedded"}
 
@@ -220,7 +281,21 @@ def stage_6_captions_alignment(project_dir: Path) -> dict:
     """Stage 6: Subtitle alignment & cue validation."""
     srt_path = project_dir / "artifacts" / "captions_en_US.srt"
     if not srt_path.is_file():
-        raise StageExecutionError(f"Stage 6 failed: subtitles file missing ({srt_path})")
+        vplan_file = project_dir / "artifacts" / "news_visual_plan.json"
+        if not vplan_file.is_file():
+            vplan_file = project_dir / "artifacts" / "visual_plan.json"
+        if vplan_file.is_file():
+            try:
+                from lib.fixed_niche.captions import generate_srt_from_beats
+                plan_json = json.loads(vplan_file.read_text(encoding="utf-8"))
+                beats = plan_json.get("beats", [])
+                srt_content = generate_srt_from_beats(beats)
+                srt_path.parent.mkdir(parents=True, exist_ok=True)
+                srt_path.write_text(srt_content, encoding="utf-8")
+            except Exception as e:
+                raise StageExecutionError(f"Stage 6 failed: dynamic captions generation failed: {e}")
+        else:
+            raise StageExecutionError(f"Stage 6 failed: subtitles file missing ({srt_path})")
 
     content = srt_path.read_text(encoding="utf-8")
     time_blocks = re.findall(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})", content)
@@ -261,11 +336,24 @@ def stage_7_video_rendering(
     )
 
     if render_mode == "full" or not target_video.is_file():
-        from scripts.render_verified_deliverables import render_short, render_long
-        if format_type == "short":
-            render_short()
-        else:
-            render_long()
+        from scripts.run_fixed_niche_video import render_project_composition
+        comp_name = "hyperframes_reels" if format_type == "short" else "hyperframes"
+        dur = 72.0 if format_type == "short" else 360.0
+        try:
+            render_project_composition(
+                project_dir=project_dir,
+                composition_name=comp_name,
+                output_mp4=target_video,
+                duration_seconds=dur,
+                burn_captions=False,
+                renderer="auto",
+            )
+        except Exception:
+            from scripts.render_verified_deliverables import render_short, render_long
+            if format_type == "short":
+                render_short()
+            else:
+                render_long()
 
     if not target_video.is_file():
         raise StageExecutionError(f"Stage 7 failed: render output {target_video} not found")

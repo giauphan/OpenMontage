@@ -55,6 +55,8 @@ class NormalizedSourceItem:
     content_hash: str
     is_evergreen: bool
     license_permission: str
+    source_snapshot: Optional[str] = None
+    snapshot_sha256: Optional[str] = None
 
 
 class FixedNicheSourceAdapter:
@@ -116,6 +118,11 @@ class FixedNicheSourceAdapter:
         sid = f"src_{content_h[:16]}"
         is_evergreen = bool(raw_item.get("is_evergreen", pub_utc is None))
 
+        snap = raw_item.get("source_snapshot")
+        snap_sha = raw_item.get("snapshot_sha256")
+        if snap and not snap_sha:
+            snap_sha = hashlib.sha256(str(snap).encode("utf-8")).hexdigest()
+
         return NormalizedSourceItem(
             source_id=sid,
             canonical_url=canonical_url,
@@ -127,11 +134,13 @@ class FixedNicheSourceAdapter:
             content_hash=content_h,
             is_evergreen=is_evergreen,
             license_permission=str(raw_item.get("license_permission") or "public_documentation"),
+            source_snapshot=str(snap) if snap else None,
+            snapshot_sha256=str(snap_sha) if snap_sha else None,
         )
 
     def to_candidate_dict(self, item: NormalizedSourceItem) -> Dict[str, Any]:
         """Convert normalized source item to a standard pipeline candidate dictionary."""
-        return {
+        d = {
             "candidate_id": f"cand_{item.content_hash[:16]}",
             "id": f"cand_{item.content_hash[:16]}",
             "canonical_url": item.canonical_url,
@@ -149,6 +158,11 @@ class FixedNicheSourceAdapter:
             "is_evergreen": item.is_evergreen,
             "content_kind": "evergreen_explainer" if item.is_evergreen else "news",
         }
+        if item.source_snapshot:
+            d["source_snapshot"] = item.source_snapshot
+        if item.snapshot_sha256:
+            d["snapshot_sha256"] = item.snapshot_sha256
+        return d
 
     def discover_production_candidates(
         self,
