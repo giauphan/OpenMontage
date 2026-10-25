@@ -33,6 +33,8 @@ class ClaimClassification(str, Enum):
 class DemoExecutionProtocol:
     """Executes safe, isolated commands for genuine demo reproductions."""
 
+    ALLOWED_COMMAND_BINARIES = {"python", "python3", "pytest", "git", "node", "npm", "echo", "cat", "ls"}
+
     def __init__(self, working_dir: Path):
         self.working_dir = Path(working_dir)
         self.working_dir.mkdir(parents=True, exist_ok=True)
@@ -43,7 +45,30 @@ class DemoExecutionProtocol:
         timeout_seconds: int = 15,
         env_vars: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Run an isolated test command under strict timeout and environment recording."""
+        """Run an isolated test command under strict timeout, binary allowlist, and no shell execution."""
+        import shlex
+
+        try:
+            cmd_args = shlex.split(command)
+        except Exception as e:
+            raise ResearchValidationError(f"Invalid command syntax: {e}")
+
+        if not cmd_args:
+            raise ResearchValidationError("Empty demo command")
+
+        cmd_bin = Path(cmd_args[0]).name
+        if cmd_bin not in self.ALLOWED_COMMAND_BINARIES:
+            raise ResearchValidationError(
+                f"Disallowed binary in demo command: {cmd_bin}. "
+                f"Permitted binaries: {sorted(list(self.ALLOWED_COMMAND_BINARIES))}"
+            )
+
+        # Disallow dangerous shell chaining tokens
+        dangerous_tokens = (";", "&&", "||", "|", ">", "<", "`", "$(")
+        for arg in cmd_args:
+            if any(dt in arg for dt in dangerous_tokens):
+                raise ResearchValidationError(f"Shell redirection or chaining token disallowed in demo command: {arg}")
+
         # Security: sanitize environment to prevent leaking secrets/tokens
         allowed_keys = ("PATH", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT", "COMSPEC")
         env = {k: os.environ[k] for k in allowed_keys if k in os.environ}
@@ -58,8 +83,8 @@ class DemoExecutionProtocol:
         start_time = time.time()
         try:
             res = subprocess.run(
-                command,
-                shell=True,
+                cmd_args,
+                shell=False,
                 cwd=str(self.working_dir),
                 capture_output=True,
                 text=True,
@@ -210,9 +235,14 @@ class FixedNicheResearcher:
         topic_brief_path = artifacts_dir / "topic_brief.json"
         topic_brief_path.write_text(json.dumps(topic_brief, indent=2), encoding="utf-8")
 
-        # 2. Claim ledger
-        claim_confidence = "verified" if url else "unverified"
-        claim_class = ClaimClassification.DOCUMENTED.value if url else ClaimClassification.INFERRED.value
+        # 2. Claim ledger: Require verifiable ground truth, not automatic verified mark
+        has_snapshot = bool(candidate.get("source_snapshot") or candidate.get("snapshot_sha256") or candidate.get("verified_source"))
+        claim_confidence = "verified" if (url and has_snapshot) else "unverified"
+        claim_class = ClaimClassification.DOCUMENTED.value if (url and has_snapshot) else ClaimClassification.INFERRED.value
+
+        symptom = candidate.get("symptom") or f"Observed failure symptom: {title}"
+        root_cause = candidate.get("root_cause") or candidate.get("mechanism") or f"Architectural root cause in {candidate.get('topic_family', 'agent execution boundary')}"
+        remedy = candidate.get("remedy") or candidate.get("fix") or "Actionable verification checklist for developers to confirm fix in their repo"
 
         claim_ledger = {
             "schema_version": "1.0",
@@ -222,7 +252,7 @@ class FixedNicheResearcher:
             "claims": [
                 {
                     "claim_id": "C001",
-                    "statement": f"Observed failure symptom: {title}",
+                    "statement": symptom,
                     "confidence": claim_confidence,
                     "classification": claim_class,
                     "scope": {"market": "US", "locale": "en-US"},
@@ -234,7 +264,7 @@ class FixedNicheResearcher:
                 },
                 {
                     "claim_id": "C002",
-                    "statement": "Architectural root cause in agent session or tool execution boundary",
+                    "statement": root_cause,
                     "confidence": claim_confidence,
                     "classification": claim_class,
                     "source": {
@@ -245,7 +275,7 @@ class FixedNicheResearcher:
                 },
                 {
                     "claim_id": "C003",
-                    "statement": "Actionable verification checklist for developers to confirm fix in their repo",
+                    "statement": remedy,
                     "confidence": claim_confidence,
                     "classification": claim_class,
                     "source": {

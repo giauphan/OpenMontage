@@ -212,3 +212,23 @@ def test_render_qa_gate_fails_closed_on_corrupt_video(tmp_path: Path, monkeypatc
     assert val_status["strict_quality_pass"] is False
     assert val_status["status"] == "QA_FAILED"
 
+
+def test_cli_returns_nonzero_when_qa_fails(tmp_path: Path, monkeypatch):
+    """Ensure scripts.run_fixed_niche_video.main returns exit code 1 when QA fails."""
+    from scripts.run_fixed_niche_video import main
+
+    def fake_render(project_dir, composition_name, output_mp4, duration_seconds):
+        output_mp4.parent.mkdir(parents=True, exist_ok=True)
+        output_mp4.write_bytes(b"")
+        return output_mp4
+
+    monkeypatch.setattr("scripts.run_fixed_niche_video.render_project_composition", fake_render)
+
+    exit_code = main([
+        "--candidate-id", "cand_cli_fail",
+        "--project-dir", str(tmp_path / "cli_fail_proj"),
+        "--title", "Why coding agents crash on recursion",
+        "--provider", "flite",
+    ])
+    assert exit_code == 1
+

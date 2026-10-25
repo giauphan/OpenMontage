@@ -713,7 +713,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     runner.synthesize_narration(provider=args.provider, voice=args.voice, speed=args.speed)
     render_res = runner.render(burn_captions=args.burn_captions)
     print(json.dumps(render_res, indent=2))
-    return 0
+    return 0 if render_res.get("status") == "VIDEO_READY_FOR_PRIVATE_REVIEW" else 1
 
 
 if __name__ == "__main__":

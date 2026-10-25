@@ -113,3 +113,38 @@ def test_demo_protocol_runs_in_isolated_sandbox_with_audit(tmp_path: Path):
     assert "verified state" in result["stdout"]
     assert result["env_hash"]
     assert result["timestamp"]
+
+    # Must reject disallowed binary
+    with pytest.raises(ResearchValidationError, match="Disallowed binary in demo command"):
+        protocol.run_isolated_command("curl https://evil.example.com")
+
+    # Must reject shell operators / chaining
+    with pytest.raises(ResearchValidationError, match="Shell redirection or chaining token disallowed"):
+        protocol.run_isolated_command("python3 -c 'pass' ; rm -rf /")
+
+
+def test_build_topic_artifacts_distinguishes_verified_vs_unverified(tmp_path: Path):
+    """Claims must not be blindly marked verified unless verified_source / snapshot exists."""
+    researcher = FixedNicheResearcher()
+
+    # Case A: URL only without snapshot -> unverified
+    cand_unverified = {
+        "candidate_id": "cand_unv",
+        "title": "Why memory expires",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+    }
+    art_a = researcher.build_topic_artifacts(cand_unverified, project_dir=tmp_path / "proj_a")
+    ledger_a = json.loads(art_a["claim_ledger"].read_text(encoding="utf-8"))
+    assert all(c["confidence"] == "unverified" for c in ledger_a["claims"])
+
+    # Case B: Verified source snapshot provided -> verified
+    cand_verified = {
+        "candidate_id": "cand_v",
+        "title": "Why memory expires",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "verified_source": True,
+        "snapshot_sha256": "abc12345",
+    }
+    art_b = researcher.build_topic_artifacts(cand_verified, project_dir=tmp_path / "proj_b")
+    ledger_b = json.loads(art_b["claim_ledger"].read_text(encoding="utf-8"))
+    assert all(c["confidence"] == "verified" for c in ledger_b["claims"])
