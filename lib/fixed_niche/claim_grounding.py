@@ -9,6 +9,15 @@ POLARITY_PAIRS = (
     ("increas", "decreas"),
     ("increas", "reduc"),
     ("increas", "drop"),
+    ("increas", "fall"),
+    ("rise", "decreas"),
+    ("rise", "reduc"),
+    ("rise", "drop"),
+    ("rise", "fall"),
+    ("rose", "decreas"),
+    ("rose", "reduc"),
+    ("rose", "drop"),
+    ("rose", "fall"),
     ("succeed", "fail"),
     ("success", "fail"),
     ("enabl", "disabl"),
@@ -18,9 +27,6 @@ POLARITY_PAIRS = (
     ("pass", "fail"),
     ("improv", "degrad"),
     ("accelerat", "decelerat"),
-    ("rise", "drop"),
-    ("rose", "drop"),
-    ("rise", "fall"),
 )
 
 ALL_POLARITY_ROOTS = tuple(sorted({r for pair in POLARITY_PAIRS for r in pair}, key=len, reverse=True))
@@ -29,11 +35,23 @@ _ROOT_RE = re.compile(
     r"^(" + "|".join(map(re.escape, ALL_POLARITY_ROOTS)) + r")(?:e|es|ed|ing|s|ion|ions|ure|ures|ment|ful|fully|ped|ping|tion|tions|ement)?$"
 )
 
+IRREGULAR_ROOT_MAP = {
+    "rose": "rise",
+    "rising": "rise",
+    "risen": "rise",
+    "fell": "fall",
+    "fallen": "fall",
+}
+
 
 def _polarity_root(word: str) -> Optional[str]:
-    """Extract canonical polarity root if word matches allowed inflection suffixes."""
-    m = _ROOT_RE.match(word)
-    return m.group(1) if m else None
+    """Extract canonical polarity root if word matches allowed inflection suffixes or irregular forms."""
+    canonical = IRREGULAR_ROOT_MAP.get(word, word)
+    m = _ROOT_RE.match(canonical)
+    if m:
+        return m.group(1)
+    m_raw = _ROOT_RE.match(word)
+    return m_raw.group(1) if m_raw else None
 
 NEGATION_RE = re.compile(
     r"\b(?:not|never|no|neither|nor|without|cannot|can[\'’]?t|don[\'’]?t|didn[\'’]?t|doesn[\'’]?t|wasn[\'’]?t|isn[\'’]?t|aren[\'’]?t|won[\'’]?t|wouldn[\'’]?t|couldn[\'’]?t|shouldn[\'’]?t|haven[\'’]?t|hasn[\'’]?t)\b",

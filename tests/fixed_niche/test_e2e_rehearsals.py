@@ -517,6 +517,13 @@ def test_claim_grounding_rejects_unit_mismatch_and_unrelated_negative():
     assert res22["verification_status"] == "INDEPENDENT_FACT_CHECK_VERIFIED"
     assert "Latency rose sharply for production users" in res22["grounding_sentence"]
 
+    # 23. Irregular polarity verb 'rose' triggers contradiction against 'decreased'
+    stmt23 = "Latency rose for production users across software benchmarks"
+    snap23 = "Latency decreased for production users across software benchmarks."
+    res23 = verify_independent_claim(statement=stmt23, snapshot_text=snap23)
+    assert res23["verification_status"] == "UNVERIFIED"
+    assert "Direct semantic polarity contradiction" in res23["attestation"]
+
 
 def test_claim_grounding_rejects_fabricated_snapshot_and_provenance_negative(tmp_path: Path):
     """Negative Test: verify_independent_claim and Stage 1 reject fabricated snapshots and invalid provenance."""
