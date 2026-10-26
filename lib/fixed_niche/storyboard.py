@@ -66,6 +66,7 @@ class FixedNicheStoryboardDirector:
         topic_family: str,
         title: str,
         beat_num: int,
+        total_beats: int = 6,
     ) -> str:
         """Generate high-contrast, informative vector geometry tailored to the engineering concept and screen state."""
         fam = topic_family.lower()
@@ -197,6 +198,19 @@ class FixedNicheStoryboardDirector:
                 f'  <circle cx="110" cy="305" r="13" fill="#22c55e"/><text x="110" y="311" fill="#0f172a" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">✓</text>\n'
                 f'  <text x="135" y="310" fill="#f8fafc" font-family="sans-serif" font-size="15" font-weight="bold">3. Zero Silent Regressions Across Clean Restarts</text>\n'
             )
+        elif beat_num == 6 and total_beats == 7:
+            accent = "#38bdf8"
+            badge = f"{fam_label} // CONTRACT ASSERTION"
+            body = (
+                f'  <rect x="60" y="110" width="840" height="280" rx="16" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>\n'
+                f'  <circle cx="80" cy="150" r="10" fill="#38bdf8"/><path d="M 76 150 L 79 153 L 85 147" stroke="#0f172a" stroke-width="2" fill="none"/>\n'
+                f'  <text x="105" y="155" fill="#38bdf8" font-family="sans-serif" font-size="19" font-weight="bold">HERMETIC CI ASSERTION</text>\n'
+                f'  <rect x="90" y="170" width="780" height="90" rx="10" fill="#1e293b"/>\n'
+                f'  <text x="110" y="200" fill="#f8fafc" font-family="sans-serif" font-size="14" font-weight="bold">Automated Contract Gate:</text>\n'
+                f'  <text x="110" y="225" fill="#38bdf8" font-family="monospace" font-size="13">assert test_clean_session_persistence() == PASS</text>\n'
+                f'  <rect x="90" y="280" width="780" height="70" rx="10" fill="#1e293b"/>\n'
+                f'  <text x="110" y="315" fill="#22c55e" font-family="sans-serif" font-size="14" font-weight="bold">Verified zero regressions against clean baseline environment.</text>\n'
+            )
         else:
             accent = "#38bdf8"
             badge = f"{fam_label} // SUMMARY PAYOFF &amp; SCOPE"
@@ -221,7 +235,7 @@ class FixedNicheStoryboardDirector:
             f'  <text x="210" y="53" fill="{accent}" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">{badge}</text>\n'
             f'{body}'
             f'  <rect x="60" y="420" width="840" height="60" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1"/>\n'
-            f'  <text x="480" y="455" fill="#e2e8f0" font-family="sans-serif" font-size="15" text-anchor="middle">Stage {beat_num} of 6 — Practical AI Agent Engineering</text>\n'
+            f'  <text x="480" y="455" fill="#e2e8f0" font-family="sans-serif" font-size="15" text-anchor="middle">Stage {beat_num} of {total_beats} — Practical AI Agent Engineering</text>\n'
             f'</svg>'
         )
 
@@ -364,19 +378,20 @@ class FixedNicheStoryboardDirector:
         b5_narration = narration_beats["b5"]
         b6_narration = narration_beats["b6"]
 
-        # 6-beat recipe from VIDEO_PLAYBOOK.md calibrated so no scene holds > 12s
-        dur_step = round(target_duration / 6.0, 2)
-        if dur_step > 12.0:
-            raise ValueError(
-                f"target_duration {target_duration}s yields {dur_step}s per beat; max scene hold is 12.0s for 6 beats."
-            )
-        t0 = 0.0
-        t1 = round(dur_step, 2)
-        t2 = round(dur_step * 2, 2)
-        t3 = round(dur_step * 3, 2)
-        t4 = round(dur_step * 4, 2)
-        t5 = round(dur_step * 5, 2)
-        t6 = round(target_duration, 2)
+        # Determine number of beats: 6 beats cover up to 72.0s without exceeding the 12.0s hold limit.
+        # Durations > 72.0s (up to 75.0s) add a 7th beat so every scene hold is <= 12.0s.
+        num_beats = 7 if target_duration > 72.0 else 6
+        dur_step = target_duration / num_beats
+        timestamps = [round(i * dur_step, 2) for i in range(num_beats + 1)]
+        timestamps[-1] = round(target_duration, 2)
+
+        # Validate that actual beat intervals never exceed 12.0s
+        for i in range(num_beats):
+            interval = round(timestamps[i + 1] - timestamps[i], 2)
+            if interval > 12.0:
+                raise ValueError(
+                    f"Beat {i+1} duration ({interval}s) exceeds maximum allowed scene hold of 12.0s for target_duration {target_duration}s."
+                )
 
         import os
         ai_visual_enabled = os.environ.get("AI_VISUAL_ENABLED", "0") in ("1", "true", "True")
@@ -387,8 +402,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B01",
                 "script_section_id": "S01",
-                "start_s": t0,
-                "end_s": t1,
+                "start_s": timestamps[0],
+                "end_s": timestamps[1],
                 "story_function": "problem_hook",
                 "narration": b1_narration,
                 "claim_ids": [c1],
@@ -404,8 +419,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B02",
                 "script_section_id": "S02",
-                "start_s": t1,
-                "end_s": t2,
+                "start_s": timestamps[1],
+                "end_s": timestamps[2],
                 "story_function": "developer_impact",
                 "narration": b2_narration,
                 "claim_ids": [c1],
@@ -421,8 +436,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B03",
                 "script_section_id": "S03",
-                "start_s": t2,
-                "end_s": t3,
+                "start_s": timestamps[2],
+                "end_s": timestamps[3],
                 "story_function": "architectural_mechanism",
                 "narration": b3_narration,
                 "claim_ids": [c2],
@@ -438,8 +453,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B04",
                 "script_section_id": "S04",
-                "start_s": t3,
-                "end_s": t4,
+                "start_s": timestamps[3],
+                "end_s": timestamps[4],
                 "story_function": "verified_fix",
                 "narration": b4_narration,
                 "claim_ids": list(dict.fromkeys([c2, c3, *extra_claim_ids])),
@@ -455,8 +470,8 @@ class FixedNicheStoryboardDirector:
             {
                 "beat_id": "B05",
                 "script_section_id": "S05",
-                "start_s": t4,
-                "end_s": t5,
+                "start_s": timestamps[4],
+                "end_s": timestamps[5],
                 "story_function": "verification_checklist",
                 "narration": b5_narration,
                 "claim_ids": [c3],
@@ -469,11 +484,49 @@ class FixedNicheStoryboardDirector:
                 "visual_intent": f"Terminal trace and verification checklist: {b5_narration[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             },
-            {
+        ]
+
+        if num_beats == 7:
+            beats_spec.append({
                 "beat_id": "B06",
                 "script_section_id": "S06",
-                "start_s": t5,
-                "end_s": t6,
+                "start_s": timestamps[5],
+                "end_s": timestamps[6],
+                "story_function": "contract_assertion",
+                "narration": "Verify all assertions against hermetic reproduction tests before deploying agent updates to production.",
+                "claim_ids": [c3],
+                "visual_kind": "svg_diagram",
+                "evidence_class": "conceptual_diagram",
+                "render_strategy": "deterministic_svg",
+                "is_proof_bearing": True,
+                "asset_id": f"{family}_b06_assertion",
+                "expected_screen_state": "CI validation pipeline: hermetic contract assertion status",
+                "visual_intent": "Engineering blueprint showing contract assertion verification in CI",
+                "fallback_policy": "use_builtin_verified_icon_diagram",
+            })
+            beats_spec.append({
+                "beat_id": "B07",
+                "script_section_id": "S07",
+                "start_s": timestamps[6],
+                "end_s": timestamps[7],
+                "story_function": "payoff_and_caveat",
+                "narration": b6_narration,
+                "claim_ids": [c3],
+                "visual_kind": "svg_diagram",
+                "evidence_class": "conceptual_diagram",
+                "render_strategy": "deterministic_svg",
+                "is_proof_bearing": True,
+                "asset_id": f"{family}_b07_payoff",
+                "expected_screen_state": "Summary payoff card with version qualifier",
+                "visual_intent": f"Summary card reinforcing defensive verification principle: {b6_narration[:80]}",
+                "fallback_policy": "use_builtin_verified_icon_diagram",
+            })
+        else:
+            beats_spec.append({
+                "beat_id": "B06",
+                "script_section_id": "S06",
+                "start_s": timestamps[5],
+                "end_s": timestamps[6],
                 "story_function": "payoff_and_caveat",
                 "narration": b6_narration,
                 "claim_ids": [c3],
@@ -485,8 +538,7 @@ class FixedNicheStoryboardDirector:
                 "expected_screen_state": "Summary payoff card with version qualifier",
                 "visual_intent": f"Summary card reinforcing defensive verification principle: {b6_narration[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
-            },
-        ]
+            })
 
         # Generate SVGs on disk
         for i, beat in enumerate(beats_spec):
@@ -496,6 +548,7 @@ class FixedNicheStoryboardDirector:
                 topic_family=family,
                 title=title,
                 beat_num=i + 1,
+                total_beats=len(beats_spec),
             )
             svg_file = visuals_dir / f"{asset_id}.svg"
             svg_file.write_text(svg_content, encoding="utf-8")
