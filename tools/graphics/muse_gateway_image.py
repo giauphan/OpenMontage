@@ -411,7 +411,7 @@ class MuseGatewayImage(BaseTool):
         return b"", "Failed to fetch image bytes from gateway media endpoints"
 
     def _is_safe_remote_url(self, url_str: str) -> bool:
-        """Enforce origin rules: allow loopback gateway or explicitly configured HTTPS hosts."""
+        """Enforce origin rules: allow configured gateway base URL, loopback, or explicitly configured redirect hosts."""
         try:
             parsed = urlparse(url_str)
             if not parsed.hostname:
@@ -419,6 +419,12 @@ class MuseGatewayImage(BaseTool):
             host = parsed.hostname.lower()
             if host in ("localhost", "127.0.0.1", "::1", "gateway"):
                 return True
+
+            # Allow configured gateway base host and scheme
+            gw_base = self.get_gateway_base_url()
+            gw_parsed = urlparse(gw_base)
+            if gw_parsed.hostname and host == gw_parsed.hostname.lower():
+                return parsed.scheme == gw_parsed.scheme
 
             allowed_hosts_str = os.environ.get("MUSE_GATEWAY_ALLOWED_REDIRECT_HOSTS", "")
             allowed_hosts = {h.strip().lower() for h in allowed_hosts_str.split(",") if h.strip()}

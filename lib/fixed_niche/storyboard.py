@@ -366,6 +366,10 @@ class FixedNicheStoryboardDirector:
 
         # 6-beat recipe from VIDEO_PLAYBOOK.md calibrated so no scene holds > 12s
         dur_step = round(target_duration / 6.0, 2)
+        if dur_step > 12.0:
+            raise ValueError(
+                f"target_duration {target_duration}s yields {dur_step}s per beat; max scene hold is 12.0s for 6 beats."
+            )
         t0 = 0.0
         t1 = round(dur_step, 2)
         t2 = round(dur_step * 2, 2)

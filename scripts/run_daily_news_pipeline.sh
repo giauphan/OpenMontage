@@ -1166,6 +1166,7 @@ else
 fi
 if [ "$is_en" -eq 1 ] && [ "${FIXED_NICHE_MODE:-0}" = "1" ]; then
   # Fixed-niche policy locks production to 9:16 Shorts; skip unauthorized 16:9 longform render
+  REQUIRED_RENDERS=("$REELS_RENDER_PATH")
   rm -f "$REELS_RENDER_PATH"
   set +e
   "$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
@@ -1173,6 +1174,7 @@ if [ "$is_en" -eq 1 ] && [ "${FIXED_NICHE_MODE:-0}" = "1" ]; then
   RENDER_FULL_EXIT=0
   set -e
 else
+  REQUIRED_RENDERS=("$FULL_RENDER_PATH" "$REELS_RENDER_PATH")
   rm -f "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"
   set +e
   "$HYPERFRAMES_BIN" render "$FULL_COMP" --output "$FULL_RENDER_PATH"
@@ -1245,7 +1247,7 @@ fi
 
 # Check if videos exist
 RENDER_MISSING=0
-for render in "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"; do
+for render in "${REQUIRED_RENDERS[@]}"; do
   if [ ! -s "$render" ]; then
     echo "[$(date -u +%FT%TZ)] ERROR: render missing or empty: $render for $PROJECT_ID" >&2
     RENDER_MISSING=1
@@ -1294,14 +1296,18 @@ else
 fi
 
 # Create publish_metadata.json for validation
-if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$FULL_RENDER_PATH" ]; then
+PUB_FULL_PATH="$FULL_RENDER_PATH"
+if [ ! -s "$PROJECT_DIR/$PUB_FULL_PATH" ] && [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ]; then
+  PUB_FULL_PATH="$REELS_RENDER_PATH"
+fi
+if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$PUB_FULL_PATH" ]; then
   jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
   --arg desc "$(if [ -n "$script_json" ] && [ -s "$script_json" ]; then jq -r '.description // ""' "$script_json" 2>/dev/null || echo ""; fi)" \
   --arg yt_shorts "$REELS_RENDER_PATH" \
-  --arg tiktok "$FULL_RENDER_PATH" \
-  --arg fb_video "$FULL_RENDER_PATH" \
+  --arg tiktok "$PUB_FULL_PATH" \
+  --arg fb_video "$PUB_FULL_PATH" \
   --arg ig_reels "$REELS_RENDER_PATH" \
   --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
   --arg format "short" \

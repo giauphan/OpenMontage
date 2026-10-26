@@ -94,7 +94,7 @@ class VisualAssetOrchestrator:
                             "asset_id": primary_asset_id,
                         }
                     else:
-                        svg_path = self._generate_contextual_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                        svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
                         staged_assets.append({
                             "id": primary_asset_id,
                             "file": str(svg_path.relative_to(project_dir)),
@@ -160,7 +160,7 @@ class VisualAssetOrchestrator:
                         else:
                             # Non-proof beat fallback to contextual explanatory SVG
                             logger.info(f"AI generation for beat {beat_id} failed ({ai_result.get('error')}); falling back to contextual SVG")
-                            svg_path = self._generate_contextual_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                            svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
                             staged_assets.append({
                                 "id": primary_asset_id,
                                 "file": str(svg_path.relative_to(project_dir)),
@@ -175,7 +175,7 @@ class VisualAssetOrchestrator:
                             }
                 else:
                     # AI visual disabled or quota reached: fallback to deterministic contextual SVG
-                    svg_path = self._generate_contextual_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                    svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
                     staged_assets.append({
                         "id": primary_asset_id,
                         "file": str(svg_path.relative_to(project_dir)),
@@ -190,7 +190,7 @@ class VisualAssetOrchestrator:
 
             # 3. Strategy: Deterministic SVG (Default Technical Diagram)
             else:
-                svg_path = self._generate_contextual_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
                 staged_assets.append({
                     "id": primary_asset_id,
                     "file": str(svg_path.relative_to(project_dir)),
@@ -220,26 +220,38 @@ class VisualAssetOrchestrator:
         }
 
     def _find_authentic_capture(self, project_dir: Path, beat: Dict[str, Any]) -> Optional[Path]:
-        """Locate verified screenshot or capture file on disk."""
+        """Locate verified screenshot or capture file on disk for authentic proof."""
         candidate_dirs = [
             project_dir / "artifacts" / "news_source_capture",
             project_dir / "assets" / "visuals",
         ]
-        asset_ids = beat.get("asset_ids", [])
+        asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [])
+        beat_id = beat.get("id") or beat.get("beat_id")
+        check_ids = list(asset_ids)
+        if beat_id and beat_id not in check_ids:
+            check_ids.append(beat_id)
+        for cid in beat.get("claim_ids", []):
+            if cid not in check_ids:
+                check_ids.append(cid)
+
         for cdir in candidate_dirs:
             if not cdir.is_dir():
                 continue
-            for aid in asset_ids:
+            for aid in check_ids:
                 for ext in (".png", ".jpg", ".jpeg", ".webp"):
                     target = cdir / f"{aid}{ext}"
                     if target.is_file() and target.stat().st_size > 500:
                         return target
-            # Also check any PNG file in capture directory
-            if cdir.name == "news_source_capture":
-                for cap_file in sorted(cdir.glob("*.png")):
-                    if cap_file.stat().st_size > 500:
-                        return cap_file
         return None
+
+    def _get_or_generate_svg(
+        self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int
+    ) -> Path:
+        """Return existing non-empty SVG asset if present; otherwise generate technical SVG."""
+        existing = visuals_dir / f"{asset_id}.svg"
+        if existing.is_file() and existing.stat().st_size > 0:
+            return existing
+        return self._generate_contextual_svg(visuals_dir, asset_id, topic_family, title, beat_num)
 
     def _generate_contextual_svg(
         self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int

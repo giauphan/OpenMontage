@@ -124,7 +124,11 @@ def main() -> int:
                 except Exception as retime_exc:
                     print(f"INFO: Retiming could not preserve plan ({retime_exc}); regenerating", file=sys.stderr)
                     if claim_ledger:
-                        plan = planner.plan_visuals(project_dir.name, script_data, claim_ledger)
+                        try:
+                            plan = planner.plan_visuals(project_dir.name, script_data, claim_ledger)
+                        except Exception as plan_exc:
+                            print(f"WARN: Claim-aware regeneration fell back to default: {plan_exc}", file=sys.stderr)
+                            plan = build_default_visual_plan(project_dir, script_data, script_sha)
                     else:
                         plan = build_default_visual_plan(project_dir, script_data, script_sha)
                     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")

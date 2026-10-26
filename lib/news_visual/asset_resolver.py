@@ -171,9 +171,8 @@ def resolve_visual_assets(
 
             is_ai_art = (
                 beat_strategy == "ai_illustration_eligible"
-                or beat_kind == "illustration"
-                or beat_ev_class == "illustration"
-                or "art_" in asset_id
+                or asset_id.startswith("art_")
+                or (beat_kind == "illustration" and beat_ev_class == "illustration")
             ) and not found_file.endswith(".svg")
 
             if is_ai_art:
