@@ -639,7 +639,7 @@ cp "$SCHEDULE" "$TMP_QUEUE"
 
 # Determine target allocation between today (fill up to TARGET_TODAY_COUNT, default 3) and next day (primary target).
 TARGET_TODAY_COUNT="${TARGET_TODAY_COUNT:-3}"
-CURRENT_TODAY_COUNT="${#TODAY_PROJECT_IDS[@]}"
+CURRENT_TODAY_COUNT=$(jq -r --arg d "$TODAY" '[.active_projects[]? | select(type == "object" and (.publish_date // "") == $d)] | length' "$SCHEDULE" 2>/dev/null || echo "${#TODAY_PROJECT_IDS[@]}")
 NEEDED_TODAY=0
 if [ "$CURRENT_TODAY_COUNT" -lt "$TARGET_TODAY_COUNT" ]; then
   NEEDED_TODAY=$((TARGET_TODAY_COUNT - CURRENT_TODAY_COUNT))
@@ -656,6 +656,11 @@ fi
 TODAY_IDX=0
 NEXT_IDX=0
 for PID in "${VALIDATED_PIDS[@]}"; do
+  if jq -e --arg pid "$PID" 'any(.active_projects[]?; (if type == "object" then .project_id else . end) == $pid)' "$TMP_QUEUE" >/dev/null 2>&1; then
+    log "already queued $PID in schedule; retaining existing slot"
+    QUEUED_PIDS+=("$PID")
+    continue
+  fi
   if [ "$NEXT_IDX" -lt "${#NEXT_SLOTS[@]}" ] && { [ "$TODAY_IDX" -ge "$MAX_TODAY_ALLOCATION" ] || [ "$TODAY_IDX" -ge "${#TODAY_SLOTS[@]}" ]; }; then
     DATE="$NEXT_DATE"
     SLOT="${NEXT_SLOTS[$NEXT_IDX]}"
