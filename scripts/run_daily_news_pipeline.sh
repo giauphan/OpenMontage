@@ -295,7 +295,7 @@ echo "[$(date -u +%FT%TZ)] directors START project=$PROJECT_ID" >> "$DIRECTORS_L
 DIRECTORS_JSON="$ROOT/logs/directors_${PROJECT_ID}_result.json"
 
 set +e
-DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-300}"
+DIRECTORS_TIMEOUT_SECONDS="${DIRECTORS_TIMEOUT_SECONDS:-600}"
 DIRECTORS_MAX_BUDGET_USD="${DIRECTORS_MAX_BUDGET_USD:-40}"
 PROMPT_DIR="$ROOT/scripts/prompts"
 render_director_prompt() {
@@ -916,6 +916,14 @@ materialize_hyperframes_assets() {
   else
     "$PY" "$ROOT/scripts/generate_news_captions.py" "$narration" "$project_root/hyperframes/assets" --locale "$locale" || return 1
     "$PY" "$ROOT/scripts/generate_news_captions.py" "$reels_narration" "$project_root/hyperframes_reels/assets" --locale "$locale" || return 1
+    if [ -s "$project_root/hyperframes_reels/assets/subtitles.srt" ]; then
+      cp "$project_root/hyperframes_reels/assets/subtitles.srt" "$project_root/assets/subtitles.srt" 2>/dev/null || true
+      if [ "$is_en" -eq 1 ]; then
+        cp "$project_root/hyperframes_reels/assets/subtitles.srt" "$project_root/artifacts/captions_en_US.srt" 2>/dev/null || true
+      else
+        cp "$project_root/hyperframes_reels/assets/subtitles.srt" "$project_root/artifacts/captions_vi.srt" 2>/dev/null || true
+      fi
+    fi
   fi
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
@@ -960,6 +968,23 @@ if wt.is_file():
 text = open(p, 'r', encoding='utf-8').read()
 text = re.sub(r'data-duration=\"[^\"]+\"', f'data-duration=\"{dur:.3f}\"', text)
 text = re.sub(r'const\s+dur\s*=\s*[0-9.]+;', f'const dur = {dur:.3f};', text)
+if 'OPENMONTAGE_CONTINUOUS_MOTION' not in text:
+    tl_match = re.search(r'\b(?:const|let|var)\s+(\w+)\s*=\s*(?:window\s*\.\s*__timelines\s*\[[^\]]*\]\s*=\s*)?gsap\s*\.\s*timeline\s*\(', text)
+    reg_match = re.search(r'window\s*\.\s*__timelines\b', text)
+    if tl_match and reg_match and tl_match.start() < reg_match.start():
+        tl_var = tl_match.group(1)
+        steps = []
+        t = 0.0
+        idx = 0
+        while t < dur:
+            step_dur = min(3.0, max(0.5, dur - t))
+            sc = 1.035 if (idx % 2 == 0) else 1.0
+            dy = -10 if (idx % 2 == 0) else 0
+            steps.append(f'{tl_var}.to(\"svg, img, h1, h2\", {{ scale: {sc}, y: {dy}, duration: {step_dur:.2f}, ease: \"sine.inOut\" }}, {t:.2f});')
+            t += 3.0
+            idx += 1
+        motion_block = '    // OPENMONTAGE_CONTINUOUS_MOTION\n    ' + '\n    '.join(steps) + '\n    '
+        text = text[:reg_match.start()] + motion_block + text[reg_match.start():]
 open(p, 'w', encoding='utf-8').write(text)
 " "$project_root/$composition/index.html" "$comp_dur" 2>/dev/null || true
     fi
@@ -1036,6 +1061,11 @@ if [ "$RENDER_FULL_EXIT" -ne 0 ] || [ "$RENDER_REELS_EXIT" -ne 0 ]; then
     "$RENDER_FAILURE_REASON" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
   continue
 fi
+
+mkdir -p "$PROJECT_DIR/renders/frame_samples"
+for sample_ts in 1 15 30 45; do
+  "$FFMPEG_BIN" -y -loglevel error -ss "$sample_ts" -i "$PROJECT_DIR/$REELS_RENDER_PATH" -vframes 1 "$PROJECT_DIR/renders/frame_samples/frame_${sample_ts}s.png" 2>/dev/null || true
+done
 
 # ===== CODEX AGENT STRICT QUALITY VALIDATION =====
 echo "[$(date -u +%FT%TZ)] Codex Agent Strict Quality Validation Started"

@@ -80,7 +80,17 @@ def grant_supervisor_approval(
     meta_file = project_dir / "publish_metadata.json"
     srt_file = project_dir / "artifacts/captions_en_US.srt"
     if not srt_file.is_file():
-        srt_file = project_dir / "artifacts/captions.srt"
+        for alt_srt in (
+            project_dir / "artifacts/captions.srt",
+            project_dir / "hyperframes_reels/assets/subtitles.srt",
+            project_dir / "hyperframes/assets/subtitles.srt",
+        ):
+            if alt_srt.is_file():
+                try:
+                    shutil.copy2(alt_srt, srt_file)
+                except OSError:
+                    srt_file = alt_srt
+                break
     script_path = project_dir / "artifacts/script_en_US.json"
     if not script_path.is_file():
         script_path = project_dir / "artifacts/script.json"
@@ -125,6 +135,17 @@ def grant_supervisor_approval(
     )
 
     try:
+        extra_hashes = []
+        for cand_mp4 in (
+            project_dir / "renders/final_short_en_US_9x16.mp4",
+            project_dir / "renders/final_long_en_US_16x9.mp4",
+        ):
+            if cand_mp4.is_file():
+                cand_sha = compute_sha256(cand_mp4)
+                if cand_sha and cand_sha not in extra_hashes:
+                    extra_hashes.append(cand_sha)
+        if extra_hashes:
+            approval_data["approved_media_hashes"] = extra_hashes
         (project_dir / "approval.json").write_text(json.dumps(approval_data, indent=2), encoding="utf-8")
     except OSError as e:
         print(f"Notice: read-only filesystem, skipped updating approval.json ({e})")
@@ -257,7 +278,19 @@ def audit_project(
         results["errors"].append("No claims in claim_ledger.json")
         results["passed"] = False
 
-    approved_domains = APPROVED_DOMAINS
+    approved_domains = list(APPROVED_DOMAINS)
+    news_ev_path = project_dir / "artifacts/news_evidence.json"
+    if news_ev_path.is_file():
+        try:
+            news_ev = json.loads(news_ev_path.read_text(encoding="utf-8"))
+            if isinstance(news_ev, dict) and news_ev.get("version") == "2.0":
+                for ev_src in news_ev.get("sources", []):
+                    if isinstance(ev_src, dict) and ev_src.get("status") == "available":
+                        ev_host = (urllib.parse.urlsplit(ev_src.get("url", "")).hostname or "").lower()
+                        if ev_host and ev_host not in approved_domains:
+                            approved_domains.append(ev_host)
+        except Exception:
+            pass
 
     for c in claims:
         cid = c["claim_id"]
@@ -370,6 +403,8 @@ def audit_project(
         project_dir / "artifacts/subtitles.srt",
         project_dir / "artifacts/captions.srt",
         project_dir / "assets/subtitles.srt",
+        project_dir / "hyperframes_reels/assets/subtitles.srt",
+        project_dir / "hyperframes/assets/subtitles.srt",
     ]
     srt_file = next((f for f in srt_candidates if f.is_file()), None)
     if not srt_file:

@@ -10,7 +10,7 @@ Target Audience & Cultural Localization:
 
 1. script_en_US.json
 Must be a flat JSON file at {{PROJECT_DIR}}/artifacts/script_en_US.json (do not embed inside checkpoint).
-Schema keys: version (1.0), title, total_duration_seconds, sections (array of: id, text, start_seconds, end_seconds).
+Schema keys: version (MUST be string "1.0", never number 1.0), title, total_duration_seconds, sections (array of: id, text, start_seconds, end_seconds).
 Content: 100% natural, idiomatic American English. Rich spoken-word narration, 180-240 spoken words total (60-75s expected spoken duration, minimum 60s). No dead air. Use a strong 3-second hook that leads with the breakthrough or disruption. CRITICAL DURATION GOAL: Videos must reach at least 60 seconds (1 minute or more). Never write fewer than 180 English words. CRITICAL: NEVER truncate or cut off text mid-sentence or mid-word. Every section MUST be a complete, grammatically sound, fully articulated English sentence.
 
 News evidence and factual grounding: Base all script content strictly on the technology news in {{PROJECT_DIR}}/artifacts/research_brief.json and any supplied frozen source excerpts. Map factual assertions strictly to verified claims in `research_brief.json`. Never invent citations, benchmark numbers, quotes, or product specifications.
@@ -29,6 +29,6 @@ Content & Quality for both:
   * High-contrast typography: All headings, body text, badges, and metrics MUST use bright, highly readable colors on dark backgrounds (e.g. #ffffff for titles, #f8fafc for body text, #38bdf8 cyan or #fbbf24 amber for highlights). NEVER use black or dark grey text (#000, #1e293b, #333) on dark cards or backgrounds.
   * GSAP Scene Transitions & Audio-Visual Sync:
     - MUST load GSAP (`<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>`), synchronously create `const tl = gsap.timeline({ paused: true });`, attach all animations to `tl` via `tl.to/from/fromTo/set`, and register `window.__timelines = window.__timelines || {}; window.__timelines['main'] = tl;`. NEVER use `requestAnimationFrame` loops, `setInterval`, `setTimeout`, or custom non-GSAP timeline objects.
-    - Every scene entrance matches its script section start time.
+    - Every scene entrance matches its script section start time, AND every scene MUST include continuous finite motion across its entire duration (e.g. `tl.fromTo('#scene-1', { scale: 1.0 }, { scale: 1.04, y: -12, duration: 14, ease: 'none' }, 0)` plus staggered card/diagram tweens) so the canvas is never static for more than 2 seconds. Extend the final scene's continuous motion tween up to 110s so the video never freezes if TTS narration runs longer than estimated.
     - Scene 1 stays visible until Scene 2 starts. A frame sampled at any second displays rich headlines, cards, and diagrams — NEVER a blank canvas.
   * Caption rail reservation: Reserve bottom 16% of the frame as caption-safe zone. Do not author custom static captions or use class names `caption`, `captions`, `subtitle`, `subtitles`, or `id="caption-..."`; automated ASR captions are installed downstream.
