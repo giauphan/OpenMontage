@@ -1,0 +1,196 @@
+{
+  "metadata": {
+    "schema_version": "1.0",
+    "generated_at": "2026-10-26T10:33:00Z",
+    "target_commit_sha": "2b8b8b09ae31c63e13ee370530310ae83f4b973f",
+    "locked_niche_sha256": "adeaaf1e3c8754e952b555bcbba36add0965afa1eebe8dbd352f81e8954aeed1",
+    "en_us_profile_sha256": "948de1cb240c4a86f96a74f78f58db888e2ae01124fc6060dac4df1666933faf",
+    "niche_id": "us-ai-agent-engineering",
+    "niche_title": "Practical AI Agent Engineering — How Coding Agents Work, Fail & Get Fixed"
+  },
+  "requirements": [
+    {
+      "id": "REQ-NICHE-001",
+      "category": "niche_governance",
+      "source_doc": "config/niches/us-ai-agent-engineering.locked.yaml",
+      "requirement": "Niche status must be LOCKED_BY_OWNER with allow_agent_niche_discovery=false, allow_agent_niche_switch=false, and allow_agent_edit_policy=false.",
+      "implementation_modules": [
+        "config/niches/us-ai-agent-engineering.locked.yaml:3-7",
+        "lib/fixed_niche/policy.py:25-78"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_policy.py::test_policy_001_locked_niche_integrity",
+        "tests/fixed_niche/test_policy.py::test_policy_002_prevent_policy_mutation"
+      ],
+      "status": "PASS",
+      "evidence": "Policy validator verifies status==LOCKED_BY_OWNER and rejects dynamic edits."
+    },
+    {
+      "id": "REQ-NICHE-002",
+      "category": "niche_scope",
+      "source_doc": "config/niches/us-ai-agent-engineering.locked.yaml",
+      "requirement": "Topics must belong strictly to one of the 5 allowed families: context_memory, agent_tool_use, debugging_reliability, agent_evaluation, agent_architecture. Off-niche topics must be rejected.",
+      "implementation_modules": [
+        "config/niches/us-ai-agent-engineering.locked.yaml:16-26",
+        "lib/fixed_niche/gate.py:62-185",
+        "scripts/run_fixed_niche_video.py:187-215"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_gate_and_selector.py::test_gate_001_allowed_topic_families",
+        "tests/fixed_niche/test_gate_and_selector.py::test_gate_002_reject_blocked_topics",
+        "tests/fixed_niche/test_gate_and_selector.py::test_gate_003_negative_ai_art_video_generation"
+      ],
+      "status": "PARTIAL",
+      "evidence": "FixedNicheScopeGate works in lib/fixed_niche/gate.py and passes 68 tests, but is not invoked by tools/news/news_pipeline_cli.py or scripts/run_daily_news_pipeline.sh."
+    },
+    {
+      "id": "REQ-NICHE-003",
+      "category": "niche_quota",
+      "source_doc": "config/niches/us-ai-agent-engineering.locked.yaml",
+      "requirement": "insufficient_topic_action must be NO_ELIGIBLE_TOPIC and never_force_daily_quota=true. No fallback to another niche.",
+      "implementation_modules": [
+        "config/niches/us-ai-agent-engineering.locked.yaml:50-52,83",
+        "lib/fixed_niche/gate.py:160-185",
+        "scripts/run_fixed_niche_video.py:220-245"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_gate_and_selector.py::test_gate_004_insufficient_topics_returns_no_eligible_topic"
+      ],
+      "status": "PARTIAL",
+      "evidence": "Fixed niche runner respects NO_ELIGIBLE_TOPIC, but scripts/retry_daily_pipeline.sh hardcodes EXPECTED_SUCCESS_COUNT=3 and retries hourly."
+    },
+    {
+      "id": "REQ-DUR-001",
+      "category": "video_duration",
+      "source_doc": "config/niches/us-ai-agent-engineering.locked.yaml",
+      "requirement": "Shorts target duration strictly locked to [65.0, 75.0] seconds. Speech and rendered MP4 must be within this bound.",
+      "implementation_modules": [
+        "config/niches/us-ai-agent-engineering.locked.yaml:64",
+        "scripts/run_daily_news_pipeline.sh:905-937,1034-1039",
+        "lib/news_visual/qa.py:350-410",
+        "lib/fixed_niche/runner.py:120-160"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_production_runner.py::test_render_002_sixty_five_to_seventy_five_seconds_duration",
+        "tests/news_visual/test_qa_strict.py::test_qa_strict_duration_window"
+      ],
+      "status": "PASS",
+      "evidence": "edge-tts rate retry and ffmpeg atempo fine-tuning ensure speech and MP4 duration fall in [65.0, 74.5]s."
+    },
+    {
+      "id": "REQ-FORMAT-001",
+      "category": "video_format",
+      "source_doc": "config/niches/us-ai-agent-engineering.locked.yaml",
+      "requirement": "Longform is initially disabled (longform.enabled_initially: false). Daily pipeline should produce 9:16 portrait Shorts only.",
+      "implementation_modules": [
+        "config/niches/us-ai-agent-engineering.locked.yaml:68-71",
+        "scripts/run_daily_news_pipeline.sh:1158-1172"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_policy.py::test_policy_003_longform_initially_disabled"
+      ],
+      "status": "FAIL",
+      "evidence": "run_daily_news_pipeline.sh unconditionally renders final_long_en_US_16x9.mp4 alongside final_short_en_US_9x16.mp4."
+    },
+    {
+      "id": "REQ-VISUAL-001",
+      "category": "visual_pacing",
+      "source_doc": "config/niches/us-ai-agent-engineering.locked.yaml",
+      "requirement": "Videos must contain >=6 semantically distinct visual beats; no single scene or beat can hold longer than 12.0 seconds.",
+      "implementation_modules": [
+        "scripts/run_daily_news_pipeline.sh:939-975,1057-1085",
+        "lib/news_visual/qa.py:189-242,273-292",
+        "scripts/run_fixed_niche_video.py:340-390"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_storyboard_and_visuals.py::test_storyboard_001_minimum_six_beats",
+        "tests/fixed_niche/test_storyboard_and_visuals.py::test_storyboard_002_no_beat_holds_over_twelve_seconds",
+        "tests/news_visual/test_qa_strict.py::test_qa_strict_scene_hold_enforcement"
+      ],
+      "status": "PASS",
+      "evidence": "lib/news_visual/qa.py strictly checks HTML scene hold times and beat durations <=12.0s."
+    },
+    {
+      "id": "REQ-VISUAL-002",
+      "category": "rendered_visual_coverage",
+      "source_doc": "plan/feedback/feedback-today.md",
+      "requirement": "Post-render frame sampling must verify actual visual content from decoded video frames (contrast, std-dev, MAD pixel movement, scene transitions) rather than relying on HTML references alone.",
+      "implementation_modules": [
+        "lib/news_visual/qa.py:150-188,333-410"
+      ],
+      "verification_tests": [
+        "tests/news_visual/test_qa_strict.py::test_qa_strict_rendered_frames_sampled"
+      ],
+      "status": "PARTIAL",
+      "evidence": "lib/news_visual/qa.py decodes upper 80% gray frames with ffmpeg, checks std-dev and MAD, but does not yet evaluate semantic claim alignment."
+    },
+    {
+      "id": "REQ-FACT-001",
+      "category": "evidence_factcheck",
+      "source_doc": "config/niches/us-ai-agent-engineering.locked.yaml",
+      "requirement": "Primary evidence must be derived from official docs, changelogs, repositories, or verified research. Claim ledger must substantiate figures and statements without self-generated synthetic snapshots.",
+      "implementation_modules": [
+        "config/niches/us-ai-agent-engineering.locked.yaml:44,57",
+        "scripts/bind_news_evidence.py:126-220,247-285",
+        "lib/fixed_niche/factcheck.py:45-120"
+      ],
+      "verification_tests": [
+        "tests/test_bind_news_evidence.py::test_bind_news_evidence_en_us_success",
+        "tests/fixed_niche/test_research_and_demo.py::test_research_001_primary_source_verification"
+      ],
+      "status": "FAIL",
+      "evidence": "scripts/bind_news_evidence.py fabricates timestamps and writes local source_evidence_s*.txt from research_brief.json text, and approves claims on 2-token overlap."
+    },
+    {
+      "id": "REQ-CAPTIONS-001",
+      "category": "captions",
+      "source_doc": "config/audience_profiles/en-US.yaml",
+      "requirement": "Captions must be generated from final audio, positioned in safe bottom zone, monotonic, seek-safe, and burned in or HTML-clip synchronized.",
+      "implementation_modules": [
+        "scripts/install_news_captions.py:1-250",
+        "scripts/run_daily_news_pipeline.sh:1113-1117",
+        "lib/news_visual/qa.py:30-100"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_captions.py::test_captions_001_monotonic_and_aligned",
+        "tests/news_visual/test_qa_strict.py::test_qa_strict_caption_safe_zone"
+      ],
+      "status": "PASS",
+      "evidence": "install_news_captions.py uses whisper/faster-whisper ASR on final narration.mp3, produces monotonic cues, and validates overlay safe zones."
+    },
+    {
+      "id": "REQ-RELEASE-001",
+      "category": "release_safety",
+      "source_doc": "artifacts/us-migration/GO_NO_GO.md",
+      "requirement": "Cryptographic release manifests must be signed with HMAC-SHA256 supervisor keys bound to media, claim ledger, metadata, captions, and script hashes.",
+      "implementation_modules": [
+        "lib/qa_signing.py:1-120",
+        "scripts/independent_editorial_qa.py:1-220"
+      ],
+      "verification_tests": [
+        "tests/fixed_niche/test_audio_and_qa.py::test_qa_001_cryptographic_hmac_signature",
+        "tests/us_migration/test_us_migration_suite.py::test_i16_cryptographic_qa_signing"
+      ],
+      "status": "PASS",
+      "evidence": "lib/qa_signing.py verifies supervisor key and validates SHA256 hashes of all release artifacts before approval."
+    },
+    {
+      "id": "REQ-SCHED-001",
+      "category": "publishing_schedule",
+      "source_doc": "config/audience_profiles/en-US.yaml",
+      "requirement": "Publishing schedule must enforce >=2 hours spacing, queue deduplication before slot allocation, idempotent retries, and clean project directories only after verified publication.",
+      "implementation_modules": [
+        "scripts/schedule_today_native.py:170-220",
+        "scripts/schedule_youtube_today.py:80-130",
+        "scripts/run_strict_docker_publish.sh:658-705",
+        "scripts/cleanup_published_projects.py:1-150"
+      ],
+      "verification_tests": [
+        "tests/test_published_cleanup_sweep.py::test_cleanup_only_after_published",
+        "tests/test_publish_cleanup.py::test_preserves_active_scheduled_projects"
+      ],
+      "status": "PARTIAL",
+      "evidence": "schedule_today_native.py and cleanup_published_projects.py pass 76 tests. However, schedule_youtube_today.py does not deduplicate active_projects before slot modulo assignment."
+    }
+  ]
+}
