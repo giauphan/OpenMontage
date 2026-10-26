@@ -117,7 +117,7 @@ class VisualAssetOrchestrator:
                         provider="muse",
                         model="muse-image",
                         visual_intent=intent,
-                        visual_plan_sha256=plan_sha,
+                        visual_plan_sha256=primary_asset_id,
                     )
                     cached_img = self.cache.get_cached_asset(cache_key)
                     dest_file = visuals_dir / f"{primary_asset_id}.png"

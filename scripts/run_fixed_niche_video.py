@@ -291,12 +291,18 @@ class FixedNicheVideoRunner:
         # 6. Orchestrate and resolve assets with strict meaningful visual enforcement
         from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
         orchestrator = VisualAssetOrchestrator()
-        orchestrator.orchestrate_plan_assets(
+        orch_res = orchestrator.orchestrate_plan_assets(
             project_dir=self.project_dir,
             plan=visual_plan,
             topic=topic,
             claim_ledger=claim_ledger.get("claims", []),
         )
+        if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
+            return {
+                "status": "BLOCKED_MISSING_PROOF",
+                "project_id": self.candidate_id,
+                "beat_results": orch_res.get("beat_results", {}),
+            }
 
         plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
         manifest = resolve_visual_assets(
@@ -362,9 +368,11 @@ class FixedNicheVideoRunner:
         dur = probe_audio_duration(out_audio)
         logger.info(f"Synthesized voice track: duration={dur:.2f}s")
         target_dur = self.get_target_duration()
-        if dur > target_dur:
+        dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
+        max_dur = float(dur_range[1]) if len(dur_range) >= 2 else target_dur
+        if dur > max_dur:
             raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum target duration ({target_dur:.2f}s). "
+                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({max_dur:.2f}s). "
                 "Truncating narration mid-sentence is forbidden."
             )
 
