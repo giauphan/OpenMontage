@@ -891,11 +891,19 @@ materialize_hyperframes_assets() {
   fi
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
   if [ "$is_en" -eq 1 ] && [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1; then
-    if ! awk -v d="$narration_duration" 'BEGIN{exit !(d >= 65.0 && d <= 75.0)}'; then
-      for try_rate in "-5%" "+5%" "-10%" "+10%" "-15%" "+15%" "-20%" "+20%" "+25%" "+30%"; do
+    local max_narration_cap=74.5
+    if [ -s "$script_json" ]; then
+      local last_sec_start
+      last_sec_start=$(jq -r '.sections[-1].start_seconds // 0' "$script_json" 2>/dev/null || echo 0)
+      if awk -v ls="$last_sec_start" 'BEGIN{exit !(ls >= 45.0 && ls + 11.8 < 74.5)}'; then
+        max_narration_cap=$(awk -v ls="$last_sec_start" 'BEGIN{printf "%.2f", ls + 11.8}')
+      fi
+    fi
+    if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
+      for try_rate in "+5%" "-5%" "+8%" "+10%" "-10%" "+12%" "+15%" "-15%" "+18%" "+20%" "-20%" "+25%" "+30%"; do
         if edge-tts --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
           try_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration.rate_try.mp3" 2>/dev/null || echo 0)
-          if awk -v d="$try_dur" 'BEGIN{exit !(d >= 65.5 && d <= 74.5)}'; then
+          if awk -v d="$try_dur" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.5 && d <= cap)}'; then
             mv "$narration.rate_try.mp3" "$narration"
             narration_duration="$try_dur"
             rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
@@ -1014,11 +1022,16 @@ if plan_p.is_file():
         plan_obj = json.loads(plan_p.read_text(encoding='utf-8'))
         beats = plan_obj.get('beats') or []
         if len(beats) >= 2:
-            n_b = len(beats)
-            b_step = round(dur / n_b, 2)
-            for bi, b in enumerate(beats):
-                b['start_seconds'] = round(bi * b_step, 2)
-                b['end_seconds'] = round(dur if bi == n_b - 1 else (bi + 1) * b_step, 2)
+            if m_starts:
+                n_b = len(beats)
+                b_step = round(dur / n_b, 2)
+                for bi, b in enumerate(beats):
+                    b['start_seconds'] = round(bi * b_step, 2)
+                    b['end_seconds'] = round(dur if bi == n_b - 1 else (bi + 1) * b_step, 2)
+            else:
+                last_start = float(beats[-1].get('start_seconds', 0.0))
+                if dur > last_start and dur - last_start <= 12.0:
+                    beats[-1]['end_seconds'] = round(dur, 2)
             plan_p.write_text(json.dumps(plan_obj, indent=2, ensure_ascii=False), encoding='utf-8')
     except Exception:
         pass
