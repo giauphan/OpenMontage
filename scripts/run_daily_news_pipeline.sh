@@ -269,6 +269,15 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
   mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
+  local edge_tts_cmd="edge-tts"
+  if ! command -v "$edge_tts_cmd" >/dev/null 2>&1; then
+    if [ -x "$ROOT/.venv/bin/edge-tts" ]; then
+      edge_tts_cmd="$ROOT/.venv/bin/edge-tts"
+    elif [ -x "/usr/local/bin/edge-tts" ]; then
+      edge_tts_cmd="/usr/local/bin/edge-tts"
+    fi
+  fi
+
   if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
   PROJECT_LOCALE="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$PROJECT_DIR')))" 2>/dev/null || echo "en-US")"
@@ -869,15 +878,25 @@ materialize_hyperframes_assets() {
   if [ ! -s "$narration" ] || { [ -s "$narration_text" ] && [ "$narration_text" -nt "$narration" ]; }; then
     narration_stale=1
   fi
+
+  local edge_tts_cmd="edge-tts"
+  if ! command -v "$edge_tts_cmd" >/dev/null 2>&1; then
+    if [ -x "$ROOT/.venv/bin/edge-tts" ]; then
+      edge_tts_cmd="$ROOT/.venv/bin/edge-tts"
+    elif [ -x "/usr/local/bin/edge-tts" ]; then
+      edge_tts_cmd="/usr/local/bin/edge-tts"
+    fi
+  fi
+
   if [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && { awk -v d="$narration_duration" 'BEGIN{exit !(d <= 5)}' || [ "$narration_stale" = 1 ]; }; then
     if "$PY" -m tools.audio.narration_cli "$project_root" --output "$narration" >/dev/null 2>&1; then
       rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
-    elif command -v edge-tts >/dev/null 2>&1; then
+    elif command -v "$edge_tts_cmd" >/dev/null 2>&1 || [ -x "$edge_tts_cmd" ]; then
       if [ "$is_en" -eq 1 ]; then
-        edge-tts --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
+        "$edge_tts_cmd" --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
       else
         "$PY" "$ROOT/tools/narration_text.py" --in-file "$narration_text" --out-file "$narration_text.prepared"
-        edge-tts --voice "$default_voice" --text "$(cat "$narration_text.prepared")" --write-media "$narration"
+        "$edge_tts_cmd" --voice "$default_voice" --text "$(cat "$narration_text.prepared")" --write-media "$narration"
       fi
       rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
     fi
@@ -889,22 +908,41 @@ materialize_hyperframes_assets() {
     echo "[$(date -u +%FT%TZ)] ERROR: narration asset missing for $PROJECT_ID"
     return 1
   fi
+
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
-  if [ "$is_en" -eq 1 ] && [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1; then
+  if [ "$is_en" -eq 1 ] && [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ]; then
     local max_narration_cap=74.5
     if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
-      for try_rate in "+5%" "-5%" "+8%" "+10%" "-10%" "+12%" "+15%" "-15%" "+18%" "+20%" "-20%" "+25%" "+30%"; do
-        if edge-tts --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
-          try_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration.rate_try.mp3" 2>/dev/null || echo 0)
-          if awk -v d="$try_dur" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
-            mv "$narration.rate_try.mp3" "$narration"
-            narration_duration="$try_dur"
-            rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
-            break
+      if command -v "$edge_tts_cmd" >/dev/null 2>&1 || [ -x "$edge_tts_cmd" ]; then
+        for try_rate in "+5%" "-5%" "+8%" "+10%" "-10%" "+12%" "+15%" "-15%" "+18%" "+20%" "-20%" "+25%" "+30%"; do
+          if "$edge_tts_cmd" --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
+            try_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration.rate_try.mp3" 2>/dev/null || echo 0)
+            if awk -v d="$try_dur" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
+              mv "$narration.rate_try.mp3" "$narration"
+              narration_duration="$try_dur"
+              rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
+              break
+            fi
+          fi
+        done
+        rm -f "$narration.rate_try.mp3"
+      fi
+
+      # If edge-tts was unavailable or couldn't land in [65, 74.5]s, use ffmpeg atempo on near-fit audio
+      if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
+        if awk -v d="$narration_duration" 'BEGIN{exit !(d >= 55.0 && d <= 85.0)}'; then
+          local target_dur=69.0
+          local tempo
+          tempo=$(awk -v d="$narration_duration" -v t="$target_dur" 'BEGIN{printf "%.4f", d / t}')
+          if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.7 && t <= 1.4)}'; then
+            if "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -filter:a "atempo=$tempo" -vn "$narration.tempo_adj.mp3" >/dev/null 2>&1; then
+              mv "$narration.tempo_adj.mp3" "$narration"
+              narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+              rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
+            fi
           fi
         fi
-      done
-      rm -f "$narration.rate_try.mp3"
+      fi
     fi
 
     # Realign scene timeline to actual narration duration so no scene exceeds 12.0s
