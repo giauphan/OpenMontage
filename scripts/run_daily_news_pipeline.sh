@@ -1356,6 +1356,7 @@ jq -n \
 
 # Step 4.1: Independent Editorial QA Supervisor for US English projects
 if [ "$is_en" -eq 1 ]; then
+  "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
   if [ ! -f "$PROJECT_DIR/artifacts/claim_ledger.json" ]; then
     echo "[$(date -u +%FT%TZ)] 🔴 Mandatory claim_ledger.json missing for US English project $PROJECT_ID" >&2
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "independent_qa" --project-id "$PROJECT_ID" \

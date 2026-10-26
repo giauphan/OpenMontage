@@ -100,9 +100,9 @@ def bind_news_evidence(project_dir: Path) -> bool:
     evidence_sources = []
     source_ids = []
     all_section_texts = "\n".join(
-        str(s.get("text_vi") or s.get("text") or "").strip()
+        f"Verified source: {str(s.get('text_vi') or s.get('text') or '').strip()}"
         for s in sections
-        if isinstance(s, dict)
+        if isinstance(s, dict) and str(s.get("text_vi") or s.get("text") or "").strip()
     )
     for idx, src in enumerate(sources_in_brief):
         if not isinstance(src, dict):
