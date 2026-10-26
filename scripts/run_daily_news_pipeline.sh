@@ -973,7 +973,9 @@ if 'OPENMONTAGE_CONTINUOUS_MOTION' not in text:
     reg_match = re.search(r'window\s*\.\s*__timelines\b', text)
     if tl_match and reg_match and tl_match.start() < reg_match.start():
         tl_var = tl_match.group(1)
-        steps = []
+        steps = [
+            f'if (typeof starts !== \"undefined\" && Array.isArray(starts)) {{ document.querySelectorAll(\".scene\").forEach((sc, idx) => {{ if (idx + 1 < starts.length) {{ {tl_var}.to(sc, {{ autoAlpha: 0, opacity: 0, duration: 0.35 }}, Math.max(0, starts[idx + 1] - 0.35)); }} }}); }}'
+        ]
         t = 0.0
         idx = 0
         while t < dur:
