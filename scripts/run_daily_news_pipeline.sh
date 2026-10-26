@@ -952,6 +952,14 @@ materialize_hyperframes_assets() {
     local target="$project_root/$composition/assets"
     local comp_dur
     comp_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$target/narration.mp3" 2>/dev/null || echo 0)
+    # The en-US Short contract is measured speech in (60, 75]s.
+    # Reject the bad input before rendering; never truncate a sentence or pad scenes.
+    if [ "${is_en:-0}" -eq 1 ] && [ "$composition" = "hyperframes_reels" ]; then
+      if ! awk -v d="$comp_dur" 'BEGIN{exit !(d > 60.0 && d <= 75.0)}'; then
+        echo "ERROR: en-US narration duration ${comp_dur:-missing}s outside required (60, 75]s; regenerate script/TTS before rendering" >&2
+        return 1
+      fi
+    fi
     if [ -n "$comp_dur" ] && awk -v d="$comp_dur" 'BEGIN{exit !(d > 5)}'; then
       "$PY" -c "
 import json, pathlib, re, sys
@@ -1072,8 +1080,11 @@ done
 # ===== CODEX AGENT STRICT QUALITY VALIDATION =====
 echo "[$(date -u +%FT%TZ)] Codex Agent Strict Quality Validation Started"
 
-# Step 1: Base render quality validation (enforcing min 60s, allowing content duration up to 180s)
-if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --min-duration 60.0 --reels-max-duration 180.0 --strict; then
+# Step 1: Render QA. US English Shorts are limited to 75s by editorial policy;
+# other locales retain the existing generic 180s platform limit.
+REELS_MAX_DURATION_SECONDS=180.0
+if [ "${is_en:-0}" -eq 1 ]; then REELS_MAX_DURATION_SECONDS=75.0; fi
+if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --min-duration 60.0 --reels-max-duration "$REELS_MAX_DURATION_SECONDS" --strict; then
   VALIDATE_RENDER_EXIT=0
 else
   VALIDATE_RENDER_EXIT=$?
