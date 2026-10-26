@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -174,6 +175,18 @@ def bind_news_evidence(project_dir: Path) -> bool:
                 research_lines.append(f"Angle: {ang_text}")
 
     capture_dir = artifacts_dir / "news_source_capture"
+    strict_capture_required = (
+        os.environ.get("REQUIRE_AUTHENTIC_CAPTURES", "0") in ("1", "true", "True")
+        or (os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True") and script_path.name == "script_en_US.json")
+    )
+    if strict_capture_required:
+        has_captures = capture_dir.is_dir() and any(
+            f.is_file() and f.stat().st_size > 0 for f in capture_dir.glob("*.txt")
+        )
+        if not has_captures:
+            print("ERROR: Strict evidence release requires authentic source capture files in artifacts/news_source_capture", file=sys.stderr)
+            return False
+
     if capture_dir.is_dir():
         for cap_txt in sorted(capture_dir.glob("*.txt")):
             try:

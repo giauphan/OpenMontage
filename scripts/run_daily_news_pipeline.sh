@@ -1164,13 +1164,23 @@ else
   FULL_RENDER_PATH="renders/final_full_vi_9x16.mp4"
   REELS_RENDER_PATH="renders/final_reels_vi_9x16.mp4"
 fi
-rm -f "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"
-set +e
-"$HYPERFRAMES_BIN" render "$FULL_COMP" --output "$FULL_RENDER_PATH"
-RENDER_FULL_EXIT=$?
-"$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
-RENDER_REELS_EXIT=$?
-set -e
+if [ "$is_en" -eq 1 ] && [ "${FIXED_NICHE_MODE:-0}" = "1" ]; then
+  # Fixed-niche policy locks production to 9:16 Shorts; skip unauthorized 16:9 longform render
+  rm -f "$REELS_RENDER_PATH"
+  set +e
+  "$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
+  RENDER_REELS_EXIT=$?
+  RENDER_FULL_EXIT=0
+  set -e
+else
+  rm -f "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"
+  set +e
+  "$HYPERFRAMES_BIN" render "$FULL_COMP" --output "$FULL_RENDER_PATH"
+  RENDER_FULL_EXIT=$?
+  "$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
+  RENDER_REELS_EXIT=$?
+  set -e
+fi
 if [ "$RENDER_FULL_EXIT" -ne 0 ] || [ "$RENDER_REELS_EXIT" -ne 0 ]; then
   RENDER_FAILURE_REASON="HyperFrames render command failed: full_exit=$RENDER_FULL_EXIT reels_exit=$RENDER_REELS_EXIT"
   echo "[$(date -u +%FT%TZ)] ERROR: $RENDER_FAILURE_REASON for $PROJECT_ID" >&2

@@ -91,7 +91,12 @@ def resolve_visual_assets(
 
             # Look for local candidate in assets/visuals/
             found_file = None
-            for ext in (".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4"):
+            ext_order = (
+                (".png", ".webp", ".jpg", ".jpeg", ".svg", ".mp4")
+                if (beat.get("render_strategy") == "ai_illustration_eligible" or beat.get("visual_kind") == "illustration")
+                else (".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4")
+            )
+            for ext in ext_order:
                 cand_name = f"{asset_id}{ext}"
                 cand_path = visuals_dir / cand_name
                 if cand_path.is_file():
@@ -134,6 +139,17 @@ def resolve_visual_assets(
             if not ok or sha256 is None:
                 raise ValueError(f"Asset validation failed for {asset_id}: {err}")
 
+            # Probe actual image dimensions and MIME
+            real_width = 960
+            real_height = 540
+            if found_file.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                try:
+                    from PIL import Image
+                    with Image.open(project_dir / found_file) as img:
+                        real_width, real_height = img.size
+                except Exception:
+                    pass
+
             # Determine MIME
             mime, _ = mimetypes.guess_type(found_file)
             if not mime:
@@ -148,20 +164,50 @@ def resolve_visual_assets(
                 else:
                     mime = "application/octet-stream"
 
+            # Determine kind and origin
+            beat_kind = beat.get("visual_kind")
+            beat_ev_class = beat.get("evidence_class")
+            beat_strategy = beat.get("render_strategy")
+
+            is_ai_art = (
+                beat_strategy == "ai_illustration_eligible"
+                or beat_kind == "illustration"
+                or beat_ev_class == "illustration"
+                or "art_" in asset_id
+            ) and not found_file.endswith(".svg")
+
+            if is_ai_art:
+                kind = "illustration"
+                origin = "ai_generated"
+                rights_status = "in_house_illustration"
+            elif found_file.endswith(".svg"):
+                kind = "svg_diagram" if beat_kind not in ("svg_diagram", "contextual_icon") else beat_kind
+                origin = "project-generated-verified-diagram"
+                rights_status = "cleared_for_use"
+            else:
+                kind = beat_kind if beat_kind in ("authentic_photo", "source_screenshot", "chart") else "authentic_photo"
+                origin = "local_authorized_source"
+                rights_status = "cleared_for_use"
+
             asset_record = {
                 "asset_id": asset_id,
                 "beat_ids": [beat_id],
-                "kind": "svg_diagram" if found_file.endswith(".svg") else "authentic_photo",
+                "kind": kind,
                 "file": found_file,
                 "sha256": sha256,
                 "mime": mime,
-                "width": 960,
-                "height": 540,
-                "origin": "project-generated-verified-diagram" if found_file.endswith(".svg") else "local_authorized_source",
-                "rights_status": "cleared_for_use",
+                "width": real_width,
+                "height": real_height,
+                "origin": origin,
+                "rights_status": rights_status,
                 "credit": None,
-                "claim_ids": beat.get("claim_ids", [])
+                "claim_ids": beat.get("claim_ids", []),
             }
+            if is_ai_art:
+                asset_record["ai_generated"] = True
+                asset_record["provider"] = "muse"
+                asset_record["model"] = "muse-image"
+
             assets_manifest["assets"].append(asset_record)
             seen_asset_ids.add(asset_id)
 

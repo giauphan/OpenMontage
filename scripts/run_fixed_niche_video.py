@@ -190,10 +190,12 @@ class FixedNicheVideoRunner:
         self.orchestrator = NarrationOrchestrator()
 
     def get_target_duration(self) -> float:
-        """Return target duration in seconds (65.0 - 75.0s for shorts)."""
+        """Return target duration in seconds (65.0 - 75.0s for shorts, default 72.0s)."""
         shorts_contract = self.policy.video_contract.get("shorts", {})
         dur_range = shorts_contract.get("target_duration_seconds", [65, 75])
-        return float(dur_range[1] if len(dur_range) > 1 else 72.0)
+        if len(dur_range) >= 2 and dur_range[0] <= 72.0 <= dur_range[1]:
+            return 72.0
+        return float(dur_range[0] if dur_range else 72.0)
 
     def build_and_stage_project(
         self,
@@ -286,7 +288,16 @@ class FixedNicheVideoRunner:
         (artifacts_dir / "captions.srt").write_text(srt_content, encoding="utf-8")
         (artifacts_dir / "captions.ass").write_text(ass_content, encoding="utf-8")
 
-        # 6. Resolve assets with strict meaningful visual enforcement and verified script SHA256
+        # 6. Orchestrate and resolve assets with strict meaningful visual enforcement
+        from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
+        orchestrator = VisualAssetOrchestrator()
+        orchestrator.orchestrate_plan_assets(
+            project_dir=self.project_dir,
+            plan=visual_plan,
+            topic=topic,
+            claim_ledger=claim_ledger.get("claims", []),
+        )
+
         plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
         manifest = resolve_visual_assets(
             project_dir=self.project_dir,

@@ -264,7 +264,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b2 = "A single type mismatch between the tool schema and the runtime payload causes immediate tool execution failure."
         elif family == "debugging_reliability":
-            b2 = "Agents generate localized code that satisfies isolated mock assertions while silently introducing breaking regression defects across the broader test suite."
+            b2 = "In modern continuous integration environments, automated agents generate localized code patches that satisfy isolated unit assertions, yet silently introduce breaking regressions across downstream test suites and production build pipelines."
         else:
             b2 = "You provide detailed constraints in chat, yet the next agent session resets back to zero."
 
@@ -276,7 +276,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b3 = "The underlying mechanism is strict validation in client libraries. Autonomous agents frequently emit stringified arguments or hallucinated keys instead of structured dictionaries conforming to the tool definition."
         elif family == "debugging_reliability":
-            b3 = "The underlying mechanism is context contamination and test blindness. Unit tests written in isolation overlook system environment flags, asynchronous timing constraints, and multi-package dependency cycles."
+            b3 = "The underlying architectural mechanism is context contamination and test blindness. Unit tests executed in isolation fail to catch system environment variables, asynchronous timing races, and inter-package dependency cycles that manifest during full end-to-end continuous integration builds."
         else:
             b3 = "The root cause is ephemeral session memory. Large language models maintain zero persistent state across process restarts unless repository instructions are explicitly injected into the agent system prompt on every invocation."
 
@@ -288,7 +288,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b4 = "The verified remedy is schema defense. Enforce input schema validation before invoking the server, and provide automatic schema coercion filters that sanitize agent payloads before dispatch."
         elif family == "debugging_reliability":
-            b4 = "The disciplined engineering remedy is reproduction before remediation. Require agents to author a failing reproduction test verifying the defect before generating any patch."
+            b4 = "The disciplined engineering remedy is reproduction before remediation. Mandate that autonomous agents author a hermetic reproduction test verifying the failure under clean baseline conditions before any repair patch is drafted."
         else:
             b4 = "The engineering remedy is declarative configuration. Define an immutable AGENTS markdown contract at the repository root, and enforce automated preflight checks that load these boundaries before executing any code modifications."
 
@@ -300,7 +300,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b5 = "Verify this remedy locally by executing mock MCP tool calls with malformed payloads, asserting that repair filters recover valid arguments and schema errors drop to zero."
         elif family == "debugging_reliability":
-            b5 = "Verify this fix by executing the reproduction test against clean main branch baselines, ensuring the defect reproduces and the subsequent patch cleanly resolves it in isolation."
+            b5 = "Verify this fix by executing the reproduction test against a clean main branch baseline, confirming that the failure reproduces deterministically and that the subsequent patch cleanly resolves all test assertions in isolation."
         else:
             b5 = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
 
@@ -312,7 +312,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b6 = "Strict schema adherence and defensive payload coercion are mandatory for resilient agent tool integration across production environments."
         elif family == "debugging_reliability":
-            b6 = "Always require verified reproduction tests and clean contract assertions before trusting automated agent bug repairs in production repositories."
+            b6 = "Always require verified reproduction tests and clean contract assertions before trusting automated agent bug repairs, ensuring that CI builds remain green and stable across production releases."
         else:
             b6 = "Always enforce deterministic state persistence across sessions in code and CI, rather than assuming conversational memory survives."
 
@@ -364,91 +364,123 @@ class FixedNicheStoryboardDirector:
         b5_narration = narration_beats["b5"]
         b6_narration = narration_beats["b6"]
 
-        # 6-beat recipe from VIDEO_PLAYBOOK.md
+        # 6-beat recipe from VIDEO_PLAYBOOK.md calibrated so no scene holds > 12s
+        dur_step = round(target_duration / 6.0, 2)
+        t0 = 0.0
+        t1 = round(dur_step, 2)
+        t2 = round(dur_step * 2, 2)
+        t3 = round(dur_step * 3, 2)
+        t4 = round(dur_step * 4, 2)
+        t5 = round(dur_step * 5, 2)
+        t6 = round(target_duration, 2)
+
+        import os
+        ai_visual_enabled = os.environ.get("AI_VISUAL_ENABLED", "0") in ("1", "true", "True")
+        b1_is_ai = ai_visual_enabled
+        b3_is_ai = ai_visual_enabled
+
         beats_spec = [
             {
                 "beat_id": "B01",
                 "script_section_id": "S01",
-                "start_s": 0.0,
-                "end_s": 6.0,
+                "start_s": t0,
+                "end_s": t1,
                 "story_function": "problem_hook",
                 "narration": b1_narration,
                 "claim_ids": [c1],
-                "visual_kind": "svg_diagram",
-                "evidence_class": "conceptual_diagram",
-                "is_proof_bearing": True,
-                "asset_id": f"{family}_b01_hook",
+                "visual_kind": "illustration" if b1_is_ai else "svg_diagram",
+                "evidence_class": "illustration" if b1_is_ai else "conceptual_diagram",
+                "render_strategy": "ai_illustration_eligible" if b1_is_ai else "deterministic_svg",
+                "is_proof_bearing": not b1_is_ai,
+                "asset_id": f"art_{family}_b01_hook" if b1_is_ai else f"{family}_b01_hook",
                 "expected_screen_state": "Screen split: Active session vs blank new session",
+                "visual_intent": f"Conceptual illustration depicting developer problem hook: {b1_narration[:80]}",
+                "fallback_policy": "typographic_card" if b1_is_ai else "use_builtin_verified_icon_diagram",
             },
             {
                 "beat_id": "B02",
                 "script_section_id": "S02",
-                "start_s": 6.0,
-                "end_s": 14.0,
+                "start_s": t1,
+                "end_s": t2,
                 "story_function": "developer_impact",
                 "narration": b2_narration,
                 "claim_ids": [c1],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
+                "render_strategy": "deterministic_svg",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b02_impact",
                 "expected_screen_state": "Developer workflow: requirement input lost across boundary",
+                "visual_intent": f"Technical diagram illustrating developer workflow impact: {b2_narration[:80]}",
+                "fallback_policy": "use_builtin_verified_icon_diagram",
             },
             {
                 "beat_id": "B03",
                 "script_section_id": "S03",
-                "start_s": 14.0,
-                "end_s": 31.0,
+                "start_s": t2,
+                "end_s": t3,
                 "story_function": "architectural_mechanism",
                 "narration": b3_narration,
                 "claim_ids": [c2],
-                "visual_kind": "svg_diagram",
-                "evidence_class": "conceptual_diagram",
-                "is_proof_bearing": True,
-                "asset_id": f"{family}_b03_mechanism",
+                "visual_kind": "illustration" if b3_is_ai else "svg_diagram",
+                "evidence_class": "illustration" if b3_is_ai else "conceptual_diagram",
+                "render_strategy": "ai_illustration_eligible" if b3_is_ai else "deterministic_svg",
+                "is_proof_bearing": not b3_is_ai,
+                "asset_id": f"art_{family}_b03_concept" if b3_is_ai else f"{family}_b03_mechanism",
                 "expected_screen_state": "Technical lifecycle diagram showing ephemeral context vs durable files",
+                "visual_intent": f"Conceptual illustration showing ephemeral session context: {b3_narration[:80]}",
+                "fallback_policy": "typographic_card" if b3_is_ai else "use_builtin_verified_icon_diagram",
             },
             {
                 "beat_id": "B04",
                 "script_section_id": "S04",
-                "start_s": 31.0,
-                "end_s": 47.0,
+                "start_s": t3,
+                "end_s": t4,
                 "story_function": "verified_fix",
                 "narration": b4_narration,
                 "claim_ids": list(dict.fromkeys([c2, c3, *extra_claim_ids])),
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
+                "render_strategy": "deterministic_svg",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b04_remedy",
                 "expected_screen_state": "Concrete repair diagram: configuration and read step",
+                "visual_intent": f"Engineering blueprint showing declarative remedy: {b4_narration[:80]}",
+                "fallback_policy": "use_builtin_verified_icon_diagram",
             },
             {
                 "beat_id": "B05",
                 "script_section_id": "S05",
-                "start_s": 47.0,
-                "end_s": 60.0,
+                "start_s": t4,
+                "end_s": t5,
                 "story_function": "verification_checklist",
                 "narration": b5_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
+                "render_strategy": "deterministic_svg",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b05_verify",
                 "expected_screen_state": "Verification checklist: pass/fail criteria",
+                "visual_intent": f"Terminal trace and verification checklist: {b5_narration[:80]}",
+                "fallback_policy": "use_builtin_verified_icon_diagram",
             },
             {
                 "beat_id": "B06",
                 "script_section_id": "S06",
-                "start_s": 60.0,
-                "end_s": target_duration,
+                "start_s": t5,
+                "end_s": t6,
                 "story_function": "payoff_and_caveat",
                 "narration": b6_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
+                "render_strategy": "deterministic_svg",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b06_payoff",
                 "expected_screen_state": "Summary payoff card with version qualifier",
+                "visual_intent": f"Summary card reinforcing defensive verification principle: {b6_narration[:80]}",
+                "fallback_policy": "use_builtin_verified_icon_diagram",
             },
         ]
 

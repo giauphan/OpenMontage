@@ -103,17 +103,43 @@ def main() -> int:
             print(f"WARN: Cannot parse news_evidence.json: {exc}", file=sys.stderr)
 
     # Load or generate plan
+    from lib.news_visual.visual_planner import ClaimAwareVisualPlanner
+    planner = ClaimAwareVisualPlanner()
+    ledger_path = artifacts_dir / "claim_ledger.json"
+    claim_ledger = None
+    if ledger_path.is_file():
+        try:
+            claim_ledger = json.loads(ledger_path.read_text(encoding="utf-8")).get("claims", [])
+        except Exception:
+            claim_ledger = None
+
     if plan_path.is_file():
         try:
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
             if plan.get("script_sha256") != script_sha:
-                plan = build_default_visual_plan(project_dir, script_data, script_sha)
-                plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+                # Try retiming existing authored plan first to preserve intent and asset bindings
+                try:
+                    plan = planner.retime_plan(plan, script_data)
+                    plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+                except Exception as retime_exc:
+                    print(f"INFO: Retiming could not preserve plan ({retime_exc}); regenerating", file=sys.stderr)
+                    if claim_ledger:
+                        plan = planner.plan_visuals(project_dir.name, script_data, claim_ledger)
+                    else:
+                        plan = build_default_visual_plan(project_dir, script_data, script_sha)
+                    plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception as exc:
             print(f"ERROR: Malformed news_visual_plan.json: {exc}", file=sys.stderr)
             return 1
     else:
-        plan = build_default_visual_plan(project_dir, script_data, script_sha)
+        if claim_ledger:
+            try:
+                plan = planner.plan_visuals(project_dir.name, script_data, claim_ledger)
+            except Exception as plan_exc:
+                print(f"WARN: Claim-aware planning fell back to default: {plan_exc}", file=sys.stderr)
+                plan = build_default_visual_plan(project_dir, script_data, script_sha)
+        else:
+            plan = build_default_visual_plan(project_dir, script_data, script_sha)
         plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # Validate plan contract
@@ -123,6 +149,26 @@ def main() -> int:
         return 2
 
     plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+
+    # Orchestrate assets before manifest resolution
+    try:
+        from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
+        brief_path = artifacts_dir / "research_brief.json"
+        topic_info = {"candidate_id": project_dir.name}
+        if brief_path.is_file():
+            try:
+                bdata = json.loads(brief_path.read_text(encoding="utf-8"))
+                topic_info["title"] = bdata.get("topic") or project_dir.name
+                topic_info["topic_family"] = bdata.get("topic_family", "context_memory")
+            except Exception:
+                pass
+        orchestrator = VisualAssetOrchestrator()
+        orch_res = orchestrator.orchestrate_plan_assets(project_dir, plan, topic_info, claim_ledger=claim_ledger)
+        if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
+            print("ERROR: Visual orchestrator blocked: proof-bearing beat lacks authentic capture", file=sys.stderr)
+            return 4
+    except Exception as orch_exc:
+        print(f"WARN: Visual asset orchestration encountered warning: {orch_exc}", file=sys.stderr)
 
     # Resolve and stage assets
     try:

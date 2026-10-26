@@ -38,6 +38,7 @@ def compose_hyperframes_html(
     *,
     is_vertical: bool = True,
     audio_src: str = "assets/narration.mp3",
+    visuals_src: Optional[Path] = None,
 ) -> str:
     """Compose production HyperFrames HTML composition matching hyperframes-core contract."""
     width = 1080 if is_vertical else 1920
@@ -58,16 +59,35 @@ def compose_hyperframes_html(
         scr_state = html_mod.escape(str(beat.get("expected_screen_state", s_func)), quote=True)
         track_idx = i + 1
 
+        # Resolve asset file type
+        vis_file = f"{aid}.svg"
+        if visuals_src and visuals_src.is_dir():
+            found = False
+            for ext in (".png", ".webp", ".jpg", ".jpeg", ".svg"):
+                if (visuals_src / f"{aid}{ext}").is_file():
+                    vis_file = f"{aid}{ext}"
+                    found = True
+                    break
+                for alt_aid in beat.get("asset_ids", []):
+                    if (visuals_src / f"{alt_aid}{ext}").is_file():
+                        vis_file = f"{alt_aid}{ext}"
+                        found = True
+                        break
+                if found:
+                    break
+        elif beat.get("file"):
+            vis_file = Path(beat["file"]).name
+
         sec_id = f"scene-{bid}"
         sections_html.append(
-            f'    <section id="{sec_id}" class="clip" '
+            f'    <section id="{sec_id}" class="clip scene" '
             f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
             f'      <div class="stage-card">\n'
             f'        <div class="stage-header">\n'
             f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
             f'        </div>\n'
             f'        <div class="diagram-viewport">\n'
-            f'          <img src="assets/visuals/{aid}.svg" alt="{scr_state}" class="technical-svg" />\n'
+            f'          <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />\n'
             f'        </div>\n'
             f'      </div>\n'
             f'    </section>'
@@ -95,6 +115,7 @@ def compose_hyperframes_html(
 
     clips_block = "\n".join(sections_html)
     tweens_block = "\n".join(tweens_js)
+    starts_js = ", ".join(_fmt_time(b.get("start_s") if b.get("start_s") is not None else b.get("start_seconds", 0.0)) for b in beats)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -191,6 +212,7 @@ def compose_hyperframes_html(
   </div>
   <script>
   (function() {{
+    const starts = [{starts_js}];
     window.__timelines = window.__timelines || {{}};
     const tl = gsap.timeline({{ paused: true }});
 {tweens_block}
@@ -222,12 +244,13 @@ def materialize_hyperframes_project(
         comp_dir = project_dir / comp_name
         comp_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy visual SVG assets
+        # Copy visual media assets (SVG diagrams, PNG/JPEG/WEBP illustrations, captures)
         comp_vis = comp_dir / "assets" / "visuals"
         comp_vis.mkdir(parents=True, exist_ok=True)
         if visuals_src.is_dir():
-            for svg_file in visuals_src.glob("*.svg"):
-                shutil.copy2(svg_file, comp_vis / svg_file.name)
+            for vis_file in visuals_src.iterdir():
+                if vis_file.is_file() and vis_file.suffix.lower() in (".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm"):
+                    shutil.copy2(vis_file, comp_vis / vis_file.name)
 
         # Copy or reference narration audio
         comp_assets = comp_dir / "assets"
@@ -242,6 +265,7 @@ def materialize_hyperframes_project(
             beats=beats,
             is_vertical=is_vertical,
             audio_src="assets/narration.mp3",
+            visuals_src=visuals_src,
         )
 
         index_file = comp_dir / "index.html"
