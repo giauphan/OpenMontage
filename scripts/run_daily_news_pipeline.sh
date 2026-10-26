@@ -269,15 +269,6 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
   mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
-  local edge_tts_cmd="edge-tts"
-  if ! command -v "$edge_tts_cmd" >/dev/null 2>&1; then
-    if [ -x "$ROOT/.venv/bin/edge-tts" ]; then
-      edge_tts_cmd="$ROOT/.venv/bin/edge-tts"
-    elif [ -x "/usr/local/bin/edge-tts" ]; then
-      edge_tts_cmd="/usr/local/bin/edge-tts"
-    fi
-  fi
-
   if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
   PROJECT_LOCALE="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$PROJECT_DIR')))" 2>/dev/null || echo "en-US")"
