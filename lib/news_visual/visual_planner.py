@@ -40,6 +40,7 @@ class PlannedBeat:
     fallback_policy: str
     background_preset: Optional[str] = "dark_tech"
     motion_preset: Optional[str] = "subtle_drift"
+    narration_sha256: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -61,6 +62,8 @@ class PlannedBeat:
             data["background_preset"] = self.background_preset
         if self.motion_preset:
             data["motion_preset"] = self.motion_preset
+        if self.narration_sha256:
+            data["narration_sha256"] = self.narration_sha256
         return data
 
 
@@ -157,6 +160,24 @@ class ClaimAwareVisualPlanner:
         updated_beats: List[Dict[str, Any]] = []
 
         for beat, sec in zip(old_beats, new_sections):
+            sec_id = sec.get("id")
+            beat_sec_id = beat.get("script_section_id")
+            if sec_id != beat_sec_id:
+                raise VisualPlannerError(
+                    f"Section ID mismatch during retime: beat '{beat.get('id')}' references "
+                    f"'{beat_sec_id}', but retimed script provided '{sec_id}'. Full plan regeneration required."
+                )
+
+            expected_sha = beat.get("narration_sha256")
+            if expected_sha:
+                curr_text = str(sec.get("narration") or sec.get("text", "")).strip()
+                curr_sha = hashlib.sha256(curr_text.encode("utf-8")).hexdigest()
+                if curr_sha != expected_sha:
+                    raise VisualPlannerError(
+                        f"Script text for section '{sec_id}' changed; retiming requires unchanged narration text. "
+                        "Full plan regeneration required."
+                    )
+
             start = float(sec.get("start_seconds", 0.0))
             end = float(sec.get("end_seconds", 0.0))
             dur = end - start
@@ -329,6 +350,7 @@ class ClaimAwareVisualPlanner:
                 visual_intent=intent,
                 render_strategy=render_strategy,
                 fallback_policy=fallback_policy,
+                narration_sha256=hashlib.sha256(text.strip().encode("utf-8")).hexdigest(),
             )
             beats.append(beat)
 

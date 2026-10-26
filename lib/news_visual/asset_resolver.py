@@ -62,6 +62,17 @@ def resolve_visual_assets(
     visuals_dir = project_dir / "assets" / "visuals"
     visuals_dir.mkdir(parents=True, exist_ok=True)
 
+    ai_generated_asset_ids = set()
+    orch_path = project_dir / "artifacts" / "orchestrated_assets.json"
+    if orch_path.is_file():
+        try:
+            orch_data = json.loads(orch_path.read_text(encoding="utf-8"))
+            for item in orch_data.get("assets", []):
+                if item.get("origin") == "ai_generated":
+                    ai_generated_asset_ids.add(item.get("id"))
+        except Exception:
+            pass
+
     seen_asset_ids = set()
     fallback_asset_ids = set()
     for beat in visual_plan.get("beats", []):
@@ -169,11 +180,14 @@ def resolve_visual_assets(
             beat_ev_class = beat.get("evidence_class")
             beat_strategy = beat.get("render_strategy")
 
-            is_ai_art = (
-                beat_strategy == "ai_illustration_eligible"
-                or asset_id.startswith("art_")
-                or (beat_kind == "illustration" and beat_ev_class == "illustration")
-            ) and not found_file.endswith(".svg")
+            if orch_path.is_file():
+                is_ai_art = (asset_id in ai_generated_asset_ids) and not found_file.endswith(".svg")
+            else:
+                is_ai_art = (
+                    asset_id.startswith("art_")
+                    or (beat_kind == "illustration" and beat_ev_class == "illustration")
+                    or beat_strategy == "ai_illustration_eligible"
+                ) and not found_file.endswith(".svg")
 
             if is_ai_art:
                 kind = "illustration"

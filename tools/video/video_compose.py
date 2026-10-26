@@ -168,6 +168,32 @@ class VideoCompose(BaseTool):
                     "Highly recommended for compose-director calls."
                 ),
             },
+            "narration_transcript_path": {
+                "type": "string",
+                "description": (
+                    "Path to a word-level transcript JSON (from `transcriber` "
+                    "tool output). Optional but STRONGLY recommended: when "
+                    "combined with script_path/script_text, final_review "
+                    "runs transcript_comparison and catches TTS failures "
+                    "like 'Chirp3-HD reads ... as the word dot'. Without "
+                    "it, content-level audio bugs ship silently."
+                ),
+            },
+            "script_path": {
+                "type": "string",
+                "description": (
+                    "Path to the source narration script (plain text). "
+                    "Used by transcript_comparison to diff against the "
+                    "transcribed audio. Provide this OR script_text."
+                ),
+            },
+            "script_text": {
+                "type": "string",
+                "description": (
+                    "Inline source narration script. Used by "
+                    "transcript_comparison when a file path is unavailable."
+                ),
+            },
             "preserve_existing_workspace": {
                 "type": "boolean",
                 "default": False,

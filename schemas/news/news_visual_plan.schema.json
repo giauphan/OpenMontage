@@ -95,6 +95,10 @@
               "typographic_card",
               "block"
             ]
+          },
+          "narration_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "additionalProperties": false

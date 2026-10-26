@@ -212,18 +212,25 @@ class VisualAssetOrchestrator:
             "blocked_missing_proof": sum(1 for r in beat_results.values() if r["status"] == self.STATUS_BLOCKED_MISSING_PROOF),
         }
 
-        return {
+        out_payload = {
             "project_id": project_dir.name,
             "beat_results": beat_results,
             "assets": staged_assets,
             "summary": summary,
         }
+        try:
+            orch_file = project_dir / "artifacts" / "orchestrated_assets.json"
+            orch_file.parent.mkdir(parents=True, exist_ok=True)
+            orch_file.write_text(json.dumps(out_payload, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not persist orchestrated_assets.json: {e}")
+
+        return out_payload
 
     def _find_authentic_capture(self, project_dir: Path, beat: Dict[str, Any]) -> Optional[Path]:
         """Locate verified screenshot or capture file on disk for authentic proof."""
         candidate_dirs = [
             project_dir / "artifacts" / "news_source_capture",
-            project_dir / "assets" / "visuals",
         ]
         asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [])
         beat_id = beat.get("id") or beat.get("beat_id")
