@@ -48,6 +48,7 @@ class VisualAssetOrchestrator:
         visuals_dir.mkdir(parents=True, exist_ok=True)
 
         beats = plan.get("beats", [])
+        total_beats = len(beats)
         beat_results: Dict[str, Dict[str, Any]] = {}
         staged_assets: List[Dict[str, Any]] = []
 
@@ -94,7 +95,7 @@ class VisualAssetOrchestrator:
                             "asset_id": primary_asset_id,
                         }
                     else:
-                        svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                        svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats)
                         staged_assets.append({
                             "id": primary_asset_id,
                             "file": str(svg_path.relative_to(project_dir)),
@@ -160,7 +161,7 @@ class VisualAssetOrchestrator:
                         else:
                             # Non-proof beat fallback to contextual explanatory SVG
                             logger.info(f"AI generation for beat {beat_id} failed ({ai_result.get('error')}); falling back to contextual SVG")
-                            svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                            svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats)
                             staged_assets.append({
                                 "id": primary_asset_id,
                                 "file": str(svg_path.relative_to(project_dir)),
@@ -175,7 +176,7 @@ class VisualAssetOrchestrator:
                             }
                 else:
                     # AI visual disabled or quota reached: fallback to deterministic contextual SVG
-                    svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                    svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats)
                     staged_assets.append({
                         "id": primary_asset_id,
                         "file": str(svg_path.relative_to(project_dir)),
@@ -190,7 +191,7 @@ class VisualAssetOrchestrator:
 
             # 3. Strategy: Deterministic SVG (Default Technical Diagram)
             else:
-                svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1)
+                svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats)
                 staged_assets.append({
                     "id": primary_asset_id,
                     "file": str(svg_path.relative_to(project_dir)),
@@ -262,17 +263,17 @@ class VisualAssetOrchestrator:
                     pass
 
     def _get_or_generate_svg(
-        self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int
+        self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int, total_beats: int = 6
     ) -> Path:
         """Return existing non-empty SVG asset if present; otherwise generate technical SVG."""
         self._cleanup_stale_raster(visuals_dir, asset_id)
         existing = visuals_dir / f"{asset_id}.svg"
         if existing.is_file() and existing.stat().st_size > 0:
             return existing
-        return self._generate_contextual_svg(visuals_dir, asset_id, topic_family, title, beat_num)
+        return self._generate_contextual_svg(visuals_dir, asset_id, topic_family, title, beat_num, total_beats=total_beats)
 
     def _generate_contextual_svg(
-        self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int
+        self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int, total_beats: int = 6
     ) -> Path:
         """Generate high-contrast technical SVG diagram."""
         svg_content = self.storyboard_director.generate_technical_svg(
@@ -280,6 +281,7 @@ class VisualAssetOrchestrator:
             topic_family=topic_family,
             title=title,
             beat_num=beat_num,
+            total_beats=total_beats,
         )
         svg_path = visuals_dir / f"{asset_id}.svg"
         svg_path.write_text(svg_content, encoding="utf-8")

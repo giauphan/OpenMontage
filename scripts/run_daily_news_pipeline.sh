@@ -1167,7 +1167,7 @@ fi
 if [ "$is_en" -eq 1 ] && [ "${FIXED_NICHE_MODE:-0}" = "1" ]; then
   # Fixed-niche policy locks production to 9:16 Shorts; skip unauthorized 16:9 longform render
   REQUIRED_RENDERS=("$REELS_RENDER_PATH")
-  rm -f "$REELS_RENDER_PATH"
+  rm -f "$FULL_RENDER_PATH" "$REELS_RENDER_PATH"
   set +e
   "$HYPERFRAMES_BIN" render "$REELS_COMP" --output "$REELS_RENDER_PATH"
   RENDER_REELS_EXIT=$?

@@ -383,23 +383,12 @@ class FixedNicheVideoRunner:
                 "Truncating narration mid-sentence is forbidden."
             )
 
-        # If narration exceeds n_beats * 12.0s but is within policy_max, regenerate storyboard with expanded beats
+        # A post-synthesis storyboard change desynchronizes script, audio, captions, and asset manifest
         if n_beats > 0 and dur > n_beats * 12.0:
-            brief_p = self.project_dir / "artifacts" / "research_brief.json"
-            claims_p = self.project_dir / "artifacts" / "claim_ledger.json"
-            if brief_p.is_file() and claims_p.is_file():
-                try:
-                    b_data = json.loads(brief_p.read_text(encoding="utf-8"))
-                    c_data = json.loads(claims_p.read_text(encoding="utf-8")).get("claims", [])
-                    t_topic = {"candidate_id": self.candidate_id, "title": b_data.get("topic", ""), "topic_family": b_data.get("topic_family", "context_memory")}
-                    self.storyboard_director.generate_storyboard(
-                        topic=t_topic,
-                        claims=c_data,
-                        project_dir=self.project_dir,
-                        target_duration=dur,
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not regenerate expanded storyboard for {dur:.2f}s: {e}")
+            raise ValueError(
+                f"Synthesized narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit ({n_beats * 12.0:.1f}s); "
+                "re-stage the project with a longer beat plan before synthesis."
+            )
 
         # In production synthesis with neural voice, reject narration outside 65-75s contract
         if provider == "kokoro" and not (65.0 <= dur <= 75.0):
