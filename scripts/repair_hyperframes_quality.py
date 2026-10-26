@@ -289,22 +289,39 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
 </style>"""
         html = html.replace("</style>", wrap_css_rule, 1)
 
-    if "/* Visual Quality Enhancement */" not in html and "</style>" in html:
-        visual_mode = os.environ.get("NEWS_VISUAL_MODE", "0") in ("1", "true", "True")
-        if visual_mode:
-            enhancement_css = """
-/* Visual Quality Enhancement (Context-Aware Visual Mode) */
-#stage {
-    font-family: 'BeVietnamPro', sans-serif;
-}
-.scene {
+    legacy_visual_scene_block = """.scene {
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     padding: 80px 48px 300px 48px;
     box-sizing: border-box;
+}"""
+    if legacy_visual_scene_block in html and len(re.findall(r"(?<![-\w])\.scene\s*\{", html)) > 1:
+        html = html.replace(legacy_visual_scene_block, ".scene {\n    box-sizing: border-box;\n}")
+
+    if "/* Visual Quality Enhancement" not in html and "</style>" in html:
+        visual_mode = os.environ.get("NEWS_VISUAL_MODE", "0") in ("1", "true", "True")
+        if visual_mode:
+            has_authored_scene_rule = bool(re.search(r"(?<![-\w])\.scene\s*\{", html))
+            scene_css = (
+                ".scene {\n    box-sizing: border-box;\n}"
+                if has_authored_scene_rule
+                else """.scene {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 80px 48px 300px 48px;
+    box-sizing: border-box;
+}"""
+            )
+            enhancement_css = """
+/* Visual Quality Enhancement (Context-Aware Visual Mode) */
+#stage {
+    font-family: 'BeVietnamPro', sans-serif;
 }
+__SCENE_CSS__
 /* Ensure visual media elements are properly layered and never clipped */
 .scene img, .scene video, .scene svg, .scene-media {
     max-width: 100%;
@@ -349,7 +366,7 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
     font-weight: 700;
     text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
 }
-</style>"""
+</style>""".replace("__SCENE_CSS__", scene_css)
         else:
             enhancement_css = """
 /* Visual Quality Enhancement */
