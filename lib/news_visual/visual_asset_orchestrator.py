@@ -113,7 +113,7 @@ class VisualAssetOrchestrator:
                     prompt = VisualPromptBuilder.build_prompt(topic_family, intent)
                     cache_key = self.cache.compute_cache_key(
                         prompt=prompt,
-                        aspect_ratio="9:16",
+                        aspect_ratio="16:9",
                         provider="muse",
                         model="muse-image",
                         visual_intent=intent,
@@ -251,10 +251,21 @@ class VisualAssetOrchestrator:
                         return target
         return None
 
+    def _cleanup_stale_raster(self, visuals_dir: Path, asset_id: str) -> None:
+        """Remove any stale raster files when falling back to vector SVG."""
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            stale = visuals_dir / f"{asset_id}{ext}"
+            if stale.is_file():
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+
     def _get_or_generate_svg(
         self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int
     ) -> Path:
         """Return existing non-empty SVG asset if present; otherwise generate technical SVG."""
+        self._cleanup_stale_raster(visuals_dir, asset_id)
         existing = visuals_dir / f"{asset_id}.svg"
         if existing.is_file() and existing.stat().st_size > 0:
             return existing
@@ -286,7 +297,7 @@ class VisualAssetOrchestrator:
             tool_instance = tool_cls()
             result = tool_instance.execute({
                 "prompt": prompt,
-                "aspect_ratio": "9:16",
+                "aspect_ratio": "16:9",
                 "model": "muse-image",
                 "submission_key": f"om-{submission_key[:32]}",
                 "output_path": str(output_path),

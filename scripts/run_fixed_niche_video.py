@@ -377,12 +377,29 @@ class FixedNicheVideoRunner:
                 pass
         dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
         policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
-        max_dur = min(policy_max, n_beats * 12.0) if n_beats > 0 else target_dur
-        if dur > max_dur:
+        if dur > policy_max:
             raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({max_dur:.2f}s). "
+                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s). "
                 "Truncating narration mid-sentence is forbidden."
             )
+
+        # If narration exceeds n_beats * 12.0s but is within policy_max, regenerate storyboard with expanded beats
+        if n_beats > 0 and dur > n_beats * 12.0:
+            brief_p = self.project_dir / "artifacts" / "research_brief.json"
+            claims_p = self.project_dir / "artifacts" / "claim_ledger.json"
+            if brief_p.is_file() and claims_p.is_file():
+                try:
+                    b_data = json.loads(brief_p.read_text(encoding="utf-8"))
+                    c_data = json.loads(claims_p.read_text(encoding="utf-8")).get("claims", [])
+                    t_topic = {"candidate_id": self.candidate_id, "title": b_data.get("topic", ""), "topic_family": b_data.get("topic_family", "context_memory")}
+                    self.storyboard_director.generate_storyboard(
+                        topic=t_topic,
+                        claims=c_data,
+                        project_dir=self.project_dir,
+                        target_duration=dur,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not regenerate expanded storyboard for {dur:.2f}s: {e}")
 
         # In production synthesis with neural voice, reject narration outside 65-75s contract
         if provider == "kokoro" and not (65.0 <= dur <= 75.0):

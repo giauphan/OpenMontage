@@ -1475,8 +1475,8 @@ jq -n \
   --arg title "$TITLE" \
   --arg description "$DESCRIPTION" \
   --arg yt_shorts "$REELS_RENDER_PATH" \
-  --arg tiktok "$FULL_RENDER_PATH" \
-  --arg fb_video "$FULL_RENDER_PATH" \
+  --arg tiktok "$PUB_FULL_PATH" \
+  --arg fb_video "$PUB_FULL_PATH" \
   --arg ig_reels "$REELS_RENDER_PATH" \
   --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
   --arg format "short" \
