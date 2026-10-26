@@ -603,11 +603,14 @@ def run_news_visual_qa(
                 bid = beat.get("id")
                 sec_id = beat.get("script_section_id")
                 asset_keys = beat.get("asset_ids", [])
-                # Look for beat ID, section ID, or asset reference in HTML
+                # Look for beat ID, section ID, scene index, or asset reference in HTML
                 if (
                     (bid and bid in html_content)
                     or any(aid in html_content for aid in asset_keys)
                     or (sec_id and (f'id="{sec_id}"' in html_content or f'data-scene-id="{sec_id}"' in html_content or f'scene-{sec_id}' in html_content))
+                    or f'id="scene-{idx + 1}"' in html_content
+                    or f'id="scene{idx + 1}"' in html_content
+                    or (f'class="scene' in html_content and (f'#scene-{idx + 1}' in html_content or f'#scene{idx + 1}' in html_content))
                 ):
                     bound_beats += 1
                     bound_beat_indices.add(idx)

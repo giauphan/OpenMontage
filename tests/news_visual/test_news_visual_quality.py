@@ -410,3 +410,59 @@ def test_post_render_frame_verification_detects_frozen_scene(tmp_path: Path, qa_
     assert "VISUAL_NOT_RENDERED" in report["failure_categories"]
     jsonschema.validate(instance=report, schema=qa_schema)
 
+
+def test_scene_numbered_id_binding_passes_qa(tmp_path: Path, qa_schema: dict):
+    """Verify that scenes identified by id='scene-1', id='scene-2' etc. bind cleanly."""
+    project_dir = tmp_path / "cand_scene_numbered"
+    project_dir.mkdir(parents=True)
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    hf_dir = project_dir / "hyperframes_reels"
+    hf_dir.mkdir(parents=True)
+
+    plan = {
+        "version": "1.0",
+        "project_id": "cand_scene_numbered",
+        "script_sha256": "0" * 64,
+        "enabled": True,
+        "beats": [
+            {
+                "id": "vb-01",
+                "script_section_id": "hook",
+                "start_seconds": 0,
+                "end_seconds": 10,
+                "story_function": "hook",
+                "visual_kind": "svg_diagram",
+                "evidence_class": "svg_diagram",
+                "claim_ids": [],
+                "asset_ids": ["diagram-hook"],
+                "layout": "hero_center",
+            },
+            {
+                "id": "vb-02",
+                "script_section_id": "cost_efficiency",
+                "start_seconds": 10,
+                "end_seconds": 20,
+                "story_function": "cost_efficiency",
+                "visual_kind": "svg_diagram",
+                "evidence_class": "svg_diagram",
+                "claim_ids": [],
+                "asset_ids": ["diagram-cost_efficiency"],
+                "layout": "hero_center",
+            },
+        ],
+    }
+    (artifacts_dir / "news_visual_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    (hf_dir / "index.html").write_text(
+        '<div id="stage" data-composition-id="main" data-duration="20">'
+        '<div id="scene-1" class="scene"><div class="headline">Hook</div></div>'
+        '<div id="scene-2" class="scene"><div class="headline">Cost</div></div>'
+        '</div>',
+        encoding="utf-8",
+    )
+
+    report = run_news_visual_qa(project_dir, mode="advisory")
+    assert report["scorecard"]["visual_beat_binding_coverage_pct"] == 100.0
+    jsonschema.validate(instance=report, schema=qa_schema)
+
+

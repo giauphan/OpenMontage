@@ -25,7 +25,7 @@ Content & Quality for both:
   * Content-first visual intent: Every narrative beat must declare a clear visual_intent and evidence_class (e.g. authentic_photo, svg_diagram, contextual_icon, or typographic_focus).
   * For major technical concepts, hardware, or architecture, author an actual SVG diagram or bind an approved staged source image from assets/visuals/ — do NOT rely on text-only cards.
   * In visual mode, consume staged local files from assets/visuals/ or inline deterministic SVG layers.
-  * Scene-specific art direction: Distinct scenes must have distinct, context-relevant visual treatment.
+  * Scene-specific art direction: Distinct scenes must have distinct, context-relevant visual treatment. Tag each scene container with its numbered id and semantic metadata: `<div id="scene-1" data-scene-id="<section_id>" data-beat-id="vb-01" class="scene">` (scene numbers 1 to N matching script section order).
   * Layout & Non-Overlapping Elements (CRITICAL): Place headlines, body copy, metric cards, and SVG diagrams in normal document/flex/grid flow (`display: flex; flex-direction: column; gap: 28px;` or CSS Grid) with `position: relative`. NEVER use `position: absolute` with hardcoded `top:` / `right:` offsets for panels, cards, or `<svg>` elements inside `.scene`, as absolute-positioned diagrams will collide with and cover headlines or body text.
   * High-contrast typography: All headings, body text, badges, and metrics MUST use bright, highly readable colors on dark backgrounds (e.g. #ffffff for titles, #f8fafc for body text, #38bdf8 cyan or #fbbf24 amber for highlights). NEVER use black or dark grey text (#000, #1e293b, #333) on dark cards or backgrounds.
   * GSAP Scene Transitions & Audio-Visual Sync:
