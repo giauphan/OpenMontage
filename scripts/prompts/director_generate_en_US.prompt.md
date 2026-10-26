@@ -4,7 +4,7 @@ Generate or repair all three director outputs for {{PROJECT_DIR}}.
 
 Target Audience & Cultural Localization:
 - Audience: United States technology professionals, developers, and tech enthusiasts.
-- Editorial Standard: Follow skills/meta/cultural-localization-en-us.md and skills/meta/audience-and-culture-us.md.
+- Editorial Standard: Self-contained US English tech documentary standard (do NOT open or search external `skills/` or `scripts/` files).
 - Voice & Tone: Confident, fast-paced, insightful, authoritative American tech documentary narration.
 - Idiomatic Precision: Use natural American spoken English ("straightforward", "tradeoff", "under the hood", "step-by-step"). Avoid literal calques, machine-translation relics, or unnatural tropes.
 
@@ -13,7 +13,7 @@ Must be a flat JSON file at {{PROJECT_DIR}}/artifacts/script_en_US.json (do not 
 Schema keys: version (1.0), title, total_duration_seconds, sections (array of: id, text, start_seconds, end_seconds).
 Content: 100% natural, idiomatic American English. Rich spoken-word narration, 180-240 spoken words total (60-75s expected spoken duration, minimum 60s). No dead air. Use a strong 3-second hook that leads with the breakthrough or disruption. CRITICAL DURATION GOAL: Videos must reach at least 60 seconds (1 minute or more). Never write fewer than 180 English words. CRITICAL: NEVER truncate or cut off text mid-sentence or mid-word. Every section MUST be a complete, grammatically sound, fully articulated English sentence.
 
-News evidence and factual grounding: Base all script content strictly on the technology news in {{PROJECT_DIR}}/artifacts/research_brief.json and any supplied frozen source excerpts. Map factual assertions to verified claims per skills/meta/claim-bound-visual-director.md and skills/meta/factcheck-and-claim-ledger.md. Never invent citations, benchmark numbers, quotes, or product specifications.
+News evidence and factual grounding: Base all script content strictly on the technology news in {{PROJECT_DIR}}/artifacts/research_brief.json and any supplied frozen source excerpts. Map factual assertions strictly to verified claims in `research_brief.json`. Never invent citations, benchmark numbers, quotes, or product specifications.
 
 2. hyperframes/index.html & hyperframes_reels/index.html
 hyperframes/index.html: The complete story for 16:9 long-form video with no sections/narration removed. MUST use Landscape 1920x1080 layout everywhere: `<meta name="viewport" content="width=1920, height=1080">`, `#stage { width: 1920px; height: 1080px; position: relative; overflow: hidden; }`, and a closed direct child of `<body>`: `<div id="stage" data-composition-id="main" data-start="0" data-duration="<total_seconds>" data-width="1920" data-height="1080">...</div>`. Duration matches the full text (60-75s, minimum 60s).
@@ -21,7 +21,7 @@ hyperframes_reels/index.html: Identical story for 9:16 Shorts/Reels. MUST use Po
 Content & Quality for both:
 - NO visible "Montage" or "OpenMontage" branding anywhere.
 - Grounding: Base the narration and on-screen text 100% on the factual technology news in {{PROJECT_DIR}}/artifacts/research_brief.json.
-- Visual scene diversity, visual intent & styling (MANDATORY per skills/meta/claim-bound-visual-director.md):
+- Visual scene diversity, visual intent & styling (MANDATORY):
   * Content-first visual intent: Every narrative beat must declare a clear visual_intent and evidence_class (e.g. authentic_photo, svg_diagram, contextual_icon, or typographic_focus).
   * For major technical concepts, hardware, or architecture, author an actual SVG diagram or bind an approved staged source image from assets/visuals/ — do NOT rely on text-only cards.
   * In visual mode, consume staged local files from assets/visuals/ or inline deterministic SVG layers.
