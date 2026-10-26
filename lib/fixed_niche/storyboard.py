@@ -494,13 +494,17 @@ class FixedNicheStoryboardDirector:
         ]
 
         if num_beats == 7:
+            b6_words = b6_narration.split()
+            mid = max(1, len(b6_words) // 2)
+            b6a_narration = " ".join(b6_words[:mid])
+            b6b_narration = " ".join(b6_words[mid:])
             beats_spec.append({
                 "beat_id": "B06",
                 "script_section_id": "S06",
                 "start_s": timestamps[5],
                 "end_s": timestamps[6],
                 "story_function": "contract_assertion",
-                "narration": "Verify all assertions against hermetic reproduction tests before deploying agent updates to production.",
+                "narration": b6a_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -508,7 +512,7 @@ class FixedNicheStoryboardDirector:
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b06_assertion",
                 "expected_screen_state": "CI validation pipeline: hermetic contract assertion status",
-                "visual_intent": "Engineering blueprint showing contract assertion verification in CI",
+                "visual_intent": f"Engineering blueprint showing contract assertion verification in CI: {b6a_narration[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             })
             beats_spec.append({
@@ -517,7 +521,7 @@ class FixedNicheStoryboardDirector:
                 "start_s": timestamps[6],
                 "end_s": timestamps[7],
                 "story_function": "payoff_and_caveat",
-                "narration": b6_narration,
+                "narration": b6b_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -525,7 +529,7 @@ class FixedNicheStoryboardDirector:
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b07_payoff",
                 "expected_screen_state": "Summary payoff card with version qualifier",
-                "visual_intent": f"Summary card reinforcing defensive verification principle: {b6_narration[:80]}",
+                "visual_intent": f"Summary card reinforcing defensive verification principle: {b6b_narration[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             })
         else:

@@ -143,3 +143,29 @@ def test_orchestrator_ai_visual_enabled_generates_and_caches(tmp_path: Path, sam
         manifest2 = orchestrator.orchestrate_plan_assets(project_dir, sample_plan, sample_topic)
         assert manifest2["beat_results"]["vb-01"]["status"] == VisualAssetOrchestrator.STATUS_READY_AI
         assert manifest2["beat_results"]["vb-01"]["cache_hit"] is True
+
+
+def test_orchestrator_preserves_existing_rasters_without_render_strategy(tmp_path: Path, sample_topic):
+    """Beats without explicit render_strategy leave existing rasters untouched for resolver."""
+    project_dir = tmp_path / "proj"
+    visuals_dir = project_dir / "assets" / "visuals"
+    visuals_dir.mkdir(parents=True)
+    custom_raster = visuals_dir / "custom_raster.png"
+    custom_raster.write_bytes(make_test_png(100, 100))
+
+    plan = {
+        "version": "1.0",
+        "beats": [
+            {
+                "id": "vb-legacy",
+                "asset_id": "custom_raster",
+                "visual_intent": "Hand-authored diagram",
+            }
+        ]
+    }
+    orchestrator = VisualAssetOrchestrator(cache=VisualAssetCache(cache_dir=tmp_path / "cache"))
+    manifest = orchestrator.orchestrate_plan_assets(project_dir, plan, sample_topic)
+
+    assert custom_raster.is_file(), "Existing custom raster must not be deleted when render_strategy is absent"
+    assert "vb-legacy" not in manifest["beat_results"]
+

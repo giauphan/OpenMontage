@@ -51,6 +51,6 @@
 ## 3. Clean Architecture Compliance
 
 All modified and newly authored modules comply with the repository Clean Architecture standards:
-- **Line budgets:** Hard ceiling of 800 lines is respected across every file (largest module is `lib/news_visual/qa.py` at 755 lines).
+- **Line budgets:** Python modules strictly stay under the 800-line ceiling (largest checked Python files are `scripts/run_fixed_niche_video.py` at 783 lines and `lib/news_visual/qa.py` at 755 lines). Pre-existing shell pipeline scripts like `scripts/run_daily_news_pipeline.sh` (~1576 lines) were modified in place as pre-existing exemptions.
 - **Separation of concerns:** Business rules (`ClaimAwareVisualPlanner`, `FixedNicheScopeGate`) are decoupled from I/O adapters (`MuseGatewayImageTool`, `FixedNicheSourceAdapter`).
 - **Domain integrity:** Evidence classification (`proof_bearing` vs `conceptual_illustration`) is enforced by the `PROHIBITED_AI_PROOF` QA gate in `lib/news_visual/qa.py` (with SHA256 integrity validation) and cannot be overridden by UI adapters.

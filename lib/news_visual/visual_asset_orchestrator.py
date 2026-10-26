@@ -63,7 +63,11 @@ class VisualAssetOrchestrator:
 
         for idx, beat in enumerate(beats):
             beat_id = beat.get("beat_id") or beat.get("id", f"vb-{idx+1:02d}")
-            strategy = beat.get("render_strategy", "deterministic_svg")
+            strategy = beat.get("render_strategy")
+            if not strategy:
+                # Beats without explicit render_strategy keep existing raster/vector assets and are left for resolver
+                continue
+
             fallback_policy = beat.get("fallback_policy", "use_builtin_verified_icon_diagram")
             intent = beat.get("visual_intent", "")
             asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [f"asset_{beat_id}"])
@@ -169,7 +173,7 @@ class VisualAssetOrchestrator:
                         else:
                             # Non-proof beat fallback to contextual explanatory SVG
                             logger.info(f"AI generation for beat {beat_id} failed ({ai_result.get('error')}); falling back to contextual SVG")
-                            svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats)
+                            svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats, cleanup_raster=True)
                             staged_assets.append({
                                 "id": primary_asset_id,
                                 "file": str(svg_path.relative_to(project_dir)),
@@ -184,7 +188,7 @@ class VisualAssetOrchestrator:
                             }
                 else:
                     # AI visual disabled or quota reached: fallback to deterministic contextual SVG
-                    svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats)
+                    svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats, cleanup_raster=True)
                     staged_assets.append({
                         "id": primary_asset_id,
                         "file": str(svg_path.relative_to(project_dir)),
@@ -198,8 +202,8 @@ class VisualAssetOrchestrator:
                     }
 
             # 3. Strategy: Deterministic SVG (Default Technical Diagram)
-            else:
-                svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats)
+            elif strategy == "deterministic_svg":
+                svg_path = self._get_or_generate_svg(visuals_dir, primary_asset_id, topic_family, topic_title, idx + 1, total_beats=total_beats, cleanup_raster=False)
                 staged_assets.append({
                     "id": primary_asset_id,
                     "file": str(svg_path.relative_to(project_dir)),
@@ -271,10 +275,12 @@ class VisualAssetOrchestrator:
                     pass
 
     def _get_or_generate_svg(
-        self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int, total_beats: int = 6
+        self, visuals_dir: Path, asset_id: str, topic_family: str, title: str, beat_num: int,
+        total_beats: int = 6, cleanup_raster: bool = False,
     ) -> Path:
         """Return existing non-empty SVG asset if present; otherwise generate technical SVG."""
-        self._cleanup_stale_raster(visuals_dir, asset_id)
+        if cleanup_raster:
+            self._cleanup_stale_raster(visuals_dir, asset_id)
         existing = visuals_dir / f"{asset_id}.svg"
         if existing.is_file() and existing.stat().st_size > 0:
             return existing

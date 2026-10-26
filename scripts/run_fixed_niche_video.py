@@ -347,14 +347,6 @@ class FixedNicheVideoRunner:
         )
         visual_plan = story_res["visual_plan"]
         beats = visual_plan.get("beats", [])
-        if len(beats) == 7:
-            b6_words = beats[6].get("narration", "").split()
-            mid = max(1, len(b6_words) // 2)
-            beats[5]["narration"] = " ".join(b6_words[:mid])
-            beats[6]["narration"] = " ".join(b6_words[mid:])
-            (self.project_dir / "artifacts" / "news_visual_plan.json").write_text(
-                json.dumps(visual_plan, indent=2), encoding="utf-8"
-            )
 
         script_data = {
             "version": "1.0", "locale": "en-US", "title": topic_data.get("title", "AI Agent Engineering Explainer"),
