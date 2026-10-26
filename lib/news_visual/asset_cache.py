@@ -66,14 +66,16 @@ class VisualAssetCache:
 
     def get_cached_asset(self, cache_key: str) -> Optional[Path]:
         """Return cached image path if present and content is non-empty."""
-        cached_file = self.cache_dir / f"{cache_key}.png"
-        if cached_file.is_file() and cached_file.stat().st_size > 100:
-            return cached_file
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            cached_file = self.cache_dir / f"{cache_key}{ext}"
+            if cached_file.is_file() and cached_file.stat().st_size > 100:
+                return cached_file
         return None
 
     def store_cached_asset(self, cache_key: str, src_path: Path) -> Path:
         """Atomically cache asset bytes under cache key."""
-        dest = self.cache_dir / f"{cache_key}.png"
+        ext = src_path.suffix if src_path.suffix else ".png"
+        dest = self.cache_dir / f"{cache_key}{ext}"
         tmp_dest = self.cache_dir / f"{cache_key}.tmp.{os.getpid()}_{int(time.time())}"
         data = src_path.read_bytes()
         tmp_dest.write_bytes(data)

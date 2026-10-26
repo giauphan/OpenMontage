@@ -121,9 +121,9 @@ class VisualAssetOrchestrator:
                         visual_plan_sha256=primary_asset_id,
                     )
                     cached_img = self.cache.get_cached_asset(cache_key)
-                    dest_file = visuals_dir / f"{primary_asset_id}.png"
 
                     if cached_img:
+                        dest_file = visuals_dir / f"{primary_asset_id}{cached_img.suffix}"
                         shutil.copy2(cached_img, dest_file)
                         staged_assets.append({
                             "id": primary_asset_id,
@@ -141,8 +141,16 @@ class VisualAssetOrchestrator:
                         ai_images_generated += 1
                     else:
                         # Invoke ImageSelector / MuseGatewayImage
-                        ai_result = self._dispatch_muse_generation(dest_file, prompt, cache_key)
+                        temp_dest = visuals_dir / f"{primary_asset_id}.png"
+                        ai_result = self._dispatch_muse_generation(temp_dest, prompt, cache_key)
                         if ai_result.get("success"):
+                            mime = ai_result.get("data", {}).get("mime", "image/png")
+                            ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+                            actual_ext = ext_map.get(mime, ".png")
+                            dest_file = visuals_dir / f"{primary_asset_id}{actual_ext}"
+                            if temp_dest != dest_file and temp_dest.is_file():
+                                temp_dest.replace(dest_file)
+                                ai_result["data"]["output_file"] = str(dest_file)
                             self.cache.store_cached_asset(cache_key, dest_file)
                             staged_assets.append({
                                 "id": primary_asset_id,

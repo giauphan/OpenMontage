@@ -63,6 +63,29 @@ def test_asset_resolver_correctly_identifies_ai_illustration_and_dimensions(tmp_
         ],
     }
 
+    # 1. Without orchestration record: unattributed raster falls back to unknown_generated
+    manifest_unattributed = resolve_visual_assets(project_dir, plan, "0" * 64, "0" * 64)
+    asset_unattributed = manifest_unattributed["assets"][0]
+    assert asset_unattributed["kind"] == "illustration"
+    assert asset_unattributed["origin"] == "unknown_generated"
+    assert asset_unattributed.get("ai_generated") is not True
+
+    # 2. With authoritative orchestration record from Muse: gets verified AI provenance
+    art_dir = project_dir / "artifacts"
+    art_dir.mkdir(parents=True, exist_ok=True)
+    orch_data = {
+        "project_id": "proj",
+        "assets": [
+            {
+                "id": "art_beat1",
+                "file": "assets/visuals/art_beat1.png",
+                "kind": "illustration",
+                "origin": "ai_generated",
+            }
+        ],
+    }
+    (art_dir / "orchestrated_assets.json").write_text(json.dumps(orch_data), encoding="utf-8")
+
     manifest = resolve_visual_assets(project_dir, plan, "0" * 64, "0" * 64)
     assert len(manifest["assets"]) == 1
     asset = manifest["assets"][0]

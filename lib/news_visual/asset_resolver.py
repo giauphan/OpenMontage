@@ -209,12 +209,7 @@ def resolve_visual_assets(
                 rights_status = "cleared_for_use"
             else:
                 # Standalone resolution without orchestration record
-                if asset_id.startswith("art_") and (beat_kind == "illustration" or beat_strategy == "ai_illustration_eligible"):
-                    is_ai_art = True
-                    kind = "illustration"
-                    origin = "ai_generated"
-                    rights_status = "in_house_illustration"
-                elif beat_kind == "illustration":
+                if beat_kind == "illustration" or beat_strategy == "ai_illustration_eligible":
                     is_ai_art = False
                     kind = "illustration"
                     origin = "unknown_generated"
