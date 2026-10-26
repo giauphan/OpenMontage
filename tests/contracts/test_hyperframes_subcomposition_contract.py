@@ -108,3 +108,46 @@ def test_repair_accepts_dot_notation_timeline_registration_and_en_us_landscape_d
     assert repair.validate_html(comp) == []
 
 
+def test_repair_normalizes_en_us_landscape_viewport_and_css_and_promotes_main_frame(tmp_path):
+    project_dir = tmp_path / "cand_en_frame"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    (artifacts_dir / "script_en_US.json").write_text('{"locale": "en-US", "sections": []}', encoding="utf-8")
+    comp_dir = project_dir / "hyperframes"
+    comp_dir.mkdir(parents=True)
+    assets_dir = comp_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    for font_name in repair.REQUIRED_FONTS:
+        (assets_dir / font_name).write_bytes(b"font")
+
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=1080,height=1920">
+    <style>
+        html, body { margin: 0; overflow: hidden; font-family: 'BeVietnamPro'; }
+        #stage { position: relative; width: 1080px; height: 1920px; }
+    </style>
+</head>
+<body>
+    <main class="frame">
+        <div class="grid"></div>
+        <section class="scene" data-start="0" data-end="10"><h1>Test</h1></section>
+    </main>
+    <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+        window.__timelines.main = tl;
+    </script>
+</body>
+</html>"""
+    comp = comp_dir / "index.html"
+    comp.write_text(html, encoding="utf-8")
+    repair.patch_html(comp, 10.0, strict=True)
+    patched = comp.read_text(encoding="utf-8")
+    assert '<main id="stage"' in patched or 'data-composition-id="main"' in patched
+    assert '<div data-start="0"' not in patched  # .grid must not become root
+    assert repair.validate_html(comp) == []
+
+
+

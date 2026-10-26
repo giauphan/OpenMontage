@@ -49,6 +49,10 @@ STAGE_CAPTION_CSS = CAPTION_CSS.replace(
     "#main { position: relative; }",
     "#stage { position: relative; }",
 )
+ROOT_CAPTION_CSS = CAPTION_CSS.replace(
+    "#main { position: relative; }",
+    "#root { position: relative; }",
+)
 
 
 class CompositionParser(HTMLParser):
@@ -128,7 +132,7 @@ def _remove_managed_block(source: str) -> tuple[str, tuple[int, int] | None]:
         r'data-track-index="(\d+)">([^<]*)</div>\n'
     )
     allowed_styles = "(?:" + "|".join(
-        re.escape(style) for style in (CAPTION_CSS, STAGE_CAPTION_CSS, LEGACY_CAPTION_CSS)
+        re.escape(style) for style in (CAPTION_CSS, STAGE_CAPTION_CSS, ROOT_CAPTION_CSS, LEGACY_CAPTION_CSS)
     ) + ")"
     block_pattern = re.compile(
         re.escape(BEGIN_MARKER) + r"\n" + allowed_styles + r"\n"
@@ -204,7 +208,7 @@ def install_captions(composition_path: Path, audio_path: Path, timings_path: Pat
     if parent != "body" or closing_offset is None:
         raise ValueError("main composition root must be a closed direct child of body")
     root_id = attrs.get("id")
-    if root_id not in ("main", "stage"):
+    if root_id not in ("main", "stage", "root"):
         raise ValueError('main composition root must use id="main"')
     try:
         composition_duration = float(attrs["data-duration"])
@@ -218,7 +222,7 @@ def install_captions(composition_path: Path, audio_path: Path, timings_path: Pat
         raise ValueError("main composition root must start at zero and dimensions/duration must be positive")
     if not re.search(r"gsap\.timeline\(\s*\{[^}]*\bpaused\s*:\s*true\b", source):
         raise ValueError("unsupported composition: expected a synchronously created paused GSAP timeline")
-    if not re.search(r"window\.__timelines\s*\[\s*(['\"])main\1\s*\]", source):
+    if not re.search(r"window\.__timelines\s*(?:\[\s*(['\"])main\1\s*\]|\.\s*main\b)", source):
         raise ValueError("unsupported composition: expected timeline registered as window.__timelines['main']")
 
     if parser.has_existing_caption_markup:
@@ -242,7 +246,11 @@ def install_captions(composition_path: Path, audio_path: Path, timings_path: Pat
     if track_index < 0:
         raise ValueError("could not allocate a caption track")
     groups = _cue_groups(parsed_words)
-    css_to_use = CAPTION_CSS if root_id == "main" else STAGE_CAPTION_CSS
+    css_to_use = (
+        CAPTION_CSS
+        if root_id == "main"
+        else (STAGE_CAPTION_CSS if root_id == "stage" else ROOT_CAPTION_CSS)
+    )
     caption_html = [BEGIN_MARKER, css_to_use]
     for index, cue in enumerate(groups, start=1):
         duration = cue["end"] - cue["start"]

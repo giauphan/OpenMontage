@@ -16,8 +16,8 @@ Content: 100% natural, idiomatic American English. Rich spoken-word narration, 1
 News evidence and factual grounding: Base all script content strictly on the technology news in {{PROJECT_DIR}}/artifacts/research_brief.json and any supplied frozen source excerpts. Map factual assertions to verified claims per skills/meta/claim-bound-visual-director.md and skills/meta/factcheck-and-claim-ledger.md. Never invent citations, benchmark numbers, quotes, or product specifications.
 
 2. hyperframes/index.html & hyperframes_reels/index.html
-hyperframes/index.html: The complete story with no sections/narration removed. Portrait 1080x1920 CSS layout (or landscape 1920x1080 when configured). Duration matches the full text (60-75s, minimum 60s).
-hyperframes_reels/index.html: Identical structure for Shorts/Reels (1080x1920 portrait, minimum 60s, up to 180s content-dependent).
+hyperframes/index.html: The complete story for 16:9 long-form video with no sections/narration removed. MUST use Landscape 1920x1080 layout everywhere: `<meta name="viewport" content="width=1920, height=1080">`, `#stage { width: 1920px; height: 1080px; position: relative; overflow: hidden; }`, and a closed direct child of `<body>`: `<div id="stage" data-composition-id="main" data-start="0" data-duration="<total_seconds>" data-width="1920" data-height="1080">...</div>`. Duration matches the full text (60-75s, minimum 60s).
+hyperframes_reels/index.html: Identical story for 9:16 Shorts/Reels. MUST use Portrait 1080x1920 layout everywhere: `<meta name="viewport" content="width=1080, height=1920">`, `#stage { width: 1080px; height: 1920px; position: relative; overflow: hidden; }`, and a closed direct child of `<body>`: `<div id="stage" data-composition-id="main" data-start="0" data-duration="<total_seconds>" data-width="1080" data-height="1920">...</div>`.
 Content & Quality for both:
 - NO visible "Montage" or "OpenMontage" branding anywhere.
 - Grounding: Base the narration and on-screen text 100% on the factual technology news in {{PROJECT_DIR}}/artifacts/research_brief.json.
@@ -28,7 +28,7 @@ Content & Quality for both:
   * Scene-specific art direction: Distinct scenes must have distinct, context-relevant visual treatment.
   * High-contrast typography: All headings, body text, badges, and metrics MUST use bright, highly readable colors on dark backgrounds (e.g. #ffffff for titles, #f8fafc for body text, #38bdf8 cyan or #fbbf24 amber for highlights). NEVER use black or dark grey text (#000, #1e293b, #333) on dark cards or backgrounds.
   * GSAP Scene Transitions & Audio-Visual Sync:
-    - Master timeline registered on window.__timelines['main'].
+    - MUST load GSAP (`<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>`), synchronously create `const tl = gsap.timeline({ paused: true });`, attach all animations to `tl` via `tl.to/from/fromTo/set`, and register `window.__timelines = window.__timelines || {}; window.__timelines['main'] = tl;`. NEVER use `requestAnimationFrame` loops, `setInterval`, `setTimeout`, or custom non-GSAP timeline objects.
     - Every scene entrance matches its script section start time.
     - Scene 1 stays visible until Scene 2 starts. A frame sampled at any second displays rich headlines, cards, and diagrams — NEVER a blank canvas.
-  * Caption rail reservation: Reserve bottom 16% of the frame as caption-safe zone. Do not author custom static captions; automated ASR captions are installed downstream.
+  * Caption rail reservation: Reserve bottom 16% of the frame as caption-safe zone. Do not author custom static captions or use class names `caption`, `captions`, `subtitle`, `subtitles`, or `id="caption-..."`; automated ASR captions are installed downstream.

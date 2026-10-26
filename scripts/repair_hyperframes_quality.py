@@ -129,6 +129,28 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
     is_landscape = locale == "en-US" and path.parent.name == "hyperframes"
     default_width, default_height = (1920, 1080) if is_landscape else (PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
 
+    if locale == "en-US" and path.parent.name in ("hyperframes", "hyperframes_reels"):
+        wrong_w, wrong_h = (1080, 1920) if is_landscape else (1920, 1080)
+
+        def _fix_viewport(m: re.Match) -> str:
+            tag = m.group(0)
+            tag = re.sub(rf"\bwidth\s*=\s*{wrong_w}\b", f"width={default_width}", tag)
+            tag = re.sub(rf"\bheight\s*=\s*{wrong_h}\b", f"height={default_height}", tag)
+            return tag
+
+        html = re.sub(r"<meta\b[^>]*\bname=[\"']viewport[\"'][^>]*>", _fix_viewport, html, flags=re.I)
+
+        def _fix_css_rule(m: re.Match) -> str:
+            full = m.group(0)
+            body = m.group(1)
+            if re.search(rf"(?<![-\w])width\s*:\s*{wrong_w}px", body) and re.search(rf"(?<![-\w])height\s*:\s*{wrong_h}px", body):
+                new_body = re.sub(rf"(?<![-\w])width\s*:\s*{wrong_w}px", f"width: {default_width}px", body)
+                new_body = re.sub(rf"(?<![-\w])height\s*:\s*{wrong_h}px", f"height: {default_height}px", new_body)
+                return full[: m.start(1) - m.start(0)] + new_body + "}"
+            return full
+
+        html = re.sub(r"(?:#root|#stage|body|html)\b[^{}]*\{([^{}]*)\}", _fix_css_rule, html)
+
     # Calculate original duration of scenes to avoid incorrectly skipping timeline alignment
     # when data-duration is missing or stale on the root element
     max_end = 0.0
@@ -136,8 +158,11 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         tag = match.group(0)
         s_match = re.search(r'\bdata-start=["\']([0-9.]+)[\"\']', tag)
         d_match = re.search(r'\bdata-duration=["\']([0-9.]+)[\"\']', tag)
+        e_match = re.search(r'\bdata-end=["\']([0-9.]+)[\"\']', tag)
         if s_match and d_match:
             max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
+        elif e_match:
+            max_end = max(max_end, float(e_match.group(1)))
     if max_end == 0.0:
         for match in re.finditer(r'<[a-zA-Z]+\b(?!data-composition-id)[^>]*>', html):
             tag = match.group(0)
@@ -145,13 +170,18 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
                 continue
             s_match = re.search(r'\bdata-start=["\']([0-9.]+)[\"\']', tag)
             d_match = re.search(r'\bdata-duration=["\']([0-9.]+)[\"\']', tag)
+            e_match = re.search(r'\bdata-end=["\']([0-9.]+)[\"\']', tag)
             if s_match and d_match:
                 max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
+            elif e_match:
+                max_end = max(max_end, float(e_match.group(1)))
 
     # Ensure composition root has required attributes.
-    root_open = re.search(r"<[a-zA-Z0-9]+\b(?![^>]*\bclass=[\"'][^\"']*\bscene\b)(?=[^>]*(?:\bdata-composition-id=|id=[\"'](?:stage|composition|root)[\"']|class=[\"'][^\"']*\bcomposition\b[^\"']*[\"']))[^>]*>", html)
+    root_open = re.search(r"<(?!body\b)[a-zA-Z0-9]+\b(?![^>]*\bclass=[\"'][^\"']*\bscene\b)(?=[^>]*(?:\bdata-composition-id=|id=[\"'](?:main|stage|composition|root)[\"']|class=[\"'][^\"']*\b(?:composition|frame|stage)\b[^\"']*[\"']))[^>]*>", html)
     if not root_open:
-        scene_match = re.search(r"<div\b[^>]*\bclass=[\"'][^\"']*\bscene\b[^\"']*[\"'][^>]*>", html)
+        root_open = re.search(r"<main\b[^>]*>", html)
+    if not root_open:
+        scene_match = re.search(r"<(?:div|section)\b[^>]*\bclass=[\"'][^\"']*\bscene\b[^\"']*[\"'][^>]*>", html)
         if scene_match:
             start_pos = scene_match.start()
             body_close = re.search(r"</body>", html[start_pos:], flags=re.IGNORECASE)
@@ -177,8 +207,14 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
         tag_match = re.match(r"<([a-zA-Z0-9]+)", tag)
         tag_prefix = f"<{tag_match.group(1)}" if tag_match else "<div"
         new_tag = tag
+        if not re.search(r'\bid=["\'][^"\']+["\']', new_tag):
+            new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} id="stage"', 1)
         if "data-composition-id" not in new_tag:
             new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-composition-id="main"', 1)
+        if locale == "en-US" and path.parent.name in ("hyperframes", "hyperframes_reels"):
+            wrong_w, wrong_h = (1080, 1920) if is_landscape else (1920, 1080)
+            new_tag = re.sub(rf'\bdata-width=["\']{wrong_w}["\']', f'data-width="{default_width}"', new_tag)
+            new_tag = re.sub(rf'\bdata-height=["\']{wrong_h}["\']', f'data-height="{default_height}"', new_tag)
         if "data-width" not in new_tag:
             new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-width="{default_width}"', 1)
         if "data-height" not in new_tag:
@@ -583,6 +619,16 @@ def _validate_seek_safety(path: Path, html: str) -> None:
         raise ValueError(f"{path}: standalone gsap animation is not registered to the paused HyperFrames timeline; regenerate using the registered timeline")
 
     timelines = list(re.finditer(r"\bgsap\s*\.\s*timeline\s*\(([^)]*)\)", code))
+    if not timelines and re.search(r"\b(?:requestAnimationFrame|setInterval)\s*\(|window\s*\.\s*__timelines\b", code):
+        raise ValueError(
+            f"{path}: GSAP timeline is not registered with gsap.timeline({{ paused: true }}); "
+            "regenerate with a paused GSAP timeline registered on window.__timelines['main']"
+        )
+    if re.search(r"\b(?:requestAnimationFrame|setInterval)\s*\(", code):
+        raise ValueError(
+            f"{path}: requestAnimationFrame/setInterval loops are not seek-safe; "
+            "regenerate using only a paused GSAP timeline registered on window.__timelines['main']"
+        )
     for match in timelines:
         if re.search(r"\bpaused\s*:\s*true\b", match.group(1)) is None:
             raise ValueError(f"{path}: GSAP timelines must be created with paused: true for deterministic seeking")

@@ -935,6 +935,9 @@ materialize_hyperframes_assets() {
   if [ "${TEMPLATE_MODE:-0}" -eq 1 ] || [ "${CODEX_AGENT_VALIDATION_MOCK:-0}" = "1" ] || [ "${CLAUDE_AGENT_VALIDATION_MOCK:-0}" = "1" ]; then
     echo "skip repair_hyperframes_quality (templated/mock composition — deterministic or offline Docker test)"
   else
+    for composition in hyperframes hyperframes_reels; do
+      [ -f "$project_root/$composition/index.html" ] && sed -i 's|\.\./assets/|assets/|g' "$project_root/$composition/index.html"
+    done
     "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$project_root" --strict || return 1
   fi
   for composition in hyperframes hyperframes_reels; do
@@ -943,9 +946,17 @@ materialize_hyperframes_assets() {
     comp_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$target/narration.mp3" 2>/dev/null || echo 0)
     if [ -n "$comp_dur" ] && awk -v d="$comp_dur" 'BEGIN{exit !(d > 5)}'; then
       "$PY" -c "
-import re, sys
+import json, pathlib, re, sys
 p = sys.argv[1]
 dur = float(sys.argv[2])
+wt = pathlib.Path(sys.argv[1]).parent / 'assets' / 'word_timestamps.json'
+if wt.is_file():
+    try:
+        words = json.loads(wt.read_text(encoding='utf-8')).get('word_timestamps') or []
+        if words:
+            dur = max(dur, max(float(w.get('end', 0)) for w in words if isinstance(w, dict)) + 0.05)
+    except Exception:
+        pass
 text = open(p, 'r', encoding='utf-8').read()
 text = re.sub(r'data-duration=\"[^\"]+\"', f'data-duration=\"{dur:.3f}\"', text)
 text = re.sub(r'const\s+dur\s*=\s*[0-9.]+;', f'const dur = {dur:.3f};', text)

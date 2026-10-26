@@ -172,6 +172,22 @@ def test_accepts_root_with_stage_id(tmp_path):
     assert 'class="clip om-asr-caption"' in updated
 
 
+def test_accepts_root_with_root_id_and_dot_notation_timeline(tmp_path):
+    composition, audio, timings = _inputs(tmp_path)
+    source = (
+        composition.read_text(encoding="utf-8")
+        .replace('id="main"', 'id="root"', 1)
+        .replace("window.__timelines['main'] = tl", "window.__timelines.main = tl", 1)
+    )
+    composition.write_text(source, encoding="utf-8")
+
+    assert installer.install_captions(composition, audio, timings) == 2
+    updated = composition.read_text(encoding="utf-8")
+    assert "#root { position: relative; }" in updated
+    assert 'class="clip om-asr-caption"' in updated
+
+
+
 def test_rejects_existing_caption_markup_instead_of_stacking_captions(tmp_path):
     composition, audio, timings = _inputs(tmp_path)
     source = composition.read_text(encoding="utf-8").replace(
