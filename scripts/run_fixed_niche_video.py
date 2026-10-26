@@ -188,6 +188,7 @@ class FixedNicheVideoRunner:
         self.researcher = FixedNicheResearcher()
         self.storyboard_director = FixedNicheStoryboardDirector(self.policy.policy_sha256)
         self.orchestrator = NarrationOrchestrator()
+        self._staged_topic: Optional[Dict[str, Any]] = None
 
     def get_target_duration(self) -> float:
         """Return target duration in seconds (65.0 - 75.0s for shorts, default 72.0s)."""
@@ -203,6 +204,7 @@ class FixedNicheVideoRunner:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """Execute intake, scope gate, research, storyboard, and asset staging."""
+        self._staged_topic = topic
         # 1. Scope gate validation before any filesystem side effects
         verdict = self.gate.evaluate_candidate(topic)
         if not verdict.is_eligible:
@@ -331,6 +333,46 @@ class FixedNicheVideoRunner:
             "beats_count": len(visual_plan["beats"]),
         }
 
+    def _restage_for_duration(self, dur: float) -> int:
+        """Re-stage storyboard and orchestrate assets when narration duration exceeds beat hold limit."""
+        topic_data = self._staged_topic
+        if not topic_data:
+            tb_file = self.project_dir / "artifacts" / "topic_brief.json"
+            topic_data = json.loads(tb_file.read_text(encoding="utf-8")) if tb_file.is_file() else {"candidate_id": self.candidate_id}
+        cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
+        claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
+        if not claims:
+            raise ValueError(f"Cannot re-stage storyboard for {dur:.2f}s: claim ledger is unavailable.")
+
+        story_res = self.storyboard_director.generate_storyboard(
+            topic=topic_data, claims=claims, project_dir=self.project_dir, target_duration=dur
+        )
+        visual_plan = story_res["visual_plan"]
+        script_data = {
+            "version": "1.0", "locale": "en-US", "title": topic_data.get("title", "AI Agent Engineering Explainer"),
+            "target_duration_seconds": dur,
+            "sections": [
+                {"section_id": b["script_section_id"], "beat_id": b["beat_id"], "start_s": b["start_s"],
+                 "end_s": b["end_s"], "narration": b["narration"], "claims": b["claim_ids"]}
+                for b in visual_plan["beats"]
+            ],
+        }
+        script_bytes = json.dumps(script_data, indent=2).encode("utf-8")
+        (self.project_dir / "artifacts" / "script_en_US.json").write_bytes(script_bytes)
+        from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
+        VisualAssetOrchestrator().orchestrate_plan_assets(
+            project_dir=self.project_dir, plan=visual_plan, topic=topic_data, claim_ledger=claims
+        )
+        from lib.news_visual.asset_resolver import resolve_visual_assets
+        plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
+        manifest = resolve_visual_assets(
+            project_dir=self.project_dir, visual_plan=visual_plan,
+            script_sha256=hashlib.sha256(script_bytes).hexdigest(), visual_plan_sha256=plan_sha,
+            enforce_meaningful_visuals=True,
+        )
+        (self.project_dir / "artifacts" / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return len(visual_plan["beats"])
+
     def synthesize_narration(
         self,
         provider: Optional[str] = None,
@@ -383,19 +425,24 @@ class FixedNicheVideoRunner:
                 "Truncating narration mid-sentence is forbidden."
             )
 
-        # A post-synthesis storyboard change desynchronizes script, audio, captions, and asset manifest
-        if n_beats > 0 and dur > n_beats * 12.0:
-            raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit ({n_beats * 12.0:.1f}s); "
-                "re-stage the project with a longer beat plan before synthesis."
-            )
-
         # In production synthesis with neural voice, reject narration outside 65-75s contract
         if provider == "kokoro" and not (65.0 <= dur <= 75.0):
             raise ValueError(
                 f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. "
                 "Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
             )
+
+        if n_beats > 0 and dur > n_beats * 12.0:
+            if dur <= policy_max:
+                logger.info(
+                    f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; "
+                    f"re-staging storyboard with target_duration={dur:.2f}s."
+                )
+                n_beats = self._restage_for_duration(dur)
+            else:
+                raise ValueError(
+                    f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s)."
+                )
 
         # Re-align all timed artifacts with synthesized audio duration
         visual_plan_file = self.project_dir / "artifacts" / "news_visual_plan.json"
@@ -708,8 +755,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
 
         from lib.fixed_niche.ranker import FixedNicheTopicScorer
-        scorer = FixedNicheTopicScorer()
-        ranked = scorer.rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
+        ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
         top_cand = ranked[0] if ranked else eligible[0]
         candidate_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
         topic = dict(top_cand)
@@ -730,10 +776,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     proj_dir = Path(args.project_dir) if args.project_dir else ROOT / "projects" / candidate_id
     runner = FixedNicheVideoRunner(
-        project_dir=proj_dir,
-        candidate_id=candidate_id,
-        format_kind=args.format,
-        policy=policy,
+        project_dir=proj_dir, candidate_id=candidate_id, format_kind=args.format, policy=policy
     )
 
     stage_res = runner.build_and_stage_project(topic=topic, dry_run=args.dry_run)
