@@ -86,11 +86,17 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
 
     asr_language = "en" if locale and locale.startswith("en") else "vi"
 
-    # Check ASR cache
-    audio_bytes = audio_path.read_bytes()
-    audio_sha = hashlib.sha256(audio_bytes).hexdigest()
-    cache_key = get_asr_cache_key(audio_sha, locale=locale or asr_language, model_size="small")
-    cached_transcript = check_asr_cache(cache_key)
+    # Check ASR cache only when using the default production transcriber on an existing file
+    use_cache = (transcriber is None) and audio_path.is_file()
+    cache_key = None
+    cached_transcript = None
+    if use_cache:
+        audio_bytes = audio_path.read_bytes()
+        audio_sha = hashlib.sha256(audio_bytes).hexdigest()
+        cache_key = get_asr_cache_key(audio_sha, locale=locale or asr_language, model_size="small")
+        cached_transcript = check_asr_cache(cache_key)
+        if not isinstance(cached_transcript, dict) or cached_transcript.get("timing_source") != "asr":
+            cached_transcript = None
 
     if cached_transcript is not None:
         transcript = cached_transcript
@@ -124,7 +130,8 @@ def generate_captions(audio_path, output_dir, *, transcriber=None, converter=Non
                 "is already cached on the render host; this pipeline will not download it."
             )
         transcript = result.data
-        save_asr_cache(cache_key, transcript)
+        if use_cache and cache_key and isinstance(transcript, dict) and transcript.get("timing_source") == "asr":
+            save_asr_cache(cache_key, transcript)
     if not isinstance(transcript, dict) or transcript.get("timing_source") != "asr":
         raise RuntimeError(f"Transcriber did not return ASR timings for {audio_path}")
     words = transcript.get("word_timestamps")

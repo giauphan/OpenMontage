@@ -522,11 +522,11 @@ def audit_project(
                 results["errors"].append(f"Duration mismatch: {v_dur:.2f}s != {expected_duration:.2f}s (tolerance ±{tol:.1f}s)")
                 results["passed"] = False
         else:
-            # Platform bounds: Short must be 15-180s, longform must be >= 60s
+            # Platform & fixed-niche policy bounds: US English Short must be 65-75s, longform must be >= 60s
             if expected_format == "short":
-                dur_ok = (15.0 <= v_dur <= 180.0)
+                dur_ok = (65.0 <= v_dur <= 75.0)
                 if not dur_ok:
-                    results["errors"].append(f"Short duration out of platform bounds: {v_dur:.2f}s (expected 15-180s)")
+                    results["errors"].append(f"Short duration out of policy bounds: {v_dur:.2f}s (expected 65.0-75.0s)")
                     results["passed"] = False
             else:
                 dur_ok = (v_dur >= 60.0)
@@ -726,9 +726,13 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Independent Editorial QA Supervisor")
     parser.add_argument("projects", nargs="*", help="Project directories to audit")
+    parser.add_argument("--project-dir", dest="project_dir", help="Single project directory to audit")
     args = parser.parse_args()
 
-    project_paths = [Path(p) for p in args.projects] if args.projects else [SHORT_PROJECT, LONG_PROJECT]
+    raw_projects = list(args.projects or [])
+    if args.project_dir:
+        raw_projects.append(args.project_dir)
+    project_paths = [Path(p) for p in raw_projects] if raw_projects else [SHORT_PROJECT, LONG_PROJECT]
     
     all_passed = True
     audit_results = {}

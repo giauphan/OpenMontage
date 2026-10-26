@@ -106,6 +106,9 @@ def main() -> int:
     if plan_path.is_file():
         try:
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if plan.get("script_sha256") != script_sha:
+                plan = build_default_visual_plan(project_dir, script_data, script_sha)
+                plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception as exc:
             print(f"ERROR: Malformed news_visual_plan.json: {exc}", file=sys.stderr)
             return 1

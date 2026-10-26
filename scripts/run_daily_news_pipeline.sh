@@ -670,8 +670,13 @@ set -e
 # Recovery must pass the current-attempt gates in the bounded retry loop.
 
 if [ "$DIRECTOR_EXIT" -eq 0 ]; then
-  if [ ! -s "$PROJECT_DIR/artifacts/news_evidence.json" ]; then
-    "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" || true
+  if ! "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: bind_news_evidence failed for $PROJECT_ID" >&2
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \
+      --error-type "NEWS_EVIDENCE_BIND_FAILED" --message "News evidence binding or quantitative verification failed" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "bind_news_evidence failed verification" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
   fi
   if [ "$is_en" -eq 1 ]; then
     echo "Validating en-US cultural localization and display language for $PROJECT_ID..."
@@ -885,6 +890,22 @@ materialize_hyperframes_assets() {
     return 1
   fi
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
+  if [ "$is_en" -eq 1 ] && [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1; then
+    if ! awk -v d="$narration_duration" 'BEGIN{exit !(d >= 65.0 && d <= 75.0)}'; then
+      for try_rate in "-5%" "+5%" "-10%" "+10%" "-15%" "+15%" "-20%" "+20%" "+25%" "+30%"; do
+        if edge-tts --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
+          try_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration.rate_try.mp3" 2>/dev/null || echo 0)
+          if awk -v d="$try_dur" 'BEGIN{exit !(d >= 65.5 && d <= 74.5)}'; then
+            mv "$narration.rate_try.mp3" "$narration"
+            narration_duration="$try_dur"
+            rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
+            break
+          fi
+        fi
+      done
+      rm -f "$narration.rate_try.mp3"
+    fi
+  fi
   local music="$project_root/assets/music-bg.mp3"
   if [ ! -s "$music" ]; then
     for candidate_music in \
@@ -952,11 +973,11 @@ materialize_hyperframes_assets() {
     local target="$project_root/$composition/assets"
     local comp_dur
     comp_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$target/narration.mp3" 2>/dev/null || echo 0)
-    # The en-US Short contract is measured speech in (60, 75]s.
+    # The en-US Short contract is measured speech in [65, 75]s.
     # Reject the bad input before rendering; never truncate a sentence or pad scenes.
     if [ "${is_en:-0}" -eq 1 ] && [ "$composition" = "hyperframes_reels" ]; then
-      if ! awk -v d="$comp_dur" 'BEGIN{exit !(d > 60.0 && d <= 75.0)}'; then
-        echo "ERROR: en-US narration duration ${comp_dur:-missing}s outside required (60, 75]s; regenerate script/TTS before rendering" >&2
+      if ! awk -v d="$comp_dur" 'BEGIN{exit !(d >= 65.0 && d <= 75.0)}'; then
+        echo "ERROR: en-US narration duration ${comp_dur:-missing}s outside required [65, 75]s; regenerate script/TTS before rendering" >&2
         return 1
       fi
     fi
@@ -965,6 +986,7 @@ materialize_hyperframes_assets() {
 import json, pathlib, re, sys
 p = sys.argv[1]
 dur = float(sys.argv[2])
+proj_root = pathlib.Path(p).parents[1]
 wt = pathlib.Path(sys.argv[1]).parent / 'assets' / 'word_timestamps.json'
 if wt.is_file():
     try:
@@ -974,8 +996,32 @@ if wt.is_file():
     except Exception:
         pass
 text = open(p, 'r', encoding='utf-8').read()
-text = re.sub(r'data-duration=\"[^\"]+\"', f'data-duration=\"{dur:.3f}\"', text)
+text = re.sub(r'data-duration=\"[^\"]+\"', f'data-duration=\"{dur:.3f}\"', text, count=1)
 text = re.sub(r'const\s+dur\s*=\s*[0-9.]+;', f'const dur = {dur:.3f};', text)
+m_starts = re.search(r'(\bstarts\s*=\s*\[)([0-9.,\s]+)(\])', text)
+if m_starts:
+    raw_vals = [float(x.strip()) for x in m_starts.group(2).split(',') if x.strip()]
+    if len(raw_vals) >= 2:
+        n_sc = len(raw_vals)
+        # Scale starts across [0, dur] so no scene holds > 12s
+        step = round(dur / n_sc, 2)
+        new_vals = [round(i * step, 2) for i in range(n_sc)]
+        new_str = ', '.join(f'{v:g}' for v in new_vals)
+        text = text[:m_starts.start()] + m_starts.group(1) + new_str + m_starts.group(3) + text[m_starts.end():]
+plan_p = proj_root / 'artifacts' / 'news_visual_plan.json'
+if plan_p.is_file():
+    try:
+        plan_obj = json.loads(plan_p.read_text(encoding='utf-8'))
+        beats = plan_obj.get('beats') or []
+        if len(beats) >= 2:
+            n_b = len(beats)
+            b_step = round(dur / n_b, 2)
+            for bi, b in enumerate(beats):
+                b['start_seconds'] = round(bi * b_step, 2)
+                b['end_seconds'] = round(dur if bi == n_b - 1 else (bi + 1) * b_step, 2)
+            plan_p.write_text(json.dumps(plan_obj, indent=2, ensure_ascii=False), encoding='utf-8')
+    except Exception:
+        pass
 if 'OPENMONTAGE_CONTINUOUS_MOTION' not in text:
     tl_match = re.search(r'\b(?:const|let|var)\s+(\w+)\s*=\s*(?:window\s*\.\s*__timelines\s*\[[^\]]*\]\s*=\s*)?gsap\s*\.\s*timeline\s*\(', text)
     reg_match = re.search(r'window\s*\.\s*__timelines\b', text)
@@ -1080,11 +1126,15 @@ done
 # ===== CODEX AGENT STRICT QUALITY VALIDATION =====
 echo "[$(date -u +%FT%TZ)] Codex Agent Strict Quality Validation Started"
 
-# Step 1: Render QA. US English Shorts are limited to 75s by editorial policy;
-# other locales retain the existing generic 180s platform limit.
+# Step 1: Render QA. US English Shorts are locked to 65-75s by editorial policy;
+# other locales retain the existing generic 60-180s platform limit.
+REELS_MIN_DURATION_SECONDS=60.0
 REELS_MAX_DURATION_SECONDS=180.0
-if [ "${is_en:-0}" -eq 1 ]; then REELS_MAX_DURATION_SECONDS=75.0; fi
-if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --min-duration 60.0 --reels-max-duration "$REELS_MAX_DURATION_SECONDS" --strict; then
+if [ "${is_en:-0}" -eq 1 ]; then
+  REELS_MIN_DURATION_SECONDS=65.0
+  REELS_MAX_DURATION_SECONDS=75.0
+fi
+if "$PY" "$ROOT/scripts/validate_render_quality.py" "$ROOT/projects/$PROJECT_ID" --ffprobe "$FFPROBE_BIN" --ffmpeg "$FFMPEG_BIN" --min-duration "$REELS_MIN_DURATION_SECONDS" --reels-max-duration "$REELS_MAX_DURATION_SECONDS" --strict; then
   VALIDATE_RENDER_EXIT=0
 else
   VALIDATE_RENDER_EXIT=$?
@@ -1369,7 +1419,6 @@ jq -n \
 
 # Step 4.1: Independent Editorial QA Supervisor for US English projects
 if [ "$is_en" -eq 1 ]; then
-  "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
   if [ ! -f "$PROJECT_DIR/artifacts/claim_ledger.json" ]; then
     echo "[$(date -u +%FT%TZ)] 🔴 Mandatory claim_ledger.json missing for US English project $PROJECT_ID" >&2
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "independent_qa" --project-id "$PROJECT_ID" \

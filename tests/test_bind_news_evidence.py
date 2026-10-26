@@ -71,3 +71,122 @@ def test_bind_news_evidence_fixes_missing_section_ids(tmp_path: Path):
     assert val_res["ok"] is True
     assert not val_res["errors"]
 
+
+def test_bind_news_evidence_rejects_unsubstantiated_en_us_figures_and_never_copies_script(tmp_path: Path):
+    project_dir = tmp_path / "cand_en_us_unverified"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    script_data = {
+        "version": "1.0",
+        "title": "AI Desktop Agents",
+        "total_duration_seconds": 70.0,
+        "sections": [
+            {
+                "id": "sec_1",
+                "text": "Multimodal desktop agents cut UI recognition errors below 12% across benchmarks.",
+                "start_seconds": 0.0,
+                "end_seconds": 10.0,
+            },
+            {
+                "id": "sec_2",
+                "text": "However, 78% of unverified enterprise deployments fail within 99 hours.",
+                "start_seconds": 10.0,
+                "end_seconds": 20.0,
+            },
+        ],
+    }
+    (artifacts_dir / "script_en_US.json").write_text(json.dumps(script_data, indent=2), encoding="utf-8")
+
+    brief_data = {
+        "version": "1.0",
+        "topic": "AI Desktop Operating Layers",
+        "data_points": [
+            {
+                "claim": "Recent desktop benchmarks report UI-recognition error rates below 12%.",
+                "source_url": "https://arxiv.org/abs/2401.00001",
+                "credibility": "high",
+            }
+        ],
+        "sources": [
+            {
+                "url": "https://arxiv.org/abs/2401.00001",
+                "title": "Desktop Agent Benchmark Paper",
+                "used_for": "Benchmark error rate",
+            }
+        ],
+    }
+    (artifacts_dir / "research_brief.json").write_text(json.dumps(brief_data, indent=2), encoding="utf-8")
+
+    # Must fail closed because 78% and 99 are not in research_brief.json
+    assert bind_news_evidence(project_dir) is False
+
+    # Verify source_evidence_s1.txt NEVER contains the script's own prose
+    snap_text = (artifacts_dir / "source_evidence_s1.txt").read_text(encoding="utf-8")
+    assert "78% of unverified enterprise deployments" not in snap_text
+    assert "Multimodal desktop agents cut UI recognition errors" not in snap_text
+
+    # Verify claim_ledger.json records C001 as APPROVED and C002 as REJECTED/unverified
+    ledger = json.loads((artifacts_dir / "claim_ledger.json").read_text(encoding="utf-8"))
+    claims_by_id = {c["claim_id"]: c for c in ledger["claims"]}
+    assert claims_by_id["C001"]["verdict"] == "APPROVED"
+    assert claims_by_id["C001"]["confidence"] == "verified"
+    assert claims_by_id["C002"]["verdict"] == "REJECTED"
+    assert claims_by_id["C002"]["confidence"] == "unverified"
+
+
+def test_bind_news_evidence_approves_grounded_en_us_script(tmp_path: Path):
+    project_dir = tmp_path / "cand_en_us_verified"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    script_data = {
+        "version": "1.0",
+        "title": "AI Desktop Agents",
+        "total_duration_seconds": 70.0,
+        "sections": [
+            {
+                "id": "sec_1",
+                "text": "Multimodal desktop agents cut UI recognition errors below 12% across benchmarks.",
+                "start_seconds": 0.0,
+                "end_seconds": 10.0,
+            },
+            {
+                "id": "sec_2",
+                "text": "Structured supervisor checkpoints bound rollback recovery within 50 milliseconds.",
+                "start_seconds": 10.0,
+                "end_seconds": 20.0,
+            },
+        ],
+    }
+    (artifacts_dir / "script_en_US.json").write_text(json.dumps(script_data, indent=2), encoding="utf-8")
+
+    brief_data = {
+        "version": "1.0",
+        "topic": "AI Desktop Operating Layers",
+        "data_points": [
+            {
+                "claim": "Recent desktop benchmarks report UI-recognition error rates below 12% and recovery under 50 milliseconds.",
+                "source_url": "https://arxiv.org/abs/2401.00001",
+                "credibility": "high",
+            }
+        ],
+        "sources": [
+            {
+                "url": "https://arxiv.org/abs/2401.00001",
+                "title": "Desktop Agent Benchmark Paper",
+                "used_for": "Benchmark error rate",
+            }
+        ],
+    }
+    (artifacts_dir / "research_brief.json").write_text(json.dumps(brief_data, indent=2), encoding="utf-8")
+
+    assert bind_news_evidence(project_dir) is True
+    snap_text = (artifacts_dir / "source_evidence_s1.txt").read_text(encoding="utf-8")
+    assert "Multimodal desktop agents cut UI recognition errors" not in snap_text
+    assert "Recent desktop benchmarks report UI-recognition error rates below 12%" in snap_text
+    val_res = validate_news_evidence(project_dir, 24.0)
+    assert val_res["ok"] is True
+
+
+

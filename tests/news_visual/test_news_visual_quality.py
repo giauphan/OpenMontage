@@ -137,7 +137,7 @@ def test_fully_grounded_visual_project_passes_visual_qa(tmp_path: Path, qa_schem
                 "id": "vb-concept",
                 "script_section_id": "concept",
                 "start_seconds": 0,
-                "end_seconds": 15,
+                "end_seconds": 12,
                 "story_function": "architecture",
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -243,3 +243,170 @@ def test_schema_compliant_news_visual_assets_manifest_passes_qa(tmp_path: Path, 
     assert report["scorecard"]["missing_required_asset_count"] == 0
     assert report["scorecard"]["visual_beat_binding_coverage_pct"] == 100.0
     jsonschema.validate(instance=report, schema=qa_schema)
+
+
+def test_no_fallback_to_test_fixture_claims(tmp_path: Path, qa_schema: dict):
+    """Visual QA must not fall back to tests/news_visual/fixtures/approved_test_claims.json when project evidence is missing."""
+    project_dir = tmp_path / "cand_no_fixture_fallback"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    hf_dir = project_dir / "hyperframes"
+    hf_dir.mkdir(parents=True)
+
+    plan = {
+        "version": "1.0",
+        "project_id": "cand_no_fixture_fallback",
+        "script_sha256": "0" * 64,
+        "enabled": True,
+        "beats": [
+            {
+                "id": "vb-01",
+                "script_section_id": "intro",
+                "start_seconds": 0,
+                "end_seconds": 10,
+                "story_function": "intro",
+                "visual_kind": "typographic_focus",
+                "evidence_class": "typographic_focus",
+                "claim_ids": ["claim-01"],  # Present in approved_test_claims.json fixture, but NOT in project_dir
+                "asset_ids": [],
+                "layout": "hero_center",
+            }
+        ],
+    }
+    (artifacts_dir / "news_visual_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    (hf_dir / "index.html").write_text('<div id="vb-01"></div>', encoding="utf-8")
+
+    report = run_news_visual_qa(project_dir, mode="strict")
+    assert not report["passed"]
+    assert "UNSUPPORTED_CLAIM" in report["failure_categories"]
+    jsonschema.validate(instance=report, schema=qa_schema)
+
+
+def test_scene_hold_exceeding_12s_fails_strict_visual_qa(tmp_path: Path, qa_schema: dict):
+    """Any visual beat or HTML scene held for >12s must fail strict visual QA with VISUAL_NOT_RENDERED."""
+    project_dir = tmp_path / "cand_long_hold"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    hf_dir = project_dir / "hyperframes_reels"
+    hf_dir.mkdir(parents=True)
+
+    plan = {
+        "version": "1.0",
+        "project_id": "cand_long_hold",
+        "script_sha256": "0" * 64,
+        "enabled": True,
+        "beats": [
+            {
+                "id": "vb-01",
+                "script_section_id": "sec_1",
+                "start_seconds": 0,
+                "end_seconds": 10,
+                "story_function": "intro",
+                "visual_kind": "typographic_focus",
+                "evidence_class": "typographic_focus",
+                "claim_ids": [],
+                "asset_ids": [],
+                "layout": "hero_center",
+            },
+            {
+                "id": "vb-02",
+                "script_section_id": "sec_2",
+                "start_seconds": 10,
+                "end_seconds": 58,  # 48s hold (>12s max)
+                "story_function": "analysis",
+                "visual_kind": "typographic_focus",
+                "evidence_class": "typographic_focus",
+                "claim_ids": [],
+                "asset_ids": [],
+                "layout": "hero_center",
+            },
+        ],
+    }
+    (artifacts_dir / "news_visual_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    (hf_dir / "index.html").write_text(
+        '<div id="stage" data-composition-id="main" data-duration="58">'
+        '<section id="sec_1" class="scene"></section>'
+        '<section id="sec_2" class="scene"></section>'
+        '<script>const starts = [0, 10];</script></div>',
+        encoding="utf-8",
+    )
+
+    report = run_news_visual_qa(project_dir, mode="strict")
+    assert not report["passed"]
+    assert "VISUAL_NOT_RENDERED" in report["failure_categories"]
+    jsonschema.validate(instance=report, schema=qa_schema)
+
+
+def test_post_render_frame_verification_detects_frozen_scene(tmp_path: Path, qa_schema: dict):
+    """Post-render frame check must fail when HTML binds all beats but rendered MP4 holds a static upper frame."""
+    import subprocess
+
+    project_dir = tmp_path / "cand_frozen_render"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    hf_dir = project_dir / "hyperframes_reels"
+    hf_dir.mkdir(parents=True)
+    renders_dir = project_dir / "renders"
+    renders_dir.mkdir(parents=True)
+
+    plan = {
+        "version": "1.0",
+        "project_id": "cand_frozen_render",
+        "script_sha256": "0" * 64,
+        "enabled": True,
+        "beats": [
+            {
+                "id": "vb-01",
+                "script_section_id": "sec_1",
+                "start_seconds": 0,
+                "end_seconds": 2,
+                "story_function": "intro",
+                "visual_kind": "typographic_focus",
+                "evidence_class": "typographic_focus",
+                "claim_ids": [],
+                "asset_ids": [],
+                "layout": "hero_center",
+            },
+            {
+                "id": "vb-02",
+                "script_section_id": "sec_2",
+                "start_seconds": 2,
+                "end_seconds": 4,
+                "story_function": "context",
+                "visual_kind": "typographic_focus",
+                "evidence_class": "typographic_focus",
+                "claim_ids": [],
+                "asset_ids": [],
+                "layout": "hero_center",
+            },
+        ],
+    }
+    (artifacts_dir / "news_visual_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    (hf_dir / "index.html").write_text(
+        '<div id="stage" data-composition-id="main" data-duration="4">'
+        '<section id="vb-01" class="scene"></section>'
+        '<section id="vb-02" class="scene"></section>'
+        '</div>',
+        encoding="utf-8",
+    )
+
+    # Render a 4s video with a static checkerboard in the upper 80% (no scene transition at t=2s)
+    mp4_path = renders_dir / "final_short_en_US_9x16.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error",
+            "-f", "lavfi",
+            "-i", "color=c=black:s=360x640:d=4,drawbox=x=40:y=60:w=200:h=160:color=white:t=fill",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            str(mp4_path),
+        ],
+        check=True,
+    )
+
+    report = run_news_visual_qa(project_dir, mode="strict")
+    assert report["scorecard"]["visual_beat_binding_coverage_pct"] == 100.0
+    assert report["scorecard"]["visual_beat_visible_in_render_coverage_pct"] == 50.0
+    assert not report["passed"]
+    assert "VISUAL_NOT_RENDERED" in report["failure_categories"]
+    jsonschema.validate(instance=report, schema=qa_schema)
+

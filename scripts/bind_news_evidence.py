@@ -76,12 +76,17 @@ def bind_news_evidence(project_dir: Path) -> bool:
         script_bytes = json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
         script_path.write_bytes(script_bytes)
 
-    brief_data = {}
-    if brief_path.is_file():
-        try:
-            brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    if not brief_path.is_file():
+        print(f"ERROR: {brief_path} does not exist; refusing fail-open evidence binding", file=sys.stderr)
+        return False
+    try:
+        brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"ERROR: cannot parse {brief_path}: {exc}", file=sys.stderr)
+        return False
+    if not isinstance(brief_data, dict):
+        print(f"ERROR: {brief_path} must be a JSON object", file=sys.stderr)
+        return False
 
     now = datetime.now(timezone.utc)
     pub_time = now - timedelta(hours=2)
@@ -91,19 +96,70 @@ def bind_news_evidence(project_dir: Path) -> bool:
 
     sources_in_brief = brief_data.get("sources", [])
     if not isinstance(sources_in_brief, list) or not sources_in_brief:
+        if script_path.name == "script_en_US.json":
+            print("ERROR: research_brief.json has no sources for en-US claim verification", file=sys.stderr)
+            return False
         sources_in_brief = [{
             "url": "https://news.ycombinator.com",
             "title": brief_data.get("topic") or "Tin tức công nghệ",
             "used_for": "Nghiên cứu bối cảnh công nghệ",
         }]
 
+    # Build frozen research corpus strictly from research_brief.json and any captured source files.
+    # NEVER include script_en_US.json or script_vi.json text in the source snapshot.
+    research_lines: list[str] = []
+    topic_val = str(brief_data.get("topic") or brief_data.get("title") or "").strip()
+    if topic_val:
+        research_lines.append(f"Topic: {topic_val}")
+    for dp in brief_data.get("data_points", []) if isinstance(brief_data.get("data_points"), list) else []:
+        if isinstance(dp, dict):
+            claim_str = str(dp.get("claim") or "").strip()
+            src_name = str(dp.get("source_name") or dp.get("source_url") or "").strip()
+            usable = str(dp.get("usable_as") or "").strip()
+            if claim_str:
+                research_lines.append(f"DataPoint ({src_name}): {claim_str} {usable}".strip())
+    landscape = brief_data.get("landscape") if isinstance(brief_data.get("landscape"), dict) else {}
+    for ec in landscape.get("existing_content", []) if isinstance(landscape.get("existing_content"), list) else []:
+        if isinstance(ec, dict):
+            ec_text = " ".join(
+                str(ec.get(k) or "").strip()
+                for k in ("title", "angle", "what_it_covers", "what_it_misses", "engagement_signal")
+                if str(ec.get(k) or "").strip()
+            )
+            if ec_text:
+                research_lines.append(f"ExistingContent: {ec_text}")
+    for gap in landscape.get("underserved_gaps", []) if isinstance(landscape.get("underserved_gaps"), list) else []:
+        if str(gap).strip():
+            research_lines.append(f"Gap: {str(gap).strip()}")
+    aud = brief_data.get("audience_insights") if isinstance(brief_data.get("audience_insights"), dict) else {}
+    for m in aud.get("misconceptions", []) if isinstance(aud.get("misconceptions"), list) else []:
+        if isinstance(m, dict):
+            m_text = f"{m.get('myth', '')} -> {m.get('reality', '')}".strip()
+            if m_text:
+                research_lines.append(f"Misconception: {m_text}")
+    for ang in brief_data.get("angles_discovered", []) if isinstance(brief_data.get("angles_discovered"), list) else []:
+        if isinstance(ang, dict):
+            grounded = " ".join(str(x) for x in (ang.get("grounded_in") or []) if x)
+            ang_text = f"{ang.get('name', '')}: {ang.get('hook', '')} {ang.get('why_now', '')} {grounded}".strip()
+            if ang_text:
+                research_lines.append(f"Angle: {ang_text}")
+
+    capture_dir = artifacts_dir / "news_source_capture"
+    if capture_dir.is_dir():
+        for cap_txt in sorted(capture_dir.glob("*.txt")):
+            try:
+                cap_content = cap_txt.read_text(encoding="utf-8", errors="replace").strip()
+                if cap_content:
+                    research_lines.append(f"CapturedSource ({cap_txt.name}): {cap_content[:4000]}")
+            except OSError:
+                pass
+
+    frozen_research_excerpt = " | ".join(research_lines).strip()
+    if len(frozen_research_excerpt) < 25:
+        frozen_research_excerpt = f"Frozen Research Grounding: {topic_val or 'Verified Technology Research Brief'}"
+
     evidence_sources = []
     source_ids = []
-    all_section_texts = "\n".join(
-        f"Verified source: {str(s.get('text_vi') or s.get('text') or '').strip()}"
-        for s in sections
-        if isinstance(s, dict) and str(s.get("text_vi") or s.get("text") or "").strip()
-    )
     for idx, src in enumerate(sources_in_brief):
         if not isinstance(src, dict):
             continue
@@ -121,7 +177,7 @@ def bind_news_evidence(project_dir: Path) -> bool:
             f"{excerpt_text}\n"
             f"URL: {url}\nMục đích: {used_for}\n"
             f"Thời điểm thu thập: {_iso_utc(ret_time)}\n"
-            f"Verified Script Grounding:\n{all_section_texts}\n"
+            f"Frozen Research Grounding:\n{frozen_research_excerpt}\n"
         ).encode("utf-8")
 
         content_path.write_bytes(full_content)
@@ -144,8 +200,10 @@ def bind_news_evidence(project_dir: Path) -> bool:
         print("ERROR: failed to build evidence sources", file=sys.stderr)
         return False
 
+    import re as _re
     claims = []
     ledger_claims = []
+    unverified_errors: list[str] = []
     primary_source = evidence_sources[0]
     primary_title = (
         sources_in_brief[0].get("title")
@@ -157,6 +215,22 @@ def bind_news_evidence(project_dir: Path) -> bool:
         sec_text = (section.get("text_vi") or section.get("text") or "").strip()
         claim_text = sec_text[:180].strip() or "Nội dung tin tức công nghệ đã được xác thực."
 
+        # Independent fact-check: every quantitative figure in sec_text must appear in frozen_research_excerpt
+        should_verify_figures = (
+            script_path.name == "script_en_US.json"
+            or bool(brief_data.get("data_points"))
+        )
+        figures = _re.findall(r"\b\d+(?:[\.,]\d+)?%?\b", sec_text) if should_verify_figures else []
+        missing_figs = [
+            fig for fig in figures
+            if fig not in frozen_research_excerpt and fig.rstrip("%") not in frozen_research_excerpt
+        ]
+        is_verified = len(missing_figs) == 0
+        if not is_verified:
+            unverified_errors.append(
+                f"Section '{sec_id}' (C{idx + 1:03d}) asserts unsubstantiated figure(s) {missing_figs} not present in frozen research_brief.json"
+            )
+
         claims.append({
             "section_id": sec_id,
             "claim": claim_text,
@@ -165,13 +239,13 @@ def bind_news_evidence(project_dir: Path) -> bool:
             "source_ids": [source_ids[0]],
             "reviewer": "Ban biên tập OpenMontage (Tự động hóa)",
             "reviewed_at": _iso_utc(rev_time),
-            "review_status": "approved",
+            "review_status": "approved" if is_verified else "rejected",
         })
         if sec_text:
             ledger_claims.append({
                 "claim_id": f"C{idx + 1:03d}",
                 "statement": sec_text,
-                "confidence": "verified",
+                "confidence": "verified" if is_verified else "unverified",
                 "scope": {
                     "market": "US",
                     "as_of": _iso_utc(now)[:10],
@@ -184,9 +258,9 @@ def bind_news_evidence(project_dir: Path) -> bool:
                     "snapshot_file": f"source_evidence_{source_ids[0]}.txt",
                     "snapshot_sha256": primary_source["content_sha256"],
                 },
-                "evidence_excerpt": f"Verified source: {sec_text}",
+                "evidence_excerpt": frozen_research_excerpt,
                 "script_spans": [sec_text],
-                "verdict": "APPROVED",
+                "verdict": "APPROVED" if is_verified else "REJECTED",
             })
 
     evidence = {
@@ -212,6 +286,11 @@ def bind_news_evidence(project_dir: Path) -> bool:
             "claims": ledger_claims,
         }
         ledger_path.write_text(json.dumps(claim_ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if unverified_errors:
+        for err in unverified_errors:
+            print(f"ERROR: {err}", file=sys.stderr)
+        return False
     return True
 
 

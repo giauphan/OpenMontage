@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -123,6 +125,278 @@ def check_overlay_safe_zones(
     return (len(reasons) == 0, reasons)
 
 
+MAX_SCENE_HOLD_SECONDS = 12.0
+MAX_SCENE_HOLD_TOLERANCE = 12.05
+
+
+def _probe_video_duration(mp4_path: Path) -> float:
+    try:
+        res = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(mp4_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return float(res.stdout.strip() or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _sample_upper_frame_gray(mp4_path: Path, timestamp_s: float) -> Optional[bytes]:
+    """Sample upper 80% of the video frame (excluding bottom 20% caption rail) at 160x160 gray."""
+    try:
+        res = subprocess.run(
+            [
+                "ffmpeg", "-v", "error",
+                "-ss", f"{max(0.0, timestamp_s):.3f}",
+                "-i", str(mp4_path),
+                "-vf", "crop=iw:trunc(ih*0.80/2)*2:0:0,scale=160:160",
+                "-frames:v", "1",
+                "-f", "rawvideo",
+                "-pix_fmt", "gray",
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        if len(res.stdout) == 160 * 160:
+            return res.stdout
+    except Exception:
+        pass
+    return None
+
+
+def _frame_std_dev(gray_bytes: bytes) -> float:
+    if not gray_bytes:
+        return 0.0
+    n = len(gray_bytes)
+    mean = sum(gray_bytes) / n
+    var = sum((b - mean) ** 2 for b in gray_bytes) / n
+    return math.sqrt(var)
+
+
+def _frame_mad(a: bytes, b: bytes) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
+
+
+def _check_html_scene_hold_limits(
+    html_text: str,
+    variant_name: str,
+    require_min_six_scenes: bool,
+) -> List[str]:
+    errors: List[str] = []
+    stage_m = re.search(r'id=["\']stage["\'][^>]*data-duration=["\']([0-9.]+)["\']', html_text)
+    if not stage_m:
+        stage_m = re.search(r'data-composition-id=["\']main["\'][^>]*data-duration=["\']([0-9.]+)["\']', html_text)
+    stage_dur = float(stage_m.group(1)) if stage_m else 0.0
+
+    scene_tags = re.findall(r'<[a-zA-Z0-9]+\b[^>]*class=["\'][^"\']*\bscene\b[^"\']*["\'][^>]*>', html_text)
+    scene_count = len(scene_tags)
+    if require_min_six_scenes and scene_count < 6:
+        errors.append(f"{variant_name}: HTML composition has {scene_count} scenes (< 6 minimum required)")
+
+    starts_m = re.search(r'\bstarts\s*=\s*\[([0-9.,\s]+)\]', html_text)
+    if starts_m:
+        try:
+            starts = [float(x.strip()) for x in starts_m.group(1).split(",") if x.strip()]
+        except ValueError:
+            starts = []
+        if starts:
+            if require_min_six_scenes and len(starts) < 6:
+                errors.append(f"{variant_name}: HTML starts array has {len(starts)} entries (< 6 minimum required)")
+            for i in range(len(starts) - 1):
+                hold = starts[i + 1] - starts[i]
+                if hold > MAX_SCENE_HOLD_TOLERANCE:
+                    errors.append(
+                        f"{variant_name}: HTML scene {i + 1} held for {hold:.2f}s (>{MAX_SCENE_HOLD_SECONDS:.1f}s max policy)"
+                    )
+            if stage_dur > starts[-1]:
+                final_hold = stage_dur - starts[-1]
+                if final_hold > MAX_SCENE_HOLD_TOLERANCE:
+                    errors.append(
+                        f"{variant_name}: final HTML scene held for {final_hold:.2f}s from {starts[-1]:.2f}s to {stage_dur:.2f}s (>{MAX_SCENE_HOLD_SECONDS:.1f}s max policy)"
+                    )
+    else:
+        step_m = re.search(r'\b(?:index|idx|i)\s*\*\s*([0-9]+(?:\.[0-9]+)?)', html_text)
+        if step_m:
+            step_val = float(step_m.group(1))
+            if step_val > MAX_SCENE_HOLD_TOLERANCE:
+                errors.append(
+                    f"{variant_name}: HTML scene step {step_val:.2f}s exceeds {MAX_SCENE_HOLD_SECONDS:.1f}s max policy"
+                )
+            if stage_dur > 0 and scene_count > 0:
+                last_start = (scene_count - 1) * step_val
+                final_hold = stage_dur - last_start
+                if final_hold > MAX_SCENE_HOLD_TOLERANCE:
+                    errors.append(
+                        f"{variant_name}: final HTML scene held for {final_hold:.2f}s (from {last_start:.2f}s to {stage_dur:.2f}s, >{MAX_SCENE_HOLD_SECONDS:.1f}s max)"
+                    )
+
+    return errors
+
+
+def _verify_scene_timeline_and_render_coverage(
+    project_dir: Path,
+    beats: List[Dict[str, Any]],
+    bound_beat_indices: set[int],
+    binding_pct: float,
+    mode: str,
+    findings: List[Dict[str, Any]],
+    failure_categories: List[str],
+) -> float:
+    if not beats:
+        return 100.0 if mode != "strict" else 0.0
+
+    is_en_project = (project_dir / "artifacts" / "script_en_US.json").is_file()
+    max_beat_end = max((float(b.get("end_seconds", 0.0)) for b in beats), default=0.0)
+    require_min_six = is_en_project or max_beat_end >= 60.0
+
+    def _add_visual_not_rendered(msg: str, beat_id: Optional[str] = None) -> None:
+        item: Dict[str, Any] = {
+            "severity": "blocker" if mode == "strict" else "warning",
+            "category": "VISUAL_NOT_RENDERED",
+            "message": msg,
+        }
+        if beat_id:
+            item["beat_id"] = beat_id
+        findings.append(item)
+        if "VISUAL_NOT_RENDERED" not in failure_categories:
+            failure_categories.append("VISUAL_NOT_RENDERED")
+
+    if require_min_six and len(beats) < 6:
+        _add_visual_not_rendered(
+            f"Visual plan has {len(beats)} beats; at least 6 visual beats are required so no scene holds >12s across a 65-75s Short"
+        )
+
+    valid_timing_indices: set[int] = set()
+    for idx, beat in enumerate(beats):
+        bid = str(beat.get("id") or f"beat-{idx + 1}")
+        b_start = float(beat.get("start_seconds", 0.0))
+        b_end = float(beat.get("end_seconds", 0.0))
+        b_dur = b_end - b_start
+        if b_dur <= 0.0:
+            _add_visual_not_rendered(f"Beat '{bid}' has non-positive duration ({b_dur:.2f}s)", bid)
+        elif b_dur > MAX_SCENE_HOLD_TOLERANCE:
+            _add_visual_not_rendered(
+                f"Beat '{bid}' duration {b_dur:.2f}s exceeds {MAX_SCENE_HOLD_SECONDS:.1f}s maximum hold policy",
+                bid,
+            )
+        else:
+            valid_timing_indices.add(idx)
+
+    # Check HTML scene timeline hold durations
+    for variant_name, html_p in (
+        ("full", project_dir / "hyperframes" / "index.html"),
+        ("reels", project_dir / "hyperframes_reels" / "index.html"),
+    ):
+        if html_p.is_file():
+            try:
+                html_text = html_p.read_text(encoding="utf-8")
+                for err in _check_html_scene_hold_limits(html_text, variant_name, require_min_six):
+                    _add_visual_not_rendered(err)
+            except Exception:
+                pass
+
+    # Locate rendered MP4 for post-render frame verification
+    render_candidates = [
+        project_dir / "renders" / "final_short_en_US_9x16.mp4",
+        project_dir / "renders" / "final_reels_vi_9x16.mp4",
+        project_dir / "renders" / "final_long_en_US_16x9.mp4",
+        project_dir / "renders" / "final_full_vi_9x16.mp4",
+        project_dir / "renders" / "final.mp4",
+        project_dir / "final_render.mp4",
+    ]
+    render_mp4 = next((p for p in render_candidates if p.is_file() and p.stat().st_size > 0), None)
+    if render_mp4 is None and (project_dir / "renders").is_dir():
+        mp4s = sorted(p for p in (project_dir / "renders").glob("*.mp4") if p.stat().st_size > 0)
+        if mp4s:
+            render_mp4 = mp4s[0]
+
+    if render_mp4 is None:
+        if is_en_project:
+            _add_visual_not_rendered(
+                "Rendered MP4 missing; post-render visual beat verification cannot fall back to HTML binding"
+            )
+            return 0.0
+        # Pre-render synthetic unit test fallback: require both HTML binding and valid <=12s beat duration
+        verified_indices = bound_beat_indices & valid_timing_indices
+        return round((len(verified_indices) / len(beats)) * 100.0, 1)
+
+    video_dur = _probe_video_duration(render_mp4)
+    if video_dur <= 0.0:
+        _add_visual_not_rendered(f"Cannot probe positive duration from rendered video {render_mp4.name}")
+        return 0.0
+
+    # Check if the final beat holds for > 12s until the end of the rendered video
+    last_beat_start = float(beats[-1].get("start_seconds", 0.0))
+    if video_dur - last_beat_start > MAX_SCENE_HOLD_TOLERANCE:
+        _add_visual_not_rendered(
+            f"Final visual beat '{beats[-1].get('id')}' holds for {video_dur - last_beat_start:.2f}s in rendered video (from {last_beat_start:.2f}s to {video_dur:.2f}s, >{MAX_SCENE_HOLD_SECONDS:.1f}s max)",
+            str(beats[-1].get("id") or ""),
+        )
+
+    visible_beats = 0
+    prev_frame: Optional[bytes] = None
+    for idx, beat in enumerate(beats):
+        bid = str(beat.get("id") or f"beat-{idx + 1}")
+        b_start = float(beat.get("start_seconds", 0.0))
+        b_end = float(beat.get("end_seconds", 0.0))
+        if idx not in bound_beat_indices or idx not in valid_timing_indices:
+            prev_frame = None
+            continue
+        if b_start >= video_dur:
+            _add_visual_not_rendered(
+                f"Beat '{bid}' starts at {b_start:.2f}s beyond rendered video duration {video_dur:.2f}s",
+                bid,
+            )
+            prev_frame = None
+            continue
+
+        clamped_end = min(b_end, video_dur)
+        mid_ts = min(max(0.1, (b_start + clamped_end) / 2.0), max(0.1, video_dur - 0.1))
+        frame_bytes = _sample_upper_frame_gray(render_mp4, mid_ts)
+        if frame_bytes is None:
+            _add_visual_not_rendered(f"Failed to sample rendered frame for beat '{bid}' at {mid_ts:.2f}s", bid)
+            prev_frame = None
+            continue
+
+        std_val = _frame_std_dev(frame_bytes)
+        if std_val < 5.0:
+            _add_visual_not_rendered(
+                f"Beat '{bid}' rendered frame at {mid_ts:.2f}s is visually blank or low-contrast (std_dev={std_val:.2f} < 5.0)",
+                bid,
+            )
+            prev_frame = frame_bytes
+            continue
+
+        if prev_frame is not None:
+            mad_val = _frame_mad(frame_bytes, prev_frame)
+            if mad_val < 0.25:
+                _add_visual_not_rendered(
+                    f"Beat '{bid}' at {mid_ts:.2f}s shows no visual transition from previous beat in rendered video (upper-frame MAD={mad_val:.3f} < 0.25)",
+                    bid,
+                )
+                prev_frame = frame_bytes
+                continue
+
+        visible_beats += 1
+        prev_frame = frame_bytes
+
+    render_pct = round((visible_beats / len(beats)) * 100.0, 1)
+    if render_pct < 100.0:
+        _add_visual_not_rendered(
+            f"Rendered visual beat coverage is {render_pct:.1f}% ({visible_beats}/{len(beats)} beats verified in {render_mp4.name})"
+        )
+    return render_pct
+
+
 def run_news_visual_qa(
     project_dir: Path,
     mode: str = "auto",
@@ -180,12 +454,11 @@ def run_news_visual_qa(
 
     beats = plan_data.get("beats", []) if plan_data else []
 
-    # 2. Check unapproved factual claims
+    # 2. Check unapproved factual claims (project-scoped only; never fall back to test fixtures)
     evidence_path = None
     for cand in (
         project_dir / "artifacts" / "news_evidence.json",
         project_dir / "news_evidence.json",
-        ROOT / "tests" / "news_visual" / "fixtures" / "approved_test_claims.json",
     ):
         if cand.is_file():
             evidence_path = cand
@@ -198,10 +471,22 @@ def run_news_visual_qa(
             claims_list = ev_data if isinstance(ev_data, list) else ev_data.get("claims", [])
             for c in claims_list:
                 if isinstance(c, dict):
-                    cid = c.get("id") or c.get("claim_id")
+                    cid = c.get("id") or c.get("claim_id") or c.get("section_id")
                     status = c.get("review_status") or c.get("status")
                     if cid and status in ("approved", "verified"):
-                        approved_claim_ids.add(cid)
+                        approved_claim_ids.add(str(cid))
+        except Exception:
+            pass
+
+    ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+    if ledger_path.is_file():
+        try:
+            l_data = json.loads(ledger_path.read_text(encoding="utf-8"))
+            for c in l_data.get("claims", []):
+                if isinstance(c, dict):
+                    cid = c.get("claim_id") or c.get("id")
+                    if cid and c.get("verdict") == "APPROVED" and c.get("confidence") == "verified":
+                        approved_claim_ids.add(str(cid))
         except Exception:
             pass
 
@@ -283,6 +568,7 @@ def run_news_visual_qa(
 
     # 4. Check HTML bindings and safe zones
     bound_beats = 0
+    bound_beat_indices: set[int] = set()
     full_html_p = project_dir / "hyperframes" / "index.html"
     reels_html_p = project_dir / "hyperframes_reels" / "index.html"
 
@@ -313,7 +599,7 @@ def run_news_visual_qa(
             if reels_html_p.is_file():
                 html_content += reels_html_p.read_text(encoding="utf-8")
 
-            for beat in beats:
+            for idx, beat in enumerate(beats):
                 bid = beat.get("id")
                 sec_id = beat.get("script_section_id")
                 asset_keys = beat.get("asset_ids", [])
@@ -324,8 +610,10 @@ def run_news_visual_qa(
                     or (sec_id and (f'id="{sec_id}"' in html_content or f'data-scene-id="{sec_id}"' in html_content or f'scene-{sec_id}' in html_content))
                 ):
                     bound_beats += 1
+                    bound_beat_indices.add(idx)
                 elif beat.get("visual_kind") == "typographic_focus":
                     bound_beats += 1
+                    bound_beat_indices.add(idx)
         binding_pct = round((bound_beats / len(beats)) * 100.0, 1)
     else:
         binding_pct = 100.0 if mode != "strict" else 0.0
@@ -355,8 +643,16 @@ def run_news_visual_qa(
                 "message": "All beats use typographic_focus without informative visual background or diagram",
             })
 
-    # Render coverage (can be checked if mp4 exists)
-    render_pct = binding_pct
+    # 7. Scene hold policy (<= 12s max per scene/beat, >= 6 beats for Shorts) & Post-Render Frame Verification
+    render_pct = _verify_scene_timeline_and_render_coverage(
+        project_dir=project_dir,
+        beats=beats,
+        bound_beat_indices=bound_beat_indices,
+        binding_pct=binding_pct,
+        mode=mode,
+        findings=findings,
+        failure_categories=failure_categories,
+    )
 
     # Determine overall pass
     blockers = [f for f in findings if f.get("severity") == "blocker"]
