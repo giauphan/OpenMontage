@@ -495,6 +495,8 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
     html = re.sub(r"<audio\b[^>]*>", add_data_start, html)
 
     _validate_seek_safety(path, html)
+    if (path.parent / "assets").is_dir():
+        html = html.replace("../assets/", "assets/")
     html = repair_missing_composition_assets(path, html)
 
     # Ensure GSAP CDN script is always present in HTML
