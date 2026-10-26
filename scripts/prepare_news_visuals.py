@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -154,8 +155,10 @@ def main() -> int:
 
     plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
 
-    # Orchestrate assets before manifest resolution
-    try:
+    # Orchestrate assets before manifest resolution (fixed-niche plans or plans declaring render_strategy only)
+    fixed_niche = os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True")
+    has_strategies = any(b.get("render_strategy") for b in plan.get("beats", []))
+    if fixed_niche or has_strategies:
         from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
         brief_path = artifacts_dir / "research_brief.json"
         topic_info = {"candidate_id": project_dir.name}
@@ -171,8 +174,6 @@ def main() -> int:
         if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
             print("ERROR: Visual orchestrator blocked: proof-bearing beat lacks authentic capture", file=sys.stderr)
             return 4
-    except Exception as orch_exc:
-        print(f"WARN: Visual asset orchestration encountered warning: {orch_exc}", file=sys.stderr)
 
     # Resolve and stage assets
     try:

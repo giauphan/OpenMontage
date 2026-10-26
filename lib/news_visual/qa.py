@@ -583,7 +583,7 @@ def run_news_visual_qa(
                         or beat_ev_class in ("authentic_photo", "approved_source_visual", "approved_data_chart", "primary_proof")
                         or beat.get("is_proof_bearing") is True
                     )
-                    if is_ai_asset and is_proof_beat and beat_strategy != "ai_illustration_eligible":
+                    if is_ai_asset and is_proof_beat:
                         findings.append({
                             "severity": "blocker" if mode == "strict" else "warning",
                             "category": "PROHIBITED_AI_PROOF",

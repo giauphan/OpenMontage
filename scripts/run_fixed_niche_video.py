@@ -368,8 +368,16 @@ class FixedNicheVideoRunner:
         dur = probe_audio_duration(out_audio)
         logger.info(f"Synthesized voice track: duration={dur:.2f}s")
         target_dur = self.get_target_duration()
+        n_beats = 0
+        plan_p = self.project_dir / "artifacts" / "news_visual_plan.json"
+        if plan_p.is_file():
+            try:
+                n_beats = len(json.loads(plan_p.read_text(encoding="utf-8")).get("beats", []))
+            except Exception:
+                pass
         dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
-        max_dur = float(dur_range[1]) if len(dur_range) >= 2 else target_dur
+        policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
+        max_dur = min(policy_max, n_beats * 12.0) if n_beats > 0 else target_dur
         if dur > max_dur:
             raise ValueError(
                 f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({max_dur:.2f}s). "
@@ -456,6 +464,15 @@ class FixedNicheVideoRunner:
                             assets_file.write_text(assets_json_to_write, encoding="utf-8")
                         if proof_json_to_write is not None:
                             proof_map_file.write_text(proof_json_to_write, encoding="utf-8")
+
+                        # Re-materialize HyperFrames compositions with the reconciled audio duration
+                        from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
+                        materialize_hyperframes_project(
+                            project_dir=self.project_dir,
+                            topic={"candidate_id": self.candidate_id},
+                            visual_plan=plan_json,
+                            duration=align_dur,
+                        )
             except Exception as e:
                 raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
 
