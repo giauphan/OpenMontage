@@ -146,13 +146,13 @@ def render_short():
 
     run(f'ffmpeg -y -loglevel error -f concat -safe 0 -i {list_path} -c copy {concat_video}')
 
-    # 4. Final compositing: Overlay audio, top subtitle container, burned-in synchronized subtitles
+    # 4. Final compositing: Overlay audio, bottom caption rail, burned-in synchronized subtitles
     srt_short = SHORT_PROJECT / "artifacts/captions_en_US.srt"
     ass_short = TMP_DIR / "short_captions.ass"
-    srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=38, margin_v=95, alignment=8)
+    srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=40, margin_v=240, alignment=2)
     vf = (
-        "drawbox=x=60:y=60:w=960:h=180:color=#0b0f19@0.92:t=fill,"
-        "drawbox=x=60:y=60:w=960:h=180:color=#38bdf8@0.6:t=2,"
+        "drawbox=x=60:y=1640:w=960:h=180:color=#0b0f19@0.92:t=fill,"
+        "drawbox=x=60:y=1640:w=960:h=180:color=#38bdf8@0.6:t=2,"
         f"ass={ass_short},"
         "setsar=1"
     )

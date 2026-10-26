@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -199,19 +200,35 @@ class NewsResearchBridge:
                 ]
             normalized_angles.append(normalized_item)
 
-        viet_topic = (
-            agent_draft.get("vietnamese_topic")
-            or (agent_draft.get("research_draft", {}).get("vietnamese_topic") if isinstance(agent_draft.get("research_draft"), dict) else None)
-            or candidate.get("title_vi")
+        locale = (
+            candidate.get("locale")
+            or agent_draft.get("locale")
+            or (agent_draft.get("research_draft", {}).get("locale") if isinstance(agent_draft.get("research_draft"), dict) else None)
+            or os.environ.get("OPENMONTAGE_LOCALE")
+            or os.environ.get("PROJECT_LOCALE")
+            or "en-US"
         )
-        if viet_topic:
-            topic_str = self._require_string(viet_topic, "vietnamese_topic")
-        else:
-            topic_str = self._require_string(candidate.get("title"), "candidate title")
+        if str(locale).lower().startswith("vi"):
+            viet_topic = (
+                agent_draft.get("vietnamese_topic")
+                or (agent_draft.get("research_draft", {}).get("vietnamese_topic") if isinstance(agent_draft.get("research_draft"), dict) else None)
+                or candidate.get("title_vi")
+            )
+            if viet_topic:
+                topic_str = self._require_string(viet_topic, "vietnamese_topic")
+            else:
+                topic_str = self._require_string(candidate.get("title"), "candidate title")
 
-        from tools.narration_text import check_vietnamese_prose
-        if check_vietnamese_prose(topic_str) and not topic_str.startswith("Article "):
-            topic_str = f"Tin tức công nghệ: {topic_str}"
+            from tools.narration_text import check_vietnamese_prose
+            if check_vietnamese_prose(topic_str) and not topic_str.startswith("Article "):
+                topic_str = f"Tin tức công nghệ: {topic_str}"
+        else:
+            en_topic = (
+                agent_draft.get("topic")
+                or (agent_draft.get("research_draft", {}).get("topic") if isinstance(agent_draft.get("research_draft"), dict) else None)
+                or candidate.get("title")
+            )
+            topic_str = self._require_string(en_topic, "candidate title")
 
         brief = {
             "version": "1.0",
