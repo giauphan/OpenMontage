@@ -125,7 +125,7 @@ def needs_remotion(
         if transform and transform.get("animation"):
             return True
 
-    return True
+    return False
 
 
 def remotion_render(tool: Any, inputs: dict[str, Any]) -> ToolResult:

@@ -41,9 +41,7 @@ logger = logging.getLogger(__name__)
 
 from lib.fixed_niche.captions import format_srt_timestamp, generate_srt_from_beats
 from lib.fixed_niche.hyperframes_composer import (
-    materialize_hyperframes_project,
-    render_hyperframes_composition,
-    render_ffmpeg_composition,
+    materialize_hyperframes_project, render_hyperframes_composition, render_ffmpeg_composition,
 )
 from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
 
@@ -348,21 +346,34 @@ class FixedNicheVideoRunner:
             topic=topic_data, claims=claims, project_dir=self.project_dir, target_duration=dur
         )
         visual_plan = story_res["visual_plan"]
+        beats = visual_plan.get("beats", [])
+        if len(beats) == 7:
+            b6_words = beats[6].get("narration", "").split()
+            mid = max(1, len(b6_words) // 2)
+            beats[5]["narration"] = " ".join(b6_words[:mid])
+            beats[6]["narration"] = " ".join(b6_words[mid:])
+            (self.project_dir / "artifacts" / "news_visual_plan.json").write_text(
+                json.dumps(visual_plan, indent=2), encoding="utf-8"
+            )
+
         script_data = {
             "version": "1.0", "locale": "en-US", "title": topic_data.get("title", "AI Agent Engineering Explainer"),
             "target_duration_seconds": dur,
             "sections": [
                 {"section_id": b["script_section_id"], "beat_id": b["beat_id"], "start_s": b["start_s"],
                  "end_s": b["end_s"], "narration": b["narration"], "claims": b["claim_ids"]}
-                for b in visual_plan["beats"]
+                for b in beats
             ],
         }
         script_bytes = json.dumps(script_data, indent=2).encode("utf-8")
         (self.project_dir / "artifacts" / "script_en_US.json").write_bytes(script_bytes)
         from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
-        VisualAssetOrchestrator().orchestrate_plan_assets(
+        orch_res = VisualAssetOrchestrator().orchestrate_plan_assets(
             project_dir=self.project_dir, plan=visual_plan, topic=topic_data, claim_ledger=claims
         )
+        if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
+            raise ValueError(f"Re-staging for {dur:.2f}s blocked: proof-bearing beats missing verified evidence.")
+
         from lib.news_visual.asset_resolver import resolve_visual_assets
         plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
         manifest = resolve_visual_assets(
@@ -371,7 +382,7 @@ class FixedNicheVideoRunner:
             enforce_meaningful_visuals=True,
         )
         (self.project_dir / "artifacts" / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        return len(visual_plan["beats"])
+        return len(beats)
 
     def synthesize_narration(
         self,
@@ -541,26 +552,15 @@ class FixedNicheVideoRunner:
         render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else target_dur
 
         render_project_composition(
-            project_dir=self.project_dir,
-            composition_name="hyperframes_reels",
-            output_mp4=output_mp4,
-            duration_seconds=render_dur,
-            burn_captions=burn_captions,
-            renderer=renderer,
+            project_dir=self.project_dir, composition_name="hyperframes_reels",
+            output_mp4=output_mp4, duration_seconds=render_dur,
+            burn_captions=burn_captions, renderer=renderer,
         )
 
-        # Probe output video using argument list (prevent CWE-78)
-        probe_cmd = [
-            "ffprobe", "-v", "quiet",
-            "-print_format", "json",
-            "-show_format", "-show_streams",
-            str(output_mp4),
-        ]
+        probe_cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(output_mp4)]
         probe_out = subprocess.run(probe_cmd, capture_output=True, text=True)
         probe_json = json.loads(probe_out.stdout) if probe_out.returncode == 0 else {}
-        (self.project_dir / "renders" / "ffprobe.json").write_text(
-            json.dumps(probe_json, indent=2), encoding="utf-8"
-        )
+        (self.project_dir / "renders" / "ffprobe.json").write_text(json.dumps(probe_json, indent=2), encoding="utf-8")
 
         # Sample frames using argument lists
         frames_dir = self.project_dir / "renders" / "frame_samples"
@@ -574,11 +574,7 @@ class FixedNicheVideoRunner:
         sampling_ok = True
         for sec, fname in sample_points:
             fpath = frames_dir / fname
-            cmd = [
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-ss", str(sec), "-i", str(output_mp4),
-                "-vframes", "1", str(fpath),
-            ]
+            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
             sample_proc = subprocess.run(cmd, capture_output=True)
             if sample_proc.returncode != 0:
                 sampling_ok = False

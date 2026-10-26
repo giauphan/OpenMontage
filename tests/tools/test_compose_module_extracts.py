@@ -418,6 +418,7 @@ class TestRemotionRunnerExtract:
 
     def test_needs_remotion(self):
         assert not needs_remotion(False, [{"source": "video.mp4"}], {".png"})
+        assert not needs_remotion(True, [{"source": "video.mp4"}], {".png"})
         assert needs_remotion(True, [{"source": "slide.png"}], {".png"})
         assert needs_remotion(True, [{"type": "stat_card"}], {".png"})
         assert needs_remotion(True, [{"animation": "fade"}], {".png"})

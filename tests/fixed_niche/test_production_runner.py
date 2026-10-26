@@ -429,6 +429,10 @@ def test_synthesize_narration_recovers_and_restages_for_duration_above_72s(tmp_p
     for b in plan["beats"]:
         assert (b["end_s"] - b["start_s"]) <= 12.0
 
+    # Ensure no invented narration sentence exists: text matches synthesized narration
+    synth_text = (proj_dir / "artifacts" / "narration_en_US_text.txt").read_text(encoding="utf-8")
+    assert " ".join(b["narration"] for b in plan["beats"]) == synth_text
+
 
 def test_synthesize_narration_rejects_duration_above_policy_max(tmp_path: Path, monkeypatch):
     """Ensure narration > 75.0s strictly fails closed."""
