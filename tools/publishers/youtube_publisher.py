@@ -439,7 +439,20 @@ class YoutubePublisher(BaseTool):
         title = inputs["title"][:100]
         description = inputs.get("description", "")
         format_type = str(inputs.get("format", "short")).lower()
-        locale = str(inputs.get("locale") or ("en-US" if "en-us" in str(inputs.get("audience_profile_id", "")).lower() else "vi-VN"))
+        target_loc = (
+            inputs.get("locale")
+            or inputs.get("target_locale")
+            or os.environ.get("OPENMONTAGE_LOCALE")
+            or os.environ.get("TARGET_LOCALE")
+            or ("en-US" if "en-us" in str(inputs.get("audience_profile_id", "")).lower() else "")
+        )
+        if not target_loc:
+            try:
+                from lib.artifact_paths import resolve_project_locale
+                target_loc = resolve_project_locale(video_path.parent.parent)
+            except Exception:
+                target_loc = "en-US" if os.environ.get("OPENMONTAGE_LOCALE") == "en-US" else "vi-VN"
+        locale = str(target_loc)
 
         geom_error = _check_video_geometry(video_path, format_type)
         if geom_error:

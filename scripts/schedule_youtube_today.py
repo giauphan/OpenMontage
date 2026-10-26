@@ -33,6 +33,7 @@ def upload(project_dir, topic_meta, kind, publish_at):
     path = project_dir / topic_meta[kind]
     if not path.is_file():
         raise FileNotFoundError(path)
+    locale = topic_meta.get("locale") or os.environ.get("OPENMONTAGE_LOCALE") or "en-US"
     result = YoutubePublisher().execute({
         "video_path": str(path),
         "title": youtube_shorts_title(topic_meta["title"]),
@@ -40,6 +41,7 @@ def upload(project_dir, topic_meta, kind, publish_at):
         "privacy_status": "private",
         "publish_at": ytv_publish_at(publish_at),
         "category_id": "28",
+        "locale": locale,
     })
     if not result.success:
         raise RuntimeError(result.error or "YouTube schedule failed")

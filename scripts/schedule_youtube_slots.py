@@ -49,15 +49,29 @@ def main():
             key = publish_key(date, meta["id"], "youtube", kind)
             store.update(key, {"status": "scheduling", "error": None, "scheduled_for": publish_at})
 
+        from lib.artifact_paths import is_english_locale
+        locale = (
+            meta.get("locale")
+            or os.environ.get("OPENMONTAGE_LOCALE")
+            or "en-US"
+        )
+        is_en = is_english_locale(locale)
+        tags = meta.get("tags") or (
+            ["AI", "Tech", "Anthropic", "Claude", "OpenMontage"]
+            if is_en
+            else ["AI", "Công nghệ", "Vietnamese", "OpenMontage"]
+        )
+
         result = publisher.execute(
             {
                 "video_path": str(asset),
                 "title": title,
                 "description": meta.get("description", ""),
-                "tags": ["AI", "Công nghệ", "Vietnamese", "OpenMontage"],
+                "tags": tags,
                 "privacy_status": "private",
                 "publish_at": publish_at,
                 "category_id": "28",
+                "locale": locale,
             }
         )
         if not result.success:

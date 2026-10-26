@@ -7,6 +7,7 @@ vertical render; Instagram Reels takes the shorter cut render.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -147,7 +148,12 @@ def validate_release_metadata(meta: dict) -> list[str]:
     title = str(meta.get("title", ""))
     desc = str(meta.get("description", ""))
 
-    locale = meta.get("locale") or ("en-US" if "en-us" in str(meta.get("audience_profile_id", "")).lower() else "vi-VN")
+    locale = (
+        meta.get("locale")
+        or os.environ.get("OPENMONTAGE_LOCALE")
+        or os.environ.get("TARGET_LOCALE")
+        or ("en-US" if "en-us" in str(meta.get("audience_profile_id", "")).lower() else "vi-VN")
+    )
 
     if title:
         from scripts.validate_publish_metadata import validate_text_field
@@ -192,7 +198,12 @@ def _clean_and_dedup_tags(tags: Any, default_tags: tuple[str, ...]) -> list[str]
 
 def _resolve_platform_defaults(data: dict) -> tuple[tuple[str, ...], str, str]:
     from lib.artifact_paths import is_english_locale
-    locale = data.get("locale") or ("en-US" if "en-us" in str(data.get("audience_profile_id", "")).lower() else "vi-VN")
+    locale = (
+        data.get("locale")
+        or os.environ.get("OPENMONTAGE_LOCALE")
+        or os.environ.get("TARGET_LOCALE")
+        or ("en-US" if "en-us" in str(data.get("audience_profile_id", "")).lower() else "vi-VN")
+    )
     is_en = is_english_locale(locale)
     default_tags = DEFAULT_ENGLISH_TAGS if is_en else DEFAULT_VIETNAMESE_TAGS
     default_short = "renders/final_short_en_US_9x16.mp4" if is_en else CUT_RENDER

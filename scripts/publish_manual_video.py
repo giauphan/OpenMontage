@@ -64,7 +64,7 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         "publish_at": publish_at,
         "category_id": "28",
         "format": fmt,
-        "locale": payload_meta.get("locale", "vi-VN"),
+        "locale": payload_meta.get("locale") or os.environ.get("OPENMONTAGE_LOCALE") or "en-US",
     }
     expected_channel = (
         payload_meta.get("expected_channel_id")
