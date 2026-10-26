@@ -960,6 +960,8 @@ try:
 except Exception:
     pass
 ' "$script_json" "$narration_duration"
+      # Re-bind news evidence so evidence manifest and claim ledger hash the realigned script_en_US.json
+      "$PY" "$ROOT/scripts/bind_news_evidence.py" "$project_root" >/dev/null 2>&1 || true
     fi
   fi
   local music="$project_root/assets/music-bg.mp3"
