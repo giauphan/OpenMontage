@@ -201,13 +201,20 @@ class FixedNicheStoryboardDirector:
         elif beat_num == 6 and total_beats == 7:
             accent = "#38bdf8"
             badge = f"{fam_label} // CONTRACT ASSERTION"
+            if fam == "agent_tool_use":
+                assert_line = "assert test_tool_schema_compliance() == PASS"
+            elif fam == "debugging_reliability":
+                assert_line = "assert test_isolated_reproduction_gate() == PASS"
+            else:
+                assert_line = "assert test_clean_session_persistence() == PASS"
+
             body = (
                 f'  <rect x="60" y="110" width="840" height="280" rx="16" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>\n'
                 f'  <circle cx="80" cy="150" r="10" fill="#38bdf8"/><path d="M 76 150 L 79 153 L 85 147" stroke="#0f172a" stroke-width="2" fill="none"/>\n'
                 f'  <text x="105" y="155" fill="#38bdf8" font-family="sans-serif" font-size="19" font-weight="bold">HERMETIC CI ASSERTION</text>\n'
                 f'  <rect x="90" y="170" width="780" height="90" rx="10" fill="#1e293b"/>\n'
                 f'  <text x="110" y="200" fill="#f8fafc" font-family="sans-serif" font-size="14" font-weight="bold">Automated Contract Gate:</text>\n'
-                f'  <text x="110" y="225" fill="#38bdf8" font-family="monospace" font-size="13">assert test_clean_session_persistence() == PASS</text>\n'
+                f'  <text x="110" y="225" fill="#38bdf8" font-family="monospace" font-size="13">{assert_line}</text>\n'
                 f'  <rect x="90" y="280" width="780" height="70" rx="10" fill="#1e293b"/>\n'
                 f'  <text x="110" y="315" fill="#22c55e" font-family="sans-serif" font-size="14" font-weight="bold">Verified zero regressions against clean baseline environment.</text>\n'
             )
