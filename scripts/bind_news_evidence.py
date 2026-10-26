@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,6 +31,34 @@ def _is_valid_url(url: str) -> bool:
         return parsed.scheme.lower() in {"http", "https"} and bool(parsed.hostname)
     except Exception:
         return False
+
+
+def _extract_content_tokens(text: str) -> set[str]:
+    stopwords = {
+        "this", "that", "with", "from", "have", "been", "were", "about", "when",
+        "where", "their", "there", "which", "would", "could", "should", "these",
+        "those", "other", "into", "more", "some", "such", "than", "then", "them",
+        "also", "only", "well", "even", "most", "what", "will", "your", "they",
+        "each", "both", "across", "under", "after", "while", "during", "using",
+        "over", "does", "been", "many", "much", "very", "every", "first", "just",
+        "chúng", "ta", "quý", "vị", "các", "những", "được", "trong", "cho", "với",
+        "của", "là", "và", "có", "đến", "này", "đây", "theo", "một", "nhiều", "như"
+    }
+    tokens = set()
+    for word in re.findall(r"[A-Za-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]{3,}", text.lower()):
+        if word not in stopwords:
+            tokens.add(word)
+    return tokens
+
+
+def _tokens_match(token: str, source_tokens: set[str]) -> bool:
+    if token in source_tokens:
+        return True
+    if len(token) >= 4:
+        for st in source_tokens:
+            if len(st) >= 4 and (token.startswith(st) or st.startswith(token)):
+                return True
+    return False
 
 
 def bind_news_evidence(project_dir: Path) -> bool:
@@ -215,20 +244,42 @@ def bind_news_evidence(project_dir: Path) -> bool:
         sec_text = (section.get("text_vi") or section.get("text") or "").strip()
         claim_text = sec_text[:180].strip() or "Nội dung tin tức công nghệ đã được xác thực."
 
-        # Independent fact-check: every quantitative figure in sec_text must appear in frozen_research_excerpt
+        # 1. Quantitative check: every quantitative figure in sec_text must appear in frozen_research_excerpt
+        # Strip structural references like "Section 1", "Scene 1", "Đoạn 1" from factual figures
+        cleaned_text = _re.sub(r'\b(?:section|scene|part|đoạn|phần)\s+\d+\b', '', sec_text, flags=_re.IGNORECASE)
         should_verify_figures = (
             script_path.name == "script_en_US.json"
             or bool(brief_data.get("data_points"))
         )
-        figures = _re.findall(r"\b\d+(?:[\.,]\d+)?%?\b", sec_text) if should_verify_figures else []
+        figures = _re.findall(r"\b\d+(?:[\.,]\d+)?%?\b", cleaned_text) if should_verify_figures else []
         missing_figs = [
             fig for fig in figures
             if fig not in frozen_research_excerpt and fig.rstrip("%") not in frozen_research_excerpt
         ]
-        is_verified = len(missing_figs) == 0
-        if not is_verified:
+        has_fig_error = len(missing_figs) > 0
+
+        # 2. Semantic grounding check: for en-US claims, every claim (including non-numeric statements)
+        # must be substantiated by key content terms / entities from the research brief and captured sources
+        sec_tokens = _extract_content_tokens(sec_text)
+        source_tokens = _extract_content_tokens(frozen_research_excerpt)
+        common_tokens = {tok for tok in sec_tokens if _tokens_match(tok, source_tokens)}
+        
+        has_semantic_error = False
+        if script_path.name == "script_en_US.json":
+            min_overlap = 2 if len(sec_tokens) >= 4 else (1 if len(sec_tokens) >= 1 else 0)
+            if len(common_tokens) < min_overlap:
+                has_semantic_error = True
+        elif len(sec_tokens) >= 5 and len(common_tokens) == 0:
+            has_semantic_error = True
+
+        is_verified = (not has_fig_error) and (not has_semantic_error)
+        if has_fig_error:
             unverified_errors.append(
                 f"Section '{sec_id}' (C{idx + 1:03d}) asserts unsubstantiated figure(s) {missing_figs} not present in frozen research_brief.json"
+            )
+        elif has_semantic_error:
+            unverified_errors.append(
+                f"Section '{sec_id}' (C{idx + 1:03d}) lacks substantive semantic/entity grounding in source evidence (found {len(common_tokens)} matching terms: {list(common_tokens)})"
             )
 
         claims.append({

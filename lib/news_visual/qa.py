@@ -304,22 +304,22 @@ def _verify_scene_timeline_and_render_coverage(
             except Exception:
                 pass
 
-    # Locate rendered MP4 for post-render frame verification
-    render_candidates = [
+    # Locate all rendered MP4s for post-render frame verification
+    candidate_list = [
         project_dir / "renders" / "final_short_en_US_9x16.mp4",
         project_dir / "renders" / "final_reels_vi_9x16.mp4",
         project_dir / "renders" / "final_long_en_US_16x9.mp4",
         project_dir / "renders" / "final_full_vi_9x16.mp4",
-        project_dir / "renders" / "final.mp4",
-        project_dir / "final_render.mp4",
     ]
-    render_mp4 = next((p for p in render_candidates if p.is_file() and p.stat().st_size > 0), None)
-    if render_mp4 is None and (project_dir / "renders").is_dir():
-        mp4s = sorted(p for p in (project_dir / "renders").glob("*.mp4") if p.stat().st_size > 0)
-        if mp4s:
-            render_mp4 = mp4s[0]
+    render_mp4s = [p for p in candidate_list if p.is_file() and p.stat().st_size > 0]
+    if not render_mp4s and (project_dir / "renders").is_dir():
+        render_mp4s = sorted(p for p in (project_dir / "renders").glob("*.mp4") if p.stat().st_size > 0)
+    if not render_mp4s:
+        for fallback_cand in (project_dir / "renders" / "final.mp4", project_dir / "final_render.mp4"):
+            if fallback_cand.is_file() and fallback_cand.stat().st_size > 0:
+                render_mp4s.append(fallback_cand)
 
-    if render_mp4 is None:
+    if not render_mp4s:
         if is_en_project:
             _add_visual_not_rendered(
                 "Rendered MP4 missing; post-render visual beat verification cannot fall back to HTML binding"
@@ -329,72 +329,77 @@ def _verify_scene_timeline_and_render_coverage(
         verified_indices = bound_beat_indices & valid_timing_indices
         return round((len(verified_indices) / len(beats)) * 100.0, 1)
 
-    video_dur = _probe_video_duration(render_mp4)
-    if video_dur <= 0.0:
-        _add_visual_not_rendered(f"Cannot probe positive duration from rendered video {render_mp4.name}")
-        return 0.0
+    min_render_pct = 100.0
+    for render_mp4 in render_mp4s:
+        video_dur = _probe_video_duration(render_mp4)
+        if video_dur <= 0.0:
+            _add_visual_not_rendered(f"Cannot probe positive duration from rendered video {render_mp4.name}")
+            return 0.0
 
-    # Check if the final beat holds for > 12s until the end of the rendered video
-    last_beat_start = float(beats[-1].get("start_seconds", 0.0))
-    if video_dur - last_beat_start > MAX_SCENE_HOLD_TOLERANCE:
-        _add_visual_not_rendered(
-            f"Final visual beat '{beats[-1].get('id')}' holds for {video_dur - last_beat_start:.2f}s in rendered video (from {last_beat_start:.2f}s to {video_dur:.2f}s, >{MAX_SCENE_HOLD_SECONDS:.1f}s max)",
-            str(beats[-1].get("id") or ""),
-        )
-
-    visible_beats = 0
-    prev_frame: Optional[bytes] = None
-    for idx, beat in enumerate(beats):
-        bid = str(beat.get("id") or f"beat-{idx + 1}")
-        b_start = float(beat.get("start_seconds", 0.0))
-        b_end = float(beat.get("end_seconds", 0.0))
-        if idx not in bound_beat_indices or idx not in valid_timing_indices:
-            prev_frame = None
-            continue
-        if b_start >= video_dur:
+        # Check if the final beat holds for > 12s until the end of the rendered video
+        last_beat_start = float(beats[-1].get("start_seconds", 0.0))
+        if video_dur - last_beat_start > MAX_SCENE_HOLD_TOLERANCE:
             _add_visual_not_rendered(
-                f"Beat '{bid}' starts at {b_start:.2f}s beyond rendered video duration {video_dur:.2f}s",
-                bid,
+                f"Final visual beat '{beats[-1].get('id')}' holds for {video_dur - last_beat_start:.2f}s in {render_mp4.name} (from {last_beat_start:.2f}s to {video_dur:.2f}s, >{MAX_SCENE_HOLD_SECONDS:.1f}s max)",
+                str(beats[-1].get("id") or ""),
             )
-            prev_frame = None
-            continue
 
-        clamped_end = min(b_end, video_dur)
-        mid_ts = min(max(0.1, (b_start + clamped_end) / 2.0), max(0.1, video_dur - 0.1))
-        frame_bytes = _sample_upper_frame_gray(render_mp4, mid_ts)
-        if frame_bytes is None:
-            _add_visual_not_rendered(f"Failed to sample rendered frame for beat '{bid}' at {mid_ts:.2f}s", bid)
-            prev_frame = None
-            continue
-
-        std_val = _frame_std_dev(frame_bytes)
-        if std_val < 5.0:
-            _add_visual_not_rendered(
-                f"Beat '{bid}' rendered frame at {mid_ts:.2f}s is visually blank or low-contrast (std_dev={std_val:.2f} < 5.0)",
-                bid,
-            )
-            prev_frame = frame_bytes
-            continue
-
-        if prev_frame is not None:
-            mad_val = _frame_mad(frame_bytes, prev_frame)
-            if mad_val < 0.25:
+        visible_beats = 0
+        prev_frame: Optional[bytes] = None
+        for idx, beat in enumerate(beats):
+            bid = str(beat.get("id") or f"beat-{idx + 1}")
+            b_start = float(beat.get("start_seconds", 0.0))
+            b_end = float(beat.get("end_seconds", 0.0))
+            if idx not in bound_beat_indices or idx not in valid_timing_indices:
+                prev_frame = None
+                continue
+            if b_start >= video_dur:
                 _add_visual_not_rendered(
-                    f"Beat '{bid}' at {mid_ts:.2f}s shows no visual transition from previous beat in rendered video (upper-frame MAD={mad_val:.3f} < 0.25)",
+                    f"Beat '{bid}' starts at {b_start:.2f}s beyond rendered video duration {video_dur:.2f}s in {render_mp4.name}",
+                    bid,
+                )
+                prev_frame = None
+                continue
+
+            clamped_end = min(b_end, video_dur)
+            mid_ts = min(max(0.1, (b_start + clamped_end) / 2.0), max(0.1, video_dur - 0.1))
+            frame_bytes = _sample_upper_frame_gray(render_mp4, mid_ts)
+            if frame_bytes is None:
+                _add_visual_not_rendered(f"Failed to sample rendered frame for beat '{bid}' at {mid_ts:.2f}s in {render_mp4.name}", bid)
+                prev_frame = None
+                continue
+
+            std_val = _frame_std_dev(frame_bytes)
+            if std_val < 5.0:
+                _add_visual_not_rendered(
+                    f"Beat '{bid}' rendered frame at {mid_ts:.2f}s in {render_mp4.name} is visually blank or low-contrast (std_dev={std_val:.2f} < 5.0)",
                     bid,
                 )
                 prev_frame = frame_bytes
                 continue
 
-        visible_beats += 1
-        prev_frame = frame_bytes
+            if prev_frame is not None:
+                mad_val = _frame_mad(frame_bytes, prev_frame)
+                if mad_val < 0.25:
+                    _add_visual_not_rendered(
+                        f"Beat '{bid}' at {mid_ts:.2f}s shows no visual transition from previous beat in {render_mp4.name} (upper-frame MAD={mad_val:.3f} < 0.25)",
+                        bid,
+                    )
+                    prev_frame = frame_bytes
+                    continue
 
-    render_pct = round((visible_beats / len(beats)) * 100.0, 1)
-    if render_pct < 100.0:
-        _add_visual_not_rendered(
-            f"Rendered visual beat coverage is {render_pct:.1f}% ({visible_beats}/{len(beats)} beats verified in {render_mp4.name})"
-        )
-    return render_pct
+            visible_beats += 1
+            prev_frame = frame_bytes
+
+        render_pct = round((visible_beats / len(beats)) * 100.0, 1)
+        if render_pct < 100.0:
+            _add_visual_not_rendered(
+                f"Rendered visual beat coverage is {render_pct:.1f}% ({visible_beats}/{len(beats)} beats verified in {render_mp4.name})"
+            )
+        if render_pct < min_render_pct:
+            min_render_pct = render_pct
+
+    return min_render_pct
 
 
 def run_news_visual_qa(
@@ -599,6 +604,25 @@ def run_news_visual_qa(
             if reels_html_p.is_file():
                 html_content += reels_html_p.read_text(encoding="utf-8")
 
+            script_path = next(
+                (p for p in (
+                    project_dir / "artifacts" / "script_en_US.json",
+                    project_dir / "artifacts" / "script_vi.json",
+                    project_dir / "artifacts" / "script.json",
+                ) if p.is_file()),
+                None,
+            )
+            script_sections: dict[str, Any] = {}
+            if script_path:
+                try:
+                    s_data = json.loads(script_path.read_text(encoding="utf-8"))
+                    for s in s_data.get("sections", []):
+                        sid = s.get("id")
+                        if sid:
+                            script_sections[sid] = s
+                except Exception:
+                    pass
+
             for idx, beat in enumerate(beats):
                 bid = beat.get("id")
                 sec_id = beat.get("script_section_id")
@@ -617,6 +641,27 @@ def run_news_visual_qa(
                 elif beat.get("visual_kind") == "typographic_focus":
                     bound_beats += 1
                     bound_beat_indices.add(idx)
+
+                # Visual-semantic verification: verify the scene in HTML relates to the script section
+                sec_data = script_sections.get(sec_id) if sec_id else None
+                if sec_data and mode == "strict":
+                    sec_text = (sec_data.get("text") or sec_data.get("text_vi") or "").lower()
+                    sec_keywords = [
+                        w for w in re.findall(r'[a-zA-Z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]{4,}', sec_text)
+                        if w not in {"this", "that", "with", "from", "have", "were", "been", "about", "when", "more", "into", "their"}
+                    ]
+                    has_semantic_match = (
+                        any(w in html_content.lower() for w in sec_keywords[:5])
+                        or any(aid in html_content for aid in asset_keys)
+                        or beat.get("visual_kind") == "typographic_focus"
+                    )
+                    if not has_semantic_match and sec_keywords:
+                        findings.append({
+                            "severity": "warning",
+                            "category": "VISUAL_SEMANTIC_MISMATCH",
+                            "message": f"Beat '{bid}' (section '{sec_id}') visual elements in HTML do not reflect script semantic keywords: {sec_keywords[:3]}",
+                            "beat_id": bid,
+                        })
         binding_pct = round((bound_beats / len(beats)) * 100.0, 1)
     else:
         binding_pct = 100.0 if mode != "strict" else 0.0

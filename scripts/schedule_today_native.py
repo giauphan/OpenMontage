@@ -175,7 +175,14 @@ def main():
     today = (datetime.strptime(args.date,"%Y-%m-%d").date() if args.date else datetime.now(tz).date())
     date = today.isoformat()
     # Only schedule queued projects whose publish_date matches the requested date
-    queue = [p for p in cfg.get("active_projects",[]) if isinstance(p,dict) and p.get("publish_date")==date]
+    raw_queue = [p for p in cfg.get("active_projects",[]) if isinstance(p,dict) and p.get("publish_date")==date]
+    seen_pids = set()
+    queue = []
+    for p in raw_queue:
+        pid = p.get("project_id")
+        if pid and pid not in seen_pids:
+            seen_pids.add(pid)
+            queue.append(p)
 
     if not queue:
         print(f"No queued projects for {date}")

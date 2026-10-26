@@ -189,4 +189,63 @@ def test_bind_news_evidence_approves_grounded_en_us_script(tmp_path: Path):
     assert val_res["ok"] is True
 
 
+def test_bind_news_evidence_rejects_non_numeric_ungrounded_claims(tmp_path: Path):
+    project_dir = tmp_path / "cand_en_us_ungrounded_prose"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    script_data = {
+        "version": "1.0",
+        "title": "AI Desktop Operating Systems",
+        "total_duration_seconds": 70.0,
+        "sections": [
+            {
+                "id": "sec_1",
+                "text": "Multimodal desktop agents streamline workflow automation across platforms.",
+                "start_seconds": 0.0,
+                "end_seconds": 10.0,
+            },
+            {
+                "id": "sec_2",
+                # Completely ungrounded claim with NO numbers
+                "text": "Astronauts discovered ancient fossilized pyramids on Mars yesterday afternoon.",
+                "start_seconds": 10.0,
+                "end_seconds": 20.0,
+            },
+        ],
+    }
+    (artifacts_dir / "script_en_US.json").write_text(json.dumps(script_data, indent=2), encoding="utf-8")
+
+    brief_data = {
+        "version": "1.0",
+        "topic": "AI Desktop Operating Layers",
+        "data_points": [
+            {
+                "claim": "Multimodal desktop agents streamline workflow automation across modern platforms.",
+                "source_url": "https://arxiv.org/abs/2401.00001",
+                "credibility": "high",
+            }
+        ],
+        "sources": [
+            {
+                "url": "https://arxiv.org/abs/2401.00001",
+                "title": "Desktop Agent Benchmark Paper",
+                "used_for": "Workflow automation",
+            }
+        ],
+    }
+    (artifacts_dir / "research_brief.json").write_text(json.dumps(brief_data, indent=2), encoding="utf-8")
+
+    # Must fail closed because the Mars claim has no grounding in the research brief
+    assert bind_news_evidence(project_dir) is False
+
+    # Check ledger recorded C002 as REJECTED
+    ledger = json.loads((artifacts_dir / "claim_ledger.json").read_text(encoding="utf-8"))
+    claims_by_id = {c["claim_id"]: c for c in ledger["claims"]}
+    assert claims_by_id["C001"]["verdict"] == "APPROVED"
+    assert claims_by_id["C002"]["verdict"] == "REJECTED"
+    assert claims_by_id["C002"]["confidence"] == "unverified"
+
+
+
 

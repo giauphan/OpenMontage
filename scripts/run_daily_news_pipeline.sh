@@ -892,18 +892,11 @@ materialize_hyperframes_assets() {
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
   if [ "$is_en" -eq 1 ] && [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ] && command -v edge-tts >/dev/null 2>&1; then
     local max_narration_cap=74.5
-    if [ -s "$script_json" ]; then
-      local last_sec_start
-      last_sec_start=$(jq -r '.sections[-1].start_seconds // 0' "$script_json" 2>/dev/null || echo 0)
-      if awk -v ls="$last_sec_start" 'BEGIN{exit !(ls >= 45.0 && ls + 11.8 < 74.5)}'; then
-        max_narration_cap=$(awk -v ls="$last_sec_start" 'BEGIN{printf "%.2f", ls + 11.8}')
-      fi
-    fi
     if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
       for try_rate in "+5%" "-5%" "+8%" "+10%" "-10%" "+12%" "+15%" "-15%" "+18%" "+20%" "-20%" "+25%" "+30%"; do
         if edge-tts --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
           try_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration.rate_try.mp3" 2>/dev/null || echo 0)
-          if awk -v d="$try_dur" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.5 && d <= cap)}'; then
+          if awk -v d="$try_dur" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
             mv "$narration.rate_try.mp3" "$narration"
             narration_duration="$try_dur"
             rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
@@ -912,6 +905,32 @@ materialize_hyperframes_assets() {
         fi
       done
       rm -f "$narration.rate_try.mp3"
+    fi
+
+    # Realign scene timeline to actual narration duration so no scene exceeds 12.0s
+    if [ -s "$script_json" ]; then
+      "$PY" -c '
+import json, sys
+script_file = sys.argv[1]
+dur = float(sys.argv[2])
+try:
+    with open(script_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    sections = data.get("sections", [])
+    if sections and len(sections) >= 6 and 60.0 <= dur <= 75.0:
+        n = len(sections)
+        step = dur / n
+        curr = 0.0
+        for i, s in enumerate(sections):
+            s["start_seconds"] = round(curr, 2)
+            curr += step
+            s["end_seconds"] = round(curr if i < n - 1 else dur, 2)
+        data["total_duration_seconds"] = round(dur, 2)
+        with open(script_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+except Exception:
+    pass
+' "$script_json" "$narration_duration"
     fi
   fi
   local music="$project_root/assets/music-bg.mp3"
