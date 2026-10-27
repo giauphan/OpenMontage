@@ -20,6 +20,10 @@
             "enum": ["talking_head", "broll", "animation", "character_scene", "diagram", "text_card", "transition", "generated", "screen_recording"]
           },
           "description": { "type": "string" },
+          "template_id": {
+            "type": "string",
+            "description": "Reusable visual template identifier from the active style system, such as chalkboard_system_diagram or chalkboard_mod_list."
+          },
           "start_seconds": { "type": "number", "minimum": 0 },
           "end_seconds": { "type": "number", "minimum": 0 },
           "script_section_id": { "type": "string" },

@@ -98,6 +98,17 @@ Create once:
 - repeated motif assets,
 - background containers.
 
+For `chalkboard-explainer`, resolve each scene's `template_id` from the scene
+plan catalog before producing assets. Create a shared board background and
+consistent title/label treatments once, then build each topic-specific diagram
+with `diagram_gen` when available. Keep the diagram as editable, ordered strokes
+or elements where the tool supports it so the compose stage can reveal the drawing
+progressively. If the available diagram tool only returns a static image, describe
+the staged reveal in the asset metadata and use the supported composition path;
+do not claim hand-drawn animation that the tool cannot produce. Preserve the
+template's layout and color roles while writing fresh labels and relationships for
+the current topic. Store the resolved template ID with each scene asset entry.
+
 ### 3. Narration Is Optional, But The Plan Must Be Explicit
 
 If the project is narration-led, produce or source narration. Read

@@ -40,6 +40,9 @@ def get_layout_preset(family_or_preset: str) -> str:
         "debugging_reliability": "agent_retry_loop",
         "agent_evaluation": "eval_breakdown",
         "agent_architecture": "persistent_agent_flow",
+        "agent_architecture": "persistent_agent_flow",
+        "agent_harness_mods": "agent_harness_mods",
+        "claude_code_mods": "agent_harness_mods",
     }
     return mapping.get(family_or_preset, family_or_preset)
 
@@ -100,6 +103,45 @@ def build_preset_graph(preset_name: str, topic_title: str = "") -> DiagramGraph:
             DiagramEdge(id="e_apply_rootcause", source="agent_debug", target="rootcause_fix", label="Deep Diagnosis"),
             DiagramEdge(id="e_verify_full", source="rootcause_fix", target="full_suite_run", label="Run All Tests"),
             DiagramEdge(id="e_confirm_pass", source="full_suite_run", target="verified_green", label="100% Green"),
+        ]
+        return DiagramGraph(nodes=nodes, edges=edges)
+
+    elif canonical_name == "eval_breakdown":
+        nodes = [
+            DiagramNode(id="task_set", label="Task Set", kind=NodeKind.STORE, x=0.50, y=0.20, width=0.34, height=0.07),
+            DiagramNode(id="agent_run", label="Agent Run", kind=NodeKind.AGENT, x=0.50, y=0.33, width=0.34, height=0.07),
+            DiagramNode(id="grader", label="Grader", kind=NodeKind.DECISION, x=0.26, y=0.48, width=0.30, height=0.07),
+            DiagramNode(id="trace_review", label="Trace Review", kind=NodeKind.TOOL, x=0.74, y=0.48, width=0.30, height=0.07),
+            DiagramNode(id="reliability", label="Reliability Score", kind=NodeKind.RESULT, x=0.50, y=0.63, width=0.38, height=0.07),
+        ]
+        edges = [
+            DiagramEdge(id="e_tasks_to_run", source="task_set", target="agent_run", label="Run Cases"),
+            DiagramEdge(id="e_run_to_grade", source="agent_run", target="grader", label="Score Output"),
+            DiagramEdge(id="e_run_to_trace", source="agent_run", target="trace_review", label="Inspect Trace"),
+            DiagramEdge(id="e_grade_to_score", source="grader", target="reliability", label="Aggregate"),
+            DiagramEdge(id="e_trace_to_score", source="trace_review", target="reliability", label="Find Failure Modes"),
+        ]
+        return DiagramGraph(nodes=nodes, edges=edges)
+
+    elif canonical_name in ("agent_harness_mods", "claude_code_mods"):
+        nodes = [
+            DiagramNode(id="prompt", label="User Prompt", kind=NodeKind.DEVELOPER, x=0.50, y=0.18, width=0.34, height=0.06),
+            DiagramNode(id="model", label="LLM Reasoning", kind=NodeKind.AGENT, x=0.50, y=0.28, width=0.34, height=0.06),
+            DiagramNode(id="mod", label="Harness Mod", kind=NodeKind.CONCEPT, x=0.50, y=0.38, width=0.32, height=0.06, group_id="internal"),
+            DiagramNode(id="tool_call", label="Tool Call", kind=NodeKind.TOOL, x=0.50, y=0.48, width=0.34, height=0.06),
+            DiagramNode(id="screen", label="Terminal Output", kind=NodeKind.RESULT, x=0.50, y=0.57, width=0.34, height=0.05),
+            DiagramNode(id="skills", label="Skills (External)", kind=NodeKind.STORE, x=0.22, y=0.67, width=0.28, height=0.05, group_id="external"),
+            DiagramNode(id="hooks", label="Hooks (1x Shell)", kind=NodeKind.WARNING, x=0.50, y=0.67, width=0.28, height=0.05, group_id="external"),
+            DiagramNode(id="mcp", label="MCP Servers", kind=NodeKind.DECISION, x=0.78, y=0.67, width=0.28, height=0.05, group_id="external"),
+        ]
+        edges = [
+            DiagramEdge(id="e_p_to_m", source="prompt", target="model", label="Prompt Input"),
+            DiagramEdge(id="e_m_to_mod", source="model", target="mod", label="Interception"),
+            DiagramEdge(id="e_mod_to_t", source="mod", target="tool_call", label="Action Control"),
+            DiagramEdge(id="e_t_to_s", source="tool_call", target="screen", label="Render Stream"),
+            DiagramEdge(id="e_tool_skills", source="tool_call", target="skills", label="Call Skill"),
+            DiagramEdge(id="e_tool_hooks", source="tool_call", target="hooks", label="Fire Hook"),
+            DiagramEdge(id="e_tool_mcp", source="tool_call", target="mcp", label="JSON-RPC"),
         ]
         return DiagramGraph(nodes=nodes, edges=edges)
 

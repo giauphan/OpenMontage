@@ -28,6 +28,11 @@
       "type": "string",
       "minLength": 1
     },
+    "template_id": {
+      "type": "string",
+      "pattern": "^chalkboard_[a-z0-9_]+$",
+      "description": "Reusable chalkboard layout selected for this topic."
+    },
     "duration_seconds": {
       "type": "number",
       "minimum": 65,

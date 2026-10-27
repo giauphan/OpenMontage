@@ -151,7 +151,9 @@ def compose_animated_diagram_html(
       height: {height}px;
       overflow: hidden;
       margin: 0 auto;
-      background: #080b11;
+      background-color: #080b11;
+      background-image: radial-gradient(#1e293b 1.5px, transparent 1.5px);
+      background-size: 28px 28px;
     }}
     .bg-canvas {{
       position: absolute;
@@ -178,17 +180,7 @@ def compose_animated_diagram_html(
       text-align: center;
     }}
     .stage-badge {{
-      display: inline-block;
-      padding: 8px 22px;
-      background: rgba(15, 23, 42, 0.90);
-      border: 1.5px solid #38bdf8;
-      border-radius: 9999px;
-      color: #38bdf8;
-      font-size: 15px;
-      font-weight: 800;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      box-shadow: 0 4px 18px rgba(56, 189, 248, 0.25);
+      display: none;
     }}
   </style>
 </head>

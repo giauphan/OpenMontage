@@ -18,22 +18,22 @@ from lib.visual_style.layouts import node_to_pixels, VIEWPORT_WIDTH, VIEWPORT_HE
 from lib.visual_style.spec import DiagramGraph, DiagramNode, DiagramEdge, NodeKind
 from lib.visual_style.validation import validate_security_string
 
-# Color palette tokens for Coding Agent Mechanics
-THEME_BG = "#080b11"
-THEME_CARD_BG = "#0f172a"
-THEME_BORDER = "#1e293b"
-THEME_TEXT = "#f8fafc"
-THEME_TEXT_MUTED = "#94a3b8"
+# Chalkboard palette sampled from the supplied vertical reference.
+THEME_BG = "#090A0C"
+THEME_CARD_BG = "#101114"
+THEME_BORDER = "#55545A"
+THEME_TEXT = "#F1EEE8"
+THEME_TEXT_MUTED = "#C7C2D5"
 
 KIND_COLORS: Dict[NodeKind, Dict[str, str]] = {
-    NodeKind.AGENT: {"stroke": "#38bdf8", "fill": "#0c2538", "glow": "#0284c7", "badge": "AGENT"},
-    NodeKind.TOOL: {"stroke": "#34d399", "fill": "#082a1f", "glow": "#059669", "badge": "TOOL"},
-    NodeKind.STORE: {"stroke": "#818cf8", "fill": "#171c42", "glow": "#4f46e5", "badge": "MEMORY"},
-    NodeKind.DECISION: {"stroke": "#f59e0b", "fill": "#2c1c05", "glow": "#d97706", "badge": "GATE"},
-    NodeKind.DEVELOPER: {"stroke": "#c084fc", "fill": "#261338", "glow": "#9333ea", "badge": "USER"},
-    NodeKind.WARNING: {"stroke": "#f43f5e", "fill": "#330c17", "glow": "#e11d48", "badge": "FAIL"},
-    NodeKind.RESULT: {"stroke": "#a3e635", "fill": "#192906", "glow": "#65a30d", "badge": "PASS"},
-    NodeKind.CONCEPT: {"stroke": "#38bdf8", "fill": "#0c2538", "glow": "#0284c7", "badge": "LOGIC"},
+    NodeKind.AGENT: {"stroke": "#F28C7A", "fill": "#151110", "glow": "#F28C7A", "badge": "CORE"},
+    NodeKind.TOOL: {"stroke": "#F1EEE8", "fill": "#111214", "glow": "#F1EEE8", "badge": "TOOL"},
+    NodeKind.STORE: {"stroke": "#B7A0F5", "fill": "#121116", "glow": "#B7A0F5", "badge": "STORE"},
+    NodeKind.DECISION: {"stroke": "#F0D94E", "fill": "#15140E", "glow": "#F0D94E", "badge": "GATE"},
+    NodeKind.DEVELOPER: {"stroke": "#F1EEE8", "fill": "#111214", "glow": "#F1EEE8", "badge": "USER"},
+    NodeKind.WARNING: {"stroke": "#B7A0F5", "fill": "#121116", "glow": "#B7A0F5", "badge": "NOTE"},
+    NodeKind.RESULT: {"stroke": "#46D9D1", "fill": "#0D1515", "glow": "#46D9D1", "badge": "RESULT"},
+    NodeKind.CONCEPT: {"stroke": "#46D9D1", "fill": "#0D1515", "glow": "#46D9D1", "badge": "MOD"},
 }
 
 
@@ -147,6 +147,44 @@ def render_inline_svg_dom(graph: DiagramGraph, title: str = "") -> str:
         f'<rect width="{VIEWPORT_WIDTH}" height="{VIEWPORT_HEIGHT}" fill="url(#diag-grid)" />',
     ]
 
+    # Draw persistent chalk enclosures for graph groups before their contents.
+    groups: Dict[str, List[DiagramNode]] = {}
+    for node in graph.nodes:
+        if node.group_id:
+            groups.setdefault(node.group_id, []).append(node)
+    group_snippets: List[str] = ['<g id="diagram-groups-layer">']
+    group_tokens = {
+        "internal": ("#F28C7A", "inside the agent"),
+        "external": ("#B7A0F5", "outside"),
+    }
+    for group_id, group_nodes in groups.items():
+        color, label = group_tokens.get(group_id, ("#C7C2D5", group_id.replace("_", " ")))
+        pixel_nodes = [node_to_pixels(node) for node in group_nodes]
+        pad_x = 34
+        pad_y = 28
+        left = max(48, min(item["x"] for item in pixel_nodes) - pad_x)
+        top = min(item["y"] for item in pixel_nodes) - pad_y
+        right = min(VIEWPORT_WIDTH - 48, max(item["x"] + item["width"] for item in pixel_nodes) + pad_x)
+        bottom = max(item["y"] + item["height"] for item in pixel_nodes) + pad_y
+        safe_label = html.escape(label, quote=True)
+        group_snippets.append(
+            f'<g id="group-{html.escape(group_id, quote=True)}" class="diagram-group">'
+            f'<rect x="{left:.1f}" y="{top:.1f}" width="{right-left:.1f}" height="{bottom-top:.1f}" '
+            f'fill="none" stroke="{color}" stroke-width="2.5" stroke-linejoin="round" />'
+            f'<text x="{left+12:.1f}" y="{top-9:.1f}" font-family="Comic Sans MS, Segoe Print, cursive" '
+            f'font-size="25" fill="{color}">{safe_label}</text></g>'
+        )
+    group_snippets.append('</g>')
+
+    title_text = html.escape((title or "").strip(), quote=True)
+    title_markup = ""
+    if title_text:
+        title_markup = (
+            f'<text id="diagram-title" x="{VIEWPORT_WIDTH/2:.0f}" y="132" text-anchor="middle" '
+            f'font-family="Comic Sans MS, Segoe Print, cursive" font-size="34" font-weight="600" '
+            f'fill="#F28C7A">{title_text}</text>'
+        )
+
     # Render Edges layer (drawn behind nodes)
     edges_snippets: List[str] = ['<g id="diagram-edges-layer">']
     for edge in graph.edges:
@@ -205,19 +243,19 @@ def render_inline_svg_dom(graph: DiagramGraph, title: str = "") -> str:
             f'data-node-id="{node.id}" data-group="{escaped_group}" opacity="0" '
             f'transform="translate({px["cx"]}, {px["cy"]}) scale(0.85)">\n'
             f'  <rect class="node-box" x="{-half_w}" y="{-half_h}" width="{px["width"]}" height="{px["height"]}" '
-            f'rx="16" fill="{colors["fill"]}" stroke="{colors["stroke"]}" stroke-width="2.5" />\n'
+            f'rx="3" fill="{colors["fill"]}" stroke="{colors["stroke"]}" stroke-width="2.5" />\n'
             # Node Kind Chip / Badge at top-left
-            f'  <rect x="{-half_w + 14}" y="{-half_h - 10}" width="68" height="20" rx="4" '
+            f'  <rect display="none" x="{-half_w + 14}" y="{-half_h - 10}" width="68" height="20" rx="4" '
             f'fill="{colors["stroke"]}" />\n'
-            f'  <text x="{-half_w + 48}" y="{-half_h + 4}" text-anchor="middle" font-family="Inter, system-ui, sans-serif" '
+            f'  <text display="none" x="{-half_w + 48}" y="{-half_h + 4}" text-anchor="middle" font-family="Inter, system-ui, sans-serif" '
             f'font-size="11" font-weight="800" fill="#000000">{badge_text}</text>\n'
             # Icon Glyph
-            f'  <g class="node-glyph" transform="translate({-half_w + 32}, 0)" color="{colors["stroke"]}">\n'
+            f'  <g class="node-glyph" display="none" transform="translate({-half_w + 32}, 0)" color="{colors["stroke"]}">\n'
             f'    {glyph}\n'
             f'  </g>\n'
             # Label
-            f'  <text class="node-label" text-anchor="start" x="{-half_w + 58}" y="8" '
-            f'font-family="Inter, system-ui, sans-serif" font-size="24" font-weight="700" '
+            f'  <text class="node-label" text-anchor="middle" x="0" y="8" '
+            f'font-family="Comic Sans MS, Segoe Print, cursive" font-size="24" font-weight="500" '
             f'fill="{THEME_TEXT}">{escaped_label}</text>\n'
             f'</g>'
         )
@@ -228,6 +266,8 @@ def render_inline_svg_dom(graph: DiagramGraph, title: str = "") -> str:
         f'width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">\n'
         + "\n".join(defs_snippets) + "\n"
         + "\n".join(bg_snippets) + "\n"
+        + title_markup + "\n"
+        + "\n".join(group_snippets) + "\n"
         + "\n".join(edges_snippets) + "\n"
         + "\n".join(nodes_snippets) + "\n"
         + '</svg>'

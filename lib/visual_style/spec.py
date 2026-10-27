@@ -217,6 +217,7 @@ class DiagramAnimationPlan:
     version: str = "1.0"
     style: str = "animated_agent_diagram_v1"
     project_id: str = ""
+    template_id: str = "chalkboard_explainer_v1"
     duration_seconds: float = 72.0
     script_sha256: str = "0" * 64
     source_visual_plan_sha256: str = "0" * 64
@@ -231,6 +232,7 @@ class DiagramAnimationPlan:
             "version": self.version,
             "style": self.style,
             "project_id": self.project_id,
+            "template_id": self.template_id,
             "duration_seconds": round(self.duration_seconds, 4),
             "script_sha256": self.script_sha256,
             "source_visual_plan_sha256": self.source_visual_plan_sha256,
@@ -247,6 +249,7 @@ class DiagramAnimationPlan:
             version=str(data.get("version", "1.0")),
             style=str(data.get("style", "animated_agent_diagram_v1")),
             project_id=str(data.get("project_id", "")),
+            template_id=str(data.get("template_id", "chalkboard_explainer_v1")),
             duration_seconds=float(data.get("duration_seconds", 72.0)),
             script_sha256=str(data.get("script_sha256", "0" * 64)),
             source_visual_plan_sha256=str(data.get("source_visual_plan_sha256", "0" * 64)),

@@ -48,6 +48,15 @@ Animation gets expensive when every scene is unique. Define:
 - transition family,
 - typography hierarchy.
 
+For the `chalkboard-explainer` playbook, use `diagrammatic` animation and define a
+reusable visual template catalog in brief metadata. The catalog should name the
+layouts the scene plan can reuse: `chalkboard_hook` (one provocative question or
+claim), `chalkboard_system_diagram` (a labeled boundary with a progressive flow),
+`chalkboard_compare` (two or three aligned alternatives), `chalkboard_feature_list`
+(up to three short labels around one central system), and `chalkboard_recap` (the
+complete simplified model plus one takeaway). Template structure is reusable;
+topic-specific wording and diagram relationships must be newly authored.
+
 ### 4. Build The Brief
 
 Recommended metadata keys:

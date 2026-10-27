@@ -52,7 +52,7 @@ class AnimatedDiagramDirector:
         source_visual_plan_sha256: str = "0" * 64,
     ) -> DiagramAnimationPlan:
         """Create a complete, validated DiagramAnimationPlan for an engineering topic."""
-        family = str(topic.get("topic_family", "context_memory"))
+        family = str(topic.get("layout_preset") or topic.get("topic_family", "context_memory"))
         title = str(topic.get("title", "AI Agent Engineering"))
         viewer_q = str(topic.get("viewer_question", title))
 
@@ -77,13 +77,13 @@ class AnimatedDiagramDirector:
 
         intents = [
             f"Hook: {viewer_q[:80]}",
-            "Examine internal execution structure",
-            "Trace operational boundaries and interactions",
-            "Analyze points of failure and edge cases",
-            "Demonstrate runtime breakdown and diagnostic logs",
-            "Introduce architectural fix and mitigation",
-            "Execute validation suite across boundary",
-            "Final payoff: verified reliable agent behavior",
+            "Establish the current system and its main parts",
+            "Introduce the central mechanism",
+            "Trace how the mechanism changes the flow",
+            "Show a concrete use case or consequence",
+            "Compare it with the nearest alternative",
+            "Connect the parts into one clear mental model",
+            "Final payoff: one memorable takeaway",
         ]
 
         for b_idx in range(num_beats):
@@ -194,6 +194,7 @@ class AnimatedDiagramDirector:
             version="1.0",
             style="animated_agent_diagram_v1",
             project_id=project_id,
+            template_id=f"chalkboard_{get_layout_preset(family)}",
             duration_seconds=duration,
             script_sha256=script_sha256,
             source_visual_plan_sha256=source_visual_plan_sha256,

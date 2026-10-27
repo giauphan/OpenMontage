@@ -12,6 +12,7 @@ from __future__ import annotations
 import html as html_mod
 import json
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -467,8 +468,20 @@ def render_hyperframes_composition(
         "-o", str(raw_mp4),
         "--quality", quality,
     ]
+    env = dict(os.environ)
+    if "HYPERFRAMES_BROWSER_PATH" not in env:
+        brave_sh = Path("/tmp/brave_headless.sh")
+        if not brave_sh.is_file() and Path("/opt/brave.com/brave/brave").is_file():
+            brave_sh.write_text(
+                "#!/bin/bash\nexec /opt/brave.com/brave/brave --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \"$@\"\n",
+                encoding="utf-8",
+            )
+            brave_sh.chmod(0o755)
+        if brave_sh.is_file():
+            env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
+
     logger.info("Executing HyperFrames render: %s", " ".join(cmd))
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=env)
     if res.returncode != 0:
         raise RuntimeError(f"HyperFrames render failed (exit {res.returncode}): {res.stderr or res.stdout}")
 
