@@ -7,33 +7,25 @@ import re
 class VisualPromptBuilder:
     """Constructs disciplined, claim-aware prompts for non-proof conceptual beats."""
 
-    STYLE_PREFIX: str = (
-        "High-contrast conceptual engineering artwork, technical dark theme (#0b1120 background) "
-        "with subtle cyan and amber structural accents. Clean geometric diagrams and visual metaphors: "
-    )
+    STYLE_PREFIX: str = "Conceptual illustration of "
 
-    SAFETY_NEGATIVE_CONSTRAINTS: str = (
-        "; strictly no UI screenshots, no fake code logs, no fake terminal prompts, "
-        "no invented benchmark graphs, no brand logos, no readable fake text, no stock photos."
-    )
+    SAFETY_NEGATIVE_CONSTRAINTS: str = ""
 
     @classmethod
     def build_prompt(cls, topic_family: str, visual_intent: str, narration_excerpt: str = "") -> str:
-        """Combine style, concept intent, and negative constraints into a safe prompt."""
+        """Combine style, concept intent, and declarative theme into a clean image prompt."""
         # Clean text
         clean_intent = re.sub(r"\s+", " ", visual_intent).strip()
-        clean_excerpt = re.sub(r"\s+", " ", narration_excerpt[:100]).strip()
+        clean_intent = re.sub(r"^(conceptual\s+illustration\s+(depicting|showing|of)?\s*)", "", clean_intent, flags=re.IGNORECASE).strip()
+        clean_intent = re.sub(r"^(developer\s+problem(\s+hook)?:\s*)", "", clean_intent, flags=re.IGNORECASE).strip()
+        clean_intent = re.sub(r"^(technical\s+diagram\s+(illustrating|showing|depicting)?:\s*)", "", clean_intent, flags=re.IGNORECASE).strip()
 
         family_context = {
-            "context_memory": "metaphor of session boundary, active working memory vs persistent repository storage",
-            "agent_tool_use": "abstract representation of structured tool interfaces, schema boundary contracts, and execution pipelines",
-            "debugging_reliability": "conceptual visualization of test regression boundaries, isolated verification cycles, and defect reproduction",
-            "agent_evaluation": "symbolic representation of rigorous reliability assertions and evaluation matrix checkpoints",
-            "agent_architecture": "clean multi-agent orchestration flows, declarative handoff boundaries, and state transitions",
-        }.get(topic_family.lower(), "abstract software engineering architecture and verification boundaries")
+            "context_memory": "active working memory and persistent repository storage",
+            "agent_tool_use": "structured tool interfaces, schema boundary contracts, and execution pipelines",
+            "debugging_reliability": "test regression boundaries, isolated verification cycles, and defect reproduction",
+            "agent_evaluation": "rigorous reliability assertions and evaluation matrix checkpoints",
+            "agent_architecture": "multi-agent orchestration flows, declarative handoff boundaries, and state transitions",
+        }.get(topic_family.lower(), "software engineering architecture and verification boundaries")
 
-        base_prompt = f"{cls.STYLE_PREFIX}{clean_intent}. Visual theme: {family_context}"
-        if clean_excerpt:
-            base_prompt += f" (Context: {clean_excerpt})"
-        base_prompt += cls.SAFETY_NEGATIVE_CONSTRAINTS
-        return base_prompt
+        return f"{cls.STYLE_PREFIX}{clean_intent}, {family_context}"

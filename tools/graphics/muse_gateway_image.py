@@ -123,6 +123,8 @@ class MuseGatewayImage(BaseTool):
     def __init__(self, http_session: Optional[requests.Session] = None):
         super().__init__()
         self._session = http_session or requests.Session()
+        if http_session is None:
+            self._session.trust_env = False
 
     def get_gateway_base_url(self) -> str:
         """Resolve and validate the configured Gateway base URL."""

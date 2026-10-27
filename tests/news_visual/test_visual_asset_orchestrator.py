@@ -130,7 +130,7 @@ def test_orchestrator_ai_visual_enabled_generates_and_caches(tmp_path: Path, sam
 
     fake_png = make_test_png()
 
-    def mock_dispatch(dest_file, prompt, key):
+    def mock_dispatch(dest_file, prompt, key, **kwargs):
         dest_file.write_bytes(fake_png)
         return {"success": True, "data": {"provider": "muse", "model": "muse-image"}}
 

@@ -116,9 +116,10 @@ class VisualAssetOrchestrator:
             elif strategy == "ai_illustration_eligible":
                 if ai_visual_enabled and ai_images_generated < max_ai_images:
                     prompt = VisualPromptBuilder.build_prompt(topic_family, intent)
+                    ar = beat.get("aspect_ratio") or "9:16"
                     cache_key = self.cache.compute_cache_key(
                         prompt=prompt,
-                        aspect_ratio="16:9",
+                        aspect_ratio=ar,
                         provider="muse",
                         model="muse-image",
                         visual_intent=intent,
@@ -146,7 +147,7 @@ class VisualAssetOrchestrator:
                     else:
                         # Invoke ImageSelector / MuseGatewayImage
                         temp_dest = visuals_dir / f"{primary_asset_id}.png"
-                        ai_result = self._dispatch_muse_generation(temp_dest, prompt, cache_key)
+                        ai_result = self._dispatch_muse_generation(temp_dest, prompt, cache_key, aspect_ratio=ar)
                         if ai_result.get("success"):
                             mime = ai_result.get("data", {}).get("mime", "image/png")
                             ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
@@ -301,7 +302,7 @@ class VisualAssetOrchestrator:
         svg_path.write_text(svg_content, encoding="utf-8")
         return svg_path
 
-    def _dispatch_muse_generation(self, output_path: Path, prompt: str, submission_key: str) -> Dict[str, Any]:
+    def _dispatch_muse_generation(self, output_path: Path, prompt: str, submission_key: str, aspect_ratio: str = "9:16") -> Dict[str, Any]:
         """Dispatch image generation using registered muse_gateway_image tool."""
         try:
             registry = ToolRegistry()
@@ -309,11 +310,11 @@ class VisualAssetOrchestrator:
             if "muse_gateway_image" not in registry._tools:
                 return {"success": False, "error": "muse_gateway_image tool not registered"}
 
-            tool_cls = registry._tools["muse_gateway_image"]
-            tool_instance = tool_cls()
+            tool_obj = registry._tools["muse_gateway_image"]
+            tool_instance = tool_obj() if isinstance(tool_obj, type) else tool_obj
             result = tool_instance.execute({
                 "prompt": prompt,
-                "aspect_ratio": "16:9",
+                "aspect_ratio": aspect_ratio,
                 "model": "muse-image",
                 "submission_key": f"om-{submission_key[:32]}",
                 "output_path": str(output_path),
