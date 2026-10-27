@@ -104,13 +104,15 @@ def test_muse_e2e_rehearsals_positive_topics(
     }
 
     # Mock Muse Gateway tool execution
+    monkeypatch.setenv("OPENMONTAGE_CACHE_DIR", str(tmp_path / "visual_cache"))
     fake_png = make_test_png()
 
-    def mock_dispatch(dest_file, prompt, key):
+    def mock_dispatch(dest_file, prompt, key, **kwargs):
         dest_file.write_bytes(fake_png)
         return {
             "success": True,
             "data": {
+                "mime": "image/png",
                 "gateway_job_id": f"job-{family}-001",
                 "provider": "muse",
                 "model": "muse-image",
