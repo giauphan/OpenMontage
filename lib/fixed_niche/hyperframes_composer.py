@@ -43,6 +43,8 @@ def compose_hyperframes_html(
     """Compose production HyperFrames HTML composition matching hyperframes-core contract."""
     width = 1080 if is_vertical else 1920
     height = 1920 if is_vertical else 1080
+    dia_w = 980 if is_vertical else 960
+    dia_h = 1100 if is_vertical else 540
     escaped_title = html_mod.escape(title, quote=True)
 
     # Build clip sections and GSAP timeline tweens
@@ -63,7 +65,12 @@ def compose_hyperframes_html(
         vis_file = f"{aid}.svg"
         if visuals_src and visuals_src.is_dir():
             found = False
-            for ext in (".png", ".webp", ".jpg", ".jpeg", ".svg"):
+            pref_exts = (
+                (".webp", ".png", ".jpg", ".jpeg", ".svg")
+                if beat.get("visual_kind") == "illustration" and not (visuals_src / f"{aid}.svg").is_file()
+                else (".svg", ".webp", ".png", ".jpg", ".jpeg")
+            )
+            for ext in pref_exts:
                 if (visuals_src / f"{aid}{ext}").is_file():
                     vis_file = f"{aid}{ext}"
                     found = True
@@ -119,10 +126,20 @@ def compose_hyperframes_html(
                     f'  tl.set("#{sec_id}", {{ opacity: 0 }}, {exit_end_t});'
                 )
         else:
+            bg_art = f"bg_{bid}.webp" if visuals_src and (visuals_src / f"bg_{bid}.webp").is_file() else ""
+            bg_snippet = (
+                f'      <div class="illustration-viewport">\n'
+                f'        <img src="assets/visuals/{bg_art}" alt="" class="hero-illustration" />\n'
+                f'        <div class="vignette-overlay"></div>\n'
+                f'      </div>\n'
+                if bg_art else ""
+            )
+            card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
             sections_html.append(
                 f'    <section id="{sec_id}" class="clip scene" '
                 f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
-                f'      <div class="stage-card">\n'
+                f'{bg_snippet}'
+                f'      <div class="{card_cls}">\n'
                 f'        <div class="stage-header">\n'
                 f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
                 f'        </div>\n'
@@ -135,6 +152,13 @@ def compose_hyperframes_html(
 
             # GSAP animation per beat: smooth fade and subtle rise on entry
             entry_t = _fmt_time(max(0.0, start_s))
+            if bg_art:
+                tweens_js.append(
+                    f'  tl.fromTo("#{sec_id} .hero-illustration", '
+                    f'{{ scale: 1.0 }}, '
+                    f'{{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, '
+                    f'{entry_t});'
+                )
             tweens_js.append(
                 f'  tl.fromTo("#{sec_id} .stage-card", '
                 f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
@@ -225,16 +249,26 @@ def compose_hyperframes_html(
       box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
     }}
     .diagram-viewport {{
-      width: 960px;
-      height: 540px;
-      border-radius: 16px;
+      width: {dia_w}px;
+      height: {dia_h}px;
+      border-radius: 20px;
       overflow: hidden;
       border: 1.5px solid #334155;
-      background: #0f172a;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.65);
+      background: #0b1120;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
       display: flex;
       align-items: center;
       justify-content: center;
+    }}
+    .hybrid-card {{
+      position: relative;
+      z-index: 3;
+    }}
+    .hybrid-card .diagram-viewport {{
+      background: rgba(11, 17, 32, 0.88);
+      backdrop-filter: blur(16px);
+      border: 1.5px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.9), 0 0 40px rgba(56, 189, 248, 0.15);
     }}
     .technical-svg {{
       width: 100%;

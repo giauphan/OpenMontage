@@ -1,15 +1,6 @@
 """Production runner for the owner-locked Practical AI Agent Engineering niche.
 
 Generates truthful, evidence-backed en-US animated explainer videos for dynamic project directories.
-Follows the execution graph:
-1. Scope validation against immutable locked policy
-2. Primary evidence capture & claim ledger
-3. 65-75s en-US script and 6-beat visual storyboard
-4. Technical vector SVG asset generation
-5. Voice narration synthesis via existing NarrationOrchestrator under MediaCpuLock
-6. ASR caption generation and timestamp alignment
-7. Dynamic project rendering to renders/final_short_en_US_9x16.mp4
-8. Frame sampling, duration ffprobe, and independent signed QA
 """
 from __future__ import annotations
 
@@ -35,15 +26,13 @@ from lib.fixed_niche.research import FixedNicheResearcher, ClaimClassification
 from lib.fixed_niche.storyboard import FixedNicheStoryboardDirector, MeaningfulVisualError
 from lib.news_visual.asset_resolver import resolve_visual_assets
 from lib.audio.narration_orchestrator import NarrationOrchestrator, MediaCpuLock, probe_audio_duration
-
-logger = logging.getLogger(__name__)
-
-
 from lib.fixed_niche.captions import format_srt_timestamp, generate_srt_from_beats
 from lib.fixed_niche.hyperframes_composer import (
     materialize_hyperframes_project, render_hyperframes_composition, render_ffmpeg_composition,
 )
 from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
+
+logger = logging.getLogger(__name__)
 
 
 def render_project_composition(
@@ -701,7 +690,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--title", default=None)
     parser.add_argument("--topic-family", default=None)
     parser.add_argument("--canonical-url", default=None)
+    parser.add_argument("--enable-ai-visuals", action="store_true", default=True, help="Enable Muse AI image generation for conceptual illustration beats (default: True)")
     args = parser.parse_args(argv)
+
+    if args.enable_ai_visuals:
+        os.environ["AI_VISUAL_ENABLED"] = "1"
+        os.environ["MUSE_GATEWAY_EXTERNAL_CALLS_ALLOWED"] = "1"
 
     policy = load_locked_policy()
     gate = FixedNicheScopeGate(policy)
