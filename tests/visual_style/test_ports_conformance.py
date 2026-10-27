@@ -1,0 +1,48 @@
+"""Test conformance of adapters and services to Clean Architecture Ports (typing.Protocol)."""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+import pytest
+
+from lib.visual_style.ports import (
+    DiagramDirectorPort,
+    DiagramRendererPort,
+    PlanValidatorPort,
+    TimelineCompilerPort,
+    VisualQaPort,
+)
+from lib.visual_style.diagram_director import AnimatedDiagramDirector
+from lib.visual_style.svg_renderer import render_inline_svg_dom
+from lib.visual_style.gsap_compiler import compile_gsap_timeline_script
+from lib.visual_style.validation import validate_diagram_plan_data
+from lib.visual_style.qa import evaluate_plan_qa
+
+
+def test_renderer_conforms_to_port():
+    """render_inline_svg_dom callable must conform to DiagramRendererPort."""
+    assert callable(render_inline_svg_dom)
+    assert isinstance(render_inline_svg_dom, DiagramRendererPort)
+
+
+def test_compiler_conforms_to_port():
+    """compile_gsap_timeline_script callable must conform to TimelineCompilerPort."""
+    assert callable(compile_gsap_timeline_script)
+    assert isinstance(compile_gsap_timeline_script, TimelineCompilerPort)
+
+
+def test_validator_conforms_to_port():
+    """validate_diagram_plan_data callable must conform to PlanValidatorPort."""
+    assert callable(validate_diagram_plan_data)
+    assert isinstance(validate_diagram_plan_data, PlanValidatorPort)
+
+
+def test_director_conforms_to_port():
+    """AnimatedDiagramDirector instance must conform to DiagramDirectorPort."""
+    director = AnimatedDiagramDirector()
+    assert isinstance(director, DiagramDirectorPort)
+
+
+def test_qa_conforms_to_port():
+    """evaluate_plan_qa callable must conform to VisualQaPort."""
+    assert callable(evaluate_plan_qa)
+    assert isinstance(evaluate_plan_qa, VisualQaPort)

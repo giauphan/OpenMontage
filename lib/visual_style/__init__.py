@@ -58,6 +58,14 @@ from lib.visual_style.qa import (
     evaluate_plan_qa,
     validate_frame_nonblank,
 )
+from lib.visual_style.ports import (
+    DiagramDirectorPort,
+    DiagramRendererPort,
+    PlanValidatorPort,
+    ProofVerifierPort,
+    TimelineCompilerPort,
+    VisualQaPort,
+)
 
 __all__ = [
     "DiagramAnimationPlan",
@@ -95,4 +103,10 @@ __all__ = [
     "build_immutable_proof_bundle",
     "evaluate_plan_qa",
     "validate_frame_nonblank",
+    "DiagramDirectorPort",
+    "DiagramRendererPort",
+    "PlanValidatorPort",
+    "ProofVerifierPort",
+    "TimelineCompilerPort",
+    "VisualQaPort",
 ]
