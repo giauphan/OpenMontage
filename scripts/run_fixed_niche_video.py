@@ -690,12 +690,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--title", default=None)
     parser.add_argument("--topic-family", default=None)
     parser.add_argument("--canonical-url", default=None)
-    parser.add_argument("--enable-ai-visuals", action="store_true", default=True, help="Enable Muse AI image generation for conceptual illustration beats (default: True)")
+    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=True, help="Enable Muse AI image generation for conceptual illustration beats")
     args = parser.parse_args(argv)
 
     if args.enable_ai_visuals:
         os.environ["AI_VISUAL_ENABLED"] = "1"
-        os.environ["MUSE_GATEWAY_EXTERNAL_CALLS_ALLOWED"] = "1"
+        os.environ.setdefault("MUSE_GATEWAY_EXTERNAL_CALLS_ALLOWED", "1")
+    else:
+        os.environ["AI_VISUAL_ENABLED"] = "0"
 
     policy = load_locked_policy()
     gate = FixedNicheScopeGate(policy)
