@@ -1,15 +1,6 @@
 """Production runner for the owner-locked Practical AI Agent Engineering niche.
 
 Generates truthful, evidence-backed en-US animated explainer videos for dynamic project directories.
-Follows the execution graph:
-1. Scope validation against immutable locked policy
-2. Primary evidence capture & claim ledger
-3. 65-75s en-US script and 6-beat visual storyboard
-4. Technical vector SVG asset generation
-5. Voice narration synthesis via existing NarrationOrchestrator under MediaCpuLock
-6. ASR caption generation and timestamp alignment
-7. Dynamic project rendering to renders/final_short_en_US_9x16.mp4
-8. Frame sampling, duration ffprobe, and independent signed QA
 """
 from __future__ import annotations
 
@@ -35,17 +26,13 @@ from lib.fixed_niche.research import FixedNicheResearcher, ClaimClassification
 from lib.fixed_niche.storyboard import FixedNicheStoryboardDirector, MeaningfulVisualError
 from lib.news_visual.asset_resolver import resolve_visual_assets
 from lib.audio.narration_orchestrator import NarrationOrchestrator, MediaCpuLock, probe_audio_duration
-
-logger = logging.getLogger(__name__)
-
-
 from lib.fixed_niche.captions import format_srt_timestamp, generate_srt_from_beats
 from lib.fixed_niche.hyperframes_composer import (
-    materialize_hyperframes_project,
-    render_hyperframes_composition,
-    render_ffmpeg_composition,
+    materialize_hyperframes_project, render_hyperframes_composition, render_ffmpeg_composition,
 )
 from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
+
+logger = logging.getLogger(__name__)
 
 
 def render_project_composition(
@@ -188,12 +175,15 @@ class FixedNicheVideoRunner:
         self.researcher = FixedNicheResearcher()
         self.storyboard_director = FixedNicheStoryboardDirector(self.policy.policy_sha256)
         self.orchestrator = NarrationOrchestrator()
+        self._staged_topic: Optional[Dict[str, Any]] = None
 
     def get_target_duration(self) -> float:
-        """Return target duration in seconds (65.0 - 75.0s for shorts)."""
+        """Return target duration in seconds (65.0 - 75.0s for shorts, default 72.0s)."""
         shorts_contract = self.policy.video_contract.get("shorts", {})
         dur_range = shorts_contract.get("target_duration_seconds", [65, 75])
-        return float(dur_range[1] if len(dur_range) > 1 else 72.0)
+        if len(dur_range) >= 2 and dur_range[0] <= 72.0 <= dur_range[1]:
+            return 72.0
+        return float(dur_range[0] if dur_range else 72.0)
 
     def build_and_stage_project(
         self,
@@ -201,6 +191,7 @@ class FixedNicheVideoRunner:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """Execute intake, scope gate, research, storyboard, and asset staging."""
+        self._staged_topic = topic
         # 1. Scope gate validation before any filesystem side effects
         verdict = self.gate.evaluate_candidate(topic)
         if not verdict.is_eligible:
@@ -286,7 +277,22 @@ class FixedNicheVideoRunner:
         (artifacts_dir / "captions.srt").write_text(srt_content, encoding="utf-8")
         (artifacts_dir / "captions.ass").write_text(ass_content, encoding="utf-8")
 
-        # 6. Resolve assets with strict meaningful visual enforcement and verified script SHA256
+        # 6. Orchestrate and resolve assets with strict meaningful visual enforcement
+        from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
+        orchestrator = VisualAssetOrchestrator()
+        orch_res = orchestrator.orchestrate_plan_assets(
+            project_dir=self.project_dir,
+            plan=visual_plan,
+            topic=topic,
+            claim_ledger=claim_ledger.get("claims", []),
+        )
+        if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
+            return {
+                "status": "BLOCKED_MISSING_PROOF",
+                "project_id": self.candidate_id,
+                "beat_results": orch_res.get("beat_results", {}),
+            }
+
         plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
         manifest = resolve_visual_assets(
             project_dir=self.project_dir,
@@ -313,6 +319,51 @@ class FixedNicheVideoRunner:
             "target_duration": target_dur,
             "beats_count": len(visual_plan["beats"]),
         }
+
+    def _restage_for_duration(self, dur: float) -> int:
+        """Re-stage storyboard and orchestrate assets when narration duration exceeds beat hold limit."""
+        topic_data = self._staged_topic
+        if not topic_data:
+            tb_file = self.project_dir / "artifacts" / "topic_brief.json"
+            topic_data = json.loads(tb_file.read_text(encoding="utf-8")) if tb_file.is_file() else {"candidate_id": self.candidate_id}
+        cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
+        claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
+        if not claims:
+            raise ValueError(f"Cannot re-stage storyboard for {dur:.2f}s: claim ledger is unavailable.")
+
+        story_res = self.storyboard_director.generate_storyboard(
+            topic=topic_data, claims=claims, project_dir=self.project_dir, target_duration=dur
+        )
+        visual_plan = story_res["visual_plan"]
+        beats = visual_plan.get("beats", [])
+
+        script_data = {
+            "version": "1.0", "locale": "en-US", "title": topic_data.get("title", "AI Agent Engineering Explainer"),
+            "target_duration_seconds": dur,
+            "sections": [
+                {"section_id": b["script_section_id"], "beat_id": b["beat_id"], "start_s": b["start_s"],
+                 "end_s": b["end_s"], "narration": b["narration"], "claims": b["claim_ids"]}
+                for b in beats
+            ],
+        }
+        script_bytes = json.dumps(script_data, indent=2).encode("utf-8")
+        (self.project_dir / "artifacts" / "script_en_US.json").write_bytes(script_bytes)
+        from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
+        orch_res = VisualAssetOrchestrator().orchestrate_plan_assets(
+            project_dir=self.project_dir, plan=visual_plan, topic=topic_data, claim_ledger=claims
+        )
+        if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
+            raise ValueError(f"Re-staging for {dur:.2f}s blocked: proof-bearing beats missing verified evidence.")
+
+        from lib.news_visual.asset_resolver import resolve_visual_assets
+        plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
+        manifest = resolve_visual_assets(
+            project_dir=self.project_dir, visual_plan=visual_plan,
+            script_sha256=hashlib.sha256(script_bytes).hexdigest(), visual_plan_sha256=plan_sha,
+            enforce_meaningful_visuals=True,
+        )
+        (self.project_dir / "artifacts" / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return len(beats)
 
     def synthesize_narration(
         self,
@@ -351,9 +402,18 @@ class FixedNicheVideoRunner:
         dur = probe_audio_duration(out_audio)
         logger.info(f"Synthesized voice track: duration={dur:.2f}s")
         target_dur = self.get_target_duration()
-        if dur > target_dur:
+        n_beats = 0
+        plan_p = self.project_dir / "artifacts" / "news_visual_plan.json"
+        if plan_p.is_file():
+            try:
+                n_beats = len(json.loads(plan_p.read_text(encoding="utf-8")).get("beats", []))
+            except Exception:
+                pass
+        dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
+        policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
+        if dur > policy_max:
             raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum target duration ({target_dur:.2f}s). "
+                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s). "
                 "Truncating narration mid-sentence is forbidden."
             )
 
@@ -363,6 +423,18 @@ class FixedNicheVideoRunner:
                 f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. "
                 "Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
             )
+
+        if n_beats > 0 and dur > n_beats * 12.0:
+            if dur <= policy_max:
+                logger.info(
+                    f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; "
+                    f"re-staging storyboard with target_duration={dur:.2f}s."
+                )
+                n_beats = self._restage_for_duration(dur)
+            else:
+                raise ValueError(
+                    f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s)."
+                )
 
         # Re-align all timed artifacts with synthesized audio duration
         visual_plan_file = self.project_dir / "artifacts" / "news_visual_plan.json"
@@ -437,6 +509,15 @@ class FixedNicheVideoRunner:
                             assets_file.write_text(assets_json_to_write, encoding="utf-8")
                         if proof_json_to_write is not None:
                             proof_map_file.write_text(proof_json_to_write, encoding="utf-8")
+
+                        # Re-materialize HyperFrames compositions with the reconciled audio duration
+                        from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
+                        materialize_hyperframes_project(
+                            project_dir=self.project_dir,
+                            topic={"candidate_id": self.candidate_id},
+                            visual_plan=plan_json,
+                            duration=align_dur,
+                        )
             except Exception as e:
                 raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
 
@@ -452,26 +533,15 @@ class FixedNicheVideoRunner:
         render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else target_dur
 
         render_project_composition(
-            project_dir=self.project_dir,
-            composition_name="hyperframes_reels",
-            output_mp4=output_mp4,
-            duration_seconds=render_dur,
-            burn_captions=burn_captions,
-            renderer=renderer,
+            project_dir=self.project_dir, composition_name="hyperframes_reels",
+            output_mp4=output_mp4, duration_seconds=render_dur,
+            burn_captions=burn_captions, renderer=renderer,
         )
 
-        # Probe output video using argument list (prevent CWE-78)
-        probe_cmd = [
-            "ffprobe", "-v", "quiet",
-            "-print_format", "json",
-            "-show_format", "-show_streams",
-            str(output_mp4),
-        ]
+        probe_cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(output_mp4)]
         probe_out = subprocess.run(probe_cmd, capture_output=True, text=True)
         probe_json = json.loads(probe_out.stdout) if probe_out.returncode == 0 else {}
-        (self.project_dir / "renders" / "ffprobe.json").write_text(
-            json.dumps(probe_json, indent=2), encoding="utf-8"
-        )
+        (self.project_dir / "renders" / "ffprobe.json").write_text(json.dumps(probe_json, indent=2), encoding="utf-8")
 
         # Sample frames using argument lists
         frames_dir = self.project_dir / "renders" / "frame_samples"
@@ -485,11 +555,7 @@ class FixedNicheVideoRunner:
         sampling_ok = True
         for sec, fname in sample_points:
             fpath = frames_dir / fname
-            cmd = [
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-ss", str(sec), "-i", str(output_mp4),
-                "-vframes", "1", str(fpath),
-            ]
+            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
             sample_proc = subprocess.run(cmd, capture_output=True)
             if sample_proc.returncode != 0:
                 sampling_ok = False
@@ -624,7 +690,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--title", default=None)
     parser.add_argument("--topic-family", default=None)
     parser.add_argument("--canonical-url", default=None)
+    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=True, help="Enable Muse AI image generation for conceptual illustration beats")
     args = parser.parse_args(argv)
+
+    if args.enable_ai_visuals:
+        os.environ["AI_VISUAL_ENABLED"] = "1"
+        os.environ.setdefault("MUSE_GATEWAY_EXTERNAL_CALLS_ALLOWED", "1")
+    else:
+        os.environ["AI_VISUAL_ENABLED"] = "0"
 
     policy = load_locked_policy()
     gate = FixedNicheScopeGate(policy)
@@ -633,30 +706,41 @@ def main(argv: Optional[List[str]] = None) -> int:
     topic: Dict[str, Any]
     candidate_id = args.candidate_id
 
-    if args.auto_select or not candidate_id:
-        candidates_pool: List[Dict[str, Any]] = []
-        if args.candidates_file:
-            c_file = Path(args.candidates_file)
-            if c_file.is_file():
-                try:
-                    import yaml
-                    raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                    candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-                except Exception as e:
-                    logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
-        elif args.use_test_fixtures:
-            c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
-            if c_file.is_file():
-                try:
-                    import yaml
-                    raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                    candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-                except Exception as e:
-                    logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
-        else:
-            adapter = FixedNicheSourceAdapter()
-            candidates_pool = adapter.discover_production_candidates()
+    candidates_pool: List[Dict[str, Any]] = []
+    if args.candidates_file:
+        c_file = Path(args.candidates_file)
+        if c_file.is_file():
+            try:
+                import yaml
+                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+            except Exception as e:
+                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
+    elif args.use_test_fixtures:
+        c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
+        if c_file.is_file():
+            try:
+                import yaml
+                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+            except Exception as e:
+                logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
+    elif args.auto_select or not candidate_id:
+        adapter = FixedNicheSourceAdapter()
+        candidates_pool = adapter.discover_production_candidates()
 
+    matched_cand = next((c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)), None) if candidate_id else None
+
+    if matched_cand:
+        topic = dict(matched_cand)
+        topic["candidate_id"] = candidate_id
+        if args.title:
+            topic["title"] = args.title
+        if args.topic_family:
+            topic["topic_family"] = args.topic_family
+        if args.canonical_url:
+            topic["canonical_url"] = args.canonical_url
+    elif args.auto_select or not candidate_id:
         eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
         if not eligible:
             print(json.dumps({
@@ -666,8 +750,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 0
 
         from lib.fixed_niche.ranker import FixedNicheTopicScorer
-        scorer = FixedNicheTopicScorer()
-        ranked = scorer.rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
+        ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
         top_cand = ranked[0] if ranked else eligible[0]
         candidate_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
         topic = dict(top_cand)
@@ -688,10 +771,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     proj_dir = Path(args.project_dir) if args.project_dir else ROOT / "projects" / candidate_id
     runner = FixedNicheVideoRunner(
-        project_dir=proj_dir,
-        candidate_id=candidate_id,
-        format_kind=args.format,
-        policy=policy,
+        project_dir=proj_dir, candidate_id=candidate_id, format_kind=args.format, policy=policy
     )
 
     stage_res = runner.build_and_stage_project(topic=topic, dry_run=args.dry_run)

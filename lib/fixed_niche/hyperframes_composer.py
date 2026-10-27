@@ -38,10 +38,13 @@ def compose_hyperframes_html(
     *,
     is_vertical: bool = True,
     audio_src: str = "assets/narration.mp3",
+    visuals_src: Optional[Path] = None,
 ) -> str:
     """Compose production HyperFrames HTML composition matching hyperframes-core contract."""
     width = 1080 if is_vertical else 1920
     height = 1920 if is_vertical else 1080
+    dia_w = 980 if is_vertical else 960
+    dia_h = 1100 if is_vertical else 540
     escaped_title = html_mod.escape(title, quote=True)
 
     # Build clip sections and GSAP timeline tweens
@@ -58,43 +61,125 @@ def compose_hyperframes_html(
         scr_state = html_mod.escape(str(beat.get("expected_screen_state", s_func)), quote=True)
         track_idx = i + 1
 
-        sec_id = f"scene-{bid}"
-        sections_html.append(
-            f'    <section id="{sec_id}" class="clip" '
-            f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
-            f'      <div class="stage-card">\n'
-            f'        <div class="stage-header">\n'
-            f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
-            f'        </div>\n'
-            f'        <div class="diagram-viewport">\n'
-            f'          <img src="assets/visuals/{aid}.svg" alt="{scr_state}" class="technical-svg" />\n'
-            f'        </div>\n'
-            f'      </div>\n'
-            f'    </section>'
-        )
+        # Resolve asset file type
+        vis_file = f"{aid}.svg"
+        if visuals_src and visuals_src.is_dir():
+            found = False
+            pref_exts = (
+                (".webp", ".png", ".jpg", ".jpeg", ".svg")
+                if beat.get("visual_kind") == "illustration" and not (visuals_src / f"{aid}.svg").is_file()
+                else (".svg", ".webp", ".png", ".jpg", ".jpeg")
+            )
+            for ext in pref_exts:
+                if (visuals_src / f"{aid}{ext}").is_file():
+                    vis_file = f"{aid}{ext}"
+                    found = True
+                    break
+                for alt_aid in beat.get("asset_ids", []):
+                    if (visuals_src / f"{alt_aid}{ext}").is_file():
+                        vis_file = f"{alt_aid}{ext}"
+                        found = True
+                        break
+                if found:
+                    break
+        elif beat.get("file"):
+            vis_file = Path(beat["file"]).name
 
-        # GSAP animation per beat: smooth fade and subtle rise on entry
-        entry_t = _fmt_time(max(0.0, start_s))
-        tweens_js.append(
-            f'  tl.fromTo("#{sec_id} .stage-card", '
-            f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
-            f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
-            f'{entry_t});'
-        )
-        if i < len(beats) - 1:
-            exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
-            exit_end_t = _fmt_time(max(0.0, end_s))
+        sec_id = f"scene-{bid}"
+        is_illustration = vis_file.lower().endswith((".webp", ".png", ".jpg", ".jpeg"))
+
+        if is_illustration:
+            sections_html.append(
+                f'    <section id="{sec_id}" class="clip scene illustration-scene" '
+                f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
+                f'      <div class="illustration-viewport">\n'
+                f'        <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="hero-illustration" />\n'
+                f'        <div class="vignette-overlay"></div>\n'
+                f'      </div>\n'
+                f'      <div class="stage-header stage-header-overlay">\n'
+                f'        <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
+                f'      </div>\n'
+                f'    </section>'
+            )
+            entry_t = _fmt_time(max(0.0, start_s))
             tweens_js.append(
-                f'  tl.to("#{sec_id} .stage-card", '
-                f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
-                f'{exit_start_t});'
+                f'  tl.fromTo("#{sec_id}", '
+                f'{{ opacity: 0 }}, '
+                f'{{ opacity: 1, duration: 0.5, ease: "power2.out" }}, '
+                f'{entry_t});'
             )
             tweens_js.append(
-                f'  tl.set("#{sec_id} .stage-card", {{ opacity: 0 }}, {exit_end_t});'
+                f'  tl.fromTo("#{sec_id} .hero-illustration", '
+                f'{{ scale: 1.0 }}, '
+                f'{{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, '
+                f'{entry_t});'
             )
+            if i < len(beats) - 1:
+                exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
+                exit_end_t = _fmt_time(max(0.0, end_s))
+                tweens_js.append(
+                    f'  tl.to("#{sec_id}", '
+                    f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
+                    f'{exit_start_t});'
+                )
+                tweens_js.append(
+                    f'  tl.set("#{sec_id}", {{ opacity: 0 }}, {exit_end_t});'
+                )
+        else:
+            bg_art = f"bg_{bid}.webp" if visuals_src and (visuals_src / f"bg_{bid}.webp").is_file() else ""
+            bg_snippet = (
+                f'      <div class="illustration-viewport">\n'
+                f'        <img src="assets/visuals/{bg_art}" alt="" class="hero-illustration" />\n'
+                f'        <div class="vignette-overlay"></div>\n'
+                f'      </div>\n'
+                if bg_art else ""
+            )
+            card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
+            sections_html.append(
+                f'    <section id="{sec_id}" class="clip scene" '
+                f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
+                f'{bg_snippet}'
+                f'      <div class="{card_cls}">\n'
+                f'        <div class="stage-header">\n'
+                f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
+                f'        </div>\n'
+                f'        <div class="diagram-viewport">\n'
+                f'          <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />\n'
+                f'        </div>\n'
+                f'      </div>\n'
+                f'    </section>'
+            )
+
+            # GSAP animation per beat: smooth fade and subtle rise on entry
+            entry_t = _fmt_time(max(0.0, start_s))
+            if bg_art:
+                tweens_js.append(
+                    f'  tl.fromTo("#{sec_id} .hero-illustration", '
+                    f'{{ scale: 1.0 }}, '
+                    f'{{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, '
+                    f'{entry_t});'
+                )
+            tweens_js.append(
+                f'  tl.fromTo("#{sec_id} .stage-card", '
+                f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
+                f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
+                f'{entry_t});'
+            )
+            if i < len(beats) - 1:
+                exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
+                exit_end_t = _fmt_time(max(0.0, end_s))
+                tweens_js.append(
+                    f'  tl.to("#{sec_id} .stage-card", '
+                    f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
+                    f'{exit_start_t});'
+                )
+                tweens_js.append(
+                    f'  tl.set("#{sec_id} .stage-card", {{ opacity: 0 }}, {exit_end_t});'
+                )
 
     clips_block = "\n".join(sections_html)
     tweens_block = "\n".join(tweens_js)
+    starts_js = ", ".join(_fmt_time(b.get("start_s") if b.get("start_s") is not None else b.get("start_seconds", 0.0)) for b in beats)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -164,22 +249,73 @@ def compose_hyperframes_html(
       box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
     }}
     .diagram-viewport {{
-      width: 960px;
-      height: 540px;
-      border-radius: 16px;
+      width: {dia_w}px;
+      height: {dia_h}px;
+      border-radius: 20px;
       overflow: hidden;
       border: 1.5px solid #334155;
-      background: #0f172a;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.65);
+      background: #0b1120;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
       display: flex;
       align-items: center;
       justify-content: center;
+    }}
+    .hybrid-card {{
+      position: relative;
+      z-index: 3;
+    }}
+    .hybrid-card .diagram-viewport {{
+      background: rgba(11, 17, 32, 0.88);
+      backdrop-filter: blur(16px);
+      border: 1.5px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.9), 0 0 40px rgba(56, 189, 248, 0.15);
     }}
     .technical-svg {{
       width: 100%;
       height: 100%;
       object-fit: contain;
       display: block;
+    }}
+    .clip.illustration-scene {{
+      padding: 0;
+    }}
+    .illustration-viewport {{
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .hero-illustration {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform-origin: center center;
+    }}
+    .vignette-overlay {{
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(11, 17, 32, 0.78) 0%,
+        rgba(11, 17, 32, 0.15) 18%,
+        rgba(11, 17, 32, 0.1) 65%,
+        rgba(11, 17, 32, 0.88) 100%
+      );
+      pointer-events: none;
+      z-index: 2;
+    }}
+    .stage-header-overlay {{
+      position: absolute;
+      top: 100px;
+      left: 0;
+      right: 0;
+      z-index: 3;
+      margin-bottom: 0;
     }}
   </style>
 </head>
@@ -191,6 +327,7 @@ def compose_hyperframes_html(
   </div>
   <script>
   (function() {{
+    const starts = [{starts_js}];
     window.__timelines = window.__timelines || {{}};
     const tl = gsap.timeline({{ paused: true }});
 {tweens_block}
@@ -222,12 +359,13 @@ def materialize_hyperframes_project(
         comp_dir = project_dir / comp_name
         comp_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy visual SVG assets
+        # Copy visual media assets (SVG diagrams, PNG/JPEG/WEBP illustrations, captures)
         comp_vis = comp_dir / "assets" / "visuals"
         comp_vis.mkdir(parents=True, exist_ok=True)
         if visuals_src.is_dir():
-            for svg_file in visuals_src.glob("*.svg"):
-                shutil.copy2(svg_file, comp_vis / svg_file.name)
+            for vis_file in visuals_src.iterdir():
+                if vis_file.is_file() and vis_file.suffix.lower() in (".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm"):
+                    shutil.copy2(vis_file, comp_vis / vis_file.name)
 
         # Copy or reference narration audio
         comp_assets = comp_dir / "assets"
@@ -242,6 +380,7 @@ def materialize_hyperframes_project(
             beats=beats,
             is_vertical=is_vertical,
             audio_src="assets/narration.mp3",
+            visuals_src=visuals_src,
         )
 
         index_file = comp_dir / "index.html"

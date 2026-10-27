@@ -398,3 +398,62 @@ def test_runner_supports_renderer_selection(tmp_path: Path, monkeypatch):
     assert called_renderers == ["hyperframes", "ffmpeg"]
 
 
+def test_synthesize_narration_recovers_and_restages_for_duration_above_72s(tmp_path: Path, monkeypatch):
+    """Ensure narration in (72.0, 75.0]s is recoverable by automatically re-staging to 7 beats."""
+    proj_dir = tmp_path / "restage_proj"
+    runner = FixedNicheVideoRunner(project_dir=proj_dir, candidate_id="cand_restage")
+    topic = {
+        "candidate_id": "cand_restage",
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "source_snapshot": "Conversation context disappears on session boundary unless persisted in markdown.",
+    }
+    stage_res = runner.build_and_stage_project(topic=topic, dry_run=False)
+    assert stage_res["status"] == "STAGED_READY"
+    assert stage_res["beats_count"] == 6
+
+    def fake_synthesize(*args, **kwargs):
+        out = kwargs.get("output_path") or args[1]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"dummy_mp3")
+        return {"success": True}
+
+    monkeypatch.setattr(runner.orchestrator, "synthesize", fake_synthesize)
+    monkeypatch.setattr("scripts.run_fixed_niche_video.probe_audio_duration", lambda p: 73.5)
+
+    runner.synthesize_narration(provider="flite")
+
+    plan = json.loads((proj_dir / "artifacts" / "news_visual_plan.json").read_text(encoding="utf-8"))
+    assert len(plan["beats"]) == 7
+    for b in plan["beats"]:
+        assert (b["end_s"] - b["start_s"]) <= 12.0
+
+    # Ensure no invented narration sentence exists: text matches synthesized narration
+    synth_text = (proj_dir / "artifacts" / "narration_en_US_text.txt").read_text(encoding="utf-8")
+    assert " ".join(b["narration"] for b in plan["beats"]) == synth_text
+
+
+def test_synthesize_narration_rejects_duration_above_policy_max(tmp_path: Path, monkeypatch):
+    """Ensure narration > 75.0s strictly fails closed."""
+    proj_dir = tmp_path / "exceed_max_proj"
+    runner = FixedNicheVideoRunner(project_dir=proj_dir, candidate_id="cand_exceed")
+    topic = {
+        "candidate_id": "cand_exceed",
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "source_snapshot": "Conversation context disappears on session boundary unless persisted in markdown.",
+    }
+    runner.build_and_stage_project(topic=topic, dry_run=False)
+
+    monkeypatch.setattr(runner.orchestrator, "synthesize", lambda *a, **k: {"success": True})
+    (proj_dir / "assets" / "narration.mp3").write_bytes(b"dummy")
+    monkeypatch.setattr("scripts.run_fixed_niche_video.probe_audio_duration", lambda p: 76.5)
+
+    with pytest.raises(ValueError) as exc:
+        runner.synthesize_narration(provider="flite")
+    assert "exceeds maximum allowed duration" in str(exc.value)
+
+
+

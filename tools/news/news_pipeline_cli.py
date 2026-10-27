@@ -149,6 +149,22 @@ def run_produce(args: argparse.Namespace) -> None:
     available_candidates = [c for c in candidates if c.get("candidate_id") not in used_ids]
     candidate_pool = available_candidates if len(available_candidates) >= count else candidates
 
+    if os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True") or os.environ.get("OPENMONTAGE_NICHE_LOCKED", "0") in ("1", "true", "True"):
+        from lib.fixed_niche.gate import FixedNicheScopeGate
+        gate = FixedNicheScopeGate()
+        niche_filtered = []
+        for cand in candidate_pool:
+            verdict = gate.evaluate_candidate(cand)
+            if verdict.is_eligible:
+                cand["topic_family"] = verdict.topic_family
+                niche_filtered.append(cand)
+            else:
+                logger.info(f"FixedNicheScopeGate rejected candidate '{cand.get('candidate_id')}': {verdict.reason}")
+        candidate_pool = niche_filtered
+        if not candidate_pool:
+            logger.error("NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
+            sys.exit(1)
+
     logger.info("Scoring and ranking...")
     scorer = NewsCandidateScorer()
     ranked = scorer.rank_candidates(candidate_pool, limit=max(30, count * 4))

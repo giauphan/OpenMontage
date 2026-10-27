@@ -31,6 +31,25 @@ from tools.video._compose.ffmpeg_commands import (
     resolve_subtitle_style,
     build_subtitle_style,
 )
+from tools.video._compose.atelier import (
+    run_atelier_checks,
+    stage_atelier_project,
+    build_theme_from_playbook,
+    ATELIER_STOCK_IMPORT_RE,
+)
+from tools.video._compose.remotion_runner import (
+    get_composition_id,
+    needs_remotion,
+    stage_remotion_media,
+    RENDERER_FAMILY_MAP,
+)
+from tools.video._compose.ffmpeg_effects import (
+    has_audio_stream,
+    probe_video_stream_duration,
+)
+from tools.video._compose.review import (
+    run_final_review,
+)
 from tools.video._hyperframes.template import (
     format_float,
     escape_text,
@@ -342,4 +361,77 @@ class TestHyperFramesTemplateExtract:
         assert '<audio id="nar-0"' in html
         assert '<audio id="music"' in html
         assert 'window.__timelines["root"] = tl;' in html
+
+
+class TestAtelierExtract:
+    """Test atelier checks and theme builder pure functions."""
+
+    def test_run_atelier_checks_detects_stock_import(self, tmp_path):
+        proj = tmp_path / "my_project"
+        proj.mkdir()
+        entry = proj / "index.tsx"
+        entry.write_text(
+            'import { Explainer } from "../../src/Explainer";\nexport const MyComp = () => <div />;',
+            encoding="utf-8",
+        )
+        checks = run_atelier_checks(entry, {"composition_id": "test"})
+        assert checks["stock_reuse_detected"]
+        assert len(checks["offending_imports"]) == 1
+        assert not checks["art_direction_declared"]
+
+    def test_run_atelier_checks_passes_pure_bespoke(self, tmp_path):
+        proj = tmp_path / "clean_project"
+        proj.mkdir()
+        entry = proj / "index.tsx"
+        entry.write_text(
+            'import { Composition } from "remotion";\nexport const MyComp = () => <div />;',
+            encoding="utf-8",
+        )
+        checks = run_atelier_checks(entry, {"composition_id": "test", "art_direction": "Minimalist Dark"})
+        assert not checks["stock_reuse_detected"]
+        assert checks["art_direction_declared"]
+        assert checks["art_direction"] == "Minimalist Dark"
+
+    def test_build_theme_from_playbook_metadata_fallback(self):
+        comp_data = {
+            "metadata": {
+                "primary_color": "#FF0000",
+                "accent_color": "#00FF00",
+            }
+        }
+        theme = build_theme_from_playbook(None, comp_data)
+        assert theme is not None
+        assert theme["primaryColor"] == "#FF0000"
+        assert theme["accentColor"] == "#00FF00"
+
+
+class TestRemotionRunnerExtract:
+    """Test remotion runner resolution and staging functions."""
+
+    def test_get_composition_id(self):
+        assert get_composition_id("explainer-data") == "Explainer"
+        assert get_composition_id("cinematic-trailer") == "CinematicRenderer"
+        assert get_composition_id("presenter") == "TalkingHead"
+
+        with pytest.raises(ValueError):
+            get_composition_id("nonexistent_family")
+
+    def test_needs_remotion(self):
+        assert not needs_remotion(False, [{"source": "video.mp4"}], {".png"})
+        assert not needs_remotion(True, [{"source": "video.mp4"}], {".png"})
+        assert needs_remotion(True, [{"source": "slide.png"}], {".png"})
+        assert needs_remotion(True, [{"type": "stat_card"}], {".png"})
+        assert needs_remotion(True, [{"animation": "fade"}], {".png"})
+
+    def test_stage_remotion_media_in_place(self, tmp_path):
+        pub_dir = tmp_path / "public"
+        asset_file = tmp_path / "image.png"
+        asset_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        payload = {"source": str(asset_file), "nested": {"src": str(asset_file)}}
+        count = stage_remotion_media(payload, pub_dir)
+        assert count == 1
+        assert not payload["source"].startswith("/")
+        assert (pub_dir / payload["source"]).exists()
+
 

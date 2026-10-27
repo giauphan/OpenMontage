@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -174,15 +175,32 @@ def bind_news_evidence(project_dir: Path) -> bool:
                 research_lines.append(f"Angle: {ang_text}")
 
     capture_dir = artifacts_dir / "news_source_capture"
+    strict_capture_required = (
+        os.environ.get("REQUIRE_AUTHENTIC_CAPTURES", "0") in ("1", "true", "True")
+        or (os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True") and script_path.name == "script_en_US.json")
+    )
+
+    capture_corpus_lines: list[str] = []
+    capture_files_map: dict[str, tuple[str, str]] = {}
     if capture_dir.is_dir():
         for cap_txt in sorted(capture_dir.glob("*.txt")):
             try:
                 cap_content = cap_txt.read_text(encoding="utf-8", errors="replace").strip()
                 if cap_content:
+                    capture_corpus_lines.append(cap_content)
+                    cap_sha = hashlib.sha256(cap_content.encode("utf-8")).hexdigest()
+                    capture_files_map[cap_txt.name] = (cap_content, cap_sha)
                     research_lines.append(f"CapturedSource ({cap_txt.name}): {cap_content[:4000]}")
             except OSError:
                 pass
 
+    if strict_capture_required:
+        has_captures = bool(capture_corpus_lines)
+        if not has_captures:
+            print("ERROR: Strict evidence release requires authentic source capture files in artifacts/news_source_capture", file=sys.stderr)
+            return False
+
+    captured_corpus = " | ".join(capture_corpus_lines).strip()
     frozen_research_excerpt = " | ".join(research_lines).strip()
     if len(frozen_research_excerpt) < 25:
         frozen_research_excerpt = f"Frozen Research Grounding: {topic_val or 'Verified Technology Research Brief'}"
@@ -252,16 +270,20 @@ def bind_news_evidence(project_dir: Path) -> bool:
             or bool(brief_data.get("data_points"))
         )
         figures = _re.findall(r"\b\d+(?:[\.,]\d+)?%?\b", cleaned_text) if should_verify_figures else []
+        target_corpus = captured_corpus if (strict_capture_required and captured_corpus) else frozen_research_excerpt
+        if not target_corpus:
+            target_corpus = frozen_research_excerpt
+
         missing_figs = [
             fig for fig in figures
-            if fig not in frozen_research_excerpt and fig.rstrip("%") not in frozen_research_excerpt
+            if fig not in target_corpus and fig.rstrip("%") not in target_corpus
         ]
         has_fig_error = len(missing_figs) > 0
 
         # 2. Semantic grounding check: for en-US claims, every claim (including non-numeric statements)
         # must be substantiated by key content terms / entities from the research brief and captured sources
         sec_tokens = _extract_content_tokens(sec_text)
-        source_tokens = _extract_content_tokens(frozen_research_excerpt)
+        source_tokens = _extract_content_tokens(target_corpus)
         common_tokens = {tok for tok in sec_tokens if _tokens_match(tok, source_tokens)}
         
         has_semantic_error = False
@@ -273,13 +295,14 @@ def bind_news_evidence(project_dir: Path) -> bool:
             has_semantic_error = True
 
         is_verified = (not has_fig_error) and (not has_semantic_error)
+        corpus_source_desc = "captured source files" if strict_capture_required else "frozen research_brief.json"
         if has_fig_error:
             unverified_errors.append(
-                f"Section '{sec_id}' (C{idx + 1:03d}) asserts unsubstantiated figure(s) {missing_figs} not present in frozen research_brief.json"
+                f"Section '{sec_id}' (C{idx + 1:03d}) asserts unsubstantiated figure(s) {missing_figs} not present in {corpus_source_desc}"
             )
         elif has_semantic_error:
             unverified_errors.append(
-                f"Section '{sec_id}' (C{idx + 1:03d}) lacks substantive semantic/entity grounding in source evidence (found {len(common_tokens)} matching terms: {list(common_tokens)})"
+                f"Section '{sec_id}' (C{idx + 1:03d}) lacks substantive semantic/entity grounding in {corpus_source_desc} (found {len(common_tokens)} matching terms: {list(common_tokens)})"
             )
 
         claims.append({
@@ -293,6 +316,21 @@ def bind_news_evidence(project_dir: Path) -> bool:
             "review_status": "approved" if is_verified else "rejected",
         })
         if sec_text:
+            best_cap_file = None
+            best_cap_sha = None
+            if capture_files_map:
+                best_overlap = -1
+                for cap_name, (cap_content, cap_sha) in capture_files_map.items():
+                    cap_toks = _extract_content_tokens(cap_content)
+                    overlap = len([t for t in sec_tokens if _tokens_match(t, cap_toks)])
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_cap_file = f"news_source_capture/{cap_name}"
+                        best_cap_sha = cap_sha
+
+            snap_file = best_cap_file if (strict_capture_required and best_cap_file) else f"source_evidence_{source_ids[0]}.txt"
+            snap_sha = best_cap_sha if (strict_capture_required and best_cap_sha) else primary_source["content_sha256"]
+
             ledger_claims.append({
                 "claim_id": f"C{idx + 1:03d}",
                 "statement": sec_text,
@@ -306,10 +344,10 @@ def bind_news_evidence(project_dir: Path) -> bool:
                     "publisher": str(primary_title),
                     "published_at": _iso_utc(pub_time),
                     "retrieved_at": _iso_utc(ret_time),
-                    "snapshot_file": f"source_evidence_{source_ids[0]}.txt",
-                    "snapshot_sha256": primary_source["content_sha256"],
+                    "snapshot_file": snap_file,
+                    "snapshot_sha256": snap_sha,
                 },
-                "evidence_excerpt": frozen_research_excerpt,
+                "evidence_excerpt": target_corpus[:4000],
                 "script_spans": [sec_text],
                 "verdict": "APPROVED" if is_verified else "REJECTED",
             })

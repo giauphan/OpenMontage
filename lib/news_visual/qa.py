@@ -277,9 +277,9 @@ def _verify_scene_timeline_and_render_coverage(
 
     valid_timing_indices: set[int] = set()
     for idx, beat in enumerate(beats):
-        bid = str(beat.get("id") or f"beat-{idx + 1}")
-        b_start = float(beat.get("start_seconds", 0.0))
-        b_end = float(beat.get("end_seconds", 0.0))
+        bid = str(beat.get("id") or beat.get("beat_id") or f"beat-{idx + 1}")
+        b_start = float(beat.get("start_seconds") if beat.get("start_seconds") is not None else beat.get("start_s", 0.0))
+        b_end = float(beat.get("end_seconds") if beat.get("end_seconds") is not None else beat.get("end_s", 0.0))
         b_dur = b_end - b_start
         if b_dur <= 0.0:
             _add_visual_not_rendered(f"Beat '{bid}' has non-positive duration ({b_dur:.2f}s)", bid)
@@ -337,19 +337,20 @@ def _verify_scene_timeline_and_render_coverage(
             return 0.0
 
         # Check if the final beat holds for > 12s until the end of the rendered video
-        last_beat_start = float(beats[-1].get("start_seconds", 0.0))
+        last_beat = beats[-1]
+        last_beat_start = float(last_beat.get("start_seconds") if last_beat.get("start_seconds") is not None else last_beat.get("start_s", 0.0))
         if video_dur - last_beat_start > MAX_SCENE_HOLD_TOLERANCE:
             _add_visual_not_rendered(
-                f"Final visual beat '{beats[-1].get('id')}' holds for {video_dur - last_beat_start:.2f}s in {render_mp4.name} (from {last_beat_start:.2f}s to {video_dur:.2f}s, >{MAX_SCENE_HOLD_SECONDS:.1f}s max)",
-                str(beats[-1].get("id") or ""),
+                f"Final visual beat '{last_beat.get('id') or last_beat.get('beat_id')}' holds for {video_dur - last_beat_start:.2f}s in {render_mp4.name} (from {last_beat_start:.2f}s to {video_dur:.2f}s, >{MAX_SCENE_HOLD_SECONDS:.1f}s max)",
+                str(last_beat.get('id') or last_beat.get('beat_id') or ""),
             )
 
         visible_beats = 0
         prev_frame: Optional[bytes] = None
         for idx, beat in enumerate(beats):
-            bid = str(beat.get("id") or f"beat-{idx + 1}")
-            b_start = float(beat.get("start_seconds", 0.0))
-            b_end = float(beat.get("end_seconds", 0.0))
+            bid = str(beat.get("id") or beat.get("beat_id") or f"beat-{idx + 1}")
+            b_start = float(beat.get("start_seconds") if beat.get("start_seconds") is not None else beat.get("start_s", 0.0))
+            b_end = float(beat.get("end_seconds") if beat.get("end_seconds") is not None else beat.get("end_s", 0.0))
             if idx not in bound_beat_indices or idx not in valid_timing_indices:
                 prev_frame = None
                 continue
@@ -497,6 +498,7 @@ def run_news_visual_qa(
 
     for beat in beats:
         claim_ids = beat.get("claim_ids", [])
+        bid = beat.get("id") or beat.get("beat_id")
         if claim_ids:
             for cid in claim_ids:
                 if cid not in approved_claim_ids:
@@ -504,8 +506,8 @@ def run_news_visual_qa(
                     findings.append({
                         "severity": "blocker" if mode == "strict" else "warning",
                         "category": "UNSUPPORTED_CLAIM",
-                        "message": f"Beat '{beat.get('id')}' references unapproved claim '{cid}'",
-                        "beat_id": beat.get("id"),
+                        "message": f"Beat '{bid}' references unapproved claim '{cid}'",
+                        "beat_id": bid,
                     })
                     if "UNSUPPORTED_CLAIM" not in failure_categories:
                         failure_categories.append("UNSUPPORTED_CLAIM")
@@ -529,15 +531,16 @@ def run_news_visual_qa(
             pass
 
     for beat in beats:
-        asset_ids = beat.get("asset_ids", [])
+        asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [])
+        bid = beat.get("id") or beat.get("beat_id")
         for aid in asset_ids:
             if aid not in staged_assets:
                 missing_required_asset_count += 1
                 findings.append({
                     "severity": "blocker" if mode == "strict" else "warning",
                     "category": "ASSET_UNRESOLVED",
-                    "message": f"Beat '{beat.get('id')}' requires unresolved asset '{aid}'",
-                    "beat_id": beat.get("id"),
+                    "message": f"Beat '{bid}' requires unresolved asset '{aid}'",
+                    "beat_id": bid,
                     "asset_id": aid,
                 })
                 if "ASSET_UNRESOLVED" not in failure_categories:
@@ -553,7 +556,7 @@ def run_news_visual_qa(
                             "severity": "blocker" if mode == "strict" else "warning",
                             "category": "ASSET_UNRESOLVED",
                             "message": f"Staged asset '{aid}' file not found on disk at {local_path}",
-                            "beat_id": beat.get("id"),
+                            "beat_id": bid,
                             "asset_id": aid,
                         })
                         if "ASSET_UNRESOLVED" not in failure_categories:
@@ -565,11 +568,31 @@ def run_news_visual_qa(
                                 "severity": "blocker" if mode == "strict" else "warning",
                                 "category": "ASSET_TAMPERED",
                                 "message": f"Asset '{aid}' hash mismatch (tampered or corrupt): expected {asset_info['sha256']}, got {actual_sha}",
-                                "beat_id": beat.get("id"),
+                                "beat_id": bid,
                                 "asset_id": aid,
                             })
                             if "ASSET_TAMPERED" not in failure_categories:
                                 failure_categories.append("ASSET_TAMPERED")
+
+                    # Check proof vs AI generation boundary (A07: No fake proof)
+                    is_ai_asset = asset_info.get("ai_generated") is True or asset_info.get("kind") == "illustration"
+                    beat_strategy = beat.get("render_strategy")
+                    beat_ev_class = beat.get("evidence_class")
+                    is_proof_beat = (
+                        beat_strategy in ("authentic_capture", "deterministic_svg")
+                        or beat_ev_class in ("authentic_photo", "approved_source_visual", "approved_data_chart", "primary_proof")
+                        or beat.get("is_proof_bearing") is True
+                    )
+                    if is_ai_asset and is_proof_beat:
+                        findings.append({
+                            "severity": "blocker" if mode == "strict" else "warning",
+                            "category": "PROHIBITED_AI_PROOF",
+                            "message": f"AI-generated asset '{aid}' assigned to proof-bearing beat '{bid}'; fake proof is strictly forbidden",
+                            "beat_id": bid,
+                            "asset_id": aid,
+                        })
+                        if "PROHIBITED_AI_PROOF" not in failure_categories:
+                            failure_categories.append("PROHIBITED_AI_PROOF")
 
     # 4. Check HTML bindings and safe zones
     bound_beats = 0
@@ -624,9 +647,9 @@ def run_news_visual_qa(
                     pass
 
             for idx, beat in enumerate(beats):
-                bid = beat.get("id")
+                bid = beat.get("id") or beat.get("beat_id")
                 sec_id = beat.get("script_section_id")
-                asset_keys = beat.get("asset_ids", [])
+                asset_keys = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [])
                 # Look for beat ID, section ID, scene index, or asset reference in HTML
                 if (
                     (bid and bid in html_content)
@@ -634,7 +657,8 @@ def run_news_visual_qa(
                     or (sec_id and (f'id="{sec_id}"' in html_content or f'data-scene-id="{sec_id}"' in html_content or f'scene-{sec_id}' in html_content))
                     or f'id="scene-{idx + 1}"' in html_content
                     or f'id="scene{idx + 1}"' in html_content
-                    or (f'class="scene' in html_content and (f'#scene-{idx + 1}' in html_content or f'#scene{idx + 1}' in html_content))
+                    or (bid and f'id="scene-{bid}"' in html_content)
+                    or (f'class="scene' in html_content and (f'#scene-{idx + 1}' in html_content or f'#scene{idx + 1}' in html_content or (bid and f'#scene-{bid}' in html_content)))
                 ):
                     bound_beats += 1
                     bound_beat_indices.add(idx)

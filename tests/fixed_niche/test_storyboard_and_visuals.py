@@ -157,6 +157,22 @@ def test_storyboard_validations_and_distinct_beat_artwork(tmp_path: Path):
     assert covered == {"C01", "C02", "C03", "C04", "C05"}, "All surplus claims must be retained in proof map"
 
 
+def test_storyboard_handles_entire_65_to_75s_contract_without_exceeding_12s_hold(tmp_path: Path):
+    """Ensure storyboard handles boundary durations across [65.0, 75.0] without any hold exceeding 12.0s."""
+    director = FixedNicheStoryboardDirector()
+    topic = {"candidate_id": "cand_01", "title": "Test Title", "topic_family": "context_memory"}
+    claims = [{"claim_id": "C01", "statement": "Test claim"}]
+
+    for duration in [65.0, 70.0, 72.0, 72.02, 74.0, 75.0]:
+        p = tmp_path / f"dur_{str(duration).replace('.', '_')}"
+        res = director.generate_storyboard(topic, claims, p, target_duration=duration)
+        beats = res["visual_plan"]["beats"]
+        assert 6 <= len(beats) <= 8
+        for i, beat in enumerate(beats):
+            hold = round(beat["end_s"] - beat["start_s"], 2)
+            assert hold <= 12.0, f"Duration {duration}s produced beat {i+1} with hold {hold}s > 12.0s"
+
+
 def test_resolver_rejects_fallback_asset_reused_in_proof_bearing_beat(tmp_path: Path):
     """When a non-proof beat triggers a fallback SVG, a later proof beat reusing that asset ID must be rejected."""
     project_dir = tmp_path / "reused_asset_proj"

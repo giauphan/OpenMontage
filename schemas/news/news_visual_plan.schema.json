@@ -78,6 +78,16 @@
           },
           "background_preset": { "type": "string" },
           "motion_preset": { "type": "string" },
+          "visual_intent": { "type": "string", "minLength": 1 },
+          "render_strategy": {
+            "type": "string",
+            "enum": [
+              "authentic_capture",
+              "deterministic_svg",
+              "ai_illustration_eligible",
+              "typographic_fallback"
+            ]
+          },
           "fallback_policy": {
             "type": "string",
             "enum": [
@@ -85,6 +95,10 @@
               "typographic_card",
               "block"
             ]
+          },
+          "narration_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "additionalProperties": false

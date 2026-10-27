@@ -70,7 +70,8 @@
               "public_domain",
               "cc_by_sa_attributed",
               "fair_use_reviewed",
-              "in_house_illustration"
+              "in_house_illustration",
+              "pending_review"
             ]
           },
           "credit": { "type": ["string", "null"] },
@@ -78,7 +79,14 @@
           "claim_ids": {
             "type": "array",
             "items": { "type": "string" }
-          }
+          },
+          "ai_generated": { "type": "boolean" },
+          "provider": { "type": "string" },
+          "model": { "type": "string" },
+          "prompt_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "model_request_id": { "type": "string" },
+          "gateway_job_id": { "type": "string" },
+          "source_claim_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
         },
         "additionalProperties": false
       }
