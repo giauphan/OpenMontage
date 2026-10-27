@@ -710,30 +710,41 @@ def main(argv: Optional[List[str]] = None) -> int:
     topic: Dict[str, Any]
     candidate_id = args.candidate_id
 
-    if args.auto_select or not candidate_id:
-        candidates_pool: List[Dict[str, Any]] = []
-        if args.candidates_file:
-            c_file = Path(args.candidates_file)
-            if c_file.is_file():
-                try:
-                    import yaml
-                    raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                    candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-                except Exception as e:
-                    logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
-        elif args.use_test_fixtures:
-            c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
-            if c_file.is_file():
-                try:
-                    import yaml
-                    raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                    candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-                except Exception as e:
-                    logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
-        else:
-            adapter = FixedNicheSourceAdapter()
-            candidates_pool = adapter.discover_production_candidates()
+    candidates_pool: List[Dict[str, Any]] = []
+    if args.candidates_file:
+        c_file = Path(args.candidates_file)
+        if c_file.is_file():
+            try:
+                import yaml
+                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+            except Exception as e:
+                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
+    elif args.use_test_fixtures:
+        c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
+        if c_file.is_file():
+            try:
+                import yaml
+                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+            except Exception as e:
+                logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
+    else:
+        adapter = FixedNicheSourceAdapter()
+        candidates_pool = adapter.discover_production_candidates()
 
+    matched_cand = next((c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)), None) if candidate_id else None
+
+    if matched_cand:
+        topic = dict(matched_cand)
+        topic["candidate_id"] = candidate_id
+        if args.title:
+            topic["title"] = args.title
+        if args.topic_family:
+            topic["topic_family"] = args.topic_family
+        if args.canonical_url:
+            topic["canonical_url"] = args.canonical_url
+    elif args.auto_select or not candidate_id:
         eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
         if not eligible:
             print(json.dumps({
