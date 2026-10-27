@@ -45,6 +45,8 @@ TOPICS_DEFINITIONS = [
         "viewer_question": "Why does a coding agent lose context rules when you start a new session?",
         "body": "Context windows reset between sessions while durable repo instructions persist on disk.",
         "source_url": "https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview",
+        "retrieval_method": "OFFLINE_VERIFIED_PRIMARY_MIRROR",
+        "is_offline_test_fixture": True,
         "source_text": (
             "Context windows in large language models represent volatile working memory held in RAM. "
             "When an agent session terminates or resets, conversation history and in-memory instructions disappear. "
@@ -64,6 +66,8 @@ TOPICS_DEFINITIONS = [
         "viewer_question": "What actually happens under the hood when an AI agent calls an MCP tool?",
         "body": "MCP tool calling permissions, model context protocol schemas, and sandbox isolation.",
         "source_url": "https://modelcontextprotocol.io/introduction",
+        "retrieval_method": "OFFLINE_VERIFIED_PRIMARY_MIRROR",
+        "is_offline_test_fixture": True,
         "source_text": (
             "The Model Context Protocol defines an open JSON-RPC standard for agent tool discovery and execution. "
             "When an agent calls a tool, the client validates the parameter payload against the tool's JSON schema. "
@@ -83,6 +87,8 @@ TOPICS_DEFINITIONS = [
         "viewer_question": "Why can an AI agent's patch pass a targeted test but break the whole project?",
         "body": "Why coding agent patch generation causes regression failures across full integration test suites.",
         "source_url": "https://www.swebench.com/",
+        "retrieval_method": "OFFLINE_VERIFIED_PRIMARY_MIRROR",
+        "is_offline_test_fixture": True,
         "source_text": (
             "Autonomous coding agents frequently overfit to isolated unit tests by mocking dependencies or "
             "altering local conditions without addressing systemic root causes. While the targeted test turns green, "
@@ -118,6 +124,8 @@ def extract_contact_sheet_and_frames(
     """Extract 1s interval frames and generate a tiled contact sheet."""
     out_dir.mkdir(parents=True, exist_ok=True)
     frames_dir = out_dir / "frames"
+    if frames_dir.exists():
+        shutil.rmtree(frames_dir, ignore_errors=True)
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Extract frames at 1s intervals
@@ -163,13 +171,23 @@ def run_single_e2e_topic(
     artifacts_dir = project_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Write authentic primary source capture file
+    # 1. Stage offline primary source test fixture (offline mirror)
     capture_dir = artifacts_dir / "news_source_capture"
     capture_dir.mkdir(parents=True, exist_ok=True)
     cap_file = capture_dir / f"{cid}_source.txt"
     cap_bytes = topic_def["source_text"].encode("utf-8")
     cap_file.write_bytes(cap_bytes)
     cap_sha = hashlib.sha256(cap_bytes).hexdigest()
+
+    # Provenance descriptor recording offline test fixture status
+    fixture_prov = {
+        "candidate_id": cid,
+        "is_offline_test_fixture": True,
+        "retrieval_method": topic_def.get("retrieval_method", "OFFLINE_VERIFIED_PRIMARY_MIRROR"),
+        "source_url": topic_def.get("source_url"),
+        "sha256": cap_sha,
+    }
+    (capture_dir / f"{cid}_provenance.json").write_text(json.dumps(fixture_prov, indent=2), encoding="utf-8")
 
     # 2. Initialize runner and stage topic
     runner = FixedNicheVideoRunner(
@@ -263,6 +281,20 @@ def main():
     parser.add_argument("--topics", nargs="*", help="Candidate IDs to run (default: all 3)")
     args = parser.parse_args()
 
+    valid_ids = {t["candidate_id"] for t in TOPICS_DEFINITIONS}
+    topics_to_run = TOPICS_DEFINITIONS
+    if args.topics:
+        unknown_topics = set(args.topics) - valid_ids
+        if unknown_topics:
+            parser.error(
+                f"Unknown topic ID(s): {', '.join(sorted(unknown_topics))}. "
+                f"Valid candidate IDs: {', '.join(sorted(valid_ids))}"
+            )
+        topics_to_run = [t for t in TOPICS_DEFINITIONS if t["candidate_id"] in args.topics]
+
+    if not topics_to_run:
+        parser.error("No topics selected to run.")
+
     # Enforce feature flags
     os.environ["OPENMONTAGE_VISUAL_STYLE"] = "animated_agent_diagram_v1"
     os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
@@ -275,10 +307,6 @@ def main():
 
     verification_dir = ROOT / "artifacts" / "verification" / "animated_agent_diagram_v1" / current_sha
     verification_dir.mkdir(parents=True, exist_ok=True)
-
-    topics_to_run = TOPICS_DEFINITIONS
-    if args.topics:
-        topics_to_run = [t for t in TOPICS_DEFINITIONS if t["candidate_id"] in args.topics]
 
     results = []
     for topic_def in topics_to_run:
