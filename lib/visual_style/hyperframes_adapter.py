@@ -92,7 +92,7 @@ def compose_animated_diagram_html(
 
         sec_id = f"badge-{bid}"
         sections_html.append(
-            f'    <section id="{sec_id}" class="clip badge-overlay" '
+            f'    <section id="{sec_id}" class="clip scene badge-overlay" '
             f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
             f'      <div class="stage-header stage-header-overlay">\n'
             f'        <span class="stage-badge">Stage {i+1} of {len(beats)} // {escaped_s_func}</span>\n'
@@ -115,6 +115,10 @@ def compose_animated_diagram_html(
 
     clips_block = "\n".join(sections_html)
     overlay_script = "\n".join(overlay_tweens)
+    starts_js = ", ".join(
+        _fmt_time(float(b.get("start_s") if b.get("start_s") is not None else b.get("start_seconds", 0.0)))
+        for b in beats
+    )
 
     html_content = f"""<!doctype html>
 <html lang="en">
@@ -198,6 +202,7 @@ def compose_animated_diagram_html(
   </div>
   <script>
   (function() {{
+    const starts = [{starts_js}];
 {gsap_script}
 {overlay_script}
   }})();
