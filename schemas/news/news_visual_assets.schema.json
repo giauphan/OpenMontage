@@ -70,7 +70,8 @@
               "public_domain",
               "cc_by_sa_attributed",
               "fair_use_reviewed",
-              "in_house_illustration"
+              "in_house_illustration",
+              "pending_review"
             ]
           },
           "credit": { "type": ["string", "null"] },
