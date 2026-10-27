@@ -729,7 +729,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
             except Exception as e:
                 logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
-    else:
+    elif args.auto_select or not candidate_id:
         adapter = FixedNicheSourceAdapter()
         candidates_pool = adapter.discover_production_candidates()
 

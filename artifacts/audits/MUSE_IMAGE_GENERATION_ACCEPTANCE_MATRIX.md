@@ -36,7 +36,7 @@
 |:---|:---:|:---:|:---:|:---:|
 | `tests/fixed_niche/test_muse_visual_e2e.py` | 5 | 5 | 0 | 221.17s |
 | `tests/news_visual/test_ai_visual_qa.py` | 3 | 3 | 0 | 0.28s |
-| `tests/news_visual/test_visual_asset_orchestrator.py` | 5 | 5 | 0 | 0.22s |
+| `tests/news_visual/test_visual_asset_orchestrator.py` | 6 | 6 | 0 | 0.22s |
 | `tests/news_visual/test_visual_planner.py` | 9 | 9 | 0 | 0.25s |
 | `tests/news_visual/test_rootcause_visual_pipeline.py` | 2 | 2 | 0 | 0.15s |
 | `tests/news_visual/` (all other suites) | 25 | 25 | 0 | 23.85s |
@@ -44,7 +44,7 @@
 | `tests/fixed_niche/test_niche_release_integrity.py` | 3 | 3 | 0 | 0.18s |
 | `tests/fixed_niche/test_e2e_rehearsals.py` | 12 | 12 | 0 | 312.27s |
 | `tests/contracts/test_architecture_fitness.py` | 5 | 5 | 0 | 0.16s |
-| **Total Verified** | **82** | **82** | **0** | **Clean Pass** |
+| **Total Verified** | **83** | **83** | **0** | **Clean Pass** |
 
 ---
 
