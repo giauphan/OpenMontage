@@ -116,7 +116,7 @@ class VisualAssetOrchestrator:
             elif strategy == "ai_illustration_eligible":
                 if ai_visual_enabled and ai_images_generated < max_ai_images:
                     prompt = VisualPromptBuilder.build_prompt(topic_family, intent)
-                    ar = beat.get("aspect_ratio") or "16:9"
+                    ar = beat.get("aspect_ratio") or ("9:16" if beat.get("visual_kind") == "illustration" else "16:9")
                     cache_key = self.cache.compute_cache_key(
                         prompt=prompt,
                         aspect_ratio=ar,
@@ -302,7 +302,7 @@ class VisualAssetOrchestrator:
         svg_path.write_text(svg_content, encoding="utf-8")
         return svg_path
 
-    def _dispatch_muse_generation(self, output_path: Path, prompt: str, submission_key: str, aspect_ratio: str = "16:9") -> Dict[str, Any]:
+    def _dispatch_muse_generation(self, output_path: Path, prompt: str, submission_key: str, aspect_ratio: str = "9:16") -> Dict[str, Any]:
         """Dispatch image generation using registered muse_gateway_image tool."""
         try:
             registry = ToolRegistry()

@@ -79,39 +79,83 @@ def compose_hyperframes_html(
             vis_file = Path(beat["file"]).name
 
         sec_id = f"scene-{bid}"
-        sections_html.append(
-            f'    <section id="{sec_id}" class="clip scene" '
-            f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
-            f'      <div class="stage-card">\n'
-            f'        <div class="stage-header">\n'
-            f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
-            f'        </div>\n'
-            f'        <div class="diagram-viewport">\n'
-            f'          <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />\n'
-            f'        </div>\n'
-            f'      </div>\n'
-            f'    </section>'
+        is_illustration = (
+            vis_file.endswith((".webp", ".png", ".jpg", ".jpeg"))
+            or beat.get("visual_kind") == "illustration"
+            or beat.get("kind") == "illustration"
         )
 
-        # GSAP animation per beat: smooth fade and subtle rise on entry
-        entry_t = _fmt_time(max(0.0, start_s))
-        tweens_js.append(
-            f'  tl.fromTo("#{sec_id} .stage-card", '
-            f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
-            f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
-            f'{entry_t});'
-        )
-        if i < len(beats) - 1:
-            exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
-            exit_end_t = _fmt_time(max(0.0, end_s))
+        if is_illustration:
+            sections_html.append(
+                f'    <section id="{sec_id}" class="clip scene illustration-scene" '
+                f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
+                f'      <div class="illustration-viewport">\n'
+                f'        <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="hero-illustration" />\n'
+                f'        <div class="vignette-overlay"></div>\n'
+                f'      </div>\n'
+                f'      <div class="stage-header stage-header-overlay">\n'
+                f'        <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
+                f'      </div>\n'
+                f'    </section>'
+            )
+            entry_t = _fmt_time(max(0.0, start_s))
             tweens_js.append(
-                f'  tl.to("#{sec_id} .stage-card", '
-                f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
-                f'{exit_start_t});'
+                f'  tl.fromTo("#{sec_id}", '
+                f'{{ opacity: 0 }}, '
+                f'{{ opacity: 1, duration: 0.5, ease: "power2.out" }}, '
+                f'{entry_t});'
             )
             tweens_js.append(
-                f'  tl.set("#{sec_id} .stage-card", {{ opacity: 0 }}, {exit_end_t});'
+                f'  tl.fromTo("#{sec_id} .hero-illustration", '
+                f'{{ scale: 1.0 }}, '
+                f'{{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, '
+                f'{entry_t});'
             )
+            if i < len(beats) - 1:
+                exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
+                exit_end_t = _fmt_time(max(0.0, end_s))
+                tweens_js.append(
+                    f'  tl.to("#{sec_id}", '
+                    f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
+                    f'{exit_start_t});'
+                )
+                tweens_js.append(
+                    f'  tl.set("#{sec_id}", {{ opacity: 0 }}, {exit_end_t});'
+                )
+        else:
+            sections_html.append(
+                f'    <section id="{sec_id}" class="clip scene" '
+                f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
+                f'      <div class="stage-card">\n'
+                f'        <div class="stage-header">\n'
+                f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
+                f'        </div>\n'
+                f'        <div class="diagram-viewport">\n'
+                f'          <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />\n'
+                f'        </div>\n'
+                f'      </div>\n'
+                f'    </section>'
+            )
+
+            # GSAP animation per beat: smooth fade and subtle rise on entry
+            entry_t = _fmt_time(max(0.0, start_s))
+            tweens_js.append(
+                f'  tl.fromTo("#{sec_id} .stage-card", '
+                f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
+                f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
+                f'{entry_t});'
+            )
+            if i < len(beats) - 1:
+                exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
+                exit_end_t = _fmt_time(max(0.0, end_s))
+                tweens_js.append(
+                    f'  tl.to("#{sec_id} .stage-card", '
+                    f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
+                    f'{exit_start_t});'
+                )
+                tweens_js.append(
+                    f'  tl.set("#{sec_id} .stage-card", {{ opacity: 0 }}, {exit_end_t});'
+                )
 
     clips_block = "\n".join(sections_html)
     tweens_block = "\n".join(tweens_js)
@@ -201,6 +245,47 @@ def compose_hyperframes_html(
       height: 100%;
       object-fit: contain;
       display: block;
+    }}
+    .clip.illustration-scene {{
+      padding: 0;
+    }}
+    .illustration-viewport {{
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .hero-illustration {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform-origin: center center;
+    }}
+    .vignette-overlay {{
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(11, 17, 32, 0.78) 0%,
+        rgba(11, 17, 32, 0.15) 18%,
+        rgba(11, 17, 32, 0.1) 65%,
+        rgba(11, 17, 32, 0.88) 100%
+      );
+      pointer-events: none;
+      z-index: 2;
+    }}
+    .stage-header-overlay {{
+      position: absolute;
+      top: 100px;
+      left: 0;
+      right: 0;
+      z-index: 3;
+      margin-bottom: 0;
     }}
   </style>
 </head>
