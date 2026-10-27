@@ -79,11 +79,7 @@ def compose_hyperframes_html(
             vis_file = Path(beat["file"]).name
 
         sec_id = f"scene-{bid}"
-        is_illustration = (
-            vis_file.endswith((".webp", ".png", ".jpg", ".jpeg"))
-            or beat.get("visual_kind") == "illustration"
-            or beat.get("kind") == "illustration"
-        )
+        is_illustration = vis_file.lower().endswith((".webp", ".png", ".jpg", ".jpeg"))
 
         if is_illustration:
             sections_html.append(
