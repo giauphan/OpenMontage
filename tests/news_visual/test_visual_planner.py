@@ -115,7 +115,11 @@ def test_planner_rejects_short_total_duration(valid_script, valid_claims):
 
 def test_planner_rejects_beat_exceeding_12s(valid_script, valid_claims):
     # Beat 1 duration = 14s (> 12s)
+    shift = 3.0
     valid_script["sections"][0]["end_seconds"] = 14.0
+    for sec in valid_script["sections"][1:]:
+        sec["start_seconds"] += shift
+        sec["end_seconds"] += shift
     planner = ClaimAwareVisualPlanner()
     with pytest.raises(VisualPlannerError, match="exceeds maximum 12.0s"):
         planner.plan_visuals("proj_1", valid_script, valid_claims)

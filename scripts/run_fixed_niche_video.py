@@ -303,6 +303,23 @@ class FixedNicheVideoRunner:
         )
         (artifacts_dir / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
+        # 6.5. Generate animated diagram sidecar if visual style is active
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+            from lib.visual_style.diagram_director import AnimatedDiagramDirector
+            director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
+            diag_plan = director.plan_diagram_animation(
+                project_id=self.candidate_id,
+                topic=topic,
+                claims=claim_ledger.get("claims", []),
+                target_duration=target_dur,
+                script_sha256=script_sha,
+                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claim_ledger).encode("utf-8")).hexdigest(),
+                source_visual_plan_sha256=plan_sha,
+            )
+            director.write_sidecar(diag_plan, self.project_dir)
+
         # 7. Setup HyperFrames composition structures
         from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
         materialize_hyperframes_project(
@@ -363,6 +380,23 @@ class FixedNicheVideoRunner:
             enforce_meaningful_visuals=True,
         )
         (self.project_dir / "artifacts" / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+            from lib.visual_style.diagram_director import AnimatedDiagramDirector
+            director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
+            diag_plan = director.plan_diagram_animation(
+                project_id=self.candidate_id,
+                topic=topic_data,
+                claims=claims,
+                target_duration=dur,
+                script_sha256=hashlib.sha256(script_bytes).hexdigest(),
+                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claims).encode("utf-8")).hexdigest(),
+                source_visual_plan_sha256=plan_sha,
+            )
+            director.write_sidecar(diag_plan, self.project_dir)
+
         return len(beats)
 
     def synthesize_narration(
@@ -512,9 +546,28 @@ class FixedNicheVideoRunner:
 
                         # Re-materialize HyperFrames compositions with the reconciled audio duration
                         from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
+                        topic_for_comp = self._staged_topic or {"candidate_id": self.candidate_id}
+                        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
+                        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+                        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+                            from lib.visual_style.diagram_director import AnimatedDiagramDirector
+                            cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
+                            claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
+                            director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
+                            diag_plan = director.plan_diagram_animation(
+                                project_id=self.candidate_id,
+                                topic=topic_for_comp,
+                                claims=claims,
+                                target_duration=align_dur,
+                                script_sha256=hashlib.sha256(script_file.read_bytes()).hexdigest(),
+                                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claims).encode("utf-8")).hexdigest(),
+                                source_visual_plan_sha256=hashlib.sha256(json.dumps(plan_json).encode("utf-8")).hexdigest(),
+                            )
+                            director.write_sidecar(diag_plan, self.project_dir)
+
                         materialize_hyperframes_project(
                             project_dir=self.project_dir,
-                            topic={"candidate_id": self.candidate_id},
+                            topic=topic_for_comp,
                             visual_plan=plan_json,
                             duration=align_dur,
                         )
@@ -690,12 +743,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--title", default=None)
     parser.add_argument("--topic-family", default=None)
     parser.add_argument("--canonical-url", default=None)
-    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=True, help="Enable Muse AI image generation for conceptual illustration beats")
+    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False, help="Enable Muse AI image generation for conceptual illustration beats (operator opt-in)")
     args = parser.parse_args(argv)
 
     if args.enable_ai_visuals:
         os.environ["AI_VISUAL_ENABLED"] = "1"
-        os.environ.setdefault("MUSE_GATEWAY_EXTERNAL_CALLS_ALLOWED", "1")
     else:
         os.environ["AI_VISUAL_ENABLED"] = "0"
 

@@ -197,11 +197,11 @@ def resolve_visual_assets(
                 elif found_file.endswith(".svg"):
                     kind = "svg_diagram" if beat_kind not in ("svg_diagram", "contextual_icon") else beat_kind
                     origin = orch_rec.get("origin", "deterministic_code")
-                    rights_status = "cleared_for_use"
+                    rights_status = orch_rec.get("rights_status", "cleared_for_use" if origin in ("deterministic_code", "project-generated-verified-diagram") else "pending_review")
                 else:
                     kind = beat_kind if beat_kind in ("authentic_photo", "source_screenshot", "chart") else "authentic_photo"
-                    origin = "local_authorized_source"
-                    rights_status = "cleared_for_use"
+                    origin = orch_rec.get("origin", "local_authorized_source")
+                    rights_status = orch_rec.get("rights_status", "pending_review")
             elif found_file.endswith(".svg"):
                 is_ai_art = False
                 kind = "svg_diagram" if beat_kind not in ("svg_diagram", "contextual_icon") else beat_kind

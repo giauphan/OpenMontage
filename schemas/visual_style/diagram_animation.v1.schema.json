@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/visual-style/diagram-animation/v1",
+  "title": "Proposed Diagram Animation Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "style",
+    "project_id",
+    "duration_seconds",
+    "script_sha256",
+    "source_visual_plan_sha256",
+    "source_claim_ledger_sha256",
+    "policy_sha256",
+    "graph",
+    "beats",
+    "events"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.0"
+    },
+    "style": {
+      "const": "animated_agent_diagram_v1"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "duration_seconds": {
+      "type": "number",
+      "minimum": 65,
+      "maximum": 75
+    },
+    "script_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_visual_plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_claim_ledger_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label",
+              "kind",
+              "x",
+              "y"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "kind": {
+                "enum": [
+                  "concept",
+                  "tool",
+                  "store",
+                  "decision",
+                  "developer",
+                  "agent",
+                  "warning",
+                  "result"
+                ]
+              },
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "group_id": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 80,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "source",
+              "target"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "source": {
+                "$ref": "#/$defs/id"
+              },
+              "target": {
+                "$ref": "#/$defs/id"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 48
+              }
+            }
+          }
+        }
+      }
+    },
+    "beats": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "section_id",
+          "start_seconds",
+          "end_seconds",
+          "claim_ids",
+          "visual_intent"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "section_id": {
+            "$ref": "#/$defs/id"
+          },
+          "start_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "claim_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "visual_intent": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "at_seconds",
+          "duration_seconds",
+          "type",
+          "target",
+          "beat_id",
+          "claim_ids"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "at_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 75
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "type": {
+            "enum": [
+              "reveal_node",
+              "hide_node",
+              "draw_edge",
+              "highlight_node",
+              "dim_node",
+              "circle_node",
+              "flow_token",
+              "update_label_state",
+              "show_comparison",
+              "progress_reveal",
+              "pan_graph",
+              "focus_group"
+            ]
+          },
+          "target": {
+            "$ref": "#/$defs/id"
+          },
+          "beat_id": {
+            "$ref": "#/$defs/id"
+          },
+          "claim_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "payload": {
+            "type": "object",
+            "maxProperties": 4,
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "value",
+                "label",
+                "progress",
+                "color_token",
+                "direction",
+                "intensity",
+                "ease",
+                "offset"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+    }
+  }
+}
