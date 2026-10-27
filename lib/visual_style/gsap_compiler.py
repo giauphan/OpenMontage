@@ -57,6 +57,7 @@ def compile_gsap_timeline_script(plan: DiagramAnimationPlan) -> str:
     for ev in sorted_events:
         t = _fmt(ev.at_seconds)
         dur = _fmt(max(0.2, ev.duration_seconds))
+        dur_half = _fmt(round(max(0.05, ev.duration_seconds / 2.0), 3))
         tgt = ev.target
 
         if ev.type == EventType.REVEAL_NODE:
@@ -89,7 +90,7 @@ def compile_gsap_timeline_script(plan: DiagramAnimationPlan) -> str:
             lines.append(
                 f"tl.fromTo('#node-{tgt} .node-box', "
                 f"{{ strokeWidth: 2.5 }}, "
-                f"{{ strokeWidth: 5.5, duration: {dur}/2, yoyo: true, repeat: 1, ease: 'power1.inOut' }}, {t});"
+                f"{{ strokeWidth: 5.5, duration: {dur_half}, yoyo: true, repeat: 1, ease: 'power1.inOut' }}, {t});"
             )
 
         elif ev.type == EventType.DIM_NODE:
@@ -102,7 +103,7 @@ def compile_gsap_timeline_script(plan: DiagramAnimationPlan) -> str:
             lines.append(
                 f"tl.fromTo('#node-{tgt} .node-box', "
                 f"{{ filter: 'none' }}, "
-                f"{{ filter: 'url(#node-glow)', duration: {dur}/2, yoyo: true, repeat: 1 }}, {t});"
+                f"{{ filter: 'url(#node-glow)', duration: {dur_half}, yoyo: true, repeat: 1 }}, {t});"
             )
 
         elif ev.type == EventType.FLOW_TOKEN:
@@ -110,7 +111,7 @@ def compile_gsap_timeline_script(plan: DiagramAnimationPlan) -> str:
             lines.append(
                 f"tl.fromTo('#edge-path-{tgt}', "
                 f"{{ strokeWidth: 3.5 }}, "
-                f"{{ strokeWidth: 6.0, duration: {dur}/2, yoyo: true, repeat: 1 }}, {t});"
+                f"{{ strokeWidth: 6.0, duration: {dur_half}, yoyo: true, repeat: 1 }}, {t});"
             )
 
         elif ev.type == EventType.UPDATE_LABEL_STATE:
@@ -124,7 +125,7 @@ def compile_gsap_timeline_script(plan: DiagramAnimationPlan) -> str:
 
         elif ev.type == EventType.SHOW_COMPARISON:
             lines.append(
-                f"tl.to('#node-{tgt}', {{ scale: 1.05, duration: {dur}/2, yoyo: true, repeat: 1 }}, {t});"
+                f"tl.to('#node-{tgt}', {{ scale: 1.05, duration: {dur_half}, yoyo: true, repeat: 1 }}, {t});"
             )
 
         elif ev.type == EventType.PROGRESS_REVEAL:

@@ -21,19 +21,27 @@ from lib.visual_style.qa import evaluate_plan_qa
 def test_renderer_conforms_to_port():
     """render_inline_svg_dom callable must conform to DiagramRendererPort."""
     assert callable(render_inline_svg_dom)
-    assert isinstance(render_inline_svg_dom, DiagramRendererPort)
+    renderer: DiagramRendererPort = render_inline_svg_dom
+    assert isinstance(renderer, DiagramRendererPort)
+    from lib.visual_style.spec import DiagramGraph
+    out = renderer(DiagramGraph(nodes=[], edges=[]), title="Test")
+    assert isinstance(out, str)
 
 
 def test_compiler_conforms_to_port():
     """compile_gsap_timeline_script callable must conform to TimelineCompilerPort."""
     assert callable(compile_gsap_timeline_script)
-    assert isinstance(compile_gsap_timeline_script, TimelineCompilerPort)
+    compiler: TimelineCompilerPort = compile_gsap_timeline_script
+    assert isinstance(compiler, TimelineCompilerPort)
 
 
 def test_validator_conforms_to_port():
     """validate_diagram_plan_data callable must conform to PlanValidatorPort."""
     assert callable(validate_diagram_plan_data)
-    assert isinstance(validate_diagram_plan_data, PlanValidatorPort)
+    validator: PlanValidatorPort = validate_diagram_plan_data
+    assert isinstance(validator, PlanValidatorPort)
+    errs = validator({})
+    assert isinstance(errs, list)
 
 
 def test_director_conforms_to_port():

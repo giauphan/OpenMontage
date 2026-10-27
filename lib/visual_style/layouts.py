@@ -10,7 +10,7 @@ Target module size: < 450 lines.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from lib.visual_style.spec import DiagramNode, DiagramEdge, DiagramGraph, NodeKind
 

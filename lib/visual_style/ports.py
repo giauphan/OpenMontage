@@ -24,8 +24,7 @@ class DiagramRendererPort(Protocol):
     def __call__(
         self,
         graph: DiagramGraph,
-        plan_id: str = "animated_diagram",
-        stroke_offset_map: Optional[Dict[str, float]] = None,
+        title: str = "",
     ) -> str:
         """Render the given DiagramGraph into an inline SVG DOM string."""
         ...
@@ -37,11 +36,9 @@ class TimelineCompilerPort(Protocol):
 
     def __call__(
         self,
-        events: List[DiagramEvent],
-        duration_seconds: float = 72.0,
-        is_vertical: bool = True,
+        plan: DiagramAnimationPlan,
     ) -> str:
-        """Compile diagram events into a deterministic GSAP timeline JavaScript string."""
+        """Compile diagram animation plan into a deterministic GSAP timeline JavaScript string."""
         ...
 
 
@@ -72,8 +69,13 @@ class ProofVerifierPort(Protocol):
 class PlanValidatorPort(Protocol):
     """Port for validating diagram plans against JSON schema and referential integrity."""
 
-    def __call__(self, data: Dict[str, Any]) -> None:
-        """Validate diagram plan dictionary against schema and referential invariants."""
+    def __call__(
+        self,
+        data: Dict[str, Any],
+        *,
+        strict_hashes: bool = False,
+    ) -> List[str]:
+        """Validate diagram plan dictionary against schema and referential invariants, returning errors."""
         ...
 
 

@@ -381,7 +381,9 @@ def materialize_hyperframes_project(
             from lib.visual_style.spec import DiagramAnimationPlan
             from lib.visual_style.validation import validate_diagram_plan_data
             plan_data = json.loads(sidecar_file.read_text(encoding="utf-8"))
-            validate_diagram_plan_data(plan_data)
+            errs = validate_diagram_plan_data(plan_data)
+            if errs:
+                raise ValueError(f"Sidecar failed validation ({len(errs)} errors): {errs}")
             diagram_plan = DiagramAnimationPlan.from_dict(plan_data)
         except Exception as exc:
             logger.warning(f"Could not load sidecar {sidecar_file}: {exc}")

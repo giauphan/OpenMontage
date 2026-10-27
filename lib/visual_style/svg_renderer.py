@@ -158,6 +158,8 @@ def render_inline_svg_dom(graph: DiagramGraph, title: str = "") -> str:
         colors = KIND_COLORS.get(tgt.kind, KIND_COLORS[NodeKind.CONCEPT])
         marker_id = f"arrow-{tgt.kind.value}"
 
+        if edge.label:
+            validate_security_string(edge.label)
         escaped_label = html.escape(edge.label or "", quote=True)
         label_pill = ""
         if edge.label:
@@ -197,9 +199,10 @@ def render_inline_svg_dom(graph: DiagramGraph, title: str = "") -> str:
         half_h = round(px["height"] / 2.0, 2)
         badge_text = colors["badge"]
 
+        escaped_group = html.escape(node.group_id or "", quote=True)
         nodes_snippets.append(
             f'<g id="node-{node.id}" class="diagram-node node-{node.kind.value}" '
-            f'data-node-id="{node.id}" opacity="0" '
+            f'data-node-id="{node.id}" data-group="{escaped_group}" opacity="0" '
             f'transform="translate({px["cx"]}, {px["cy"]}) scale(0.85)">\n'
             f'  <rect class="node-box" x="{-half_w}" y="{-half_h}" width="{px["width"]}" height="{px["height"]}" '
             f'rx="16" fill="{colors["fill"]}" stroke="{colors["stroke"]}" stroke-width="2.5" />\n'
