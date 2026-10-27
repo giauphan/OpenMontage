@@ -23,12 +23,12 @@ Cập nhật quan trọng đối với ngách **YouTube Shorts**:
 
 Kiểm tra repository [`giauphan/OpenMontage`](https://github.com/giauphan/OpenMontage):
 
-Trong [`tools/publishers/youtube_publisher.py`](file:///home/ubuntu/OpenMontage/tools/publishers/youtube_publisher.py):
+Trong [`tools/publishers/youtube_publisher.py`](../tools/publishers/youtube_publisher.py):
 - `_upload_thumbnail_if_present()` đã có sẵn: gọi `youtube.thumbnails().set(videoId=..., media_body=...)`.
 - Input `thumbnail_path`: hỗ trợ nhận đường dẫn ảnh thumbnail.
 - `_upload_media_and_thumbnail()`: upload video trước, lấy `video_id`, rồi gọi upload thumbnail.
 
-Trong [`tools/graphics/muse_gateway_image.py`](file:///home/ubuntu/OpenMontage/tools/graphics/muse_gateway_image.py):
+Trong [`tools/graphics/muse_gateway_image.py`](../tools/graphics/muse_gateway_image.py):
 - Hỗ trợ tạo ảnh qua Muse Gateway, tải ảnh về và xác minh tính toàn vẹn của file.
 
 **Phần còn thiếu:** Kết nối tự động giữa hai tính năng này và kiểm chứng riêng thumbnail của Shorts. Hiện tại, test YouTube thumbnail chỉ xác nhận API mock được gọi, chưa chứng minh upload Shorts thực sự thành công.

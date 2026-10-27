@@ -46,7 +46,12 @@ def render_project_composition(
     lock = MediaCpuLock(timeout_seconds=300.0)
     with lock:
         audio_path = project_dir / "assets" / "narration.mp3"
-        is_vertical = "reels" in composition_name or "9x16" in str(output_mp4)
+        is_vertical = (
+            "reels" in composition_name
+            or "short" in composition_name
+            or "9x16" in composition_name
+            or "9x16" in str(output_mp4)
+        )
         width, height = (1080, 1920) if is_vertical else (1920, 1080)
 
         # Check narration audio file
@@ -104,8 +109,7 @@ def render_project_composition(
             if audio_path.is_file():
                 comp_audio = comp_dir / "assets" / "narration.mp3"
                 comp_audio.parent.mkdir(parents=True, exist_ok=True)
-                if not comp_audio.is_file() or comp_audio.stat().st_size != audio_path.stat().st_size:
-                    shutil.copy2(audio_path, comp_audio)
+                shutil.copy2(audio_path, comp_audio)
             ass_path = project_dir / "artifacts" / "captions.ass"
             try:
                 return render_hyperframes_composition(
