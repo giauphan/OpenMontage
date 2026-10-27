@@ -12,6 +12,7 @@ from __future__ import annotations
 import html as html_mod
 import json
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -39,8 +40,24 @@ def compose_hyperframes_html(
     is_vertical: bool = True,
     audio_src: str = "assets/narration.mp3",
     visuals_src: Optional[Path] = None,
+    diagram_plan: Optional[Any] = None,
 ) -> str:
     """Compose production HyperFrames HTML composition matching hyperframes-core contract."""
+    import os
+    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
+    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+    if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+        from lib.visual_style.hyperframes_adapter import compose_animated_diagram_html
+        return compose_animated_diagram_html(
+            title=title,
+            duration=duration,
+            beats=beats,
+            is_vertical=is_vertical,
+            audio_src=audio_src,
+            visuals_src=visuals_src,
+            diagram_plan=diagram_plan,
+        )
+
     width = 1080 if is_vertical else 1920
     height = 1920 if is_vertical else 1080
     dia_w = 980 if is_vertical else 960
@@ -65,9 +82,13 @@ def compose_hyperframes_html(
         vis_file = f"{aid}.svg"
         if visuals_src and visuals_src.is_dir():
             found = False
+            is_ai_beat = (
+                beat.get("visual_kind") == "illustration"
+                or beat.get("render_strategy") == "ai_illustration_eligible"
+            )
             pref_exts = (
                 (".webp", ".png", ".jpg", ".jpeg", ".svg")
-                if beat.get("visual_kind") == "illustration" and not (visuals_src / f"{aid}.svg").is_file()
+                if is_ai_beat
                 else (".svg", ".webp", ".png", ".jpg", ".jpeg")
             )
             for ext in pref_exts:
@@ -353,6 +374,21 @@ def materialize_hyperframes_project(
     beats = visual_plan.get("beats", [])
     title = topic.get("title", "Practical AI Agent Engineering")
 
+    # Resolve diagram animation plan if available
+    diagram_plan = None
+    sidecar_file = project_dir / "artifacts" / "diagram_animation_plan.json"
+    if sidecar_file.is_file():
+        try:
+            from lib.visual_style.spec import DiagramAnimationPlan
+            from lib.visual_style.validation import validate_diagram_plan_data
+            plan_data = json.loads(sidecar_file.read_text(encoding="utf-8"))
+            errs = validate_diagram_plan_data(plan_data)
+            if errs:
+                raise ValueError(f"Sidecar failed validation ({len(errs)} errors): {errs}")
+            diagram_plan = DiagramAnimationPlan.from_dict(plan_data)
+        except Exception as exc:
+            logger.warning(f"Could not load sidecar {sidecar_file}: {exc}")
+
     result_paths: Dict[str, Path] = {}
 
     for comp_name in composition_names:
@@ -366,6 +402,16 @@ def materialize_hyperframes_project(
             for vis_file in visuals_src.iterdir():
                 if vis_file.is_file() and vis_file.suffix.lower() in (".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm"):
                     shutil.copy2(vis_file, comp_vis / vis_file.name)
+
+        # Copy local vendor scripts (e.g. pinned gsap.min.js) if present for offline render
+        repo_root = Path(__file__).resolve().parents[2]
+        local_gsap = repo_root / "assets" / "vendor" / "gsap.min.js"
+        if not local_gsap.is_file():
+            local_gsap = Path("assets/vendor/gsap.min.js")
+        if local_gsap.is_file():
+            comp_vendor = comp_dir / "assets" / "vendor"
+            comp_vendor.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(local_gsap, comp_vendor / "gsap.min.js")
 
         # Copy or reference narration audio
         comp_assets = comp_dir / "assets"
@@ -381,6 +427,7 @@ def materialize_hyperframes_project(
             is_vertical=is_vertical,
             audio_src="assets/narration.mp3",
             visuals_src=visuals_src,
+            diagram_plan=diagram_plan,
         )
 
         index_file = comp_dir / "index.html"
@@ -421,8 +468,20 @@ def render_hyperframes_composition(
         "-o", str(raw_mp4),
         "--quality", quality,
     ]
+    env = dict(os.environ)
+    if "HYPERFRAMES_BROWSER_PATH" not in env:
+        brave_sh = Path("/tmp/brave_headless.sh")
+        if not brave_sh.is_file() and Path("/opt/brave.com/brave/brave").is_file():
+            brave_sh.write_text(
+                "#!/bin/bash\nexec /opt/brave.com/brave/brave --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \"$@\"\n",
+                encoding="utf-8",
+            )
+            brave_sh.chmod(0o755)
+        if brave_sh.is_file():
+            env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
+
     logger.info("Executing HyperFrames render: %s", " ".join(cmd))
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=env)
     if res.returncode != 0:
         raise RuntimeError(f"HyperFrames render failed (exit {res.returncode}): {res.stderr or res.stdout}")
 
@@ -451,6 +510,15 @@ def render_ffmpeg_composition(
     burn_captions: bool = False,
 ) -> Path:
     """Render composition via FFmpeg concat demuxer for fast offline/CI execution."""
+    import os
+    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
+    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+    if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+        raise RuntimeError(
+            "CRITICAL: Static slideshow fallback via FFmpeg is strictly forbidden for animated_agent_diagram_v1. "
+            "HyperFrames dynamic element-level animation is required."
+        )
+
     project_dir = Path(project_dir).resolve()
     output_mp4 = Path(output_mp4).resolve()
     output_mp4.parent.mkdir(parents=True, exist_ok=True)

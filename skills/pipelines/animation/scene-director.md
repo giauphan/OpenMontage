@@ -85,6 +85,28 @@ Recommended metadata keys:
 - `tool_path_map`
 - `reusable_motifs`
 
+### 4b. Reuse Named Chalkboard Templates
+
+When the active playbook is `chalkboard-explainer`, set `scene_plan.style_playbook`
+to that name and assign every `diagram` scene a `template_id` from the approved
+catalog in the brief or proposal. Reuse these layout patterns:
+
+| Template ID | Layout contract | Best use |
+|---|---|---|
+| `chalkboard_hook` | One short question or claim, with one hand-drawn underline or circled term | Opening hook or section reset |
+| `chalkboard_system_diagram` | One system boundary and a vertical or horizontal flow, revealed in narration order | Explain how a system works |
+| `chalkboard_compare` | Two or three aligned columns with one shared comparison axis | Contrast options or states |
+| `chalkboard_feature_list` | One central system with up to three short callouts | Summarize capabilities or examples |
+| `chalkboard_recap` | Simplified complete model plus one takeaway phrase | Resolution |
+
+The ID reuses composition only. Replace all labels, relationships, examples, and
+claims for the new topic. Prefer three to five templates for a short explainer;
+vary content and reveal order while keeping colors, line weight, title position,
+and safe margins consistent. Record the selected catalog under
+`scene_plan.metadata.visual_template_catalog`, and set `template_id` on each
+matching scene so the asset stage can resolve it without guessing. Scenes using
+other visual modes should omit `template_id`.
+
 ### 5. 5-Aspect Scene-Plan Checklist
 
 > Every scene must specify all five aspects, BUT the load shifts with the scene's `animation_mode`. Manim and other diagrammatic/programmatic scenes care most about **Subject** and **Spatial Framing** — Camera and Subject Motion in the cinematographic sense often map to N/A or to abstract equivalents. AI-video / `image_animation` / `anime_scene` scenes care about all five and behave like cinematic shots. Marking an aspect as N/A is allowed but must be explicit per scene; silent omission is forbidden.
@@ -106,6 +128,7 @@ Recommended metadata keys:
 - overlays live under `overlays:`, never inside the framing description,
 - the transition system is limited and meaningful,
 - the tool path is explicit,
+- every chalkboard diagram references one approved reusable `template_id`,
 - the sequence feels like one designed system.
 
 ## Common Pitfalls

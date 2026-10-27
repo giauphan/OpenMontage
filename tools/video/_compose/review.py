@@ -141,14 +141,18 @@ def run_final_review(
             for i, pct in enumerate(sample_points):
                 ts = round(duration * pct, 2)
                 frame_path = frame_dir / f"review_frame_{i}.png"
+                frame_path.unlink(missing_ok=True)
                 cmd = [
                     "ffmpeg", "-y", "-ss", str(ts),
                     "-i", str(output_path),
                     "-frames:v", "1", "-q:v", "2",
                     str(frame_path),
                 ]
-                subprocess.run(cmd, capture_output=True, timeout=15)
-                if frame_path.exists():
+                proc = subprocess.run(
+                    cmd, capture_output=True, timeout=15,
+                    stdin=subprocess.DEVNULL,
+                )
+                if proc.returncode == 0 and frame_path.exists():
                     frame_paths.append(str(frame_path))
 
                     # Check for black frames (file size heuristic:
@@ -286,7 +290,7 @@ def run_final_review(
                 )
 
         delivery_data = (
-            edit_decisions.get("metadata", {}).get("delivery_promise")
+            (edit_decisions.get("metadata") or {}).get("delivery_promise")
             or edit_decisions.get("delivery_promise")
         )
         if delivery_data:
@@ -325,7 +329,7 @@ def run_final_review(
         "issues": [],
     }
     if edit_decisions:
-        ed_subs = edit_decisions.get("subtitles", {})
+        ed_subs = edit_decisions.get("subtitles") or {}
         subtitle_check["subtitles_expected"] = bool(ed_subs.get("enabled"))
 
         # Check if output has subtitle stream

@@ -1,0 +1,95 @@
+identity:
+  name: "Chalkboard Explainer"
+  category: whiteboard
+  mood: curious, clear, lightly playful
+  pace: deliberate
+  best_for: "Vertical technical explainers built from progressively drawn diagrams"
+
+visual_language:
+  color_palette:
+    primary: ["#F1EEE8", "#F28C7A"]
+    accent: ["#46D9D1", "#B7A0F5", "#F0D94E"]
+    background: "#090A0C"
+    text: "#F1EEE8"
+    muted: "#72747B"
+  composition: "Vertical 9:16 chalkboard canvas, centered diagram area, generous safe margins, one main idea per frame"
+  texture: "Near-black board with sparse fine speckles and hand-drawn chalk lines; keep texture subtle behind text"
+
+typography:
+  headings:
+    font: "hand-lettered rounded sans"
+    weight: 600
+    tracking: "0"
+  body:
+    font: "clean handwritten sans"
+    weight: 400
+    line_height: 1.35
+  code:
+    font: "monospace"
+    weight: 400
+  scale_system: "major_third"
+  weight_matrix:
+    title: 600
+    heading: 600
+    body: 400
+    caption: 400
+
+motion:
+  transitions: [draw_on, dissolve, cut]
+  animation_style: "progressive chalk-line reveals, deliberate easing, slight hand-drawn irregularity, no bounce"
+  pacing_rules:
+    min_scene_hold_seconds: 2.0
+    max_scene_hold_seconds: 10
+    text_card_hold_seconds: 2.5
+    stat_card_hold_seconds: 2.5
+    transition_duration_seconds: 0.25
+  entrance: "draw labels and diagram strokes in the order the narration introduces them"
+  exit: "brief hold, then dissolve or transform one diagram element into the next scene"
+
+audio:
+  voice_style: "conversational, curious, technically clear, brisk but not rushed"
+  music_mood: "very subtle minimal electronic or warm ambient bed"
+  music_volume: 0.06
+  sfx_style: "quiet chalk strokes and small tactile ticks on key reveals"
+  ducking_threshold_db: -3
+
+asset_generation:
+  image_prompt_prefix: "vertical 9:16 near-black speckled chalkboard, hand-drawn technical explainer diagram, clean legible chalk lettering, sparse composition, restrained coral cyan lavender and yellow chalk accents, "
+  image_negative_prompt: "photorealistic, glossy 3D, gradients, dense paragraphs, tiny illegible labels, bright whiteboard, corporate cards, clutter, extra colors"
+  diagram_style: "hand-drawn white chalk lines and lettering on near-black, coral outlines for the system, cyan for the key concept, lavender for secondary labels, yellow for version tags or callouts; one progressive diagram per beat"
+  consistency_anchors:
+    - "Use a near-black speckled board throughout; speckles stay subtle and never reduce contrast."
+    - "Use off-white for explanatory labels, coral for the main system boundary, cyan for the central concept, lavender for secondary labels, and yellow sparingly for callouts."
+    - "Use hand-drawn strokes and rounded handwritten lettering, with clean alignment and enough spacing for mobile readability."
+    - "Build diagrams progressively in narration order; preserve existing elements when adding a new relationship."
+    - "Keep each frame to one central diagram and no more than three short labels."
+
+overlays:
+  key_term:
+    bg: "#090A0C"
+    text: "#46D9D1"
+    radius: 0
+  code_block:
+    bg: "#151619"
+    text: "#F1EEE8"
+    highlight: "#46D9D1"
+
+quality_rules:
+  - "Body text must remain readable on a 720x1280 mobile frame."
+  - "Maintain strong contrast between chalk strokes and the background."
+  - "Use one diagram template per scene and no more than three short labels per frame."
+  - "Draw diagrams in the order they are explained; do not reveal the complete answer before its narration beat."
+  - "Keep key shapes, labels, and titles inside a 7% safe margin."
+  - "Reuse the same visual grammar across scenes while changing the diagram content to fit the topic."
+
+chart_palette:
+  - "#F1EEE8"
+  - "#F28C7A"
+  - "#46D9D1"
+  - "#B7A0F5"
+  - "#F0D94E"
+
+color_rules:
+  harmony_type: "complementary"
+  contrast_validation: true
+  colorblind_safe: true

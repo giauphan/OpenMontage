@@ -220,24 +220,24 @@ def generate_pipeline_svg(
 
   <rect x="50" y="180" width="880" height="180" rx="14" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
   <rect x="75" y="200" width="180" height="26" rx="6" fill="#1e293b"/>
-  <text x="165" y="218" fill="#38bdf8" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">PHASE 1: TURN 1 (ACTIVE)</text>
-  <text x="75" y="255" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">User Loads Rules &amp; Architecture Guidelines</text>
-  <text x="75" y="285" fill="#cbd5e1" font-family="sans-serif" font-size="14">Agent operates within in-memory context window (volatile working memory).</text>
+  <text x="165" y="218" fill="#38bdf8" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">PHASE 1: ACTIVE ATTEMPT</text>
+  <text x="75" y="255" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">{cfg['task_desc']}</text>
+  <text x="75" y="285" fill="#cbd5e1" font-family="sans-serif" font-size="14">{cfg['rule_desc']}</text>
   <rect x="75" y="305" width="400" height="32" rx="6" fill="#1e293b"/>
-  <text x="95" y="326" fill="#22c55e" font-family="monospace" font-size="13">✓ Status: In-Memory Reasoning Succeeded</text>
+  <text x="95" y="326" fill="#22c55e" font-family="monospace" font-size="13">✓ Status: Reasoning Step Completed</text>
 
   <path d="M 490 360 L 490 410" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
   <polygon points="483,410 490,425 497,410" fill="#f59e0b"/>
   <rect x="290" y="380" width="400" height="40" rx="8" fill="#7f1d1d" stroke="#ef4444" stroke-width="1.5"/>
-  <text x="490" y="405" fill="#fca5a5" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">⚡ SESSION RESET: PROCESS RESTARTED</text>
+  <text x="490" y="405" fill="#fca5a5" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">{cfg['fail_title']}</text>
 
   <rect x="50" y="445" width="880" height="200" rx="14" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>
   <rect x="75" y="465" width="220" height="26" rx="6" fill="#7f1d1d"/>
-  <text x="185" y="483" fill="#fca5a5" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">PHASE 2: TURN 2 (NEW PROCESS)</text>
-  <text x="75" y="520" fill="#ef4444" font-family="sans-serif" font-size="18" font-weight="bold">New Subprocess Has Zero Working Memory</text>
-  <text x="75" y="550" fill="#cbd5e1" font-family="sans-serif" font-size="14">Assumes instructions survive across conversational turns.</text>
+  <text x="185" y="483" fill="#fca5a5" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">PHASE 2: UNANCHORED STATE</text>
+  <text x="75" y="520" fill="#ef4444" font-family="sans-serif" font-size="18" font-weight="bold">{cfg['unanchored_title']}</text>
+  <text x="75" y="550" fill="#cbd5e1" font-family="sans-serif" font-size="14">{cfg['unanchored_desc']}</text>
   <rect x="75" y="570" width="830" height="50" rx="8" fill="#1e293b"/>
-  <text x="95" y="600" fill="#ef4444" font-family="monospace" font-size="13">✕ Defect: Modifies production files violating clean architecture limits</text>
+  <text x="95" y="600" fill="#ef4444" font-family="monospace" font-size="13">{cfg['fail_crit']}</text>
 
   <path d="M 490 645 L 490 700" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>
   <polygon points="483,700 490,715 497,700" fill="#ef4444"/>
@@ -248,8 +248,8 @@ def generate_pipeline_svg(
   <text x="75" y="800" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold">Automated CI Regression Gate Blocks Delivery</text>
   <text x="75" y="830" fill="#cbd5e1" font-family="sans-serif" font-size="14">Developer must manually diagnose why agent broke existing boundaries.</text>
   <rect x="75" y="855" width="830" height="85" rx="8" fill="#0f172a"/>
-  <text x="95" y="885" fill="#f59e0b" font-family="monospace" font-size="13">Root Cause: Conversational context is non-durable</text>
-  <text x="95" y="915" fill="#22c55e" font-family="monospace" font-size="13">Required: Enforce declarative rules on every invocation</text>
+  <text x="95" y="885" fill="#f59e0b" font-family="monospace" font-size="13">Root Cause: {cfg['fail_desc']}</text>
+  <text x="95" y="915" fill="#22c55e" font-family="monospace" font-size="13">Required: {cfg['principle_desc']}</text>
 """
     elif beat_num == 3:
         accent, badge = "#38bdf8", f"{fam_label} // ARCHITECTURAL MECHANISM"
@@ -385,7 +385,34 @@ def generate_pipeline_svg(
   <text x="490" y="845" fill="#86efac" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">DELIVERY GATE: GIT COMMIT APPROVED</text>
   <text x="490" y="880" fill="#ffffff" font-family="sans-serif" font-size="15" text-anchor="middle">All local architectural verifications passed. Ready for review.</text>
   <rect x="240" y="905" width="500" height="36" rx="8" fill="#0f172a"/>
-  <text x="490" y="928" fill="#22c55e" font-family="monospace" font-size="13" text-anchor="middle">git commit -m "feat: verified contract persistence"</text>
+  <text x="490" y="928" fill="#22c55e" font-family="monospace" font-size="13" text-anchor="middle">{cfg['pass_check3']}</text>
+"""
+    elif beat_num == 6 and total_beats == 7:
+        accent, badge = "#8b5cf6", f"{fam_label} // CONTRACT ASSERTION"
+        body = f"""
+  <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">{cfg['contract_name']}</text>
+  <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">{cfg['contract_desc']}</text>
+
+  <rect x="50" y="180" width="880" height="230" rx="16" fill="#0f172a" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="80" y="225" fill="#a78bfa" font-family="sans-serif" font-size="16" font-weight="bold">CONTRACT RULE 1</text>
+  <text x="80" y="260" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">{cfg['check1']}</text>
+  <text x="80" y="300" fill="#cbd5e1" font-family="sans-serif" font-size="15">{cfg.get('rule_desc', 'Rule: Strict boundary assertion enforced across all agent turns')}</text>
+  <rect x="80" y="330" width="820" height="45" rx="8" fill="#1e293b"/>
+  <text x="100" y="358" fill="#22c55e" font-family="monospace" font-size="14">✓ Verified: Boundary precondition guaranteed</text>
+
+  <rect x="50" y="440" width="880" height="230" rx="16" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>
+  <text x="80" y="485" fill="#86efac" font-family="sans-serif" font-size="16" font-weight="bold">CONTRACT RULE 2</text>
+  <text x="80" y="520" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">{cfg['check2']}</text>
+  <text x="80" y="560" fill="#cbd5e1" font-family="sans-serif" font-size="15">Verification suite executes deterministically before merge or publication.</text>
+  <rect x="80" y="590" width="820" height="45" rx="8" fill="#1e293b"/>
+  <text x="100" y="618" fill="#22c55e" font-family="monospace" font-size="14">✓ Verified: Zero regression assertion violations</text>
+
+  <rect x="50" y="700" width="880" height="260" rx="16" fill="#1e1b4b" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="490" y="745" fill="#a78bfa" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">ASSERTION GATE STATUS</text>
+  <text x="490" y="790" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">{cfg['pass_check3']}</text>
+  <text x="490" y="830" fill="#cbd5e1" font-family="sans-serif" font-size="15" text-anchor="middle">{cfg['principle_desc']}</text>
+  <rect x="90" y="865" width="800" height="55" rx="10" fill="#0f172a"/>
+  <text x="490" y="898" fill="#22c55e" font-family="monospace" font-size="14" text-anchor="middle">{cfg['principle_assert']}</text>
 """
     else:
         accent, badge = "#38bdf8", f"{fam_label} // PRODUCTION SUMMARY"

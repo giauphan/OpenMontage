@@ -21,6 +21,10 @@
           "path": { "type": "string", "description": "Relative path within the pipeline project directory" },
           "source_tool": { "type": "string" },
           "scene_id": { "type": "string" },
+          "template_id": {
+            "type": "string",
+            "description": "Reusable visual template identifier inherited from the matching scene plan entry."
+          },
           "prompt": { "type": "string", "description": "Generation prompt if AI-generated" },
           "seed": { "type": "integer", "description": "Seed if applicable" },
           "model": { "type": "string", "description": "Model used for generation" },

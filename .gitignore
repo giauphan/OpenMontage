@@ -28,6 +28,7 @@ renders/
 hyperframes/
 hyperframes_reels/
 tests/qa/output/
+artifacts/verification/animated_agent_diagram_v1/
 
 # Template package source HTML baselines (shipped for integrity verification)
 !templates/news/packages/news-debate/hyperframes/

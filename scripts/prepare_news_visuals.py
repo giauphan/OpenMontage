@@ -179,6 +179,43 @@ def main() -> int:
         assets_manifest = resolve_visual_assets(project_dir, plan, script_sha, plan_sha)
         assets_manifest_path.write_text(json.dumps(assets_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
         stage_composition_visuals(project_dir, assets_manifest)
+
+        # Stage diagram animation sidecar and vendor scripts if new visual style is active
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+            from lib.visual_style.diagram_director import AnimatedDiagramDirector
+            director = AnimatedDiagramDirector()
+            brief_path = artifacts_dir / "research_brief.json"
+            t_title = project_dir.name
+            t_family = "context_memory"
+            if brief_path.is_file():
+                try:
+                    b_json = json.loads(brief_path.read_text(encoding="utf-8"))
+                    t_title = b_json.get("topic") or t_title
+                    t_family = b_json.get("topic_family") or t_family
+                except Exception:
+                    pass
+            diag_plan = director.plan_diagram_animation(
+                project_id=project_dir.name,
+                topic={"title": t_title, "topic_family": t_family, "viewer_question": t_title},
+                claims=claim_ledger if claim_ledger else [{"claim_id": "C001", "statement": t_title}],
+                target_duration=float(plan["beats"][-1].get("end_seconds", 72.0)),
+                script_sha256=script_sha,
+                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claim_ledger or []).encode("utf-8")).hexdigest(),
+                source_visual_plan_sha256=plan_sha,
+            )
+            director.write_sidecar(diag_plan, project_dir)
+
+            repo_root = Path(__file__).resolve().parents[1]
+            local_gsap = repo_root / "assets" / "vendor" / "gsap.min.js"
+            if not local_gsap.is_file():
+                local_gsap = Path("assets/vendor/gsap.min.js")
+            if local_gsap.is_file():
+                for comp in ("hyperframes", "hyperframes_reels"):
+                    comp_vendor = project_dir / comp / "assets" / "vendor"
+                    comp_vendor.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(local_gsap, comp_vendor / "gsap.min.js")
     except Exception as exc:
         print(f"ERROR: Visual asset resolution failed: {exc}", file=sys.stderr)
         return 3

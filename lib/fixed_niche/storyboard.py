@@ -120,7 +120,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b2 = "A single type mismatch between the tool schema and the runtime payload causes immediate tool execution failure."
         elif family == "debugging_reliability":
-            b2 = "In modern continuous integration environments, automated agents generate localized code patches that satisfy isolated unit assertions, yet silently introduce breaking regressions across downstream test suites and production build pipelines."
+            b2 = "In continuous integration environments, automated coding agent patches satisfy isolated unit assertions, yet silently introduce breaking regressions across downstream test suites."
         else:
             b2 = "You provide detailed constraints in chat, yet the next agent session resets back to zero."
 
@@ -132,7 +132,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b3 = "The underlying mechanism is strict validation in client libraries. Autonomous agents frequently emit stringified arguments or hallucinated keys instead of structured dictionaries conforming to the tool definition."
         elif family == "debugging_reliability":
-            b3 = "The underlying architectural mechanism is context contamination and test blindness. Unit tests executed in isolation fail to catch system environment variables, asynchronous timing races, and inter-package dependency cycles that manifest during full end-to-end continuous integration builds."
+            b3 = "The root architectural mechanism is test blindness. Targeted tests executed in isolation miss shared runtime state, environment variables, and inter-package dependency cycles that fail during full regression builds."
         else:
             b3 = "The root cause is ephemeral session memory. Large language models maintain zero persistent state across process restarts unless repository instructions are explicitly injected into the agent system prompt on every invocation."
 
@@ -144,7 +144,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b4 = "The verified remedy is schema defense. Enforce input schema validation before invoking the server, and provide automatic schema coercion filters that sanitize agent payloads before dispatch."
         elif family == "debugging_reliability":
-            b4 = "The disciplined engineering remedy is reproduction before remediation. Mandate that autonomous agents author a hermetic reproduction test verifying the failure under clean baseline conditions before any repair patch is drafted."
+            b4 = "The disciplined engineering remedy is reproduction before repair. Require agents to author hermetic reproduction tests verifying the failure under clean baseline conditions before patching."
         else:
             b4 = "The engineering remedy is declarative configuration. Define an immutable AGENTS markdown contract at the repository root, and enforce automated preflight checks that load these boundaries before executing any code modifications."
 
@@ -156,7 +156,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b5 = "Verify this remedy locally by executing mock MCP tool calls with malformed payloads, asserting that repair filters recover valid arguments and schema errors drop to zero."
         elif family == "debugging_reliability":
-            b5 = "Verify this fix by executing the reproduction test against a clean main branch baseline, confirming that the failure reproduces deterministically and that the subsequent patch cleanly resolves all test assertions in isolation."
+            b5 = "Verify this fix locally by running the reproduction test against clean baseline code, confirming that the patch cleanly resolves regressions and assertions deterministically."
         else:
             b5 = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
 
@@ -168,7 +168,7 @@ class FixedNicheStoryboardDirector:
         elif family == "agent_tool_use":
             b6 = "Strict schema adherence and defensive payload coercion are mandatory for resilient agent tool integration across production environments."
         elif family == "debugging_reliability":
-            b6 = "Always require verified reproduction tests and clean contract assertions before trusting automated agent bug repairs, ensuring that CI builds remain green and stable across production releases."
+            b6 = "Always require full regression test suites and clean contract assertions before merging automated agent bug repairs into continuous delivery pipelines."
         else:
             b6 = "Always enforce deterministic state persistence across sessions in code and CI, rather than assuming conversational memory survives."
 

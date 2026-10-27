@@ -54,6 +54,7 @@ compatible_playbooks:
   recommended:
     - flat-motion-graphics
     - anime-ghibli
+    - chalkboard-explainer
   also_works:
     - clean-professional
     - minimalist-diagram

@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import shutil
 from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
@@ -34,6 +35,14 @@ def make_test_png(width: int = 1080, height: int = 1920, color=(15, 23, 42)) -> 
     return buf.getvalue()
 
 
+_RENDER_DEPS = ("flite", "ffmpeg", "npx")
+requires_render_toolchain = pytest.mark.skipif(
+    any(shutil.which(b) is None for b in _RENDER_DEPS),
+    reason="flite, ffmpeg, and npx required for render rehearsal",
+)
+
+
+@requires_render_toolchain
 @pytest.mark.parametrize("family,title,qid,canonical_url,publisher,snap_text", [
     (
         "context_memory",

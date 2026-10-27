@@ -107,7 +107,7 @@ class FixedNicheScopeGate:
             re.compile(r"\b(reproducible\s+benchmark|reliability\s+metrics|budget\s+caps)\b", re.I),
         ],
         "agent_architecture": [
-            re.compile(r"\b(multi-?agent|single-?agent|orchestrat(e|ion)|checkpoint|subagent|supervisor|handoff|worktree|git\s+worktree|hierarchical\s+agent)\b", re.I),
+            re.compile(r"\b(multi-?agent|single-?agent|orchestrat(e|ion)|checkpoint|subagent|supervisor|handoff|worktree|git\s+worktree|hierarchical\s+agent|agent\s+harness|harness\s+mod)\b", re.I),
             re.compile(r"\b(state\s+serialization|supervisor\s+verification|agentic\s+workflow)\b", re.I),
         ],
     }
