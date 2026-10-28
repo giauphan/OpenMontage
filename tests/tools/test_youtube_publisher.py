@@ -228,3 +228,32 @@ def test_classify_check_error():
     data_http = _classify_check_error(http_exc)
     assert data_http["error_type"] == "http_error"
     assert data_http["status_code"] == 404
+
+
+def test_upload_thumbnail_statuses(tmp_path: Path):
+    mock_youtube = MagicMock()
+    mock_upload_req = MagicMock()
+    mock_youtube.thumbnails().set.return_value = mock_upload_req
+
+    # 1. Skipped when no thumbnail provided
+    status, detail = _upload_thumbnail_if_present(mock_youtube, "vid1", None)
+    assert status == "THUMBNAIL_SKIPPED"
+
+    # 2. Not found when path does not exist
+    status, detail = _upload_thumbnail_if_present(mock_youtube, "vid1", str(tmp_path / "nonexistent.png"))
+    assert status == "THUMBNAIL_NOT_FOUND"
+
+    # 3. Attached when API call succeeds
+    thumb = tmp_path / "thumb.jpg"
+    thumb.write_bytes(b"\xff\xd8\xff")
+    with patch("googleapiclient.http.MediaFileUpload"):
+        status, detail = _upload_thumbnail_if_present(mock_youtube, "vid1", str(thumb))
+        assert status == "THUMBNAIL_ATTACHED"
+        assert detail is None
+
+    # 4. Studio fallback when API call throws exception
+    mock_upload_req.execute.side_effect = Exception("YouTube Shorts custom thumbnail 403 Forbidden")
+    with patch("googleapiclient.http.MediaFileUpload"):
+        status, detail = _upload_thumbnail_if_present(mock_youtube, "vid1", str(thumb))
+        assert status == "THUMBNAIL_STUDIO_FALLBACK"
+        assert "403 Forbidden" in detail

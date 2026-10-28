@@ -20,6 +20,9 @@
           "visibility": { "type": "string", "enum": ["public", "private", "unlisted"] },
           "export_path": { "type": "string" },
           "timestamp": { "type": "string", "format": "date-time" },
+          "thumbnail_status": { "type": "string" },
+          "thumbnail_path": { "type": "string" },
+          "thumbnail_detail": { "type": "string" },
           "metadata_used": {
             "type": "object",
             "properties": {

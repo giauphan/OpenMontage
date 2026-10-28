@@ -105,6 +105,34 @@ def test_identical_youtube_payload_between_native_and_manual(tmp_path: Path):
     assert "tuonglai" not in native_payload["tags"]
 
 
+def test_youtube_payload_thumbnail_resolution(tmp_path: Path):
+    """Ensure thumbnail_path is properly resolved and identical in native and manual payload builders."""
+    from scripts.schedule_today_native import build_youtube_payload as build_native_yt
+    from scripts.publish_manual_video import build_youtube_payload as build_manual_yt
+
+    thumb_file = tmp_path / "thumbnails" / "thumbnail.png"
+    thumb_file.parent.mkdir(parents=True)
+    thumb_file.write_bytes(b"dummy_png")
+
+    video_file = tmp_path / "renders" / "final_short.mp4"
+    video_file.parent.mkdir(parents=True)
+    video_file.touch()
+
+    meta_dict = {
+        "id": "cand_thumb_test",
+        "title": "Chíp AI mới ra mắt #tintuc #congnghe #ai",
+        "description": "Chi tiết về vi xử lý mới #tintuc #congnghe #ai",
+        "yt_shorts": "renders/final_short.mp4",
+        "thumbnail_path": str(thumb_file),
+    }
+
+    native_payload = build_native_yt(meta_dict, video_path=str(video_file))
+    manual_payload = build_manual_yt(meta_dict, video_path=str(video_file))
+
+    assert native_payload == manual_payload
+    assert native_payload["thumbnail_path"] == str(thumb_file)
+
+
 def test_ci_workflow_and_makefile_contracts():
     """PR-07: Verify Makefile and CI workflow include test-contracts and Docker cron E2E."""
     ci_yml = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"

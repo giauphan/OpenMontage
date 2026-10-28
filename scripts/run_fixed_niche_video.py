@@ -600,6 +600,26 @@ class FixedNicheVideoRunner:
         }
         (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
 
+        # Generate YouTube thumbnail via Muse
+        if qa_pass:
+            try:
+                from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
+                topic_data = getattr(self, "_staged_topic", None) or {}
+                if not topic_data:
+                    tb_file = self.project_dir / "artifacts" / "topic_brief.json"
+                    if tb_file.is_file():
+                        topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
+                title = topic_data.get("title") or self.candidate_id
+                ThumbnailOrchestrator.generate_thumbnail(
+                    project_dir=self.project_dir,
+                    title=title,
+                    topic=topic_data.get("summary", ""),
+                    format_type="short",
+                    allow_fallback=True,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
+
         return {
             "status": val_status_code,
             "rendered_mp4": str(output_mp4),

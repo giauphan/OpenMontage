@@ -45,7 +45,12 @@ from tools.publishers.meta_publisher import MetaPublisher
 from tools.publishers.social_metadata import meta_caption
 
 
-def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | None = None) -> dict:
+def build_youtube_payload(
+    topic_meta: dict,
+    video_path: str,
+    publish_at: str | None = None,
+    thumbnail_path: str | None = None,
+) -> dict:
     """Build unified YouTube Shorts upload payload using compose_release_metadata."""
     payload_meta = dict(topic_meta)
     if "id" not in payload_meta:
@@ -75,6 +80,26 @@ def build_youtube_payload(topic_meta: dict, video_path: str, publish_at: str | N
         payload["expected_channel_id"] = expected_channel
     if "contains_synthetic_media" in payload_meta:
         payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
+
+    # Thumbnail resolution (explicit arg -> topic_meta -> project discovery)
+    thumb = thumbnail_path or payload_meta.get("thumbnail_path") or payload_meta.get("thumbnail")
+    if not thumb:
+        v_p = Path(video_path)
+        candidates = [
+            v_p.parent.parent / "thumbnails" / "thumbnail.png",
+            v_p.parent.parent / "thumbnails" / "thumbnail.jpg",
+            v_p.parent / "thumbnail.png",
+            v_p.parent / "thumbnail.jpg",
+            v_p.parent / "thumbnails" / "thumbnail.png",
+            v_p.parent / "thumbnails" / "thumbnail.jpg",
+        ]
+        for c in candidates:
+            if c.is_file():
+                thumb = str(c)
+                break
+    if thumb:
+        payload["thumbnail_path"] = str(thumb)
+
     return payload
 
 
@@ -679,6 +704,8 @@ def publish_batch(
                     "success": tool_result.success,
                     "video_id": tool_result.data.get("video_id") if tool_result.success else None,
                     "video_url": tool_result.data.get("video_url") if tool_result.success else None,
+                    "thumbnail_status": tool_result.data.get("thumbnail_status") if tool_result.success else None,
+                    "thumbnail_path": tool_result.data.get("thumbnail_path") if tool_result.success else None,
                     "error": tool_result.error if not tool_result.success else None,
                 }
 

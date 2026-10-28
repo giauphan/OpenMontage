@@ -93,3 +93,27 @@ Khi API bị từ chối, hệ thống không nên thử vô hạn hoặc giả 
 - [YouTube Data API v3 — Thumbnails: set](https://developers.google.com/youtube/data/reference/rest/v3/thumbnails/set)
 - [YouTube Studio Custom Thumbnail Updates](https://blog.youtube/news-and-events/youtube-studio-custom-thumbnail-updates/)
 - [Cách đặt hình thu nhỏ cho video Shorts](https://support.google.com/youtube/answer/72431?hl=en)
+
+---
+
+## 7. Trạng thái triển khai hoàn tất (28/10/2026)
+
+Hệ thống đã triển khai hoàn chỉnh luồng tạo thumbnail bằng Muse Image Generation và tích hợp vào pipeline publish YouTube:
+
+1. **`lib/news_visual/thumbnail_planner.py`**:
+   - Tự động lập kế hoạch thumbnail theo format (9:16 cho Shorts, 16:9 cho Longform).
+   - Tối ưu prompt cho Muse, lọc bỏ hashtags và sinh headline 2–5 từ tương phản cao.
+   - Thiết lập vùng an toàn (`upper_third` cho Shorts, tránh bị nút bấm/avatar YouTube che).
+2. **`lib/news_visual/thumbnail_orchestrator.py`**:
+   - Điều phối gọi `MuseGatewayImage` (`muse-image`), compositing chữ typography bằng Pillow/ImageDraw, kiểm tra giới hạn kích thước (50MB) và độ toàn vẹn ảnh.
+   - Tự động đồng bộ `thumbnail_path` vào `publish_metadata.json`.
+3. **`tools/graphics/thumbnail_generator.py`**:
+   - Đăng ký công cụ `BaseTool` trong `ToolRegistry` (`capability="thumbnail_generation"`, `provider="muse"`).
+4. **`tools/publishers/youtube_publisher.py`**:
+   - `_upload_thumbnail_if_present` trả về trạng thái chuẩn hóa: `THUMBNAIL_ATTACHED`, `THUMBNAIL_STUDIO_FALLBACK`, `THUMBNAIL_SKIPPED`, `THUMBNAIL_NOT_FOUND`.
+   - `YoutubePublisher.execute()` ghi nhận `thumbnail_status` và `thumbnail_path` vào `publish_log`.
+5. **Publish Payload & Scheduler**:
+   - `build_youtube_payload()` trong `scripts/publish_manual_video.py` và `scripts/schedule_today_native.py` nhận và tự động tìm đường dẫn thumbnail từ metadata hoặc project workspace.
+6. **Pipeline Hook**:
+   - Tích hợp bước tự động sinh thumbnail trong `scripts/run_daily_news_pipeline.sh` và `scripts/run_fixed_niche_video.py`.
+

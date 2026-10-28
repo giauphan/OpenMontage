@@ -160,20 +160,25 @@ def _construct_upload_body(
     return body
 
 
-def _upload_thumbnail_if_present(youtube: Any, video_id: str, thumb_in: str | None) -> None:
+def _upload_thumbnail_if_present(youtube: Any, video_id: str, thumb_in: str | None) -> tuple[str, str | None]:
     if not (thumb_in and video_id):
-        return
+        return ("THUMBNAIL_SKIPPED", None)
     thumb_path = Path(thumb_in).expanduser()
     if not thumb_path.is_file():
-        return
+        msg = f"Thumbnail file not found: {thumb_in}"
+        print(f"Warning: {msg}")
+        return ("THUMBNAIL_NOT_FOUND", msg)
     try:
         from googleapiclient.http import MediaFileUpload
         youtube.thumbnails().set(
             videoId=video_id,
             media_body=MediaFileUpload(str(thumb_path)),
         ).execute()
+        return ("THUMBNAIL_ATTACHED", None)
     except Exception as e:
-        print(f"Warning: Custom thumbnail upload skipped ({e})")
+        msg = f"Custom thumbnail upload skipped ({e}); local asset preserved at {thumb_path} for YouTube Studio upload"
+        print(f"Warning: {msg}")
+        return ("THUMBNAIL_STUDIO_FALLBACK", str(e))
 
 
 def _resolve_check_credentials() -> tuple[Path, Path] | dict[str, Any]:
@@ -281,7 +286,7 @@ def _upload_media_and_thumbnail(
     video_path: Path,
     body: dict[str, Any],
     thumbnail_path: str | None,
-) -> tuple[str, str]:
+) -> tuple[str, str, str, str | None]:
     from googleapiclient.http import MediaFileUpload
     media = MediaFileUpload(
         str(video_path),
@@ -296,8 +301,8 @@ def _upload_media_and_thumbnail(
 
     video_id = response.get("id")
     video_url = f"https://youtu.be/{video_id}"
-    _upload_thumbnail_if_present(youtube, video_id, thumbnail_path)
-    return video_id, video_url
+    thumb_status, thumb_detail = _upload_thumbnail_if_present(youtube, video_id, thumbnail_path)
+    return video_id, video_url, thumb_status, thumb_detail
 
 
 class YoutubePublisher(BaseTool):
@@ -487,7 +492,7 @@ class YoutubePublisher(BaseTool):
             body = _construct_upload_body(
                 inputs, title, description, tags, category_id, privacy_status, publish_at, locale
             )
-            video_id, video_url = _upload_media_and_thumbnail(
+            video_id, video_url, thumb_status, thumb_detail = _upload_media_and_thumbnail(
                 youtube, video_path, body, inputs.get("thumbnail_path")
             )
 
@@ -498,18 +503,25 @@ class YoutubePublisher(BaseTool):
                 "video_id": video_id,
                 "visibility": privacy_status,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "thumbnail_status": thumb_status,
+                "thumbnail_path": inputs.get("thumbnail_path"),
                 "metadata_used": {
                     "title": title,
                     "description": description,
                     "publish_at": publish_at,
                 },
             }
+            if thumb_detail:
+                entry["thumbnail_detail"] = thumb_detail
+
             return ToolResult(
                 success=True,
                 data={
                     "publish_log": {"version": "1.0", "entries": [entry]},
                     "video_id": video_id,
                     "video_url": video_url,
+                    "thumbnail_status": thumb_status,
+                    "thumbnail_path": inputs.get("thumbnail_path"),
                 },
                 artifacts=[str(video_path)],
             )

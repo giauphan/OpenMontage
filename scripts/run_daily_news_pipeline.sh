@@ -1325,6 +1325,13 @@ if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$PUB_FULL_PATH
     format: $format,
     feed_stale: $feed_stale
   }' > "$PROJECT_DIR/publish_metadata.json"
+
+  # Step 2b: Generate YouTube thumbnail via Muse
+  echo "[$(date -u +%FT%TZ)] Generating YouTube thumbnail via Muse..."
+  "$PY" -m tools.graphics.thumbnail_generator \
+    --project "$PROJECT_DIR" \
+    --title "$TITLE" \
+    --format "short" || echo "[$(date -u +%FT%TZ)] Warning: thumbnail generation skipped" >&2
 else
   echo "[$(date -u +%FT%TZ)] ERROR: Missing video files for $PROJECT_ID" >&2
   "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
@@ -1480,6 +1487,7 @@ jq -n \
   --arg ig_reels "$REELS_RENDER_PATH" \
   --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
   --arg format "short" \
+  --arg thumb "$(if [ -s "$PROJECT_DIR/thumbnails/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnails/thumbnail.png"; elif [ -s "$PROJECT_DIR/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnail.png"; else echo ""; fi)" \
   --argjson feed_stale "$FEED_STALE" \
   --argjson template_prov "$TEMPLATE_PROV_JSON" \
   '{
@@ -1494,7 +1502,7 @@ jq -n \
     locale: $locale,
     format: $format,
     feed_stale: $feed_stale
-  } + (if ($template_prov|length) > 0 then $template_prov else {} end)' > publish_metadata.json
+  } + (if ($template_prov|length) > 0 then $template_prov else {} end) + (if ($thumb|length) > 0 then {thumbnail_path: $thumb, thumbnail: $thumb} else {} end)' > publish_metadata.json
 
 # Step 4.1: Independent Editorial QA Supervisor for US English projects
 if [ "$is_en" -eq 1 ]; then
