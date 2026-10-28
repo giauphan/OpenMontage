@@ -188,8 +188,8 @@ class FixedNicheVideoRunner:
         (artifacts_dir / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         # 6.5. Generate animated diagram sidecar if visual style is active
-        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
-        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
         if visual_style == "animated_agent_diagram_v1" or flag_enabled:
             from lib.visual_style.diagram_director import AnimatedDiagramDirector
             director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
@@ -265,8 +265,8 @@ class FixedNicheVideoRunner:
         )
         (self.project_dir / "artifacts" / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
-        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
         if visual_style == "animated_agent_diagram_v1" or flag_enabled:
             from lib.visual_style.diagram_director import AnimatedDiagramDirector
             director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
@@ -431,8 +431,8 @@ class FixedNicheVideoRunner:
                         # Re-materialize HyperFrames compositions with the reconciled audio duration
                         from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
                         topic_for_comp = self._staged_topic or {"candidate_id": self.candidate_id}
-                        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
-                        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+                        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
+                        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
                         if visual_style == "animated_agent_diagram_v1" or flag_enabled:
                             from lib.visual_style.diagram_director import AnimatedDiagramDirector
                             cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
@@ -628,12 +628,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--topic-family", default=None)
     parser.add_argument("--canonical-url", default=None)
     parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False, help="Enable Muse AI image generation for conceptual illustration beats (operator opt-in)")
+    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"], help="Visual presentation style (progressive animated diagram vs legacy static)")
+    parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True, help="Enable progressive animated diagram reveals synchronized to speech (default: True, per JEV decision)")
     args = parser.parse_args(argv)
 
     if args.enable_ai_visuals:
         os.environ["AI_VISUAL_ENABLED"] = "1"
     else:
         os.environ["AI_VISUAL_ENABLED"] = "0"
+
+    if args.enable_diagram_animation:
+        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
+        os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
+    else:
+        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
+        os.environ["OPENMONTAGE_VISUAL_STYLE"] = "legacy"
 
     policy = load_locked_policy()
     gate = FixedNicheScopeGate(policy)
@@ -661,7 +670,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
             except Exception as e:
                 logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
-    elif args.auto_select or not candidate_id:
+    if not candidates_pool:
         adapter = FixedNicheSourceAdapter()
         candidates_pool = adapter.discover_production_candidates()
 

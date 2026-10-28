@@ -33,6 +33,7 @@ def compile_gsap_timeline_script(plan: DiagramAnimationPlan) -> str:
         "window.__timelines = window.__timelines || {};",
         "const tl = gsap.timeline({ paused: true });",
         "window.__timelines['main'] = tl;",
+        'window.__timelines["main"] = tl;',
         "",
         "// Initial state at t=0: hide all dynamic diagram elements",
         "tl.set('.diagram-node', { opacity: 0, scale: 0.85 }, 0);",
@@ -42,11 +43,16 @@ def compile_gsap_timeline_script(plan: DiagramAnimationPlan) -> str:
 
     # Pre-compute edge lengths map
     nodes_by_id = {n.id: n for n in plan.graph.nodes}
-    from lib.visual_style.svg_renderer import calculate_edge_geometry
+    from lib.visual_style.svg_renderer import calculate_edge_geometry, get_target_port_offset
     edge_lengths: Dict[str, float] = {}
     for edge in plan.graph.edges:
         if edge.source in nodes_by_id and edge.target in nodes_by_id:
-            _, _, _, _, length = calculate_edge_geometry(nodes_by_id[edge.source], nodes_by_id[edge.target])
+            offset_x = get_target_port_offset(edge, plan.graph)
+            _, _, _, _, length = calculate_edge_geometry(
+                nodes_by_id[edge.source],
+                nodes_by_id[edge.target],
+                target_offset_x=offset_x,
+            )
             edge_lengths[edge.id] = length
         else:
             edge_lengths[edge.id] = 300.0

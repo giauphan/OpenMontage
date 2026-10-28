@@ -139,6 +139,7 @@ def normalize_topic_definition(topic_def: Dict[str, Any]) -> Dict[str, Any]:
     if topic["layout_preset"] not in {
         "context_boundary", "tool_permission_path", "agent_retry_loop",
         "agent_harness_mods", "eval_breakdown", "persistent_agent_flow",
+        "claude_code_mods_lifecycle", "claude_code_mods_unlocked",
     }:
         raise ValueError("layout_preset/topic_family must select a supported reusable diagram layout")
     return topic

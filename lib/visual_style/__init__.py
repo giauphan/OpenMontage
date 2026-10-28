@@ -40,6 +40,10 @@ from lib.visual_style.layouts import (
 from lib.visual_style.svg_renderer import (
     render_inline_svg_dom,
     calculate_edge_geometry,
+    get_target_port_offset,
+    build_edge_path_d,
+    intersect_box,
+    cubic_bezier_length,
 )
 from lib.visual_style.gsap_compiler import (
     compile_gsap_timeline_script,
@@ -94,6 +98,10 @@ __all__ = [
     "node_to_pixels",
     "render_inline_svg_dom",
     "calculate_edge_geometry",
+    "get_target_port_offset",
+    "build_edge_path_d",
+    "intersect_box",
+    "cubic_bezier_length",
     "compile_gsap_timeline_script",
     "AnimatedDiagramDirector",
     "compute_sha256_bytes",

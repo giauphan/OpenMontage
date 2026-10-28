@@ -24,7 +24,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 SHORT_PROJECT = ROOT / "projects/us_ai_short_01"
+if not SHORT_PROJECT.is_dir() and (ROOT / "artifacts/us-migration/production_deliverables/us_ai_short_01").is_dir():
+    SHORT_PROJECT = ROOT / "artifacts/us-migration/production_deliverables/us_ai_short_01"
 LONG_PROJECT = ROOT / "projects/us_ai_longform_02"
+if not LONG_PROJECT.is_dir() and (ROOT / "artifacts/us-migration/production_deliverables/us_ai_longform_02").is_dir():
+    LONG_PROJECT = ROOT / "artifacts/us-migration/production_deliverables/us_ai_longform_02"
 MUSIC_BG = ROOT / "artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3"
 
 TMP_DIR = Path("/tmp/render_verified")
@@ -95,23 +99,28 @@ def render_short():
     concat_video = TMP_DIR / "short_concat_raw.mp4"
     final_video = TMP_DIR / "final_short_en_US_9x16.mp4"
 
-    # 1. TTS audio using calibrated new neural voice stack (Kokoro-82M / am_michael)
+    # 1. Voice audio track (reuse pre-synthesized verified track if present)
     from lib.audio.narration_orchestrator import NarrationOrchestrator, probe_audio_duration
-    orchestrator = NarrationOrchestrator()
-    text = narration_txt.read_text(encoding="utf-8")
-    provider = os.environ.get("TTS_PROVIDER_EN", "kokoro")
-    voice = os.environ.get("TTS_KOKORO_VOICE", "am_michael" if provider == "kokoro" else "slt")
-    speed = float(os.environ.get("TTS_SPEED", "1.30" if provider == "kokoro" else "1.0"))
-    print(f"Synthesizing Short narration using new neural voice model ({provider}:{voice}, speed={speed})...")
-    orchestrator.synthesize(
-        text=text,
-        output_path=raw_audio,
-        locale="en-US",
-        provider=provider,
-        voice=voice,
-        settings={"speed": speed},
-        allow_fallback=True,
-    )
+    existing_voice = SHORT_PROJECT / "assets/narration.mp3"
+    if existing_voice.is_file() and existing_voice.stat().st_size > 1000:
+        print(f"Reusing verified voice track from {existing_voice}...")
+        shutil.copy2(existing_voice, raw_audio)
+    else:
+        orchestrator = NarrationOrchestrator()
+        text = narration_txt.read_text(encoding="utf-8")
+        provider = os.environ.get("TTS_PROVIDER_EN", "kokoro")
+        voice = os.environ.get("TTS_KOKORO_VOICE", "am_michael" if provider == "kokoro" else "slt")
+        speed = float(os.environ.get("TTS_SPEED", "1.30" if provider == "kokoro" else "1.0"))
+        print(f"Synthesizing Short narration using new neural voice model ({provider}:{voice}, speed={speed})...")
+        orchestrator.synthesize(
+            text=text,
+            output_path=raw_audio,
+            locale="en-US",
+            provider=provider,
+            voice=voice,
+            settings={"speed": speed},
+            allow_fallback=True,
+        )
     voice_dur = probe_audio_duration(raw_audio)
     print(f"Voice track generated successfully: duration={voice_dur:.2f}s (active speech verified)")
     assert voice_dur > 10.0, f"Voice track is too short or empty ({voice_dur:.2f}s)"
@@ -149,10 +158,10 @@ def render_short():
     # 4. Final compositing: Overlay audio, bottom caption rail, burned-in synchronized subtitles
     srt_short = SHORT_PROJECT / "artifacts/captions_en_US.srt"
     ass_short = TMP_DIR / "short_captions.ass"
-    srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=40, margin_v=240, alignment=2)
+    srt_to_ass(srt_short, ass_short, width=1080, height=1920, font_size=32, margin_v=110, alignment=2)
     vf = (
-        "drawbox=x=60:y=1640:w=960:h=180:color=#0b0f19@0.92:t=fill,"
-        "drawbox=x=60:y=1640:w=960:h=180:color=#38bdf8@0.6:t=2,"
+        "drawbox=x=60:y=1600:w=960:h=240:color=#0b0f19@0.92:t=fill,"
+        "drawbox=x=60:y=1600:w=960:h=240:color=#38bdf8@0.6:t=2,"
         f"ass={ass_short},"
         "setsar=1"
     )

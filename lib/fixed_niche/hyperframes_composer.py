@@ -44,8 +44,8 @@ def compose_hyperframes_html(
 ) -> str:
     """Compose production HyperFrames HTML composition matching hyperframes-core contract."""
     import os
-    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
-    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
+    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
     if visual_style == "animated_agent_diagram_v1" or flag_enabled:
         from lib.visual_style.hyperframes_adapter import compose_animated_diagram_html
         return compose_animated_diagram_html(
@@ -511,8 +511,8 @@ def render_ffmpeg_composition(
 ) -> Path:
     """Render composition via FFmpeg concat demuxer for fast offline/CI execution."""
     import os
-    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "legacy")
-    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") in ("1", "true", "True")
+    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
+    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
     if visual_style == "animated_agent_diagram_v1" or flag_enabled:
         raise RuntimeError(
             "CRITICAL: Static slideshow fallback via FFmpeg is strictly forbidden for animated_agent_diagram_v1. "

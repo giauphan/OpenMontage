@@ -40,9 +40,11 @@ def get_layout_preset(family_or_preset: str) -> str:
         "debugging_reliability": "agent_retry_loop",
         "agent_evaluation": "eval_breakdown",
         "agent_architecture": "persistent_agent_flow",
-        "agent_architecture": "persistent_agent_flow",
         "agent_harness_mods": "agent_harness_mods",
         "claude_code_mods": "agent_harness_mods",
+        "claude_code_mods_harness": "agent_harness_mods",
+        "claude_code_mods_lifecycle": "claude_code_mods_lifecycle",
+        "claude_code_mods_unlocked": "claude_code_mods_unlocked",
     }
     return mapping.get(family_or_preset, family_or_preset)
 
@@ -76,7 +78,7 @@ def build_preset_graph(preset_name: str, topic_title: str = "") -> DiagramGraph:
             DiagramNode(id="mcp_contract", label="MCP Schema & Auth", kind=NodeKind.DECISION, x=0.26, y=0.45, width=0.36, height=0.07),
             DiagramNode(id="sandbox_guard", label="Security Boundary", kind=NodeKind.WARNING, x=0.74, y=0.45, width=0.36, height=0.07),
             DiagramNode(id="tool_execution", label="Sandbox Execution", kind=NodeKind.TOOL, x=0.50, y=0.57, width=0.38, height=0.07),
-            DiagramNode(id="structured_result", label="Verified Tool Result", kind=NodeKind.RESULT, x=0.50, y=0.66, width=0.38, height=0.06),
+            DiagramNode(id="structured_result", label="Verified Tool Result", kind=NodeKind.RESULT, x=0.50, y=0.68, width=0.38, height=0.06),
         ]
         edges = [
             DiagramEdge(id="e_plan_tool", source="user_prompt", target="agent_planner", label="Parse Intent"),
@@ -95,7 +97,7 @@ def build_preset_graph(preset_name: str, topic_title: str = "") -> DiagramGraph:
             DiagramNode(id="hallucinated_patch", label="Surface / Mock Patch", kind=NodeKind.DECISION, x=0.26, y=0.45, width=0.36, height=0.07),
             DiagramNode(id="rootcause_fix", label="Root Cause Solution", kind=NodeKind.CONCEPT, x=0.74, y=0.45, width=0.36, height=0.07),
             DiagramNode(id="full_suite_run", label="Full Regression Run", kind=NodeKind.TOOL, x=0.50, y=0.57, width=0.40, height=0.07),
-            DiagramNode(id="verified_green", label="Verified Production Fix", kind=NodeKind.RESULT, x=0.50, y=0.66, width=0.42, height=0.06),
+            DiagramNode(id="verified_green", label="Verified Production Fix", kind=NodeKind.RESULT, x=0.50, y=0.68, width=0.42, height=0.06),
         ]
         edges = [
             DiagramEdge(id="e_read_error", source="failing_test", target="agent_debug", label="Stack Trace"),
@@ -123,25 +125,68 @@ def build_preset_graph(preset_name: str, topic_title: str = "") -> DiagramGraph:
         ]
         return DiagramGraph(nodes=nodes, edges=edges)
 
-    elif canonical_name in ("agent_harness_mods", "claude_code_mods"):
+    elif canonical_name in ("agent_harness_mods", "claude_code_mods", "claude_code_mods_harness"):
         nodes = [
-            DiagramNode(id="prompt", label="User Prompt", kind=NodeKind.DEVELOPER, x=0.50, y=0.18, width=0.34, height=0.06),
-            DiagramNode(id="model", label="LLM Reasoning", kind=NodeKind.AGENT, x=0.50, y=0.28, width=0.34, height=0.06),
-            DiagramNode(id="mod", label="Harness Mod", kind=NodeKind.CONCEPT, x=0.50, y=0.38, width=0.32, height=0.06, group_id="internal"),
-            DiagramNode(id="tool_call", label="Tool Call", kind=NodeKind.TOOL, x=0.50, y=0.48, width=0.34, height=0.06),
-            DiagramNode(id="screen", label="Terminal Output", kind=NodeKind.RESULT, x=0.50, y=0.57, width=0.34, height=0.05),
-            DiagramNode(id="skills", label="Skills (External)", kind=NodeKind.STORE, x=0.22, y=0.67, width=0.28, height=0.05, group_id="external"),
-            DiagramNode(id="hooks", label="Hooks (1x Shell)", kind=NodeKind.WARNING, x=0.50, y=0.67, width=0.28, height=0.05, group_id="external"),
-            DiagramNode(id="mcp", label="MCP Servers", kind=NodeKind.DECISION, x=0.78, y=0.67, width=0.28, height=0.05, group_id="external"),
+            DiagramNode(id="prompt", label="prompt", kind=NodeKind.DEVELOPER, x=0.50, y=0.18, width=0.32, height=0.055, group_id="internal"),
+            DiagramNode(id="model", label="model", kind=NodeKind.AGENT, x=0.50, y=0.27, width=0.32, height=0.055, group_id="internal"),
+            DiagramNode(id="mod", label="mod", kind=NodeKind.CONCEPT, x=0.50, y=0.37, width=0.28, height=0.055, group_id="internal"),
+            DiagramNode(id="tool_call", label="tool call", kind=NodeKind.TOOL, x=0.50, y=0.47, width=0.32, height=0.055, group_id="internal"),
+            DiagramNode(id="screen", label="screen", kind=NodeKind.RESULT, x=0.50, y=0.56, width=0.32, height=0.05, group_id="internal"),
+            DiagramNode(id="skills", label="skills", kind=NodeKind.STORE, x=0.22, y=0.68, width=0.24, height=0.05, group_id="external"),
+            DiagramNode(id="hooks", label="hooks", kind=NodeKind.WARNING, x=0.50, y=0.68, width=0.24, height=0.05, group_id="external"),
+            DiagramNode(id="mcp", label="MCP", kind=NodeKind.DECISION, x=0.78, y=0.68, width=0.24, height=0.05, group_id="external"),
         ]
         edges = [
-            DiagramEdge(id="e_p_to_m", source="prompt", target="model", label="Prompt Input"),
-            DiagramEdge(id="e_m_to_mod", source="model", target="mod", label="Interception"),
-            DiagramEdge(id="e_mod_to_t", source="mod", target="tool_call", label="Action Control"),
-            DiagramEdge(id="e_t_to_s", source="tool_call", target="screen", label="Render Stream"),
-            DiagramEdge(id="e_tool_skills", source="tool_call", target="skills", label="Call Skill"),
-            DiagramEdge(id="e_tool_hooks", source="tool_call", target="hooks", label="Fire Hook"),
-            DiagramEdge(id="e_tool_mcp", source="tool_call", target="mcp", label="JSON-RPC"),
+            DiagramEdge(id="e_p_to_m", source="prompt", target="model", label=""),
+            DiagramEdge(id="e_m_to_mod", source="model", target="mod", label=""),
+            DiagramEdge(id="e_mod_to_t", source="mod", target="tool_call", label=""),
+            DiagramEdge(id="e_t_to_s", source="tool_call", target="screen", label=""),
+            DiagramEdge(id="e_tool_skills", source="tool_call", target="skills", label=""),
+            DiagramEdge(id="e_tool_hooks", source="tool_call", target="hooks", label=""),
+            DiagramEdge(id="e_tool_mcp", source="tool_call", target="mcp", label=""),
+        ]
+        return DiagramGraph(nodes=nodes, edges=edges)
+
+    elif canonical_name in ("claude_code_mods_lifecycle", "claude_code_mods_p2"):
+        nodes = [
+            DiagramNode(id="session", label="session", kind=NodeKind.DEVELOPER, x=0.16, y=0.23, width=0.20, height=0.05),
+            DiagramNode(id="hook_label", label="hook", kind=NodeKind.WARNING, x=0.16, y=0.36, width=0.20, height=0.055),
+            DiagramNode(id="hook_exec", label="hook.sh (1x)", kind=NodeKind.TOOL, x=0.48, y=0.36, width=0.32, height=0.06),
+            DiagramNode(id="mod_label", label="mod", kind=NodeKind.CONCEPT, x=0.16, y=0.50, width=0.20, height=0.055),
+            DiagramNode(id="card_remembers", label="remembers", kind=NodeKind.STORE, x=0.23, y=0.66, width=0.24, height=0.09),
+            DiagramNode(id="card_live_panel", label="live panel", kind=NodeKind.RESULT, x=0.50, y=0.66, width=0.24, height=0.09),
+            DiagramNode(id="card_asks_first", label="asks first", kind=NodeKind.DECISION, x=0.77, y=0.66, width=0.24, height=0.09),
+        ]
+        edges = [
+            DiagramEdge(id="e_hook_trigger", source="session", target="hook_exec", label="event"),
+            DiagramEdge(id="e_mod_lifecycle", source="mod_label", target="card_live_panel", label="persistent"),
+        ]
+        return DiagramGraph(nodes=nodes, edges=edges)
+
+    elif canonical_name in ("claude_code_mods_unlocked", "claude_code_mods_p3"):
+        nodes = [
+            DiagramNode(id="prompt", label="prompt", kind=NodeKind.DEVELOPER, x=0.35, y=0.20, width=0.28, height=0.05, group_id="internal"),
+            DiagramNode(id="model", label="model", kind=NodeKind.AGENT, x=0.35, y=0.28, width=0.28, height=0.05, group_id="internal"),
+            DiagramNode(id="mod", label="mod", kind=NodeKind.CONCEPT, x=0.35, y=0.36, width=0.26, height=0.05, group_id="internal"),
+            DiagramNode(id="tool_call", label="tool call", kind=NodeKind.TOOL, x=0.35, y=0.44, width=0.28, height=0.05, group_id="internal"),
+            DiagramNode(id="screen", label="screen", kind=NodeKind.RESULT, x=0.35, y=0.52, width=0.28, height=0.05, group_id="internal"),
+            DiagramNode(id="pill_memory", label="memory", kind=NodeKind.STORE, x=0.72, y=0.24, width=0.28, height=0.045, group_id="internal"),
+            DiagramNode(id="pill_live_panel", label="live panel", kind=NodeKind.RESULT, x=0.72, y=0.31, width=0.28, height=0.045, group_id="internal"),
+            DiagramNode(id="pill_asks_first", label="asks first", kind=NodeKind.DECISION, x=0.72, y=0.38, width=0.28, height=0.045, group_id="internal"),
+            DiagramNode(id="pill_guard", label="guard", kind=NodeKind.WARNING, x=0.72, y=0.45, width=0.28, height=0.045, group_id="internal"),
+            DiagramNode(id="pill_gauge", label="gauge", kind=NodeKind.CONCEPT, x=0.72, y=0.52, width=0.28, height=0.045, group_id="internal"),
+            DiagramNode(id="skills", label="skills", kind=NodeKind.STORE, x=0.22, y=0.66, width=0.24, height=0.05, group_id="external"),
+            DiagramNode(id="hooks", label="hooks", kind=NodeKind.WARNING, x=0.50, y=0.66, width=0.24, height=0.05, group_id="external"),
+            DiagramNode(id="mcp", label="MCP", kind=NodeKind.DECISION, x=0.78, y=0.66, width=0.24, height=0.05, group_id="external"),
+        ]
+        edges = [
+            DiagramEdge(id="e_p_to_m", source="prompt", target="model", label=""),
+            DiagramEdge(id="e_m_to_mod", source="model", target="mod", label=""),
+            DiagramEdge(id="e_mod_to_t", source="mod", target="tool_call", label=""),
+            DiagramEdge(id="e_t_to_s", source="tool_call", target="screen", label=""),
+            DiagramEdge(id="e_tool_skills", source="tool_call", target="skills", label=""),
+            DiagramEdge(id="e_tool_hooks", source="tool_call", target="hooks", label=""),
+            DiagramEdge(id="e_tool_mcp", source="tool_call", target="mcp", label=""),
         ]
         return DiagramGraph(nodes=nodes, edges=edges)
 
