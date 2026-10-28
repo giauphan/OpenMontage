@@ -127,6 +127,7 @@ venv/
 *.json
 !package.json
 !package-lock.json
+!codebuddy-flow-chat/**/*.json
 !schemas/**/*.json
 !templates/news/**/*.json
 !tests/**/*.json

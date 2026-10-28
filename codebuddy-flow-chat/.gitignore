@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+data/
+*.tsbuildinfo
+*.log
+.env
+.env.local
+.env.*.local
+
+# TypeScript build artifacts emitted by `tsc -b`
+server/**/*.js
+server/**/*.d.ts
+vite.config.js
+vite.config.d.ts
+
+.DS_Store
