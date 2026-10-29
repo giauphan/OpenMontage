@@ -24,8 +24,28 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(m
 logger = logging.getLogger("attach_thumbnail")
 
 
+KNOWN_VIDEO_MAP: Dict[str, str] = {
+    "cand_0e4153ec05bae47d": "vv8kAc3kcew",
+    "cand_4891c883d4ccfa36": "_H8sgDSAAjo",
+    "cand_489a1851509a707e": "e6R_HqCxTXw",
+    "cand_14677a0ef53452c1": "dPFPR8zLvY4",
+    "cand_172e107932cd40f4": "StKCqE5Rv60",
+    "cand_1a36bc3cdec38b34": "hhVuFTjmgzI",
+    "cand_1fe6d02cd35a931c": "0DX6XRx_eRI",
+    "cand_38a2f774ee2b3f4f": "bn6KIB1arj8",
+    "cand_7830949b25a9b9ee": "OhbFJfDtUbU",
+    "cand_7999dd5faa024c47": "hXILXBToyjo",
+    "cand_7d9acfe4bef468f1": "uMRKHuLz-Ss",
+    "cand_a7e88d0582d65dc9": "WrcAebyHgZM",
+    "cand_b6804253adb42264": "qmNR7O3LiO0",
+    "cand_dd067cd4b347e900": "XVn3f0tqs04",
+    "cand_e0d407f53099af7f": "Vj7KLV-AfsQ",
+    "cand_fd67af8f75f52c15": "4JJHkejs_k4",
+}
+
+
 def resolve_video_id(project_dir: Path, explicit_video_id: Optional[str] = None) -> Optional[str]:
-    """Resolve video ID from explicit argument, publish_log, or Firestore store."""
+    """Resolve video ID from explicit argument, publish_log, Firestore store, or known map."""
     if explicit_video_id:
         return explicit_video_id.strip()
 
@@ -69,6 +89,10 @@ def resolve_video_id(project_dir: Path, explicit_video_id: Optional[str] = None)
     except Exception as e:
         logger.debug(f"Firestore video_id lookup skipped: {e}")
 
+    # 3. Check known candidate video map
+    if project_dir.name in KNOWN_VIDEO_MAP:
+        return KNOWN_VIDEO_MAP[project_dir.name]
+
     return None
 
 
@@ -77,6 +101,8 @@ def attach_thumbnail_to_video(
     video_id: Optional[str] = None,
     thumbnail_path: Optional[str] = None,
     theme_color: str = "#FFDD00",
+    force_regenerate: bool = False,
+    min_size_bytes: int = 50_000,
 ) -> Tuple[bool, str, Optional[str]]:
     """Generate if needed and attach thumbnail to YouTube video."""
     pdir = Path(project_dir).resolve()
@@ -99,9 +125,21 @@ def attach_thumbnail_to_video(
         if cand_thumb.is_file():
             thumb_file = cand_thumb
 
-    # Generate if missing
-    if not thumb_file:
-        logger.info(f"Thumbnail missing for {pdir.name}; generating via ThumbnailOrchestrator...")
+    # Check if thumbnail should be regenerated (missing, forced, or tiny placeholder)
+    needs_generation = False
+    if not thumb_file or not thumb_file.is_file():
+        needs_generation = True
+    elif force_regenerate:
+        logger.info(f"Force regeneration requested for {pdir.name}")
+        needs_generation = True
+    elif thumb_file.stat().st_size < min_size_bytes:
+        logger.info(
+            f"Thumbnail for {pdir.name} is a placeholder ({thumb_file.stat().st_size} bytes < {min_size_bytes}); regenerating via Muse..."
+        )
+        needs_generation = True
+
+    if needs_generation:
+        logger.info(f"Generating authentic Muse AI thumbnail for {pdir.name}...")
         meta_file = pdir / "publish_metadata.json"
         title = pdir.name
         topic = ""
@@ -128,7 +166,7 @@ def attach_thumbnail_to_video(
         thumb_file = Path(res.thumbnail_path)
 
     # Attach to YouTube
-    logger.info(f"Attaching {thumb_file} to YouTube video {resolved_vid}...")
+    logger.info(f"Attaching {thumb_file} ({thumb_file.stat().st_size} bytes) to YouTube video {resolved_vid}...")
     pub = YoutubePublisher()
     secret_path = Path(os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "~/.openmontage/client_secret.json")).expanduser()
     token_path = Path(os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")).expanduser()
@@ -153,6 +191,7 @@ def main() -> int:
     parser.add_argument("--video-id", help="Explicit YouTube video ID (optional)")
     parser.add_argument("--thumbnail", help="Explicit thumbnail image path (optional)")
     parser.add_argument("--theme-color", default="#FFDD00", help="Headline theme color")
+    parser.add_argument("--force", action="store_true", help="Force regenerate thumbnail even if one exists")
     args = parser.parse_args()
 
     pdir = ROOT / "projects" / args.project_id if not Path(args.project_id).is_dir() else Path(args.project_id)
@@ -161,6 +200,7 @@ def main() -> int:
         video_id=args.video_id,
         thumbnail_path=args.thumbnail,
         theme_color=args.theme_color,
+        force_regenerate=args.force,
     )
     if success:
         print(f"SUCCESS: Thumbnail attached to video for project {pdir.name}")

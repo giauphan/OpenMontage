@@ -81,9 +81,9 @@ def build_youtube_payload(
     if "contains_synthetic_media" in payload_meta:
         payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
 
-    # Thumbnail resolution (explicit arg -> topic_meta -> project discovery)
+    # Thumbnail resolution (explicit arg -> topic_meta -> project discovery -> JIT generation)
     thumb = thumbnail_path or payload_meta.get("thumbnail_path") or payload_meta.get("thumbnail")
-    if not thumb:
+    if not thumb or not Path(thumb).is_file():
         v_p = Path(video_path)
         candidates = [
             v_p.parent.parent / "thumbnails" / "thumbnail.png",
@@ -97,7 +97,28 @@ def build_youtube_payload(
             if c.is_file():
                 thumb = str(c)
                 break
-    if thumb:
+
+    # If still missing or empty, attempt just-in-time generation
+    if not thumb or not Path(thumb).is_file():
+        try:
+            from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
+            v_p = Path(video_path)
+            pdir = v_p.parent.parent if v_p.parent.name == "renders" else v_p.parent
+            if pdir.is_dir() and pdir.name.startswith("cand_"):
+                title = payload_meta.get("title") or pdir.name
+                res = ThumbnailOrchestrator.generate_thumbnail(
+                    project_dir=pdir,
+                    title=title,
+                    topic=payload_meta.get("topic", "") or payload_meta.get("summary", ""),
+                    format_type=payload_meta.get("format", "short"),
+                    allow_fallback=True,
+                )
+                if res.success and res.thumbnail_path and Path(res.thumbnail_path).is_file():
+                    thumb = res.thumbnail_path
+        except Exception:
+            pass
+
+    if thumb and Path(thumb).is_file():
         payload["thumbnail_path"] = str(thumb)
 
     return payload
