@@ -99,14 +99,14 @@ class ThumbnailOrchestrator:
             draw = ImageDraw.Draw(overlay)
 
             # Generous margins to strictly avoid text cutoff:
-            # 1. Outer canvas margin: at least 10% on both left and right (max badge width = 80%)
-            # 2. Inner badge padding: at least 4.5% of width or 0.85 * font_size
-            # Resulting in total horizontal clearance of at least 15% on both left and right!
-            canvas_margin_x = int(width * 0.10)
+            # 1. Outer canvas margin: at least 15% on both left and right (max badge width = 70%)
+            # 2. Inner badge padding: at least 5.5% of width or 0.95 * font_size
+            # Resulting in total horizontal clearance of >= 20% on both left and right!
+            canvas_margin_x = int(width * 0.15)
             max_badge_w = width - (canvas_margin_x * 2)
 
-            font_size = max(34, int(width * 0.060))
-            pad_x = max(int(font_size * 0.85), int(width * 0.045))
+            font_size = max(34, int(width * 0.055))
+            pad_x = max(int(font_size * 0.95), int(width * 0.055))
             pad_y = max(int(font_size * 0.55), int(height * 0.015))
             max_text_width = max_badge_w - (pad_x * 2)
 
@@ -114,9 +114,16 @@ class ThumbnailOrchestrator:
             lines = cls._wrap_headline(headline, font, max_text_width, draw)
 
             # Dynamically reduce font size if text spans > 3 lines or exceeds width
-            while (len(lines) > 3 or any((draw.textbbox((0, 0), l, font=font)[2] - draw.textbbox((0, 0), l, font=font)[0]) > max_text_width for l in lines)) and font_size > 22:
+            while (
+                len(lines) > 3
+                or any(
+                    (draw.textbbox((0, 0), l, font=font)[2] - draw.textbbox((0, 0), l, font=font)[0])
+                    > max_text_width
+                    for l in lines
+                )
+            ) and font_size > 18:
                 font_size -= 2
-                pad_x = max(int(font_size * 0.85), int(width * 0.045))
+                pad_x = max(int(font_size * 0.95), int(width * 0.055))
                 pad_y = max(int(font_size * 0.55), int(height * 0.015))
                 max_text_width = max_badge_w - (pad_x * 2)
                 font = cls._get_font(font_size)
@@ -175,7 +182,7 @@ class ThumbnailOrchestrator:
             curr_y = y0 + pad_y
             for idx, line in enumerate(lines):
                 lw, lh = line_dims[idx]
-                line_x = x0 + (badge_w - lw) // 2
+                line_x = max(x0 + pad_x, min(x0 + (badge_w - lw) // 2, x0 + badge_w - pad_x - lw))
                 draw.text((line_x, curr_y), line, font=font, fill=(255, 255, 255, 255))
                 curr_y += lh + line_spacing
 

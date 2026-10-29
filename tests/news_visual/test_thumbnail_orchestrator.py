@@ -52,7 +52,7 @@ def test_headline_compositing(tmp_path: Path):
 
 
 def test_headline_compositing_safe_margins(tmp_path: Path):
-    """Verify headline compositing strictly preserves >= 10% outer margin and internal padding."""
+    """Verify headline compositing strictly preserves >= 15% outer margin and internal padding."""
     base_img = tmp_path / "base_margin.png"
     img = Image.new("RGB", (1080, 1920), (20, 20, 30))
     img.save(base_img)
@@ -69,6 +69,15 @@ def test_headline_compositing_safe_margins(tmp_path: Path):
     with Image.open(res) as r_img:
         assert r_img.size == (1080, 1920)
         assert r_img.format == "PNG"
+        w, h = r_img.size
+        min_x = int(w * 0.15)
+        max_x = w - int(w * 0.15)
+        pix = r_img.load()
+        for y in range(h):
+            for x in range(min_x):
+                assert pix[x, y] == (20, 20, 30), f"Pixel ({x}, {y}) modified in left margin safe zone"
+            for x in range(max_x, w):
+                assert pix[x, y] == (20, 20, 30), f"Pixel ({x}, {y}) modified in right margin safe zone"
 
 
 def test_generate_thumbnail_with_mock_muse(tmp_path: Path):
