@@ -66,6 +66,18 @@ class ThumbnailPlanner:
         return "9:16", cls.DIMENSIONS_MAP["9:16"]
 
     @classmethod
+    def _matches_any(cls, text: str, keywords: tuple[str, ...]) -> bool:
+        """Match keywords using boundary matching for single words to avoid substring false positives."""
+        for kw in keywords:
+            if " " in kw or "-" in kw or "." in kw:
+                if kw in text:
+                    return True
+            else:
+                if re.search(r"\b" + re.escape(kw) + r"\b", text):
+                    return True
+        return False
+
+    @classmethod
     def extract_visual_subject(
         cls,
         title: str,
@@ -78,51 +90,51 @@ class ThumbnailPlanner:
         combined = f"{clean_title} {clean_topic} {context_text}".lower()
 
         # 1. Topic-matched domain rules
-        if any(w in combined for w in ("ipad", "tablet", "apple watch", "iphone", "smartphone")):
+        if cls._matches_any(combined, ("ipad", "tablet", "apple watch", "iphone", "smartphone")):
             device_name = "Apple iPad mini tablet" if "ipad" in combined else "modern tablet and mobile device"
             return f"sleek modern {device_name} held in hand, glowing futuristic neural engine processor on screen, high-tech clean Apple aesthetic"
 
-        if any(w in combined for w in ("figma", "desigma", "ui design", "vector graphics", "ux design")):
+        if cls._matches_any(combined, ("figma", "desigma", "ui design", "vector graphics", "ux design")):
             return "futuristic digital UI/UX design canvas workspace, glowing vector shapes and UI layout tools on a floating glass workstation"
 
-        if any(w in combined for w in ("browser", "opera", "webai", "web browser", "chrome")):
-            return "futuristic web browser interface with integrated local AI engine, glowing cyber web browser workspace and code elements"
-
-        if any(w in combined for w in ("voice", "speech", "audio", "soundwave", "theysaid", "loqui", "synthesis")):
-            return "glowing futuristic digital soundwave visualizer and AI audio speech interface, holographic microphone with emotive sound waves"
-
-        if any(w in combined for w in ("swarm", "manyagents", "autonomous agent", "multi-agent", "agentic")):
+        if cls._matches_any(combined, ("swarm", "manyagents", "autonomous agent", "multi-agent", "agentic")):
             return "swarm of autonomous glowing digital AI robotic agents collaborating in a high-tech network matrix, collective intelligence"
 
-        if any(w in combined for w in ("security", "1password", "secrets", "vault", "identity", "cryptographic", "dataroom", "papermark")):
+        if cls._matches_any(combined, ("browser", "opera", "webai", "web browser", "chrome")):
+            return "futuristic web browser interface with integrated local AI engine, glowing cyber web browser workspace and code elements"
+
+        if cls._matches_any(combined, ("voice", "speech", "audio", "soundwave", "theysaid", "loqui", "synthesis")):
+            return "glowing futuristic digital soundwave visualizer and AI audio speech interface, holographic microphone with emotive sound waves"
+
+        if cls._matches_any(combined, ("security", "1password", "secrets", "vault", "identity", "cryptographic", "dataroom", "papermark")):
             return "futuristic cyber security vault, glowing holographic digital keys and encrypted security shield, biometric cyber protection"
 
-        if any(w in combined for w in ("off-grid", "off grid", "offline ai", "edge ai", "local ai", "decentralized")):
+        if cls._matches_any(combined, ("off-grid", "off grid", "offline ai", "edge ai", "local ai", "decentralized")):
             return "rugged portable offline edge AI computing hardware device operating off-grid in nature, glowing circuit boards, decentralized personal hardware"
 
-        if any(w in combined for w in ("video", "cinema", "nuvio", "film", "4k render")):
+        if cls._matches_any(combined, ("video", "cinema", "nuvio", "film", "4k render")):
             return "futuristic cinema camera projecting a glowing 4K ultra-high-definition holographic AI film universe, high-speed generative video"
 
-        if any(w in combined for w in ("job", "resume", "hiring", "jobmate", "recruiting")):
+        if cls._matches_any(combined, ("job", "resume", "hiring", "jobmate", "recruiting")):
             return "digital futuristic hiring portal with glowing automated resume pipelines, AI bot reviewing job applications on holographic screens"
 
-        if any(w in combined for w in ("pdf", "accessibility", "webyes", "document", "braille")):
+        if cls._matches_any(combined, ("pdf", "accessibility", "webyes", "document", "braille")):
             return "digital holographic document being scanned with glowing accessible sound waves and braille patterns, clean modern tech interface"
 
-        if any(w in combined for w in ("bridge", "ai bridge")):
+        if cls._matches_any(combined, ("bridge", "ai bridge")):
             return "futuristic glowing cybernetic bridge connecting neural AI models to real-world autonomous tasks, digital infrastructure"
 
-        if any(w in combined for w in ("minimax", "m3.1")):
+        if cls._matches_any(combined, ("minimax", "m3.1")):
             return "ultra-fast lightning speed AI neural brain processor glowing with neon cyan energy and high-speed data flow"
 
-        if any(w in combined for w in ("allmodels", "multi-model")):
+        if cls._matches_any(combined, ("allmodels", "multi-model")):
             return "multiple interconnected glowing AI model nodes racing in a high-tech digital neural matrix"
 
-        if any(w in combined for w in ("gpt", "openai", "claude", "gemini", "llm")):
+        if cls._matches_any(combined, ("gpt", "openai", "claude", "gemini", "llm")):
             model_name = clean_topic or clean_title.split(":")[0].strip()
             return f"an advanced glowing neural artificial intelligence brain core representing {model_name}, futuristic AI data streams, holographic neural network"
 
-        if any(w in combined for w in ("strawberry", "reasoning", "test-time", "compute", "o1", "o3", "thinking")):
+        if cls._matches_any(combined, ("strawberry", "reasoning", "test-time", "compute", "o1", "o3", "thinking")):
             return "futuristic glowing crimson AI neural processor deep in thought and reasoning, holographic computational tree search, cognitive reasoning core"
 
         # Fallback: clean core subject from title
