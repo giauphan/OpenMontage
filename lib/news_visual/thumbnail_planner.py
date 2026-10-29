@@ -143,7 +143,8 @@ class ThumbnailPlanner:
         prompt = (
             f"{cls.STYLE_PREFIX}{visual_subject}, {framing}, "
             "vivid saturated colors, high dynamic range, sharp focus, 8k concept art. "
-            "Pure visual imagery, no text, no words, no letters, no labels, no watermark."
+            "Pure visual imagery, no text, no words, no letters, no labels, no watermark. "
+            "Output markdown image tag ![Image](url)."
         )
 
         return prompt, cls.THUMBNAIL_NEGATIVE_PROMPT
