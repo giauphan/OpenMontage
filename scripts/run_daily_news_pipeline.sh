@@ -962,6 +962,10 @@ except Exception:
 ' "$script_json" "$narration_duration"
       # Re-bind news evidence so evidence manifest and claim ledger hash the realigned script_en_US.json
       "$PY" "$ROOT/scripts/bind_news_evidence.py" "$project_root" >/dev/null 2>&1 || true
+      # Retime news visual plan so beat timings match the realigned script sections
+      if [ -f "$project_root/artifacts/news_visual_plan.json" ]; then
+        "$PY" "$ROOT/scripts/prepare_news_visuals.py" "$project_root" >/dev/null 2>&1 || true
+      fi
     fi
   fi
   local music="$project_root/assets/music-bg.mp3"
@@ -1225,6 +1229,8 @@ if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
 fi
 
 if [ "$NEWS_VISUAL_MODE" = "1" ]; then
+  # Ensure visual plan is synchronized with script before running Visual QA
+  "$PY" "$ROOT/scripts/prepare_news_visuals.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
   echo "[$(date -u +%FT%TZ)] Running Content-Aware Visual QA for $PROJECT_ID..."
   if ! "$PY" "$ROOT/scripts/validate_news_visuals.py" --project-dir "$PROJECT_DIR" --mode strict; then
     echo "[$(date -u +%FT%TZ)] ERROR: Content-Aware Visual QA failed for $PROJECT_ID" >&2
