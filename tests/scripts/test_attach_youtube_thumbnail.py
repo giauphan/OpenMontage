@@ -71,3 +71,30 @@ def test_attach_thumbnail_success(mock_upload, mock_publisher_cls, tmp_path):
     assert status == "THUMBNAIL_ATTACHED"
     assert err is None
     mock_upload.assert_called_once_with(mock_service, "vid_test_123", str(thumb_file))
+
+
+@patch("scripts.attach_youtube_thumbnail.YoutubePublisher")
+@patch("scripts.attach_youtube_thumbnail._upload_thumbnail_if_present")
+def test_attach_all_thumbnails(mock_upload, mock_publisher_cls, tmp_path):
+    from scripts.attach_youtube_thumbnail import attach_all_thumbnails
+
+    cand_dir = tmp_path / "cand_0e4153ec05bae47d"
+    cand_dir.mkdir()
+    thumb_dir = cand_dir / "thumbnails"
+    thumb_dir.mkdir()
+    thumb_file = thumb_dir / "thumbnail.png"
+    # Create file > 50_000 bytes
+    thumb_file.write_bytes(b"x" * 60_000)
+
+    mock_service = MagicMock()
+    mock_pub = MagicMock()
+    mock_pub._get_authenticated_service.return_value = mock_service
+    mock_publisher_cls.return_value = mock_pub
+    mock_upload.return_value = ("THUMBNAIL_ATTACHED", None)
+
+    summary = attach_all_thumbnails(projects_dir=tmp_path, force_regenerate=False)
+    assert summary["total"] == 1
+    assert summary["success"] == 1
+    assert summary["failed"] == 0
+    assert summary["results"]["cand_0e4153ec05bae47d"]["video_id"] == "vv8kAc3kcew"
+

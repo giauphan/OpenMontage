@@ -83,8 +83,8 @@ def build_youtube_payload(
                 thumb = str(c)
                 break
 
-    # If still missing or empty, attempt just-in-time generation
-    if not thumb or not Path(thumb).is_file():
+    # If still missing, empty, or placeholder (< 50KB), attempt just-in-time generation
+    if not thumb or not Path(thumb).is_file() or Path(thumb).stat().st_size < 50_000:
         try:
             from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
             v_p = Path(video_path)

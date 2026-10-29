@@ -75,14 +75,23 @@ def resolve_video_id(project_dir: Path, explicit_video_id: Optional[str] = None)
 
         kind = "longform" if format_type in ("long", "longform", "16:9") else "short"
 
-        # Check date in publish_metadata or schedule config
+        # Check dates in publish_metadata, schedule config, or recent range
+        dates_to_check: set[str] = set()
         from scripts.publish_config import load_config
         cfg = load_config()
         for p in cfg.get("active_projects", []):
-            if p.get("project_id") == project_dir.name:
-                p_date = p.get("publish_date")
-                if p_date:
-                    key = publish_key(p_date, topic_id, "youtube", kind)
+            if p.get("project_id") == project_dir.name and p.get("publish_date"):
+                dates_to_check.add(p.get("publish_date"))
+
+        from datetime import date, timedelta
+        today = date.today()
+        for offset in range(-7, 8):
+            dates_to_check.add((today + timedelta(days=offset)).isoformat())
+
+        for p_date in sorted(dates_to_check):
+            for t_id in (topic_id, project_dir.name):
+                for k in (kind, "short", "longform"):
+                    key = publish_key(p_date, t_id, "youtube", k)
                     doc = store.get(key)
                     if doc and doc.get("video_id"):
                         return str(doc["video_id"])
@@ -103,6 +112,7 @@ def attach_thumbnail_to_video(
     theme_color: str = "#FFDD00",
     force_regenerate: bool = False,
     min_size_bytes: int = 50_000,
+    service: Optional[Any] = None,
 ) -> Tuple[bool, str, Optional[str]]:
     """Generate if needed and attach thumbnail to YouTube video."""
     pdir = Path(project_dir).resolve()
@@ -167,14 +177,14 @@ def attach_thumbnail_to_video(
 
     # Attach to YouTube
     logger.info(f"Attaching {thumb_file} ({thumb_file.stat().st_size} bytes) to YouTube video {resolved_vid}...")
-    pub = YoutubePublisher()
-    secret_path = Path(os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "~/.openmontage/client_secret.json")).expanduser()
-    token_path = Path(os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")).expanduser()
-
-    try:
-        service = pub._get_authenticated_service(secret_path, token_path, interactive=False)
-    except Exception as e:
-        return False, "AUTH_FAILED", f"YouTube authentication failed: {e}"
+    if service is None:
+        pub = YoutubePublisher()
+        secret_path = Path(os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "~/.openmontage/client_secret.json")).expanduser()
+        token_path = Path(os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")).expanduser()
+        try:
+            service = pub._get_authenticated_service(secret_path, token_path, interactive=False)
+        except Exception as e:
+            return False, "AUTH_FAILED", f"YouTube authentication failed: {e}"
 
     status, detail = _upload_thumbnail_if_present(service, resolved_vid, str(thumb_file))
     if status == "THUMBNAIL_ATTACHED":
@@ -185,14 +195,112 @@ def attach_thumbnail_to_video(
     return False, status, detail
 
 
+def attach_all_thumbnails(
+    projects_dir: Optional[Path] = None,
+    force_regenerate: bool = False,
+    min_size_bytes: int = 50_000,
+    theme_color: str = "#FFDD00",
+) -> Dict[str, Any]:
+    """Scan all candidate projects and attach Muse AI thumbnails to any associated YouTube videos."""
+    p_root = (projects_dir or ROOT / "projects").resolve()
+    logger.info(f"Scanning {p_root} for candidate projects with YouTube videos...")
+
+    # Authenticate once
+    pub = YoutubePublisher()
+    secret_path = Path(os.environ.get("YOUTUBE_CLIENT_SECRET_FILE", "~/.openmontage/client_secret.json")).expanduser()
+    token_path = Path(os.environ.get("YOUTUBE_TOKEN_PATH", "~/.openmontage/youtube_token.json")).expanduser()
+    try:
+        service = pub._get_authenticated_service(secret_path, token_path, interactive=False)
+    except Exception as e:
+        logger.error(f"YouTube authentication failed: {e}")
+        return {"total": 0, "success": 0, "failed": 0, "results": {}, "error": str(e)}
+
+    # Collect projects to process
+    candidate_dirs = sorted([p for p in p_root.iterdir() if p.is_dir() and p.name.startswith("cand_")])
+    results: Dict[str, Dict[str, Any]] = {}
+    success_count = 0
+    fail_count = 0
+
+    for pdir in candidate_dirs:
+        vid = resolve_video_id(pdir)
+        if not vid:
+            continue
+
+        cand_thumb = pdir / "thumbnails" / "thumbnail.png"
+        is_placeholder = not cand_thumb.is_file() or cand_thumb.stat().st_size < min_size_bytes
+
+        if not force_regenerate and not is_placeholder:
+            logger.info(f"Project {pdir.name} already has high-quality thumbnail ({cand_thumb.stat().st_size} bytes). Uploading...")
+            status, detail = _upload_thumbnail_if_present(service, vid, str(cand_thumb))
+            is_ok = status == "THUMBNAIL_ATTACHED"
+            results[pdir.name] = {
+                "video_id": vid,
+                "status": status,
+                "success": is_ok,
+                "detail": detail,
+                "size_bytes": cand_thumb.stat().st_size,
+            }
+            if is_ok:
+                success_count += 1
+            else:
+                fail_count += 1
+            continue
+
+        logger.info(f"Processing {pdir.name} (Video ID: {vid})...")
+        success, status, err = attach_thumbnail_to_video(
+            project_dir=pdir,
+            video_id=vid,
+            theme_color=theme_color,
+            force_regenerate=force_regenerate,
+            min_size_bytes=min_size_bytes,
+            service=service,
+        )
+        results[pdir.name] = {
+            "video_id": vid,
+            "status": status,
+            "success": success,
+            "detail": err,
+        }
+        if success:
+            success_count += 1
+        else:
+            fail_count += 1
+
+    summary = {
+        "total": len(results),
+        "success": success_count,
+        "failed": fail_count,
+        "results": results,
+    }
+    logger.info(f"Batch thumbnail processing complete: {success_count}/{len(results)} successful.")
+    return summary
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Attach thumbnail to a YouTube video")
-    parser.add_argument("project_id", help="Candidate project ID or path (e.g. cand_0e4153ec05bae47d)")
+    parser = argparse.ArgumentParser(description="Attach thumbnail to YouTube video(s)")
+    parser.add_argument("project_id", nargs="?", default=None, help="Candidate project ID or path (e.g. cand_0e4153ec05bae47d)")
+    parser.add_argument("--all", action="store_true", help="Process all candidate projects with YouTube videos")
+    parser.add_argument("--projects-dir", help="Custom projects directory path (for --all)")
     parser.add_argument("--video-id", help="Explicit YouTube video ID (optional)")
     parser.add_argument("--thumbnail", help="Explicit thumbnail image path (optional)")
     parser.add_argument("--theme-color", default="#FFDD00", help="Headline theme color")
     parser.add_argument("--force", action="store_true", help="Force regenerate thumbnail even if one exists")
+    parser.add_argument("--min-size", type=int, default=50_000, help="Min thumbnail bytes to consider valid non-placeholder")
     args = parser.parse_args()
+
+    if args.all:
+        p_dir = Path(args.projects_dir) if args.projects_dir else None
+        summary = attach_all_thumbnails(
+            projects_dir=p_dir,
+            force_regenerate=args.force,
+            min_size_bytes=args.min_size,
+            theme_color=args.theme_color,
+        )
+        print(json.dumps(summary, indent=2))
+        return 0 if summary.get("failed", 0) == 0 else 1
+
+    if not args.project_id:
+        parser.error("project_id is required unless --all is specified")
 
     pdir = ROOT / "projects" / args.project_id if not Path(args.project_id).is_dir() else Path(args.project_id)
     success, status, err = attach_thumbnail_to_video(
@@ -201,6 +309,7 @@ def main() -> int:
         thumbnail_path=args.thumbnail,
         theme_color=args.theme_color,
         force_regenerate=args.force,
+        min_size_bytes=args.min_size,
     )
     if success:
         print(f"SUCCESS: Thumbnail attached to video for project {pdir.name}")
