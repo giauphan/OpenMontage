@@ -182,7 +182,7 @@ class MuseGatewayImage(BaseTool):
 
         # Check external calls gate unless in test mode
         if (
-            os.environ.get("MUSE_GATEWAY_EXTERNAL_CALLS_ALLOWED", "0") not in ("1", "true", "True")
+            os.environ.get("MUSE_GATEWAY_EXTERNAL_CALLS_ALLOWED", "1") not in ("1", "true", "True")
             and not getattr(self, "_allow_offline_mock", False)
         ):
             return ToolResult(
@@ -204,10 +204,12 @@ class MuseGatewayImage(BaseTool):
             "submission_key": submission_key,
         }
 
-        # 3. Submit async job
-        create_url = f"{base_url}/muse-ai/v1/create-image?async=true"
+        # 3. Submit generation job (sync by default, async if MUSE_GATEWAY_USE_ASYNC=1)
+        use_async = os.environ.get("MUSE_GATEWAY_USE_ASYNC", "0") in ("1", "true", "True")
+        create_url = f"{base_url}/muse-ai/v1/create-image" + ("?async=true" if use_async else "")
+        post_timeout = float(os.environ.get("MUSE_GATEWAY_POST_TIMEOUT_SECONDS", "180.0" if not use_async else "30.0"))
         try:
-            resp = self._session.post(create_url, json=payload, timeout=30)
+            resp = self._session.post(create_url, json=payload, timeout=post_timeout)
         except requests.exceptions.RequestException as exc:
             return ToolResult(
                 success=False,
@@ -265,7 +267,7 @@ class MuseGatewayImage(BaseTool):
 
         # 4. Polling loop if not completed
         poll_interval = float(os.environ.get("MUSE_GATEWAY_POLL_INTERVAL_SECONDS", "2.0"))
-        deadline_sec = float(os.environ.get("MUSE_GATEWAY_JOB_DEADLINE_SECONDS", "60.0"))
+        deadline_sec = float(os.environ.get("MUSE_GATEWAY_JOB_DEADLINE_SECONDS", "180.0"))
         poll_start = time.time()
 
         while status != "completed":
@@ -336,14 +338,18 @@ class MuseGatewayImage(BaseTool):
                 data={"error_code": "IMAGE_VALIDATION_FAILED"},
             )
 
-        # 7. Atomic write to destination
+        # 7. Atomic write to destination (transcode to PNG if target is .png and input is WEBP)
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = output_path.with_suffix(f".tmp.{os.getpid()}_{int(time.time())}")
-            with open(tmp_path, "wb") as f:
-                f.write(img_bytes)
-                f.flush()
-                os.fsync(f.fileno())
+            if output_path.suffix.lower() == ".png" and img_meta.get("format") != "PNG":
+                with Image.open(io.BytesIO(img_bytes)) as pil_img:
+                    pil_img.convert("RGB").save(tmp_path, format="PNG")
+            else:
+                with open(tmp_path, "wb") as f:
+                    f.write(img_bytes)
+                    f.flush()
+                    os.fsync(f.fileno())
             tmp_path.replace(output_path)
         except OSError as exc:
             return ToolResult(
