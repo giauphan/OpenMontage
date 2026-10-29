@@ -57,8 +57,12 @@ NEWS_VISUAL_MODE=1
 # 16:30 UTC (23:30 Vietnam) — Publish slot 3b (Instagram only)
 30 16 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; export PYTHONPATH=/app && export INSTAGRAM_MODE=1 && OPENMONTAGE_PYTHON=/usr/bin/python3 /usr/bin/python3 scripts/publish_active_projects.py --slot 23:30 --only-platform instagram --include-overdue >> logs/cron_publish.log 2>&1
 
-# Hourly, independent of generation success. Canonical verified-publication guards
-# remain mandatory; no age-based deletion and no publishing. flock prevents overlap.
+# Every 30 minutes — Clean project trash (quarantined recovery, errored/abandoned candidate dirs).
+# Fast (<0.1s), strictly protects in-flight generations and scheduled projects.
+10,40 * * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; PYTHONPATH=/app /usr/bin/flock -n /app/logs/trash_cleanup.lock /usr/bin/python3 -m scripts.cleanup_published_projects --clear-trash-only >> logs/cron_cleanup.log 2>&1
+
+# Hourly at :35 — Reconcile and clean verified published projects across YouTube/Meta.
+# Canonical verified-publication guards remain mandatory; no age-based deletion and no publishing. flock prevents overlap.
 35 * * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; PYTHONPATH=/app /usr/bin/flock -n /app/logs/published_cleanup.lock /usr/bin/python3 -m scripts.cleanup_published_projects --apply >> logs/cron_cleanup.log 2>&1
 
 # Folder structure:
