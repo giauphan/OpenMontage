@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol, Tuple, runtime_checkable
@@ -338,8 +339,8 @@ class ThumbnailOrchestrator:
             thumb_dir.mkdir(parents=True, exist_ok=True)
             out_file = thumb_dir / "thumbnail.png"
 
-        # Deterministic submission key
-        sub_key = hashlib.sha256(f"{pdir.name}:{plan.prompt}".encode("utf-8")).hexdigest()
+        # Fresh submission key to avoid stale gateway retry cache
+        sub_key = hashlib.sha256(f"{pdir.name}:{plan.prompt}:{time.time()}".encode("utf-8")).hexdigest()
 
         # Step 1: Generate base image via Muse Gateway or injected adapter
         muse_res = cls._dispatch_muse(
