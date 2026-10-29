@@ -96,3 +96,47 @@ def test_asset_resolver_correctly_identifies_ai_illustration_and_dimensions(tmp_
     assert asset.get("ai_generated") is True
     assert asset.get("provider") == "muse"
     assert asset["width"] == 1080 and asset["height"] == 1920
+
+
+def test_prepare_news_visuals_preserves_raw_script_sha_whitespace(tmp_path: Path):
+    """Verifies that prepare_news_visuals matches the exact sha256 of script on disk regardless of formatting."""
+    import hashlib
+    import sys
+    from scripts import prepare_news_visuals
+
+    project_dir = tmp_path / "cand_test_hash"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write script JSON with compact 4-space formatting and unique trailing space
+    script_obj = {
+        "version": "1.0",
+        "title": "Test Title",
+        "total_duration_seconds": 66.0,
+        "sections": [
+            {"id": "scene-1", "text": "Hook sentence.", "start_seconds": 0.0, "end_seconds": 11.0},
+            {"id": "scene-2", "text": "Detail sentence.", "start_seconds": 11.0, "end_seconds": 22.0},
+            {"id": "scene-3", "text": "Architecture point.", "start_seconds": 22.0, "end_seconds": 33.0},
+            {"id": "scene-4", "text": "Benchmark metric.", "start_seconds": 33.0, "end_seconds": 44.0},
+            {"id": "scene-5", "text": "Real world impact.", "start_seconds": 44.0, "end_seconds": 55.0},
+            {"id": "scene-6", "text": "Final conclusion.", "start_seconds": 55.0, "end_seconds": 66.0},
+        ],
+    }
+    raw_script_text = json.dumps(script_obj, indent=4) + "\n   \n"
+    raw_script_bytes = raw_script_text.encode("utf-8")
+    expected_sha = hashlib.sha256(raw_script_bytes).hexdigest()
+    (artifacts_dir / "script_en_US.json").write_bytes(raw_script_bytes)
+
+    # Run main()
+    old_argv = sys.argv
+    try:
+        sys.argv = ["prepare_news_visuals.py", str(project_dir)]
+        exit_code = prepare_news_visuals.main()
+        assert exit_code == 0, f"Expected prepare_news_visuals to exit 0, got {exit_code}"
+
+        plan_data = json.loads((artifacts_dir / "news_visual_plan.json").read_text(encoding="utf-8"))
+        assert plan_data["script_sha256"] == expected_sha, (
+            f"Expected plan script_sha256 to match disk bytes {expected_sha}, got {plan_data['script_sha256']}"
+        )
+    finally:
+        sys.argv = old_argv

@@ -120,18 +120,31 @@ def main() -> int:
             if plan.get("script_sha256") != script_sha:
                 # Try retiming existing authored plan first to preserve intent and asset bindings
                 try:
-                    plan = planner.retime_plan(plan, script_data)
+                    plan = planner.retime_plan(
+                        plan,
+                        script_data,
+                        new_script_bytes=script_bytes,
+                        new_script_sha=script_sha,
+                    )
+                    plan["script_sha256"] = script_sha
                     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
                 except Exception as retime_exc:
                     print(f"INFO: Retiming could not preserve plan ({retime_exc}); regenerating", file=sys.stderr)
                     if claim_ledger:
                         try:
-                            plan = planner.plan_visuals(project_dir.name, script_data, claim_ledger)
+                            plan = planner.plan_visuals(
+                                project_dir.name,
+                                script_data,
+                                claim_ledger,
+                                script_bytes=script_bytes,
+                                script_sha=script_sha,
+                            )
                         except Exception as plan_exc:
                             print(f"WARN: Claim-aware regeneration fell back to default: {plan_exc}", file=sys.stderr)
                             plan = build_default_visual_plan(project_dir, script_data, script_sha)
                     else:
                         plan = build_default_visual_plan(project_dir, script_data, script_sha)
+                    plan["script_sha256"] = script_sha
                     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception as exc:
             print(f"ERROR: Malformed news_visual_plan.json: {exc}", file=sys.stderr)
@@ -139,15 +152,23 @@ def main() -> int:
     else:
         if claim_ledger:
             try:
-                plan = planner.plan_visuals(project_dir.name, script_data, claim_ledger)
+                plan = planner.plan_visuals(
+                    project_dir.name,
+                    script_data,
+                    claim_ledger,
+                    script_bytes=script_bytes,
+                    script_sha=script_sha,
+                )
             except Exception as plan_exc:
                 print(f"WARN: Claim-aware planning fell back to default: {plan_exc}", file=sys.stderr)
                 plan = build_default_visual_plan(project_dir, script_data, script_sha)
         else:
             plan = build_default_visual_plan(project_dir, script_data, script_sha)
+        plan["script_sha256"] = script_sha
         plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # Validate plan contract
+    plan["script_sha256"] = script_sha
     plan_errors = validate_visual_plan(plan, script_bytes=script_bytes, evidence_data=evidence_data)
     if plan_errors:
         print("ERROR: news_visual_plan failed validation:\n" + "\n".join(f"  - {e}" for e in plan_errors), file=sys.stderr)

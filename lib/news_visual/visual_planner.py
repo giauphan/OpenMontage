@@ -86,6 +86,8 @@ class ClaimAwareVisualPlanner:
         claim_ledger: List[Dict[str, Any]],
         topic: Optional[Dict[str, Any]] = None,
         existing_captures: Optional[List[str]] = None,
+        script_bytes: Optional[bytes] = None,
+        script_sha: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a validated news_visual_plan adhering to all policy rules."""
         if not project_id:
@@ -117,8 +119,15 @@ class ClaimAwareVisualPlanner:
         total_duration = self._compute_and_verify_durations(sections)
 
         # 5. Build beats
-        script_bytes = json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
-        script_sha = hashlib.sha256(script_bytes).hexdigest()
+        if script_sha:
+            computed_script_sha = script_sha
+            computed_script_bytes = script_bytes or json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
+        elif script_bytes is not None:
+            computed_script_bytes = script_bytes
+            computed_script_sha = hashlib.sha256(script_bytes).hexdigest()
+        else:
+            computed_script_bytes = json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
+            computed_script_sha = hashlib.sha256(computed_script_bytes).hexdigest()
 
         beats = self._assemble_beats(
             project_id=project_id,
@@ -130,13 +139,13 @@ class ClaimAwareVisualPlanner:
         plan = {
             "version": "1.0",
             "project_id": project_id,
-            "script_sha256": script_sha,
+            "script_sha256": computed_script_sha,
             "enabled": True,
             "beats": [b.to_dict() for b in beats],
         }
 
         # Validate against schema and contract
-        contract_errors = validate_visual_plan(plan, script_bytes=script_bytes)
+        contract_errors = validate_visual_plan(plan, script_bytes=computed_script_bytes)
         if contract_errors:
             raise VisualPlannerError(f"Contract validation failed: {'; '.join(contract_errors)}")
 
@@ -146,6 +155,8 @@ class ClaimAwareVisualPlanner:
         self,
         existing_plan: Dict[str, Any],
         new_script_data: Dict[str, Any],
+        new_script_bytes: Optional[bytes] = None,
+        new_script_sha: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Retime an existing visual plan when TTS audio shifts, preserving visual intent."""
         if not existing_plan or not existing_plan.get("beats"):
@@ -191,11 +202,18 @@ class ClaimAwareVisualPlanner:
             updated_beat["end_seconds"] = round(end, 2)
             updated_beats.append(updated_beat)
 
-        new_script_bytes = json.dumps(new_script_data, ensure_ascii=False, indent=2).encode("utf-8")
-        new_script_sha = hashlib.sha256(new_script_bytes).hexdigest()
+        if new_script_sha:
+            computed_sha = new_script_sha
+            computed_bytes = new_script_bytes or json.dumps(new_script_data, ensure_ascii=False, indent=2).encode("utf-8")
+        elif new_script_bytes is not None:
+            computed_bytes = new_script_bytes
+            computed_sha = hashlib.sha256(new_script_bytes).hexdigest()
+        else:
+            computed_bytes = json.dumps(new_script_data, ensure_ascii=False, indent=2).encode("utf-8")
+            computed_sha = hashlib.sha256(computed_bytes).hexdigest()
 
         retimed_plan = dict(existing_plan)
-        retimed_plan["script_sha256"] = new_script_sha
+        retimed_plan["script_sha256"] = computed_sha
         retimed_plan["beats"] = updated_beats
 
         total_dur = updated_beats[-1]["end_seconds"] - updated_beats[0]["start_seconds"]
@@ -204,7 +222,7 @@ class ClaimAwareVisualPlanner:
                 f"Retimed total duration {total_dur:.2f}s outside [{self.MIN_TOTAL_DURATION}, {self.MAX_TOTAL_DURATION}]s"
             )
 
-        contract_errors = validate_visual_plan(retimed_plan, script_bytes=new_script_bytes)
+        contract_errors = validate_visual_plan(retimed_plan, script_bytes=computed_bytes)
         if contract_errors:
             raise VisualPlannerError(f"Retimed contract validation failed: {'; '.join(contract_errors)}")
 
