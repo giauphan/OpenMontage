@@ -86,6 +86,10 @@ def build_youtube_payload(
     if not thumb or not Path(thumb).is_file():
         v_p = Path(video_path)
         candidates = [
+            v_p.parent.parent / "artifacts" / "thumbnail.png",
+            v_p.parent.parent / "artifacts" / "thumbnail.jpg",
+            v_p.parent / "artifacts" / "thumbnail.png",
+            v_p.parent / "artifacts" / "thumbnail.jpg",
             v_p.parent.parent / "thumbnails" / "thumbnail.png",
             v_p.parent.parent / "thumbnails" / "thumbnail.jpg",
             v_p.parent / "thumbnail.png",
