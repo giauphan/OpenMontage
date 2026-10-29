@@ -160,7 +160,7 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(description="Generate YouTube thumbnail via Muse")
-    parser.add_argument("--project", required=True, help="Project directory path")
+    parser.add_argument("--project", "--project-dir", dest="project", required=True, help="Project directory path")
     parser.add_argument("--title", required=True, help="Video title")
     parser.add_argument("--topic", default="", help="Topic summary")
     parser.add_argument("--format", default="short", choices=["short", "longform", "9:16", "16:9"])

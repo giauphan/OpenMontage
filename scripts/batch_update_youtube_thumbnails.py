@@ -77,7 +77,15 @@ def update_single_candidate(
             "error": f"No YouTube video ID found for {pdir.name}",
         }
 
-    thumb_file = pdir / "thumbnails" / "thumbnail.png"
+    thumb_file = None
+    for fname in ("thumbnail.jpg", "thumbnail.png"):
+        cand = pdir / "thumbnails" / fname
+        if cand.is_file():
+            thumb_file = cand
+            break
+    if not thumb_file:
+        thumb_file = pdir / "thumbnails" / "thumbnail.png"
+
     if not force and thumb_file.is_file() and thumb_file.stat().st_size >= min_size_bytes:
         logger.info(
             f"Candidate {pdir.name} already has high-res thumbnail ({thumb_file.stat().st_size} bytes); skipping."

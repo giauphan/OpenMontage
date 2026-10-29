@@ -1487,7 +1487,7 @@ jq -n \
   --arg ig_reels "$REELS_RENDER_PATH" \
   --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
   --arg format "short" \
-  --arg thumb "$(if [ -s "$PROJECT_DIR/thumbnails/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnails/thumbnail.png"; elif [ -s "$PROJECT_DIR/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnail.png"; else echo ""; fi)" \
+  --arg thumb "$(if [ -s "$PROJECT_DIR/thumbnails/thumbnail.jpg" ]; then echo "$PROJECT_DIR/thumbnails/thumbnail.jpg"; elif [ -s "$PROJECT_DIR/thumbnails/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnails/thumbnail.png"; elif [ -s "$PROJECT_DIR/thumbnail.jpg" ]; then echo "$PROJECT_DIR/thumbnail.jpg"; elif [ -s "$PROJECT_DIR/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnail.png"; else echo ""; fi)" \
   --argjson feed_stale "$FEED_STALE" \
   --argjson template_prov "$TEMPLATE_PROV_JSON" \
   '{
