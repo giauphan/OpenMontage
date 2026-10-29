@@ -43,11 +43,34 @@ def test_build_muse_thumbnail_prompt():
         format_type="short",
     )
     assert "Cinematic conceptual illustration" in prompt
-    assert "Multi-agent swarm coordination" in prompt
+    assert "swarm of autonomous glowing digital AI robotic agents" in prompt
     assert "vertical 9:16" in prompt
     assert "Pure visual imagery" in prompt
     assert "blurry" in neg
     assert "illegible gibberish text" in neg
+
+
+def test_extract_visual_subject_matches_topic():
+    # 1. iPad / tablet topic
+    s_ipad = ThumbnailPlanner.extract_visual_subject("iPad mini 8: Apple's Smallest AI Machine #ai #tech")
+    assert "Apple iPad mini tablet" in s_ipad or "tablet" in s_ipad
+
+    # 2. Figma / design tool topic
+    s_figma = ThumbnailPlanner.extract_visual_subject("desigma: The Rust-Powered Local Alternative to Figma #ai #tech")
+    assert "UI/UX design canvas" in s_figma
+
+    # 3. Off-Grid AI / edge compute topic
+    s_offgrid = ThumbnailPlanner.extract_visual_subject("The Rise of Off-Grid AI #ai #tech")
+    assert "offline edge AI computing hardware" in s_offgrid
+
+    # 4. Web browser topic
+    s_opera = ThumbnailPlanner.extract_visual_subject("WebAI by Opera: Running Local LLMs in the Browser #ai #tech")
+    assert "web browser interface" in s_opera
+
+    # 5. Voice AI topic
+    s_voice = ThumbnailPlanner.extract_visual_subject("TheySaid 4.0 #ai #tech", context_text="emotional voice storytelling")
+    assert "soundwave visualizer" in s_voice
+
 
 
 def test_plan_thumbnail_shorts():
@@ -58,7 +81,7 @@ def test_plan_thumbnail_shorts():
     assert isinstance(plan, ThumbnailPlan)
     assert plan.aspect_ratio == "9:16"
     assert plan.target_dimensions == (1080, 1920)
-    assert plan.headline_position == "upper_third"
+    assert plan.headline_position == "body_center"
     assert "DEEPSEEK" in plan.headline
     assert "9:16" in plan.prompt
 
@@ -72,4 +95,4 @@ def test_plan_thumbnail_longform():
     assert plan.aspect_ratio == "16:9"
     assert plan.target_dimensions == (1920, 1080)
     assert plan.headline == "AUTONOMOUS AGENTS"
-    assert plan.headline_position == "top"
+    assert plan.headline_position == "body_center"

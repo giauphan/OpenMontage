@@ -66,22 +66,82 @@ class ThumbnailPlanner:
         return "9:16", cls.DIMENSIONS_MAP["9:16"]
 
     @classmethod
+    def extract_visual_subject(
+        cls,
+        title: str,
+        topic: str = "",
+        context_text: str = "",
+    ) -> str:
+        """Extract a concrete, topic-matched visual subject for image generation."""
+        clean_title = re.sub(r"#\w+", "", title).strip()
+        clean_topic = re.sub(r"#\w+", "", topic).strip()
+        combined = f"{clean_title} {clean_topic} {context_text}".lower()
+
+        # 1. Topic-matched domain rules
+        if any(w in combined for w in ("ipad", "tablet", "apple watch", "iphone", "smartphone")):
+            device_name = "Apple iPad mini tablet" if "ipad" in combined else "modern tablet and mobile device"
+            return f"sleek modern {device_name} held in hand, glowing futuristic neural engine processor on screen, high-tech clean Apple aesthetic"
+
+        if any(w in combined for w in ("figma", "desigma", "ui design", "vector graphics", "ux design")):
+            return "futuristic digital UI/UX design canvas workspace, glowing vector shapes and UI layout tools on a floating glass workstation"
+
+        if any(w in combined for w in ("browser", "opera", "webai", "web browser", "chrome")):
+            return "futuristic web browser interface with integrated local AI engine, glowing cyber web browser workspace and code elements"
+
+        if any(w in combined for w in ("voice", "speech", "audio", "soundwave", "theysaid", "loqui", "synthesis")):
+            return "glowing futuristic digital soundwave visualizer and AI audio speech interface, holographic microphone with emotive sound waves"
+
+        if any(w in combined for w in ("swarm", "manyagents", "autonomous agent", "multi-agent", "agentic")):
+            return "swarm of autonomous glowing digital AI robotic agents collaborating in a high-tech network matrix, collective intelligence"
+
+        if any(w in combined for w in ("security", "1password", "secrets", "vault", "identity", "cryptographic", "dataroom", "papermark")):
+            return "futuristic cyber security vault, glowing holographic digital keys and encrypted security shield, biometric cyber protection"
+
+        if any(w in combined for w in ("off-grid", "off grid", "offline ai", "edge ai", "local ai", "decentralized")):
+            return "rugged portable offline edge AI computing hardware device operating off-grid in nature, glowing circuit boards, decentralized personal hardware"
+
+        if any(w in combined for w in ("video", "cinema", "nuvio", "film", "4k render")):
+            return "futuristic cinema camera projecting a glowing 4K ultra-high-definition holographic AI film universe, high-speed generative video"
+
+        if any(w in combined for w in ("job", "resume", "hiring", "jobmate", "recruiting")):
+            return "digital futuristic hiring portal with glowing automated resume pipelines, AI bot reviewing job applications on holographic screens"
+
+        if any(w in combined for w in ("pdf", "accessibility", "webyes", "document", "braille")):
+            return "digital holographic document being scanned with glowing accessible sound waves and braille patterns, clean modern tech interface"
+
+        if any(w in combined for w in ("strawberry", "reasoning", "test-time", "compute", "o1", "o3", "thinking")):
+            return "futuristic glowing crimson AI neural processor deep in thought and reasoning, holographic computational tree search, cognitive reasoning core"
+
+        if any(w in combined for w in ("gpt", "openai", "claude", "gemini", "minimax", "allmodels", "llm")):
+            model_name = clean_topic or clean_title.split(":")[0].strip()
+            return f"an advanced glowing neural artificial intelligence brain core representing {model_name}, futuristic AI data streams, holographic neural network"
+
+        # Fallback: clean core subject from title
+        core_subject = re.sub(r"[!?:;\-–—|/#]+", " ", clean_title)
+        core_words = [w for w in core_subject.split() if w.lower() not in ("a", "an", "the", "in", "on", "and", "by", "of", "for", "with")]
+        short_subject = " ".join(core_words[:6])
+        return f"conceptual high-tech visual metaphor of {short_subject}, prominent hero subject, dramatic cinematic atmosphere"
+
+    @classmethod
     def build_muse_thumbnail_prompt(
         cls,
         title: str,
         topic: str = "",
         format_type: str = "short",
+        context_text: str = "",
     ) -> Tuple[str, str]:
         """Build an optimized visual metaphor prompt for Muse Image Generation."""
-        # Clean title text for topic extraction
-        base_topic = topic or re.sub(r"#\w+", "", title).strip()
-        clean_topic = re.sub(r"[^\w\s\-,.]", "", base_topic).strip()
+        visual_subject = cls.extract_visual_subject(title, topic, context_text)
 
         is_vertical = (format_type or "short").lower() in ("short", "shorts", "reels", "9:16", "9x16")
-        framing = "vertical 9:16 poster composition, single powerful hero subject in center, cinematic rim lighting" if is_vertical else "cinematic 16:9 dynamic widescreen, hyper-detailed focal subject, dramatic studio lighting"
+        framing = (
+            "vertical 9:16 poster composition, single powerful hero subject in center, cinematic rim lighting"
+            if is_vertical
+            else "cinematic 16:9 dynamic widescreen, hyper-detailed focal subject, dramatic studio lighting"
+        )
 
         prompt = (
-            f"{cls.STYLE_PREFIX}{clean_topic}, {framing}, "
+            f"{cls.STYLE_PREFIX}{visual_subject}, {framing}, "
             "vivid saturated colors, high dynamic range, sharp focus, 8k concept art. "
             "Pure visual imagery, no text, no words, no letters, no labels, no watermark."
         )
@@ -96,15 +156,15 @@ class ThumbnailPlanner:
         format_type: str = "short",
         custom_headline: Optional[str] = None,
         theme_color: str = "#FFDD00",
+        context_text: str = "",
     ) -> ThumbnailPlan:
         """Generate a complete ThumbnailPlan."""
         aspect_ratio, dimensions = cls.resolve_aspect_ratio(format_type)
-        prompt, negative_prompt = cls.build_muse_thumbnail_prompt(title, topic, format_type)
+        prompt, negative_prompt = cls.build_muse_thumbnail_prompt(title, topic, format_type, context_text)
         headline = custom_headline or cls.clean_title_for_headline(title)
 
-        # For 9:16 Shorts, YouTube overlays buttons on the right and bottom, so upper_third is the safe zone.
-        # For 16:9, upper_third or center works well.
-        headline_position = "upper_third" if aspect_ratio == "9:16" else "top"
+        # Body center positioning ensures text stays safely within YouTube safe zones and avoids edge/UI cutoff
+        headline_position = "body_center"
 
         return ThumbnailPlan(
             title=title,

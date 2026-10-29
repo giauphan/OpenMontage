@@ -60,15 +60,35 @@ class ThumbnailOrchestrator:
         return ImageFont.load_default()
 
     @classmethod
+    def _wrap_headline(cls, headline: str, font: ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
+        """Wrap headline text so each line fits within max_width."""
+        words = [w.strip() for w in headline.split() if w.strip()]
+        if not words:
+            return []
+        lines = []
+        cur_line = []
+        for word in words:
+            test_line = " ".join(cur_line + [word])
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            if (bbox[2] - bbox[0]) <= max_width or not cur_line:
+                cur_line.append(word)
+            else:
+                lines.append(" ".join(cur_line))
+                cur_line = [word]
+        if cur_line:
+            lines.append(" ".join(cur_line))
+        return lines
+
+    @classmethod
     def _composite_headline(
         cls,
         image_path: Path,
         headline: str,
-        position: str = "upper_third",
+        position: str = "body_center",
         theme_color: str = "#FFDD00",
         output_path: Optional[Path] = None,
     ) -> Path:
-        """Composite high-contrast headline overlay onto the thumbnail."""
+        """Composite high-contrast, multi-line headline overlay in body center avoiding text cutoff."""
         out = output_path or image_path
         with Image.open(image_path) as img:
             img = img.convert("RGBA")
@@ -77,43 +97,78 @@ class ThumbnailOrchestrator:
             overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
             draw = ImageDraw.Draw(overlay)
 
+            # Max width for text block: 76% of image width to strictly prevent edge cutoff
+            max_text_width = int(width * 0.76)
+
+            # Determine optimal font size and line wrapping
             font_size = max(36, int(width * 0.065))
             font = cls._get_font(font_size)
+            lines = cls._wrap_headline(headline, font, max_text_width, draw)
 
-            # Measure text
-            bbox = draw.textbbox((0, 0), headline, font=font)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
+            # If more than 3 lines or text too wide, dynamically reduce font size
+            while (len(lines) > 3 or any((draw.textbbox((0, 0), l, font=font)[2] - draw.textbbox((0, 0), l, font=font)[0]) > max_text_width for l in lines)) and font_size > 28:
+                font_size -= 4
+                font = cls._get_font(font_size)
+                lines = cls._wrap_headline(headline, font, max_text_width, draw)
 
-            # Calculate position
-            pad_x = int(font_size * 0.6)
-            pad_y = int(font_size * 0.4)
-            badge_w = text_w + pad_x * 2
-            badge_h = text_h + pad_y * 2
+            if not lines:
+                lines = [headline]
 
+            # Measure all lines
+            line_dims = []
+            max_line_w = 0
+            total_text_h = 0
+            line_spacing = int(font_size * 0.25)
+            for l in lines:
+                bbox = draw.textbbox((0, 0), l, font=font)
+                lw = bbox[2] - bbox[0]
+                lh = bbox[3] - bbox[1]
+                line_dims.append((lw, lh))
+                max_line_w = max(max_line_w, lw)
+                total_text_h += lh
+            total_text_h += line_spacing * (len(lines) - 1)
+
+            # Calculate badge dimensions with safe padding
+            pad_x = int(font_size * 0.7)
+            pad_y = int(font_size * 0.5)
+            badge_w = min(width - int(width * 0.08), max_line_w + pad_x * 2)
+            badge_h = total_text_h + pad_y * 2
+
+            # Horizontal centering
             x0 = (width - badge_w) // 2
-            if position == "top":
-                y0 = int(height * 0.08)
+
+            # Vertical positioning in safe body center
+            if position in ("body_center", "center"):
+                y0 = int(height * 0.42 - badge_h / 2)
+            elif position == "top":
+                y0 = int(height * 0.10)
             elif position == "upper_third":
-                y0 = int(height * 0.18)
-            else:  # center
+                y0 = int(height * 0.22)
+            else:
                 y0 = (height - badge_h) // 2
 
-            # Draw semi-transparent dark badge backing with rounded corners
+            # Ensure badge stays within safe vertical bounds
+            y0 = max(int(height * 0.06), min(y0, height - badge_h - int(height * 0.10)))
+
+            # Draw dark background badge with rounded corners
             badge_box = [x0, y0, x0 + badge_w, y0 + badge_h]
             draw.rounded_rectangle(
                 badge_box,
-                radius=int(font_size * 0.3),
-                fill=(10, 10, 18, 220),
+                radius=int(font_size * 0.35),
+                fill=(12, 14, 22, 225),
                 outline=theme_color,
-                width=max(2, int(width * 0.003)),
+                width=max(3, int(width * 0.0035)),
             )
 
-            # Draw headline text with high contrast
-            text_pos = (x0 + pad_x, y0 + pad_y)
-            draw.text(text_pos, headline, font=font, fill=(255, 255, 255, 255))
+            # Draw centered text lines
+            curr_y = y0 + pad_y
+            for idx, line in enumerate(lines):
+                lw, lh = line_dims[idx]
+                line_x = x0 + (badge_w - lw) // 2
+                draw.text((line_x, curr_y), line, font=font, fill=(255, 255, 255, 255))
+                curr_y += lh + line_spacing
 
-            # Merge and save as RGB PNG/JPEG
+            # Composite and save
             combined = Image.alpha_composite(img, overlay).convert("RGB")
             out.parent.mkdir(parents=True, exist_ok=True)
             combined.save(out, format="PNG", quality=95)
@@ -222,12 +277,36 @@ class ThumbnailOrchestrator:
     ) -> ThumbnailResult:
         """Main entry point to generate and verify a YouTube thumbnail using Muse."""
         pdir = Path(project_dir).expanduser().resolve()
+
+        # Extract context text from project artifacts if available
+        context_text = ""
+        artifacts_dir = pdir / "artifacts"
+        if artifacts_dir.is_dir():
+            for sf in sorted(artifacts_dir.glob("script*.json")):
+                try:
+                    sd = json.loads(sf.read_text(encoding="utf-8"))
+                    sections = sd.get("sections", [])
+                    if sections:
+                        context_text = " ".join([s.get("text", "") for s in sections[:2]])
+                        break
+                except Exception:
+                    pass
+            if not context_text:
+                rb_file = artifacts_dir / "research_brief.json"
+                if rb_file.is_file():
+                    try:
+                        rb = json.loads(rb_file.read_text(encoding="utf-8"))
+                        context_text = f"{rb.get('topic', '')} {rb.get('angle', '')}"
+                    except Exception:
+                        pass
+
         plan = ThumbnailPlanner.plan_thumbnail(
             title=title,
             topic=topic,
             format_type=format_type,
             custom_headline=custom_headline,
             theme_color=theme_color,
+            context_text=context_text,
         )
 
         # Determine target file path

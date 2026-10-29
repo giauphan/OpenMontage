@@ -269,6 +269,7 @@ class MuseGatewayImage(BaseTool):
         poll_interval = float(os.environ.get("MUSE_GATEWAY_POLL_INTERVAL_SECONDS", "2.0"))
         deadline_sec = float(os.environ.get("MUSE_GATEWAY_JOB_DEADLINE_SECONDS", "180.0"))
         poll_start = time.time()
+        not_found_retries = 0
 
         while status != "completed":
             if status in ("failed", "error"):
@@ -301,6 +302,11 @@ class MuseGatewayImage(BaseTool):
                     data={"error_code": "APPROVAL_REQUIRED", "approval_required": True, "gateway_job_id": job_id},
                 )
             if poll_resp.status_code == 404:
+                not_found_retries += 1
+                if not_found_retries <= 5 and (time.time() - poll_start) < 20.0:
+                    logger.debug(f"Transient 404 for job {job_id} ({not_found_retries}/5); retrying...")
+                    time.sleep(poll_interval)
+                    continue
                 return ToolResult(
                     success=False,
                     error=f"Job {job_id} not found in gateway",
