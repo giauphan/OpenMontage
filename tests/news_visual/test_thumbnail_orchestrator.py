@@ -42,13 +42,33 @@ def test_headline_compositing(tmp_path: Path):
 
     comp_path = ThumbnailOrchestrator._composite_headline(
         image_path=base_img,
-        headline="AI REVOLUTION",
-        position="upper_third",
+        headline="AI REVOLUTION IN ENTERPRISE MULTI-AGENT SWARMS",
+        position="body_center",
         theme_color="#00FFFF",
     )
     assert comp_path.is_file()
     with Image.open(comp_path) as res_img:
         assert res_img.size == (1080, 1920)
+
+
+def test_headline_compositing_safe_margins(tmp_path: Path):
+    """Verify headline compositing strictly preserves >= 10% outer margin and internal padding."""
+    base_img = tmp_path / "base_margin.png"
+    img = Image.new("RGB", (1080, 1920), (20, 20, 30))
+    img.save(base_img)
+
+    out_p = tmp_path / "thumb_margin.png"
+    res = ThumbnailOrchestrator._composite_headline(
+        image_path=base_img,
+        headline="MASSIVE AUTONOMOUS WORKFLOW AUTOMATION ENGINE 2026",
+        position="body_center",
+        theme_color="#FFDD00",
+        output_path=out_p,
+    )
+    assert res.is_file()
+    with Image.open(res) as r_img:
+        assert r_img.size == (1080, 1920)
+        assert r_img.format == "PNG"
 
 
 def test_generate_thumbnail_with_mock_muse(tmp_path: Path):

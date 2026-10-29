@@ -97,17 +97,27 @@ class ThumbnailOrchestrator:
             overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
             draw = ImageDraw.Draw(overlay)
 
-            # Max width for text block: 76% of image width to strictly prevent edge cutoff
-            max_text_width = int(width * 0.76)
+            # Generous margins to strictly avoid text cutoff:
+            # 1. Outer canvas margin: at least 10% on both left and right (max badge width = 80%)
+            # 2. Inner badge padding: at least 4.5% of width or 0.85 * font_size
+            # Resulting in total horizontal clearance of at least 15% on both left and right!
+            canvas_margin_x = int(width * 0.10)
+            max_badge_w = width - (canvas_margin_x * 2)
 
-            # Determine optimal font size and line wrapping
-            font_size = max(36, int(width * 0.065))
+            font_size = max(34, int(width * 0.060))
+            pad_x = max(int(font_size * 0.85), int(width * 0.045))
+            pad_y = max(int(font_size * 0.55), int(height * 0.015))
+            max_text_width = max_badge_w - (pad_x * 2)
+
             font = cls._get_font(font_size)
             lines = cls._wrap_headline(headline, font, max_text_width, draw)
 
-            # If more than 3 lines or text too wide, dynamically reduce font size
-            while (len(lines) > 3 or any((draw.textbbox((0, 0), l, font=font)[2] - draw.textbbox((0, 0), l, font=font)[0]) > max_text_width for l in lines)) and font_size > 28:
-                font_size -= 4
+            # Dynamically reduce font size if text spans > 3 lines or exceeds width
+            while (len(lines) > 3 or any((draw.textbbox((0, 0), l, font=font)[2] - draw.textbbox((0, 0), l, font=font)[0]) > max_text_width for l in lines)) and font_size > 22:
+                font_size -= 2
+                pad_x = max(int(font_size * 0.85), int(width * 0.045))
+                pad_y = max(int(font_size * 0.55), int(height * 0.015))
+                max_text_width = max_badge_w - (pad_x * 2)
                 font = cls._get_font(font_size)
                 lines = cls._wrap_headline(headline, font, max_text_width, draw)
 
@@ -118,7 +128,7 @@ class ThumbnailOrchestrator:
             line_dims = []
             max_line_w = 0
             total_text_h = 0
-            line_spacing = int(font_size * 0.25)
+            line_spacing = int(font_size * 0.28)
             for l in lines:
                 bbox = draw.textbbox((0, 0), l, font=font)
                 lw = bbox[2] - bbox[0]
@@ -129,38 +139,38 @@ class ThumbnailOrchestrator:
             total_text_h += line_spacing * (len(lines) - 1)
 
             # Calculate badge dimensions with safe padding
-            pad_x = int(font_size * 0.7)
-            pad_y = int(font_size * 0.5)
-            badge_w = min(width - int(width * 0.08), max_line_w + pad_x * 2)
+            badge_w = min(max_badge_w, max_line_w + pad_x * 2)
             badge_h = total_text_h + pad_y * 2
 
-            # Horizontal centering
+            # Horizontal centering on canvas (guarantees >= 10% outer margin left & right)
             x0 = (width - badge_w) // 2
 
-            # Vertical positioning in safe body center
+            # Vertical positioning in safe body center (avoiding top overlay & bottom caption zone)
             if position in ("body_center", "center"):
-                y0 = int(height * 0.42 - badge_h / 2)
+                y0 = int(height * 0.44 - badge_h / 2)
             elif position == "top":
-                y0 = int(height * 0.10)
+                y0 = int(height * 0.12)
             elif position == "upper_third":
-                y0 = int(height * 0.22)
+                y0 = int(height * 0.24)
             else:
                 y0 = (height - badge_h) // 2
 
-            # Ensure badge stays within safe vertical bounds
-            y0 = max(int(height * 0.06), min(y0, height - badge_h - int(height * 0.10)))
+            # Safe vertical clamping
+            safe_top = int(height * 0.10)
+            safe_bottom = height - badge_h - int(height * 0.16)
+            y0 = max(safe_top, min(y0, safe_bottom))
 
             # Draw dark background badge with rounded corners
             badge_box = [x0, y0, x0 + badge_w, y0 + badge_h]
             draw.rounded_rectangle(
                 badge_box,
-                radius=int(font_size * 0.35),
-                fill=(12, 14, 22, 225),
+                radius=int(font_size * 0.40),
+                fill=(12, 14, 22, 230),
                 outline=theme_color,
                 width=max(3, int(width * 0.0035)),
             )
 
-            # Draw centered text lines
+            # Draw centered text lines (each line is centered within badge, keeping full pad_x margin)
             curr_y = y0 + pad_y
             for idx, line in enumerate(lines):
                 lw, lh = line_dims[idx]
