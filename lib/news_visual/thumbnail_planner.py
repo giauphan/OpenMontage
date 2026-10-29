@@ -109,12 +109,21 @@ class ThumbnailPlanner:
         if any(w in combined for w in ("pdf", "accessibility", "webyes", "document", "braille")):
             return "digital holographic document being scanned with glowing accessible sound waves and braille patterns, clean modern tech interface"
 
-        if any(w in combined for w in ("strawberry", "reasoning", "test-time", "compute", "o1", "o3", "thinking")):
-            return "futuristic glowing crimson AI neural processor deep in thought and reasoning, holographic computational tree search, cognitive reasoning core"
+        if any(w in combined for w in ("bridge", "ai bridge")):
+            return "futuristic glowing cybernetic bridge connecting neural AI models to real-world autonomous tasks, digital infrastructure"
 
-        if any(w in combined for w in ("gpt", "openai", "claude", "gemini", "minimax", "allmodels", "llm")):
+        if any(w in combined for w in ("minimax", "m3.1")):
+            return "ultra-fast lightning speed AI neural brain processor glowing with neon cyan energy and high-speed data flow"
+
+        if any(w in combined for w in ("allmodels", "multi-model")):
+            return "multiple interconnected glowing AI model nodes racing in a high-tech digital neural matrix"
+
+        if any(w in combined for w in ("gpt", "openai", "claude", "gemini", "llm")):
             model_name = clean_topic or clean_title.split(":")[0].strip()
             return f"an advanced glowing neural artificial intelligence brain core representing {model_name}, futuristic AI data streams, holographic neural network"
+
+        if any(w in combined for w in ("strawberry", "reasoning", "test-time", "compute", "o1", "o3", "thinking")):
+            return "futuristic glowing crimson AI neural processor deep in thought and reasoning, holographic computational tree search, cognitive reasoning core"
 
         # Fallback: clean core subject from title
         core_subject = re.sub(r"[!?:;\-–—|/#]+", " ", clean_title)
@@ -134,19 +143,12 @@ class ThumbnailPlanner:
         visual_subject = cls.extract_visual_subject(title, topic, context_text)
 
         is_vertical = (format_type or "short").lower() in ("short", "shorts", "reels", "9:16", "9x16")
-        framing = (
-            "vertical 9:16 poster composition, single powerful hero subject in center, cinematic rim lighting"
-            if is_vertical
-            else "cinematic 16:9 dynamic widescreen, hyper-detailed focal subject, dramatic studio lighting"
-        )
+        framing = "vertical 9:16 poster composition" if is_vertical else "cinematic 16:9 dynamic widescreen"
 
         prompt = (
-            f"{cls.STYLE_PREFIX}{visual_subject}, {framing}, "
-            "vivid saturated colors, high dynamic range, sharp focus, 8k concept art. "
-            "Pure visual imagery, no text, no words, no letters, no labels, no watermark. "
-            "Output markdown image tag ![Image](url)."
+            f"{cls.STYLE_PREFIX}{visual_subject}, {framing}, dramatic studio lighting, 8k render. "
+            "Pure visual imagery. Output markdown image tag ![Image](url)."
         )
-
         return prompt, cls.THUMBNAIL_NEGATIVE_PROMPT
 
     @classmethod
