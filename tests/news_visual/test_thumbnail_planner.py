@@ -42,10 +42,9 @@ def test_build_muse_thumbnail_prompt():
         topic="Multi-agent swarm coordination",
         format_type="short",
     )
-    assert "Cinematic conceptual illustration" in prompt
     assert "swarm of autonomous glowing digital AI robotic agents" in prompt
-    assert "vertical 9:16" in prompt
-    assert "Pure visual imagery" in prompt
+    assert "8k render" in prompt
+    assert "Output markdown image tag ![Image](url)" in prompt
     assert "blurry" in neg
     assert "illegible gibberish text" in neg
 
@@ -83,7 +82,7 @@ def test_plan_thumbnail_shorts():
     assert plan.target_dimensions == (1080, 1920)
     assert plan.headline_position == "body_center"
     assert "DEEPSEEK" in plan.headline
-    assert "9:16" in plan.prompt
+    assert "8k render" in plan.prompt
 
 
 def test_plan_thumbnail_longform():

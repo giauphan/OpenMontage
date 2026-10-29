@@ -155,12 +155,9 @@ class ThumbnailPlanner:
         visual_subject = cls.extract_visual_subject(title, topic, context_text)
 
         is_vertical = (format_type or "short").lower() in ("short", "shorts", "reels", "9:16", "9x16")
-        framing = "vertical 9:16 poster composition" if is_vertical else "cinematic 16:9 dynamic widescreen"
+        lighting = "cinematic studio lighting, 8k render" if is_vertical else "cinematic widescreen, dramatic studio lighting, 8k render"
 
-        prompt = (
-            f"{cls.STYLE_PREFIX}{visual_subject}, {framing}, dramatic studio lighting, 8k render. "
-            "Pure visual imagery. Output markdown image tag ![Image](url)."
-        )
+        prompt = f"{visual_subject}, {lighting}. Output markdown image tag ![Image](url)."
         return prompt, cls.THUMBNAIL_NEGATIVE_PROMPT
 
     @classmethod
