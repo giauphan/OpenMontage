@@ -42,10 +42,10 @@ def test_build_muse_thumbnail_prompt():
         topic="Multi-agent swarm coordination",
         format_type="short",
     )
-    assert "YouTube thumbnail" in prompt
+    assert "Cinematic conceptual illustration" in prompt
     assert "Multi-agent swarm coordination" in prompt
     assert "vertical 9:16" in prompt
-    assert "Pure visual illustration" in prompt
+    assert "Pure visual imagery" in prompt
     assert "blurry" in neg
     assert "illegible gibberish text" in neg
 

@@ -24,7 +24,7 @@ class ThumbnailPlan:
 class ThumbnailPlanner:
     """Plans thumbnail visual prompts and layout structure for YouTube videos."""
 
-    STYLE_PREFIX = "Epic, high-contrast YouTube thumbnail art of "
+    STYLE_PREFIX = "Cinematic conceptual illustration of "
     THUMBNAIL_NEGATIVE_PROMPT = (
         "blurry, low resolution, cluttered, ugly, deformed, illegible gibberish text, "
         "distorted faces, watermark, signature, messy border, complex UI widgets"
@@ -83,7 +83,7 @@ class ThumbnailPlanner:
         prompt = (
             f"{cls.STYLE_PREFIX}{clean_topic}, {framing}, "
             "vivid saturated colors, high dynamic range, sharp focus, 8k concept art. "
-            "Pure visual illustration, no text in background."
+            "Pure visual imagery, no text, no words, no letters, no labels, no watermark."
         )
 
         return prompt, cls.THUMBNAIL_NEGATIVE_PROMPT
