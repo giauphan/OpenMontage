@@ -332,7 +332,7 @@ class ThumbnailOrchestrator:
         used_fallback = False
         if not (muse_res.get("success") and out_file.is_file()):
             if allow_fallback:
-                logger.info("Muse generation unavailable; using stylized thumbnail fallback.")
+                logger.info(f"Muse generation unavailable ({muse_res.get('error')}); using stylized thumbnail fallback.")
                 cls._create_synthetic_fallback(plan, out_file)
                 used_fallback = True
             else:
