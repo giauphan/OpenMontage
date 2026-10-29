@@ -27,6 +27,50 @@ from tools.publish_store import PublishStore, publish_key, file_sha256
 from tools.publishers.platform_routes import PLATFORM_ROUTES
 
 
+def _resolve_render_file(
+    resolved_dir: Path,
+    platform: str,
+    meta: dict[str, Any],
+    rec: dict[str, Any] | None = None,
+    stored_hash: str | None = None,
+) -> Path | None:
+    """Resolve on-disk render file for platform, supporting US English and Vietnamese."""
+    if rec and rec.get("asset_path"):
+        cand = Path(rec["asset_path"])
+        if cand.is_file():
+            return cand
+        cand_renders = resolved_dir / "renders" / cand.name
+        if cand_renders.is_file():
+            return cand_renders
+
+    field = PLATFORM_ROUTES.get(platform, (None, None, None))[1]
+    meta_render = meta.get(field) if field else None
+    if isinstance(meta_render, dict):
+        meta_render = meta_render.get("path")
+    if meta_render:
+        cand = resolved_dir / meta_render
+        if cand.is_file():
+            return cand
+
+    def_render = PLATFORM_ROUTES.get(platform, (None, None, "renders/final_reels_vi_9x16.mp4"))[2]
+    cand = resolved_dir / def_render
+    if cand.is_file():
+        return cand
+
+    renders_dir = resolved_dir / "renders"
+    if renders_dir.is_dir():
+        if stored_hash:
+            for f in renders_dir.glob("*.mp4"):
+                if file_sha256(f) == stored_hash:
+                    return f
+        for name in ("final_short_en_US_9x16.mp4", "final_long_en_US_16x9.mp4", "final_reels_vi_9x16.mp4", "final_full_vi_9x16.mp4"):
+            cand = renders_dir / name
+            if cand.is_file():
+                return cand
+
+    return None
+
+
 def _classify_outcome(outcomes: list | None, route: str, outcome: str, detail: str) -> None:
     """Record a per-route reconciliation outcome for CLI reporting (no-op when None)."""
     if outcomes is not None:
@@ -431,12 +475,11 @@ def is_project_eligible_for_cleanup(
                             meta,
                         )
 
-                    rel_render = PLATFORM_ROUTES.get(platform, (None, None, "renders/final_reels_vi_9x16.mp4"))[2]
-                    render_file = resolved_dir / rel_render
-                    if not render_file.is_file():
+                    render_file = _resolve_render_file(resolved_dir, platform, meta, rec=rec, stored_hash=stored_hash)
+                    if not render_file or not render_file.is_file():
                         return (
                             False,
-                            f"missing_render_file_{render_file.name}_for_{platform}_{kind}",
+                            f"missing_render_file_for_{platform}_{kind}",
                             meta,
                         )
 
@@ -497,10 +540,9 @@ def is_project_eligible_for_cleanup(
 
                         # Verify every required destination's render matches the tombstone
                         for platform, kind in required_routes:
-                            rel_render = PLATFORM_ROUTES.get(platform, (None, None, "renders/final_reels_vi_9x16.mp4"))[2]
-                            render_file = resolved_dir / rel_render
-                            if not render_file.is_file():
-                                return False, f"missing_render_file_for_archive_check_{render_file.name}", meta
+                            render_file = _resolve_render_file(resolved_dir, platform, meta)
+                            if not render_file or not render_file.is_file():
+                                return False, f"missing_render_file_for_archive_check_{platform}_{kind}", meta
                             if render_file.name not in tombstone_hashes:
                                 return False, f"archive_missing_hash_for_{render_file.name}", meta
                             if file_sha256(render_file) != tombstone_hashes[render_file.name]:

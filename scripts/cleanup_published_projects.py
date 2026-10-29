@@ -155,9 +155,20 @@ def clear_project_trash(root: Path, *, apply: bool = False, store=None, min_age_
                     )
                 )
                 has_meta = (directory / "publish_metadata.json").is_file()
+                has_publish_date = False
+                if has_meta:
+                    try:
+                        m_data = json.loads((directory / "publish_metadata.json").read_text(encoding="utf-8"))
+                        if m_data.get("publish_date") or m_data.get("date"):
+                            has_publish_date = True
+                    except Exception:
+                        pass
 
-                # If validation failed, or if it has no metadata and no renders (abandoned early research)
-                if is_failed_validation or (not has_meta and not has_renders):
+                # If validation failed, or if it has no metadata and no renders (abandoned early research),
+                # or if it has no publish date, is not active, and is older than 24 hours (stale abandoned candidate)
+                is_stale_abandoned = (not has_publish_date) and (now_ts - mtime >= 86400)
+
+                if is_failed_validation or (not has_meta and not has_renders) or is_stale_abandoned:
                     if apply:
                         shutil.rmtree(directory)
                         print(f"REMOVED_TRASH: {location}/{pid} (errored/abandoned project)")

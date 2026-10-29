@@ -272,4 +272,10 @@ def test_clear_project_trash_preserves_en_us_rendered_projects(sandbox):
     assert cleanup.clear_project_trash(root, apply=True, min_age_minutes=120) == 0
     assert cand_en.exists()
 
+    # When older than 24 hours with no publish date and not active -> should be removed as stale abandoned trash
+    past_24h = time.time() - 3600 * 25
+    os.utime(cand_en, (past_24h, past_24h))
+    assert cleanup.clear_project_trash(root, apply=True, min_age_minutes=120) == 1
+    assert not cand_en.exists()
+
 
