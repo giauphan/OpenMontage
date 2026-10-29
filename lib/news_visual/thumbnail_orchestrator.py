@@ -15,8 +15,8 @@ from lib.news_visual.thumbnail_planner import ThumbnailPlan, ThumbnailPlanner
 
 logger = logging.getLogger(__name__)
 
-# YouTube hard limit for thumbnails (updated Sept 2026: 50MB)
-MAX_THUMBNAIL_SIZE_BYTES = 50 * 1024 * 1024
+# YouTube official limit for thumbnails: Under 2MB (https://support.google.com/youtube/answer/72431)
+MAX_THUMBNAIL_SIZE_BYTES = 2 * 1024 * 1024
 
 
 @runtime_checkable
@@ -168,10 +168,21 @@ class ThumbnailOrchestrator:
                 draw.text((line_x, curr_y), line, font=font, fill=(255, 255, 255, 255))
                 curr_y += lh + line_spacing
 
-            # Composite and save
+            # Composite and save adhering to YouTube specs (https://support.google.com/youtube/answer/72431)
             combined = Image.alpha_composite(img, overlay).convert("RGB")
             out.parent.mkdir(parents=True, exist_ok=True)
-            combined.save(out, format="PNG", quality=95)
+            if out.suffix.lower() in (".jpg", ".jpeg"):
+                combined.save(out, format="JPEG", quality=92, optimize=True)
+            else:
+                combined.save(out, format="PNG", optimize=True)
+                if out.stat().st_size > MAX_THUMBNAIL_SIZE_BYTES:
+                    try:
+                        q_img = combined.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+                        q_img.save(out, format="PNG", optimize=True)
+                    except Exception:
+                        pass
+                if out.stat().st_size > MAX_THUMBNAIL_SIZE_BYTES:
+                    combined.save(out.with_suffix(".jpg"), format="JPEG", quality=92, optimize=True)
 
         return out
 
@@ -375,7 +386,7 @@ class ThumbnailOrchestrator:
                 thumbnail_path=str(out_file),
                 thumbnail_status="THUMBNAIL_FAILED",
                 aspect_ratio=plan.aspect_ratio,
-                error=f"Thumbnail size ({file_size} bytes) exceeds YouTube 50MB limit",
+                error=f"Thumbnail size ({file_size} bytes) exceeds YouTube 2MB limit (https://support.google.com/youtube/answer/72431)",
             )
 
         try:

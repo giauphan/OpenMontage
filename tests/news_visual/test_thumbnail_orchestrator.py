@@ -156,7 +156,7 @@ def test_generate_thumbnail_rejects_oversized_file(tmp_path: Path, monkeypatch):
     )
     assert res.success is False
     assert res.thumbnail_status == "THUMBNAIL_FAILED"
-    assert "exceeds YouTube 50MB limit" in res.error
+    assert "exceeds YouTube 2MB limit" in res.error
 
 
 def test_generate_thumbnail_rejects_corrupt_file(tmp_path: Path):

@@ -131,9 +131,11 @@ def attach_thumbnail_to_video(
             thumb_file = candidate
 
     if not thumb_file:
-        cand_thumb = pdir / "thumbnails" / "thumbnail.png"
-        if cand_thumb.is_file():
-            thumb_file = cand_thumb
+        for fname in ("thumbnail.jpg", "thumbnail.png"):
+            cand_thumb = pdir / "thumbnails" / fname
+            if cand_thumb.is_file():
+                thumb_file = cand_thumb
+                break
 
     # Check if thumbnail should be regenerated (missing, forced, or tiny placeholder)
     needs_generation = False
@@ -226,7 +228,14 @@ def attach_all_thumbnails(
         if not vid:
             continue
 
-        cand_thumb = pdir / "thumbnails" / "thumbnail.png"
+        cand_thumb = None
+        for fname in ("thumbnail.jpg", "thumbnail.png"):
+            cand = pdir / "thumbnails" / fname
+            if cand.is_file():
+                cand_thumb = cand
+                break
+        if not cand_thumb:
+            cand_thumb = pdir / "thumbnails" / "thumbnail.png"
         is_placeholder = not cand_thumb.is_file() or cand_thumb.stat().st_size < min_size_bytes
 
         if not force_regenerate and not is_placeholder:
