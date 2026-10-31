@@ -400,7 +400,8 @@ class TiktokPublisher(BaseTool):
         status_code = res_json.get("status_code", 0)
         if status_code != 0:
             err_msg = res_json.get("error", {}).get("message") or f"TikTok status_code: {status_code}"
-            return ToolResult(success=False, error=f"TikTok post failed: {err_msg}")
+            raw_details = res_json.get("error", {}).get("raw")
+            return ToolResult(success=False, error=f"TikTok post failed: {err_msg} (raw={raw_details})")
 
         project_id = str(res_json.get("project_id") or "")
         item_id = str(res_json.get("item_id") or project_id)
