@@ -70,6 +70,11 @@ class FixedNicheStoryboardDirector:
         beat_num: int,
         total_beats: int = 6,
         is_vertical: bool = True,
+        duration: float = 11.0,
+        narration: str = "",
+        word_timestamps: Optional[List[Dict[str, Any]]] = None,
+        beat_start_s: float = 0.0,
+        progressive: bool = True,
     ) -> str:
         """Generate high-contrast, informative vector geometry tailored to the engineering concept and screen state."""
         return generate_pipeline_svg(
@@ -79,6 +84,11 @@ class FixedNicheStoryboardDirector:
             beat_num=beat_num,
             total_beats=total_beats,
             is_vertical=is_vertical,
+            duration=duration,
+            narration=narration,
+            word_timestamps=word_timestamps,
+            beat_start_s=beat_start_s,
+            progressive=progressive,
         )
 
     def compose_dynamic_narration(

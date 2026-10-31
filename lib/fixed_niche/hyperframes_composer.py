@@ -46,7 +46,7 @@ def compose_hyperframes_html(
     import os
     visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
     flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-    if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+    if (visual_style == "animated_agent_diagram_v1") and flag_enabled:
         from lib.visual_style.hyperframes_adapter import compose_animated_diagram_html
         return compose_animated_diagram_html(
             title=title,
@@ -156,6 +156,20 @@ def compose_hyperframes_html(
                 if bg_art else ""
             )
             card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
+
+            # Read and inline progressive SVG if available
+            inline_svg = ""
+            if visuals_src and (visuals_src / vis_file).is_file() and vis_file.lower().endswith(".svg"):
+                try:
+                    import re
+                    raw_svg = (visuals_src / vis_file).read_text(encoding="utf-8")
+                    clean_svg = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+                    inline_svg = clean_svg
+                except Exception:
+                    inline_svg = ""
+
+            viewport_content = inline_svg if inline_svg else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
+
             sections_html.append(
                 f'    <section id="{sec_id}" class="clip scene" '
                 f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
@@ -164,8 +178,8 @@ def compose_hyperframes_html(
                 f'        <div class="stage-header">\n'
                 f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
                 f'        </div>\n'
-                f'        <div class="diagram-viewport">\n'
-                f'          <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />\n'
+                f'        <div class="diagram-viewport" data-asset-file="assets/visuals/{vis_file}">\n'
+                f'          {viewport_content}\n'
                 f'        </div>\n'
                 f'      </div>\n'
                 f'    </section>'
@@ -186,6 +200,35 @@ def compose_hyperframes_html(
                 f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
                 f'{entry_t});'
             )
+
+            # Progressive voice-ordered reveals for SVG diagrams
+            progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
+            if progressive_reveal and vis_file.lower().endswith(".svg"):
+                from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
+                from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
+                num_steps = STEP_COUNTS.get(i + 1, 4)
+                narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+                step_timings = compute_step_timings_for_beat(
+                    narration=narration,
+                    duration=beat_dur,
+                    num_steps=num_steps,
+                    beat_start_s=start_s,
+                )
+                tweens_js.append(f'  tl.set("#{sec_id} .flow-step", {{ opacity: 0, y: 16 }}, {entry_t});')
+                tweens_js.append(f'  tl.set("#{sec_id} .flow-arrow", {{ opacity: 0 }}, {entry_t});')
+                tweens_js.append(f'  tl.to("#{sec_id} #flow-header", {{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, {_fmt_time(start_s + 0.1)});')
+                for s_idx, rel_t in enumerate(step_timings, start=1):
+                    step_abs_t = _fmt_time(start_s + rel_t)
+                    tweens_js.append(
+                        f'  tl.to("#{sec_id} #flow-step-{s_idx}", '
+                        f'{{ opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }}, {step_abs_t});'
+                    )
+                    if s_idx > 1:
+                        arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
+                        tweens_js.append(
+                            f'  tl.to("#{sec_id} #flow-arrow-{s_idx-1}", '
+                            f'{{ opacity: 1, duration: 0.3, ease: "power1.inOut" }}, {arrow_abs_t});'
+                        )
             if i < len(beats) - 1:
                 exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
                 exit_end_t = _fmt_time(max(0.0, end_s))
@@ -513,7 +556,7 @@ def render_ffmpeg_composition(
     import os
     visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
     flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-    if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+    if (visual_style == "animated_agent_diagram_v1") and flag_enabled:
         raise RuntimeError(
             "CRITICAL: Static slideshow fallback via FFmpeg is strictly forbidden for animated_agent_diagram_v1. "
             "HyperFrames dynamic element-level animation is required."
