@@ -50,3 +50,7 @@ jobs:
           args: >
             -Dsonar.organization=giauphan
             -Dsonar.projectKey=giauphan_OpenMontage
+            -Dsonar.sources=lib,tools,scripts
+            -Dsonar.tests=tests
+            -Dsonar.sourceEncoding=UTF-8
+            -Dsonar.python.version=3.10,3.11
