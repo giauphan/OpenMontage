@@ -109,76 +109,69 @@ def run_fetch(args: argparse.Namespace) -> None:
 def run_produce(args: argparse.Namespace) -> None:
     """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
     count = max(1, getattr(args, "count", 1))
-    input_path = Path(args.input)
-    if not input_path.exists():
-        logger.error(f"Input file not found: {input_path}")
-        sys.exit(1)
 
-    with input_path.open("r", encoding="utf-8") as f:
-        raw_items = json.load(f)
+    # Option C: Hybrid Tiered Strategy (Tier 1 Curated Backlog -> Tier 2 Live Feed)
+    from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery, DiscoveryTier
+    discovery = HybridCandidateDiscovery()
+    tiered_res = discovery.discover_candidates(count=count)
 
-    logger.info("Ingesting and normalizing...")
-    adapter = NewsNowAdapter()
-    candidates, diagnostics = adapter.ingest_and_normalize(raw_items)
-    if diagnostics:
-        logger.warning(f"Encountered {len(diagnostics)} invalid items during ingestion.")
+    if tiered_res.tier == DiscoveryTier.TIER_1_CURATED and tiered_res.candidates:
+        logger.info(
+            f"[HYBRID DISCOVERY] Tier 1 Curated Backlog active: utilizing {len(tiered_res.candidates)} "
+            f"candidate(s) from {tiered_res.source_file}"
+        )
+        candidate_pool = tiered_res.candidates
+        used_ids = discovery.get_used_project_ids()
+    else:
+        input_path = Path(args.input)
+        if not input_path.exists():
+            logger.error(f"Input file not found: {input_path}")
+            sys.exit(1)
 
-    used_ids: set[str] = set()
+        with input_path.open("r", encoding="utf-8") as f:
+            raw_items = json.load(f)
 
-    # Pre-populate used_ids with already scheduled projects and completed validated/rendered projects
-    sched_path = Path("config/publish_schedule.json")
-    if sched_path.is_file():
-        try:
-            with sched_path.open("r", encoding="utf-8") as f:
-                sched_data = json.load(f)
-            for item in sched_data.get("active_projects", []):
-                if isinstance(item, dict) and item.get("project_id"):
-                    used_ids.add(item["project_id"])
-        except Exception:
-            pass
+        logger.info("Ingesting and normalizing Tier 2 automated feed...")
+        adapter = NewsNowAdapter()
+        candidates, diagnostics = adapter.ingest_and_normalize(raw_items)
+        if diagnostics:
+            logger.warning(f"Encountered {len(diagnostics)} invalid items during ingestion.")
 
-    for p_dir in (Path("projects"), Path("projects_news")):
-        if p_dir.is_dir():
-            for p in p_dir.iterdir():
-                if p.is_dir():
-                    has_video = (p / "renders").is_dir() and any((p / "renders").glob("*.mp4"))
-                    if (p / "validation_status.json").is_file() or has_video:
-                        used_ids.add(p.name)
+        used_ids = discovery.get_used_project_ids()
 
-    # Filter out already used candidates before ranking so we do not artificially truncate the usable pool
-    available_candidates = [c for c in candidates if c.get("candidate_id") not in used_ids]
-    candidate_pool = available_candidates if len(available_candidates) >= count else candidates
+        # Filter out already used candidates before ranking so we do not artificially truncate the usable pool
+        available_candidates = [c for c in candidates if c.get("candidate_id") not in used_ids]
+        candidate_pool = available_candidates if len(available_candidates) >= count else candidates
 
-    should_enforce_niche = os.environ.get("SKIP_SCOPE_GATE", "0") not in ("1", "true", "True")
-    if should_enforce_niche:
-        from lib.fixed_niche.gate import FixedNicheScopeGate
-        gate = FixedNicheScopeGate()
-        niche_filtered = []
-        for cand in candidate_pool:
-            verdict = gate.evaluate_candidate(cand)
-            if verdict.is_eligible:
-                cand["topic_family"] = verdict.topic_family
-                niche_filtered.append(cand)
-            else:
-                logger.info(f"FixedNicheScopeGate rejected candidate '{cand.get('candidate_id')}': {verdict.reason}")
-        candidate_pool = niche_filtered
-        if not candidate_pool:
-            logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
-            print("STATUS=NO_ELIGIBLE_TOPIC")
-            marker_file = Path("data/.no_eligible_topic_marker")
-            try:
-                marker_file.parent.mkdir(parents=True, exist_ok=True)
-                marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-            except OSError:
-                pass
-            sys.exit(2)
-        else:
-            marker_file = Path("data/.no_eligible_topic_marker")
-            if marker_file.is_file():
+        should_enforce_niche = os.environ.get("SKIP_SCOPE_GATE", "0") not in ("1", "true", "True")
+        if should_enforce_niche:
+            gate = discovery.gate
+            niche_filtered = []
+            for cand in candidate_pool:
+                verdict = gate.evaluate_candidate(cand)
+                if verdict.is_eligible:
+                    cand["topic_family"] = verdict.topic_family
+                    niche_filtered.append(cand)
+                else:
+                    logger.info(f"FixedNicheScopeGate rejected candidate '{cand.get('candidate_id')}': {verdict.reason}")
+            candidate_pool = niche_filtered
+            if not candidate_pool:
+                logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
+                print("STATUS=NO_ELIGIBLE_TOPIC")
+                marker_file = Path("data/.no_eligible_topic_marker")
                 try:
-                    marker_file.unlink()
+                    marker_file.parent.mkdir(parents=True, exist_ok=True)
+                    marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
                 except OSError:
                     pass
+                sys.exit(2)
+            else:
+                marker_file = Path("data/.no_eligible_topic_marker")
+                if marker_file.is_file():
+                    try:
+                        marker_file.unlink()
+                    except OSError:
+                        pass
 
     logger.info("Scoring and ranking...")
     scorer = NewsCandidateScorer()
@@ -251,6 +244,7 @@ def run_produce(args: argparse.Namespace) -> None:
         logger.info("Bridging to research artifact...")
         try:
             project_id = _init_candidate_project(candidate, selection)
+            discovery.mark_candidate_consumed(project_id)
         except Exception as e:
             logger.warning(
                 "Failed to initialize project for %s: %s; retrying selection "
