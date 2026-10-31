@@ -323,11 +323,22 @@ h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [
 }
 __SCENE_CSS__
 /* Ensure visual media elements are properly layered and never clipped */
-.scene img, .scene video, .scene svg, .scene-media {
+.scene img, .scene video, .scene .svg-container svg, .scene .diagram svg, .scene-media {
     max-width: 100%;
+    max-height: 480px;
     height: auto;
     object-fit: contain;
     z-index: 1;
+}
+.card-title svg, .badge svg, .icon svg, svg[width="26"], svg[width="28"] {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+    max-width: 28px !important;
+    max-height: 28px !important;
+    flex-shrink: 0 !important;
+    display: inline-block !important;
 }
 /* Scoped default card styling without overriding specific scene elements or diagrams */
 .card-default {

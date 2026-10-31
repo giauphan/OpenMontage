@@ -29,6 +29,39 @@ MUSIC:            120-140 BPM for energetic, 90-110 for explainers
 
 **Universal safe zone: 900x1360px centered (Y: 220px to 1580px)** — works across all platforms without text or badge clipping under top search/header pills.
 
+### Content Padding, Margins & Height Budget Rules
+1. **Scene Container Bounds:** In 1080x1920 portrait compositions, author `.scene` with `padding: 220px 80px 340px 80px; box-sizing: border-box; overflow: hidden; max-height: 1920px;`.
+2. **Vertical Content Budget (≤ 1360px):** The total height of all elements inside `.scene` (badge + headline + subheadline + cards + diagrams) must NEVER exceed 1360px. If content overflows, it pushes titles/badges off the top into the dead zone or clips cards at the bottom. Keep to at most 2 compact cards per scene.
+3. **No Global Bare SVG Selectors:** NEVER write `svg { width: 100%; }` in CSS. This expands small 24px-28px inline icons in card titles to the entire card width (900px+), creating giant distorted icons that cover the screen.
+4. **Explicit Inline Icon Sizing:** All inline SVG icons in titles, badges, or list items MUST have explicit dimensions:
+   ```css
+   .card-title svg, .badge svg, .icon svg {
+     width: 28px !important;
+     height: 28px !important;
+     min-width: 28px !important;
+     min-height: 28px !important;
+     max-width: 28px !important;
+     max-height: 28px !important;
+     flex-shrink: 0 !important;
+     display: inline-block !important;
+   }
+   ```
+5. **Scoped Media & Diagram Bounds:** Diagrams must be wrapped in `.svg-container` or `.diagram`:
+   ```css
+   .svg-container svg, .diagram svg {
+     width: 100%;
+     max-height: 380px;
+     height: auto;
+     object-fit: contain;
+   }
+   .scene img, .scene video {
+     max-width: 100%;
+     max-height: 480px;
+     object-fit: contain;
+     border-radius: 12px;
+   }
+   ```
+
 **Bottom dead zones are critical** — platform UI (comments, share buttons, captions) covers the bottom 300-320px. Never put important content there.
 
 ## Upload Specs

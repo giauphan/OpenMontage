@@ -87,6 +87,12 @@ At 3840x2160: Title Safe = inner **3072x1728px**
 
 **Universal cross-platform safe zone: 900x1360px centered (Y: 220px to 1580px)** — works on all platforms without clipping under TikTok search pills or status headers.
 
+### Content Padding, Margins & Height Budget Rules
+- **Container Specs:** Vertical compositions MUST apply `padding: 220px 80px 340px 80px; box-sizing: border-box; overflow: hidden; max-height: 1920px;` to `.scene`.
+- **Total Vertical Budget:** All elements inside `.scene` (badge, headline, cards, media) must sum to ≤ 1360px in total height. Do not stack more than 2 cards per scene to prevent pushing text out of the safe zone.
+- **Icon Sizing:** Inline SVG icons in `.card-title`, `.badge`, `.icon` must always have fixed dimensions (`width: 28px !important; height: 28px !important; flex-shrink: 0;`). NEVER write bare `svg { width: 100%; }`.
+- **Diagram Bounds:** Diagrams must be scoped to `.svg-container svg, .diagram svg` with `max-height: 380px`.
+
 ## Text Animation Timing
 
 ### Duration on Screen
