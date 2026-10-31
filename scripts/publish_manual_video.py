@@ -1478,7 +1478,15 @@ def main():
         require_news_evidence(project_path, metadata=metadata)
         # Skip release preflight if only targeted platform is held or disabled
         if not (only_platform and not is_platform_enabled(only_platform, extra_enabled=cli_enabled, extra_held=cli_held)):
-            enforce_release_preflight(project_path, metadata, strict=True, force=args.force)
+            preflight_platforms = None
+            if only_platform:
+                yt_kind = "short" if metadata.get("format") == "short" else "longform"
+                yt_field = "yt_shorts" if yt_kind == "short" else "yt_longform"
+                from tools.publishers.platform_routes import PLATFORM_ROUTES
+                field = yt_field if only_platform == "youtube" else PLATFORM_ROUTES.get(only_platform, ("", "video"))[1]
+                if field in metadata:
+                    preflight_platforms = [{"platform": only_platform, "video_path": metadata[field]}]
+            enforce_release_preflight(project_path, metadata, platforms=preflight_platforms, strict=True, force=args.force)
     except Exception as exc:
         print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
         print(str(exc), file=sys.stderr)
