@@ -1377,7 +1377,7 @@ def enforce_release_preflight(
         if platforms:
             for p in platforms:
                 plat = p["platform"]
-                acct = p["account"]
+                acct = p.get("account", "")
                 target_match = approved_accounts.get(plat) or approved_accounts.get("all")
                 if target_match and str(target_match) != str(acct):
                     raise RuntimeError(
@@ -1484,8 +1484,9 @@ def main():
                 yt_field = "yt_shorts" if yt_kind == "short" else "yt_longform"
                 from tools.publishers.platform_routes import PLATFORM_ROUTES
                 field = yt_field if only_platform == "youtube" else PLATFORM_ROUTES.get(only_platform, ("", "video"))[1]
+                acct = YT_ACCOUNT if only_platform == "youtube" else (IG_ACCOUNT_ID if only_platform == "instagram" else (FB_PAGE_ID if only_platform == "facebook" else ""))
                 if field in metadata:
-                    preflight_platforms = [{"platform": only_platform, "video_path": metadata[field]}]
+                    preflight_platforms = [{"platform": only_platform, "account": acct, "video_path": metadata[field]}]
             enforce_release_preflight(project_path, metadata, platforms=preflight_platforms, strict=True, force=args.force)
     except Exception as exc:
         print(f"STRICT QUALITY GATE FAILED for {metadata['id']}:")
