@@ -212,6 +212,9 @@ class FixedNicheSourceAdapter:
         if sources_feed_path:
             feed_paths.append(Path(sources_feed_path))
         else:
+            curated_feed = Path("data/daily_candidates.json")
+            if curated_feed.is_file():
+                feed_paths.append(curated_feed)
             default_feed = Path("config/sources/production_agent_engineering_feed.json")
             if default_feed.is_file():
                 feed_paths.append(default_feed)

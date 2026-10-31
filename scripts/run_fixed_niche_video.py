@@ -693,16 +693,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
     disc = HybridCandidateDiscovery()
     if not candidates_pool:
-        # Option C: Hybrid Tiered Strategy (Tier 1 curated backlog -> Tier 2 automated feed)
-        tiered_res = disc.discover_candidates(count=1)
-        if tiered_res.is_eligible:
-            candidates_pool = tiered_res.candidates
-            logger.info(
-                f"[HYBRID DISCOVERY] Loaded candidate from {tiered_res.tier.value}: {tiered_res.source_file}"
-            )
-        else:
-            adapter = FixedNicheSourceAdapter()
-            candidates_pool = adapter.discover_production_candidates()
+        adapter = FixedNicheSourceAdapter()
+        candidates_pool = adapter.discover_production_candidates()
 
     matched_cand = next((c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)), None) if candidate_id else None
 

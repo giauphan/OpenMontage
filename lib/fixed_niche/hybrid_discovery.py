@@ -192,8 +192,25 @@ class HybridCandidateDiscovery:
             if verdict.is_eligible:
                 normalized = dict(cand)
                 normalized["candidate_id"] = cid
+                normalized["id"] = cid
                 normalized["topic_family"] = verdict.topic_family
                 normalized["content_kind"] = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
+                if not normalized.get("published_at_utc"):
+                    normalized["published_at_utc"] = cand.get("published_at") or datetime.now(timezone.utc).isoformat()
+                if not normalized.get("published_at"):
+                    normalized["published_at"] = normalized["published_at_utc"]
+                if not normalized.get("normalized_publisher"):
+                    normalized["normalized_publisher"] = str(cand.get("publisher") or "unknown").lower()
+                if not normalized.get("publisher"):
+                    normalized["publisher"] = cand.get("normalized_publisher") or "Unknown"
+                if not normalized.get("url"):
+                    normalized["url"] = cand.get("canonical_url") or ""
+                if not normalized.get("canonical_url"):
+                    normalized["canonical_url"] = normalized["url"]
+                if not normalized.get("body"):
+                    normalized["body"] = cand.get("summary") or cand.get("description") or ""
+                if not normalized.get("summary"):
+                    normalized["summary"] = normalized["body"][:300]
                 valid.append(normalized)
             else:
                 logger.debug(f"Candidate {cid} rejected by FixedNicheScopeGate: {verdict.reason}")

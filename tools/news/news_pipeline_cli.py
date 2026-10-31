@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -113,9 +114,15 @@ def run_produce(args: argparse.Namespace) -> None:
     # Option C: Hybrid Tiered Strategy (Tier 1 Curated Backlog -> Tier 2 Live Feed)
     from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery, DiscoveryTier
     discovery = HybridCandidateDiscovery()
-    tiered_res = discovery.discover_candidates(count=count)
 
-    if tiered_res.tier == DiscoveryTier.TIER_1_CURATED and tiered_res.candidates:
+    input_path = Path(args.input)
+    is_daily_feed = input_path.name in ("newsnow_feed.json", "daily_candidates.json")
+
+    tiered_res = None
+    if is_daily_feed:
+        tiered_res = discovery.discover_candidates(count=count)
+
+    if tiered_res and tiered_res.tier == DiscoveryTier.TIER_1_CURATED and tiered_res.candidates:
         logger.info(
             f"[HYBRID DISCOVERY] Tier 1 Curated Backlog active: utilizing {len(tiered_res.candidates)} "
             f"candidate(s) from {tiered_res.source_file}"
@@ -123,7 +130,6 @@ def run_produce(args: argparse.Namespace) -> None:
         candidate_pool = tiered_res.candidates
         used_ids = discovery.get_used_project_ids()
     else:
-        input_path = Path(args.input)
         if not input_path.exists():
             logger.error(f"Input file not found: {input_path}")
             sys.exit(1)
@@ -131,7 +137,7 @@ def run_produce(args: argparse.Namespace) -> None:
         with input_path.open("r", encoding="utf-8") as f:
             raw_items = json.load(f)
 
-        logger.info("Ingesting and normalizing Tier 2 automated feed...")
+        logger.info("Ingesting and normalizing candidates...")
         adapter = NewsNowAdapter()
         candidates, diagnostics = adapter.ingest_and_normalize(raw_items)
         if diagnostics:
