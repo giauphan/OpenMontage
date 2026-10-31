@@ -327,6 +327,19 @@ class PublishStore:
         for candidate in [key, *unique_keys]:
             existing = self.get(candidate)
             if existing is not None:
+                if existing.get("status") in {"scheduled", "published"}:
+                    return key, False, existing
+                if existing.get("status") in {"failed", "scheduling"}:
+                    for doc_key, doc_data in documents.items():
+                        try:
+                            self.update(doc_key, doc_data)
+                        except Exception:
+                            self.session.patch(
+                                self._url(doc_key),
+                                json={"fields": _fields(doc_data)},
+                                timeout=30,
+                            )
+                    return key, True, data
                 return key, False, existing
         raise RuntimeError("Firestore uniqueness claim failed without a conflicting record")
 

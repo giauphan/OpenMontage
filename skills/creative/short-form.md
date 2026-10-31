@@ -22,12 +22,12 @@ MUSIC:            120-140 BPM for energetic, 90-110 for explainers
 
 | Platform | Safe Zone | Top Dead | Bottom Dead | Right Dead |
 |----------|-----------|----------|-------------|------------|
-| TikTok | 900x1492 | 108px | 320px | 120px |
+| TikTok | 900x1380 | 220px (Find related content pill) | 320px | 120px |
 | Instagram Reels | 996x1400 | 210px | 310px | 84px |
-| YouTube Shorts | 984x1500 | 120px | 300px | 96px |
-| Facebook Reels | 1080x1520 | 100px | 300px | 60px |
+| YouTube Shorts | 984x1400 | 220px | 300px | 96px |
+| Facebook Reels | 1080x1400 | 220px | 300px | 60px |
 
-**Universal safe zone: 900x1400px centered** — works across all platforms.
+**Universal safe zone: 900x1360px centered (Y: 220px to 1580px)** — works across all platforms without text or badge clipping under top search/header pills.
 
 **Bottom dead zones are critical** — platform UI (comments, share buttons, captions) covers the bottom 300-320px. Never put important content there.
 

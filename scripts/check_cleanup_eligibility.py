@@ -233,6 +233,29 @@ def reconcile_scheduled_record(
             print(f"DEBUG: Meta status check failed for {video_id} ({platform}): {exc}", file=sys.stderr)
             _classify_outcome(outcomes, route, "blocked_error", f"exception: {exc}")
 
+    elif platform == "tiktok":
+        try:
+            from tools.publishers.tiktok_publisher import TiktokPublisher
+            tp = TiktokPublisher()
+            t_status = tp.check_video_published(video_id)
+            if t_status and t_status.get("status") == "published":
+                now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                updated = store.mark_published(
+                    key,
+                    video_id=video_id,
+                    video_url=record.get("video_url"),
+                    platform_id=record.get("platform_id") or video_id,
+                    published_at=scheduled_for,
+                    verified_at=now_iso,
+                    remote_status=t_status,
+                )
+                _classify_outcome(outcomes, route, "promoted", "TikTok Creator Studio confirmed published")
+                return updated
+            _classify_outcome(outcomes, route, "pending_unverified", f"TikTok status={t_status.get('status') if t_status else 'unknown'}")
+        except Exception as exc:
+            print(f"DEBUG: TikTok status check failed for {video_id}: {exc}", file=sys.stderr)
+            _classify_outcome(outcomes, route, "blocked_error", f"exception: {exc}")
+
     _classify_outcome(outcomes, route, "pending_unverified", "remote check returned no authoritative evidence")
     return record
 

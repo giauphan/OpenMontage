@@ -1,6 +1,6 @@
 Mode: Bounded Artifact Repair (en-US / US Market)
 
-Repair incomplete or invalid outputs for {{PROJECT_DIR}} only. Read the current files and {{PROJECT_DIR}}/artifacts/research_brief.json first. Do not invoke pipeline wrappers, renderers, publishers, schedulers, social APIs, SSH, subagents, or background work. Do not accept stale files as success. Do not author static captions/subtitles; the pipeline installs validated ASR caption clips. Reserve the bottom 16% of each portrait scene as a clear caption-safe rail and keep all other text, footers, tickers, and plates above it.
+Repair incomplete or invalid outputs for {{PROJECT_DIR}} only. Read the current files and {{PROJECT_DIR}}/artifacts/research_brief.json first. Do not invoke pipeline wrappers, renderers, publishers, schedulers, social APIs, SSH, subagents, or background work. Do not accept stale files as success. Do not author static captions/subtitles; the pipeline installs validated ASR caption clips. Reserve the top 220px of each portrait scene as platform UI safe zone (clears TikTok 'Find related content' search bar and Shorts header) with padding-top: 220px, and reserve the bottom 16% (340px) as caption-safe rail. Keep all headlines, badges, tickers, and plates strictly within this vertical safe area.
 
 Repair only these artifacts:
 - {{PROJECT_DIR}}/artifacts/script_en_US.json

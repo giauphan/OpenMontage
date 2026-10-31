@@ -169,7 +169,7 @@ def get_enabled_platforms(
 
     if os.environ.get("MULTI_PLATFORM") == "1":
         has_source = True
-        enabled.update(["youtube", "instagram", "facebook"])
+        enabled.update(["youtube", "instagram", "facebook", "tiktok"])
         if os.environ.get("FACEBOOK_PUBLISH_ENABLED") == "0":
             enabled.discard("facebook")
 

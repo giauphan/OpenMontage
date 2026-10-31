@@ -42,6 +42,7 @@ from tools.publishers.platform_routes import (
 )
 from tools.publishers.youtube_publisher import YoutubePublisher
 from tools.publishers.meta_publisher import MetaPublisher
+from tools.publishers.tiktok_publisher import TiktokPublisher
 from tools.publishers.social_metadata import meta_caption
 
 
@@ -436,6 +437,8 @@ def publish_batch(
     yt_kind = "longform" if is_longform else PLATFORM_ROUTES["youtube"][0]
     yt_field = "yt_longform" if is_longform else PLATFORM_ROUTES["youtube"][1]
     
+    cfg_enabled = get_enabled_platforms(extra_enabled=enabled_platforms)
+
     if only_platform:
         only_platform = canonical_platform_name(only_platform)
         effective_enabled = set(enabled_platforms) if enabled_platforms else set()
@@ -466,11 +469,29 @@ def publish_batch(
             (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
             for platform, account in (("instagram", IG_ACCOUNT_ID),)
         ]
+    elif cfg_enabled is not None:
+        contract_candidates = []
+        if "youtube" in cfg_enabled:
+            contract_candidates.append(("youtube", YT_ACCOUNT, yt_kind, yt_field))
+        if "instagram" in cfg_enabled:
+            contract_candidates.append(("instagram", IG_ACCOUNT_ID, PLATFORM_ROUTES["instagram"][0], PLATFORM_ROUTES["instagram"][1]))
+        if "facebook" in cfg_enabled:
+            contract_candidates.append(("facebook", FB_PAGE_ID, PLATFORM_ROUTES["facebook"][0], PLATFORM_ROUTES["facebook"][1]))
+        if "tiktok" in cfg_enabled:
+            contract_candidates.append(("tiktok", "tiktok", PLATFORM_ROUTES["tiktok"][0], PLATFORM_ROUTES["tiktok"][1]))
+        for p in cfg_enabled:
+            if p not in ("youtube", "instagram", "facebook", "tiktok") and p in PLATFORM_ROUTES:
+                contract_candidates.append((p, "", PLATFORM_ROUTES[p][0], PLATFORM_ROUTES[p][1]))
+        print("📋 CONFIG-ENABLED PLATFORMS MODE: " + " + ".join(p for p, _, _, _ in contract_candidates))
+        platform_contract = contract_candidates
     elif multi_platform:
         facebook_enabled = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
+        tiktok_enabled = os.environ.get("TIKTOK_PUBLISH_ENABLED", "0") in ("1", "true", "True")
         platforms = [("youtube", YT_ACCOUNT), ("instagram", IG_ACCOUNT_ID)]
         if facebook_enabled:
             platforms.append(("facebook", FB_PAGE_ID))
+        if tiktok_enabled:
+            platforms.append(("tiktok", "tiktok"))
         print("🌐 MULTI-PLATFORM MODE: " + " + ".join(platform for platform, _ in platforms))
         platform_contract = [
             (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
@@ -508,6 +529,16 @@ def publish_batch(
     else:
         if "yt_shorts" not in metadata and "yt_longform" in metadata:
             metadata = {**metadata, "yt_shorts": metadata["yt_longform"]}
+    if "tiktok" not in metadata:
+        for cand_short in ("yt_shorts", "ig_reels"):
+            if cand_short in metadata:
+                metadata = {**metadata, "tiktok": metadata[cand_short]}
+                break
+    elif "16x9" in str(metadata["tiktok"]) or "long" in str(metadata["tiktok"]):
+        for cand_short in ("yt_shorts", "ig_reels"):
+            if cand_short in metadata and ("9x16" in str(metadata[cand_short]) or "short" in str(metadata[cand_short]) or "reels" in str(metadata[cand_short])):
+                metadata = {**metadata, "tiktok": metadata[cand_short]}
+                break
     missing = [field for _, _, _, field in platform_contract if field not in metadata]
     if missing:
         raise KeyError(f"publish_metadata.json missing platform video fields: {', '.join(missing)}")
@@ -746,8 +777,6 @@ def publish_batch(
                     "video_url": f"https://facebook.com/{account}/videos/dry-run",
                 }
             else:
-                publisher = MetaPublisher()
-                # Instagram uses R2 upload + Graph API media container; Facebook uses direct page video upload
                 inputs = {
                     "video_path": video_path,
                     "title": title,
@@ -758,19 +787,44 @@ def publish_batch(
                     "post_to_instagram": platform == "instagram",
                 }
                 if cfg.get("scheduled_epoch") and platform == "facebook":
-                    # Native Graph scheduling so the post goes live at the queued VN slot.
                     inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
-                tool_result = publisher.execute(inputs)
+
+                if platform == "facebook":
+                    try:
+                        from tools.publishers.facebook_publisher import FacebookPublisher
+                        fb_pub = FacebookPublisher()
+                        fb_inputs = {
+                            "video_path": video_path,
+                            "title": title,
+                            "caption": meta_caption(title, description),
+                            "target_id": FB_PAGE_ID,
+                            "enable_auto_translate": True,
+                        }
+                        if cfg.get("scheduled_epoch"):
+                            fb_inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
+                        tool_result = fb_pub.execute(fb_inputs)
+                    except Exception as fb_exc:
+                        tool_result = ToolResult(success=False, error=str(fb_exc))
+                    if not tool_result.success and os.environ.get("TOKEN_FACEBOOK"):
+                        publisher = MetaPublisher()
+                        tool_result = publisher.execute(inputs)
+                else:
+                    publisher = MetaPublisher()
+                    tool_result = publisher.execute(inputs)
+
                 data = tool_result.data or {}
                 platform_id = (
-                    data.get("facebook_post_id") if platform == "facebook" else data.get("instagram_media_id")
+                    data.get("facebook_post_id") or data.get("video_id")
+                    if platform == "facebook"
+                    else data.get("instagram_media_id")
                 )
                 result = {
                     "success": tool_result.success and bool(platform_id),
                     "platform_id": platform_id,
                     "video_url": (
-                        f"https://facebook.com/{account}/videos/{platform_id}"
-                        if platform == "facebook" and platform_id
+                        data.get("video_url")
+                        or (f"https://facebook.com/{account}/videos/{platform_id}" if platform_id else None)
+                        if platform == "facebook"
                         else None
                     ),
                     "error": (
@@ -778,6 +832,38 @@ def publish_batch(
                         if tool_result.success and platform_id
                         else tool_result.error or f"Meta returned no {platform} media ID"
                     ),
+                }
+
+        elif platform == "tiktok":
+            if dry_run:
+                print(f"[DRY RUN] Would upload {platform} {kind}: {video_path}")
+                result = {
+                    "success": True,
+                    "platform_id": "DRY_RUN_TIKTOK_PROJECT_ID",
+                    "video_id": "DRY_RUN_TIKTOK_VIDEO_ID",
+                    "video_url": "https://www.tiktok.com/@creator/video/dry-run",
+                }
+            else:
+                publisher = TiktokPublisher()
+                caption = f"{title}\n\n{description}".strip() if description else title
+                visibility = os.environ.get("TIKTOK_DEFAULT_VISIBILITY", "only-me")
+                inputs = {
+                    "video_path": str(video_path),
+                    "caption": caption,
+                    "title": title,
+                    "visibility": visibility,
+                }
+                if cfg.get("scheduled_epoch"):
+                    inputs["schedule_time"] = int(cfg["scheduled_epoch"])
+                tool_result = publisher.execute(inputs)
+                data = tool_result.data or {}
+                project_id = data.get("project_id") or data.get("item_id")
+                result = {
+                    "success": tool_result.success and bool(project_id or data.get("status") in ("published", "scheduled")),
+                    "platform_id": project_id,
+                    "video_id": data.get("item_id") or project_id,
+                    "video_url": data.get("video_url") or (f"https://www.tiktok.com/video/{project_id}" if project_id else None),
+                    "error": None if tool_result.success else tool_result.error or "TikTok publish failed",
                 }
 
         else:
@@ -789,10 +875,10 @@ def publish_batch(
             vid_id = result.get("video_id") or result.get("platform_id")
             vid_url = result.get("video_url")
             # F08: Instagram is uploaded directly and published immediately at its slot.
-            # Only YouTube with publish_at or Facebook with scheduled_epoch are remotely scheduled.
+            # YouTube, Facebook, and TikTok can be remotely scheduled when scheduled_epoch or publish_at is present.
             if platform == "instagram":
                 is_scheduled = False
-            elif platform == "facebook" and cfg.get("scheduled_epoch"):
+            elif platform in ("facebook", "tiktok") and cfg.get("scheduled_epoch"):
                 is_scheduled = True
             elif platform == "youtube" and publish_at:
                 is_scheduled = True
@@ -836,6 +922,15 @@ def publish_batch(
                                 if m_info and m_info.get("status"):
                                     remote_st = m_info
                                     if m_info.get("status") == "published":
+                                        verified_at = now_iso
+                            except Exception:
+                                pass
+                        elif platform == "tiktok" and hasattr(publisher, "check_video_published"):
+                            try:
+                                t_info = publisher.check_video_published(vid_id)
+                                if t_info and t_info.get("status"):
+                                    remote_st = t_info
+                                    if t_info.get("status") == "published":
                                         verified_at = now_iso
                             except Exception:
                                 pass

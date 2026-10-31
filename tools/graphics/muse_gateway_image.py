@@ -128,7 +128,10 @@ class MuseGatewayImage(BaseTool):
 
     def get_gateway_base_url(self) -> str:
         """Resolve and validate the configured Gateway base URL."""
-        base_url = os.environ.get("MUSE_GATEWAY_BASE_URL", "http://127.0.0.1:20129").strip()
+        base_url = (
+            os.environ.get("MUSE_GATEWAY_BASE_URL")
+            or os.environ.get("TOOLCASE_GATEWAY_URL", "http://127.0.0.1:20129")
+        ).strip()
         parsed = urlparse(base_url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"Invalid MUSE_GATEWAY_BASE_URL scheme: {parsed.scheme}")

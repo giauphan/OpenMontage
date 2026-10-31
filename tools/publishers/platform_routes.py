@@ -225,7 +225,12 @@ def compose_release_metadata(data: dict) -> ReleaseMetadata:
     yt_shorts = _resolve_render_target(data.get("yt_shorts"), default_short)
     ig_reels = _resolve_render_target(data.get("ig_reels"), default_short)
     fb_video = _resolve_render_target(data.get("fb_video"), default_full)
-    tiktok = _resolve_render_target(data.get("tiktok"), default_full)
+    default_tiktok = default_short
+    raw_tiktok = data.get("tiktok")
+    if raw_tiktok and ("16x9" in str(raw_tiktok) or "long" in str(raw_tiktok)):
+        tiktok = default_tiktok
+    else:
+        tiktok = _resolve_render_target(raw_tiktok, default_tiktok)
 
     extra = {k: v for k, v in data.items() if k not in (
         "id", "title", "description", "yt_shorts", "ig_reels", "fb_video", "tiktok", "tags", "source_url"

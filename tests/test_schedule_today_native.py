@@ -13,6 +13,22 @@ from tests.fixtures.news_evidence import write_reviewed_news_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+@pytest.fixture(autouse=True)
+def clean_publish_env(monkeypatch):
+    """Isolate tests from ambient environment variables."""
+    for key in (
+        "HOLD_PLATFORMS",
+        "HOLD_IG",
+        "HOLD_FB",
+        "HOLD_TIKTOK",
+        "HOLD_YTB",
+        "ENABLED_PLATFORMS",
+        "ENABLE_PLATFORMS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("ENABLE_PLATFORMS", "youtube,instagram,tiktok,facebook")
+
 def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tmp_path: Path, monkeypatch):
     from scripts.schedule_today_native import main
 
@@ -79,9 +95,8 @@ def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tm
         # Verify platforms claimed
         assert "youtube" in claimed_platforms
         assert "instagram" in claimed_platforms
-        
-        # Verify facebook was never checked
-        assert "facebook" not in claimed_platforms
+        assert "tiktok" in claimed_platforms
+        assert "facebook" in claimed_platforms
 
 
 def test_passed_slot_cutoff_is_skipped_gracefully_without_exit_failure(tmp_path: Path, monkeypatch, capsys):
@@ -171,6 +186,11 @@ def test_already_scheduled_projects_skip_gracefully_without_failing_news_gate(tm
     config_dir.mkdir(parents=True)
 
     today = "2099-01-01"
+
+    # Hermetic: pin enabled platforms to YouTube-only regardless of repo config.
+    yt_only_cfg = tmp_path / "platforms_youtube_only.json"
+    yt_only_cfg.write_text(json.dumps({"enabled_platforms": ["youtube"]}))
+    monkeypatch.setenv("OPENMONTAGE_PLATFORMS_CONFIG", str(yt_only_cfg))
 
     (config_dir / "publish_schedule.json").write_text(json.dumps({
         "timezone": "UTC",

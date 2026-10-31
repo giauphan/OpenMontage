@@ -79,13 +79,13 @@ At 3840x2160: Title Safe = inner **3072x1728px**
 
 | Platform | Safe Zone | Top Dead | Bottom Dead | Right Dead |
 |----------|-----------|----------|-------------|------------|
-| **TikTok** | 900x1492 | 108px | 320px | 120px |
+| **TikTok** | 900x1380 | 220px (Find related content pill) | 320px | 120px |
 | **Instagram Reels** | 996x1400 | 210px | 310px | 84px |
-| **YouTube Shorts** | 984x1500 | 120px | 300px | 96px |
-| **Facebook Reels** | 1080x1520 | 100px | 300px | 60px |
-| **Instagram Stories** | 1080x1620 | 100px | 200px | — |
+| **YouTube Shorts** | 984x1400 | 220px | 300px | 96px |
+| **Facebook Reels** | 1080x1400 | 220px | 300px | 60px |
+| **Instagram Stories** | 1080x1500 | 220px | 200px | — |
 
-**Universal cross-platform safe zone: 900x1400px centered** — works on all platforms.
+**Universal cross-platform safe zone: 900x1360px centered (Y: 220px to 1580px)** — works on all platforms without clipping under TikTok search pills or status headers.
 
 ## Text Animation Timing
 

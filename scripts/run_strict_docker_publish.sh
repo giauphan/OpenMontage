@@ -96,7 +96,7 @@ if [ -n "${ENABLED_PLATFORMS:-}" ]; then
   export ENABLED_PLATFORMS
 fi
 
-export FACEBOOK_PUBLISH_ENABLED=0
+export FACEBOOK_PUBLISH_ENABLED="${FACEBOOK_PUBLISH_ENABLED:-1}"
 
 # Codex pipeline profile: resolved and validated by scripts/codex_agent_validation.py.
 # Defaults to the isolated pipeline profile initialized from the read-only host source.
@@ -114,12 +114,12 @@ export PRODUCTION_RELEASE="${PRODUCTION_RELEASE:-1}"
 if [ -d "/etc/codex_source" ]; then
   src_key="$(jq -r '.OPENAI_API_KEY // empty' /etc/codex_source/auth.json 2>/dev/null || true)"
   cur_key="$(jq -r '.OPENAI_API_KEY // empty' "$CODEX_HOME/auth.json" 2>/dev/null || true)"
-  if [ ! -s "$CODEX_HOME/auth.json" ] || [ -n "$src_key" -a "$src_key" != "$cur_key" ]; then
+  if [ ! -s "$CODEX_HOME/auth.json" ] || [ -n "$src_key" -a "$src_key" != "$cur_key" ] || ! cmp -s /etc/codex_source/config.toml "$CODEX_HOME/config.toml"; then
     REFRESH_CODEX_PROFILE=1 bash "$ROOT/scripts/init_codex_profile.sh" /etc/codex_source "$CODEX_HOME" || true
   fi
   if [ -d "/home/node" ]; then
     node_cur_key="$(jq -r '.OPENAI_API_KEY // empty' /home/node/.codex_pipeline/auth.json 2>/dev/null || true)"
-    if [ ! -s "/home/node/.codex_pipeline/auth.json" ] || [ -n "$src_key" -a "$src_key" != "$node_cur_key" ]; then
+    if [ ! -s "/home/node/.codex_pipeline/auth.json" ] || [ -n "$src_key" -a "$src_key" != "$node_cur_key" ] || ! cmp -s /etc/codex_source/config.toml /home/node/.codex_pipeline/config.toml; then
       REFRESH_CODEX_PROFILE=1 bash "$ROOT/scripts/init_codex_profile.sh" /etc/codex_source /home/node/.codex_pipeline node || true
     fi
   fi

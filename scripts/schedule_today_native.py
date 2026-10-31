@@ -283,11 +283,18 @@ def main():
         is_us_project = is_english_locale(locale) or topic_meta.get("audience") == "us"
 
         yt_key = publish_key(date, topic_id, "youtube", kind)
+        yt_already_done = False
         if hasattr(store, "get"):
             existing_claim = store.get(yt_key)
             if existing_claim and existing_claim.get("status") in ("scheduled", "published"):
                 print(f"ALREADY SCHEDULED {proj} on youtube ({kind}) for {existing_claim.get('scheduled_for', date)} ({existing_claim.get('video_url', '')})")
-                continue
+                # Remaining platforms (TikTok, Facebook) still need the full gate sequence below.
+                if is_longform or (
+                    not is_platform_enabled("tiktok", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled)
+                    and not is_platform_enabled("facebook", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled)
+                ):
+                    continue
+                yt_already_done = True
 
         # Strict validation gate: Ensure project has passed validation_status.json in project dir
         vstatus_path = project_dir / "validation_status.json"
@@ -318,7 +325,8 @@ def main():
 
         try:
             from lib.news_release_gate import require_news_evidence
-            require_news_evidence(project_dir, metadata=topic_meta)
+            max_age_h = "48" if yt_already_done else None
+            require_news_evidence(project_dir, env_max_age_hours=max_age_h, metadata=topic_meta)
         except Exception as err:
             print(f"failed {proj}: news evidence gate failed ({err})")
             failed = True
@@ -414,6 +422,8 @@ def main():
         # YT
         if not is_platform_enabled("youtube", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
             print(f"⏸️ HOLD/DISABLED: Skipping YouTube scheduling for {proj} (not enabled or held by pipeline flag/env)")
+        elif yt_already_done:
+            pass
         else:
             asset_path = project_dir / yt_rel if yt_rel else None
             if not asset_path or not asset_path.is_file():
@@ -466,7 +476,9 @@ def main():
                                 failed = True
 
         # Schedule Instagram Reels
-        if is_us_project and os.environ.get("ENABLE_US_INSTAGRAM") != "1" and "instagram" not in (cli_enabled or []):
+        if yt_already_done:
+            pass  # Reached only for the TikTok follow-up; Instagram keeps its prior skip behaviour.
+        elif is_us_project and os.environ.get("ENABLE_US_INSTAGRAM") != "1" and "instagram" not in (cli_enabled or []):
             print(f"⏸️ US_MIGRATION_HOLD: Skipping Instagram scheduling for US project {proj} (YouTube-only during US migration phase)")
         elif not is_platform_enabled("instagram", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
             print(f"⏸️ HOLD/DISABLED: Skipping Instagram scheduling for {proj} (not enabled or held by pipeline flag/env)")
@@ -493,6 +505,64 @@ def main():
                     print(f"SKIP: Instagram {date} {topic_meta['id']} (already claimed)")
         else:
             print(f"SKIP: Instagram {date} {topic_meta['id']} (missing asset or account)")
+
+        # TikTok: vertical-only; uploads the same approved short asset as YouTube.
+        if (
+            not is_longform
+            and yt_rel
+            and is_platform_enabled("tiktok", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled)
+        ):
+            from scripts.tiktok_native import publish_tiktok_native
+            if publish_tiktok_native(
+                store,
+                date=date,
+                topic_id=topic_meta["id"],
+                asset_path=project_dir / yt_rel,
+                title=topic_meta["title"],
+                description=topic_meta.get("description", ""),
+                scheduled_for=scheduled_for,
+                content_hash=content_hash,
+                template_id=template_id,
+                dry_run=is_dry_run,
+                locale=locale,
+            ):
+                failed = True
+
+        # Facebook: vertical Reels with 14-language auto-dubbing & scheduled_publish_time.
+        fb_rel = topic_meta.get("fb_video") or yt_rel
+        if isinstance(fb_rel, dict):
+            fb_rel = fb_rel.get("path") or fb_rel.get("file")
+        fb_asset = project_dir / fb_rel if fb_rel else None
+        if not fb_asset or not fb_asset.is_file():
+            fb_asset = project_dir / yt_rel if yt_rel else None
+
+        fb_target_id = (
+            cfg.get("meta", {}).get("page_id")
+            or cfg.get("facebook", {}).get("page_id")
+            or os.environ.get("FB_PAGE_ID")
+            or "1435449429646177"
+        )
+        if (
+            not is_longform
+            and fb_asset
+            and fb_asset.is_file()
+            and is_platform_enabled("facebook", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled)
+        ):
+            from scripts.facebook_native import publish_facebook_native
+            if publish_facebook_native(
+                store,
+                date=date,
+                topic_id=topic_meta["id"],
+                asset_path=fb_asset,
+                title=topic_meta["title"],
+                description=topic_meta.get("description", ""),
+                scheduled_for=scheduled_for,
+                content_hash=content_hash,
+                template_id=template_id,
+                dry_run=is_dry_run,
+                target_id=fb_target_id,
+            ):
+                failed = True
 
         time.sleep(1)
     if failed:

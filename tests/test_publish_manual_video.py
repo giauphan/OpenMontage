@@ -10,6 +10,49 @@ from tests.fixtures.news_evidence import write_reviewed_news_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+@pytest.fixture(autouse=True)
+def clean_publish_env(monkeypatch):
+    """Ensure tests run isolated from ambient platform hold/enable environment."""
+    for var in (
+        "HOLD_PLATFORMS",
+        "HOLD_PIPELINE",
+        "HOLD_IG",
+        "HOLD_INSTAGRAM",
+        "HOLD_FB",
+        "HOLD_FACEBOOK",
+        "HOLD_TIKTOK",
+        "HOLD_TT",
+        "HOLD_YTB",
+        "HOLD_YT",
+        "HOLD_YOUTUBE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    from tools.base_tool import ToolResult
+    monkeypatch.setattr(
+        "tools.publishers.tiktok_publisher.TiktokPublisher.execute",
+        lambda self, inputs: ToolResult(
+            success=True,
+            data={"status": "published", "project_id": "mock_tt", "item_id": "mock_tt"},
+        ),
+    )
+    monkeypatch.setattr(
+        "tools.publishers.facebook_publisher.FacebookPublisher.execute",
+        lambda self, inputs: ToolResult(
+            success=True,
+            data={"status": "published", "video_id": "mock_fb", "facebook_post_id": "mock_fb"},
+        ),
+    )
+    monkeypatch.setattr(
+        "tools.publishers.meta_publisher.MetaPublisher.execute",
+        lambda self, inputs: ToolResult(
+            success=True,
+            data={"status": "published", "facebook_post_id": "mock_fb", "instagram_media_id": "mock_ig"},
+        ),
+    )
+
+
 def test_publish_manual_video_skips_duplicates_and_avoids_facebook(tmp_path: Path, monkeypatch):
     from scripts.publish_manual_video import publish_batch
     
@@ -56,6 +99,7 @@ def test_publish_manual_video_skips_duplicates_and_avoids_facebook(tmp_path: Pat
          patch("scripts.publish_manual_video.FB_PAGE_ID", "dummy_fb"), \
          patch("scripts.publish_manual_video.IG_ACCOUNT_ID", "dummy_ig"), \
          patch("scripts.publish_manual_video.YT_ACCOUNT", "dummy_yt"), \
+         patch("scripts.publish_manual_video.get_enabled_platforms", return_value=None), \
          patch("builtins.open", MagicMock(return_value=MagicMock())):
         
         # Test 1: By default, without MULTI_PLATFORM=1, only youtube is used
@@ -71,7 +115,7 @@ def test_publish_manual_video_skips_duplicates_and_avoids_facebook(tmp_path: Pat
         # Reset and mock MULTI_PLATFORM
         store.claims.clear()
         
-        with patch.dict("os.environ", {"MULTI_PLATFORM": "1", "FACEBOOK_PUBLISH_ENABLED": "0"}):
+        with patch.dict("os.environ", {"MULTI_PLATFORM": "1", "FACEBOOK_PUBLISH_ENABLED": "0", "HOLD_PLATFORMS": "", "HOLD_IG": "0"}):
             results = publish_batch(metadata, project_dir, store)
             
             # Since FB is disabled via env var, only YouTube and Instagram are claimed
@@ -489,6 +533,7 @@ def test_publish_manual_video_cli_full_success_calls_deactivate_project(tmp_path
          patch("scripts.publish_manual_video.validate_project_quality"), \
          patch("scripts.publish_manual_video.validate_publish_asset"), \
          patch("scripts.publish_manual_video.YoutubePublisher") as mock_yt, \
+         patch("scripts.publish_manual_video.TiktokPublisher") as mock_tt, \
          patch("scripts.publish_manual_video.canonical_platform_records_published", return_value=True) as mock_canon, \
          patch("scripts.publish_active_projects.deactivate_project", return_value=True) as mock_deact:
 
@@ -526,6 +571,7 @@ def test_publish_manual_video_cli_partial_success_retains_project(tmp_path: Path
          patch("scripts.publish_manual_video.validate_project_quality"), \
          patch("scripts.publish_manual_video.validate_publish_asset"), \
          patch("scripts.publish_manual_video.YoutubePublisher") as mock_yt, \
+         patch("scripts.publish_manual_video.TiktokPublisher") as mock_tt, \
          patch("scripts.publish_manual_video.canonical_platform_records_published", return_value=False) as mock_canon, \
          patch("scripts.publish_active_projects.deactivate_project") as mock_deact:
 
@@ -714,5 +760,111 @@ def test_enforce_release_preflight_unattended_news_project(tmp_path: Path):
     with patch("scripts.publish_manual_video.validate_project_quality"):
         # Should not raise missing checkpoint_proposal or missing approval
         enforce_release_preflight(project_dir, metadata, strict=False)
+
+
+def test_publish_manual_video_tiktok_route_dry_run(tmp_path: Path):
+    from scripts.publish_manual_video import publish_batch
+
+    project_dir = tmp_path / "projects" / "cand_tiktok"
+    project_dir.mkdir(parents=True)
+    renders_dir = project_dir / "renders"
+    renders_dir.mkdir()
+    (renders_dir / "final_full_vi_9x16.mp4").touch()
+
+    metadata = {
+        "id": "cand_tiktok",
+        "title": "Công nghệ AI phát triển đột phá #tintuc #ai",
+        "description": "Chi tiết video TikTok #congnghe",
+        "tiktok": "renders/final_full_vi_9x16.mp4",
+        "topic": "topic_tt",
+    }
+    (project_dir / "publish_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    class DummyStore:
+        def claim(self, *, platform, **kwargs):
+            return "claim_key", True, None
+        def mark_published(self, *args, **kwargs):
+            return {}
+        def unclaim(self, *args, **kwargs):
+            pass
+
+    store = DummyStore()
+
+    with patch("scripts.publish_manual_video.validate_publish_asset"), \
+         patch("scripts.publish_manual_video.validate_project_quality"), \
+         patch("lib.news_release_gate.require_news_evidence"):
+        results = publish_batch(
+            metadata,
+            project_dir,
+            store=store,
+            dry_run=True,
+            only_platform="tiktok",
+            enforce_preflight=False,
+        )
+
+    assert "tiktok/video" in results["platforms"]
+    assert results["platforms"]["tiktok/video"]["status"] == "dry_run"
+
+
+def test_publish_manual_video_tiktok_route_live(tmp_path: Path):
+    from scripts.publish_manual_video import publish_batch
+    from tools.base_tool import ToolResult
+
+    project_dir = tmp_path / "projects" / "cand_tiktok_live"
+    project_dir.mkdir(parents=True)
+    renders_dir = project_dir / "renders"
+    renders_dir.mkdir()
+    (renders_dir / "final_full_vi_9x16.mp4").touch()
+
+    metadata = {
+        "id": "cand_tiktok_live",
+        "title": "Ứng dụng AI mới nhất #tintuc #ai",
+        "description": "Cập nhật công nghệ #congnghe",
+        "tiktok": "renders/final_full_vi_9x16.mp4",
+        "topic": "topic_tt_live",
+    }
+    (project_dir / "publish_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    class DummyStore:
+        def claim(self, *, platform, **kwargs):
+            return "claim_key_live", True, None
+        def mark_published(self, *args, **kwargs):
+            return {}
+        def unclaim(self, *args, **kwargs):
+            pass
+
+    store = DummyStore()
+
+    mock_tool_result = ToolResult(
+        success=True,
+        data={
+            "status": "published",
+            "project_id": "7702355712046828820",
+            "item_id": "7702355712046828820",
+            "video_url": "https://www.tiktok.com/video/7702355712046828820",
+        },
+    )
+
+    with patch("scripts.publish_manual_video.validate_publish_asset"), \
+         patch("scripts.publish_manual_video.validate_project_quality"), \
+         patch("lib.news_release_gate.require_news_evidence"), \
+         patch("tools.publishers.tiktok_publisher.TiktokPublisher.execute", return_value=mock_tool_result) as mock_exec:
+        results = publish_batch(
+            metadata,
+            project_dir,
+            store=store,
+            dry_run=False,
+            only_platform="tiktok",
+            enforce_preflight=False,
+        )
+
+    assert mock_exec.call_count == 1
+    call_args = mock_exec.call_args[0][0]
+    assert "video_path" in call_args
+    assert "Ứng dụng AI mới nhất" in call_args["caption"]
+    assert "tiktok/video" in results["platforms"]
+    assert results["platforms"]["tiktok/video"]["status"] == "published"
+    assert results["platforms"]["tiktok/video"]["video_id"] == "7702355712046828820"
+
 
 

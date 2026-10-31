@@ -32,7 +32,7 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
 |------|----------|--------|-------------------|
 | `youtube_publisher` | YouTube / Shorts | YouTube Data API v3 | `YOUTUBE_CLIENT_SECRET_FILE` (+ OAuth token auto-saved at `~/.openmontage/youtube_token.json`) |
 | `meta_publisher` | Facebook Page + Instagram Reels | Meta Graph API v26 | `TOKEN_FACEBOOK` (+ `CLOUDFLARE_R2_*` for Instagram temp hosting) |
-| `tiktok_publisher` | TikTok | Playwright browser automation | `~/.openmontage/tiktok_cookies.json` |
+| `tiktok_publisher` | TikTok | TikTok Creator Studio Adapter / Gateway API | Toolcase Gateway at `127.0.0.1:20129` (`TIKTOK_GATEWAY_BASE_URL`) or session cookies |
 | `export_bundle` | Local packaging | Filesystem copy | none |
 
 ## Publish Flow
@@ -70,10 +70,16 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
 
 ## TikTok
 
-- `tiktok_publisher` uses Playwright + Google Chrome + cookies.
-- Cookie file: `~/.openmontage/tiktok_cookies.json`.
-- It supports Cookie-Editor list JSON and Playwright storage_state JSON.
-- TikTok may block datacenter/headless sessions; official Content Posting API is more reliable when available.
+- `tiktok_publisher` integrates with **TikTok Creator Studio Adapter** through **Toolcase Gateway** (`http://127.0.0.1:20129/tiktok`).
+- Reference Specification: [docs/PUBLISHING.md](https://github.com/giauphan/TikTok-Creator-Studio-Adapter/blob/main/docs/PUBLISHING.md).
+- Endpoints:
+  - `GET /v1/status`: checks readiness and active credentials.
+  - `GET /v1/user`: returns authenticated TikTok creator account info.
+  - `GET /v1/upload/auth`: retrieves TOS upload credentials.
+  - `POST /v1/publish`: publishes video post with caption, hashtags, and privacy/visibility (`only-me`, `public`, `friends`).
+- Configuration:
+  - Set `TIKTOK_GATEWAY_BASE_URL=http://127.0.0.1:20129/tiktok` (or default port 20129).
+  - Session cookies configured via Gateway Dashboard or optional `~/.openmontage/tiktok_cookies.json`.
 
 ## Video Compliance for Reels
 
