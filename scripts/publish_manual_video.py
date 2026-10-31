@@ -1155,7 +1155,7 @@ def enforce_release_preflight(
 
         is_interactive_production = bool(
             (project_dir / "checkpoint_proposal.json").is_file()
-            or (project_dir / "approval.json").is_file()
+            or (not is_news and (project_dir / "approval.json").is_file())
             or (project_dir / "human_approval.json").is_file()
             or "human_approval" in metadata
         )
