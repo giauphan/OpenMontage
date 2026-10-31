@@ -12,7 +12,7 @@ Target module size: < 450 lines. Clean Architecture & DDD compliant.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import json
 import logging
@@ -62,6 +62,9 @@ class HybridCandidateDiscovery:
         feed_path: Optional[Path] = None,
         root_dir: Optional[Path] = None,
         require_latest_news: Optional[bool] = None,
+        max_age_days: Optional[int] = None,
+        reference_time: Optional[datetime] = None,
+        strict_news_only: Optional[bool] = None,
     ) -> None:
         self.policy = policy or load_locked_policy()
         self.gate = gate or FixedNicheScopeGate(self.policy)
@@ -82,6 +85,25 @@ class HybridCandidateDiscovery:
         else:
             env_latest = os.environ.get("REQUIRE_LATEST_NEWS", "1").strip().lower()
             self.require_latest_news = env_latest in ("1", "true", "yes", "on")
+
+        # Sliding freshness window: 1 to 3 days (default: 3 days, meaning [run_date - 3 days, run_date])
+        if max_age_days is not None:
+            self.max_age_days = max(1, int(max_age_days))
+        elif os.environ.get("NEWS_MAX_AGE_DAYS"):
+            self.max_age_days = max(1, int(os.environ["NEWS_MAX_AGE_DAYS"]))
+        elif os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS"):
+            self.max_age_days = max(1, int(float(os.environ["NEWS_MAX_SOURCE_AGE_HOURS"]) / 24.0))
+        else:
+            self.max_age_days = 3
+
+        # Strict news only: if True, completely disallows evergreen explainers
+        if strict_news_only is not None:
+            self.strict_news_only = strict_news_only
+        else:
+            env_strict = os.environ.get("STRICT_NEWS_ONLY", "0").strip().lower()
+            self.strict_news_only = env_strict in ("1", "true", "yes", "on")
+
+        self.reference_time = reference_time or datetime.now(timezone.utc)
 
     def get_used_project_ids(self) -> Set[str]:
         """Aggregate all used or in-progress candidate/project IDs across storage."""
@@ -189,7 +211,8 @@ class HybridCandidateDiscovery:
         candidates: List[Dict[str, Any]],
         used_ids: Set[str],
     ) -> List[Dict[str, Any]]:
-        """Filter out already used IDs and validate against FixedNicheScopeGate."""
+        """Filter out already used IDs, stale dates, and validate against FixedNicheScopeGate."""
+        cutoff_dt = self.reference_time - timedelta(days=self.max_age_days)
         valid: List[Dict[str, Any]] = []
         for cand in candidates:
             cid = str(cand.get("candidate_id") or cand.get("id") or "")
@@ -197,33 +220,54 @@ class HybridCandidateDiscovery:
                 continue
 
             verdict = self.gate.evaluate_candidate(cand)
-            if verdict.is_eligible:
-                normalized = dict(cand)
-                normalized["candidate_id"] = cid
-                normalized["id"] = cid
-                normalized["topic_family"] = verdict.topic_family
-                normalized["content_kind"] = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
-                has_pub = bool(cand.get("published_at") or cand.get("published_at_utc"))
-                normalized["has_explicit_date"] = has_pub
-                if not normalized.get("published_at_utc"):
-                    normalized["published_at_utc"] = cand.get("published_at") or datetime.now(timezone.utc).isoformat()
-                if not normalized.get("published_at"):
-                    normalized["published_at"] = normalized["published_at_utc"]
-                if not normalized.get("normalized_publisher"):
-                    normalized["normalized_publisher"] = str(cand.get("publisher") or "unknown").lower()
-                if not normalized.get("publisher"):
-                    normalized["publisher"] = cand.get("normalized_publisher") or "Unknown"
-                if not normalized.get("url"):
-                    normalized["url"] = cand.get("canonical_url") or ""
-                if not normalized.get("canonical_url"):
-                    normalized["canonical_url"] = normalized["url"]
-                if not normalized.get("body"):
-                    normalized["body"] = cand.get("summary") or cand.get("description") or ""
-                if not normalized.get("summary"):
-                    normalized["summary"] = normalized["body"][:300]
-                valid.append(normalized)
-            else:
+            if not verdict.is_eligible:
                 logger.debug(f"Candidate {cid} rejected by FixedNicheScopeGate: {verdict.reason}")
+                continue
+
+            content_kind = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
+            is_evergreen = bool(cand.get("is_evergreen", content_kind == "evergreen_explainer"))
+
+            if self.strict_news_only and is_evergreen:
+                logger.info(f"Candidate {cid} rejected: strict_news_only is active and candidate is evergreen")
+                continue
+
+            # Sliding window freshness check: for news topics, published_at must be >= (reference_time - max_age_days)
+            if self.require_latest_news and not is_evergreen:
+                pub_raw = cand.get("published_at") or cand.get("published_at_utc")
+                pub_ts = self.parse_timestamp(pub_raw)
+                if pub_ts > 0.0:
+                    cand_dt = datetime.fromtimestamp(pub_ts, tz=timezone.utc)
+                    if cand_dt < cutoff_dt:
+                        logger.info(
+                            f"Candidate {cid} published at {pub_raw} is older than max_age_days={self.max_age_days} "
+                            f"(cutoff: {cutoff_dt.isoformat()}). Skipping stale topic."
+                        )
+                        continue
+
+            normalized = dict(cand)
+            normalized["candidate_id"] = cid
+            normalized["id"] = cid
+            normalized["topic_family"] = verdict.topic_family
+            normalized["content_kind"] = content_kind
+            has_pub = bool(cand.get("published_at") or cand.get("published_at_utc"))
+            normalized["has_explicit_date"] = has_pub
+            if not normalized.get("published_at_utc"):
+                normalized["published_at_utc"] = cand.get("published_at") or datetime.now(timezone.utc).isoformat()
+            if not normalized.get("published_at"):
+                normalized["published_at"] = normalized["published_at_utc"]
+            if not normalized.get("normalized_publisher"):
+                normalized["normalized_publisher"] = str(cand.get("publisher") or "unknown").lower()
+            if not normalized.get("publisher"):
+                normalized["publisher"] = cand.get("normalized_publisher") or "Unknown"
+            if not normalized.get("url"):
+                normalized["url"] = cand.get("canonical_url") or ""
+            if not normalized.get("canonical_url"):
+                normalized["canonical_url"] = normalized["url"]
+            if not normalized.get("body"):
+                normalized["body"] = cand.get("summary") or cand.get("description") or ""
+            if not normalized.get("summary"):
+                normalized["summary"] = normalized["body"][:300]
+            valid.append(normalized)
         return valid
 
     @staticmethod
@@ -234,7 +278,22 @@ class HybridCandidateDiscovery:
         try:
             if isinstance(val, (int, float)):
                 return float(val)
-            dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+            s = str(val).strip().replace("Z", "+00:00")
+            if "T" in s:
+                dt = datetime.fromisoformat(s)
+            elif "-" in s:
+                parts = [int(p) for p in s.split("-")]
+                dt = datetime(parts[0], parts[1], parts[2], tzinfo=timezone.utc)
+            elif "/" in s:
+                parts = [int(p) for p in s.split("/")]
+                if parts[0] > 1000:
+                    dt = datetime(parts[0], parts[1], parts[2], tzinfo=timezone.utc)
+                else:
+                    dt = datetime(parts[2], parts[1], parts[0], tzinfo=timezone.utc)
+            else:
+                dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
             return dt.timestamp()
         except Exception:
             return 0.0
@@ -262,11 +321,15 @@ class HybridCandidateDiscovery:
         Tier 1 (Curated Queue) -> Tier 2 (Automated Feed) -> Fail-Closed (NO_ELIGIBLE_TOPIC).
         """
         used_ids = self.get_used_project_ids()
+        cutoff_dt = self.reference_time - timedelta(days=self.max_age_days)
         diagnostics: Dict[str, Any] = {
             "used_ids_count": len(used_ids),
             "tier_1_checked": False,
             "tier_2_checked": False,
             "require_latest_news_active": self.require_latest_news,
+            "max_age_days": self.max_age_days,
+            "reference_time": self.reference_time.isoformat(),
+            "cutoff_date": cutoff_dt.isoformat(),
         }
 
         # --- TIER 1: Curated Backlog ---

@@ -1,8 +1,9 @@
 """Tests for Option C: Hybrid Tiered Strategy (HybridCandidateDiscovery)."""
 from __future__ import annotations
 
-import json
+from datetime import datetime, timezone
 from pathlib import Path
+import json
 import pytest
 
 from lib.fixed_niche.hybrid_discovery import (
@@ -238,6 +239,7 @@ def test_sort_by_recency_prioritizes_breaking_news_over_evergreen(discovery_env)
         feed_path=discovery_env["feed_file"],
         root_dir=discovery_env["root"],
         require_latest_news=True,
+        reference_time=datetime(2026, 10, 16, 12, 0, 0, tzinfo=timezone.utc),
     )
 
     res = discovery.discover_candidates(count=1)
@@ -279,10 +281,119 @@ def test_sort_by_recency_ranks_newer_news_first(discovery_env):
         feed_path=discovery_env["feed_file"],
         root_dir=discovery_env["root"],
         require_latest_news=True,
+        max_age_days=30,
+        reference_time=datetime(2026, 10, 26, 12, 0, 0, tzinfo=timezone.utc),
     )
 
     res = discovery.discover_candidates(count=1)
     assert res.is_eligible is True
     # cand_news_late_oct (Oct 25) must be chosen before cand_news_early_oct (Oct 1)
     assert res.candidates[0]["candidate_id"] == "cand_news_late_oct"
+
+
+def test_sliding_window_freshness_for_november_run(discovery_env):
+    """Simulates running on 01/11 (Nov 1): only topics from 01/11, 31/10, or up to 3 days prior are accepted."""
+    # Simulated run on Nov 1, 2026 at 12:00 UTC
+    simulated_run_date = datetime(2026, 11, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    candidates = [
+        {
+            "candidate_id": "cand_stale_oct15",
+            "title": "Old Mid-October Tool Calling Explainer",
+            "topic_family": "agent_tool_use",
+            "canonical_url": "https://example.com/oct15",
+            "summary": "Published 17 days ago.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-10-15T00:00:00Z",  # 17 days old -> STALE
+        },
+        {
+            "candidate_id": "cand_yesterday_oct31",
+            "title": "Yesterday MCP Circuit Breaker Standard",
+            "topic_family": "agent_tool_use",
+            "canonical_url": "https://example.com/oct31",
+            "summary": "Published on 31/10.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-10-31T14:00:00Z",  # 1 day old (31/10) -> ACCEPTED
+        },
+        {
+            "candidate_id": "cand_today_nov01",
+            "title": "Today November 1st Subagent Handoff Specification",
+            "topic_family": "agent_architecture",
+            "canonical_url": "https://example.com/nov01",
+            "summary": "Published on 01/11.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-11-01T08:00:00Z",  # Today (01/11) -> ACCEPTED
+        },
+    ]
+    curated_path = discovery_env["root"] / "data" / "november_feed.json"
+    curated_path.write_text(json.dumps(candidates, indent=2), encoding="utf-8")
+
+    discovery = HybridCandidateDiscovery(
+        curated_path=curated_path,
+        feed_path=discovery_env["feed_file"],
+        root_dir=discovery_env["root"],
+        require_latest_news=True,
+        max_age_days=3,  # Window: [2026-10-29, 2026-11-01]
+        reference_time=simulated_run_date,
+    )
+
+    # First discovery should pick today's 01/11 topic
+    res1 = discovery.discover_candidates(count=1)
+    assert res1.is_eligible is True
+    assert res1.candidates[0]["candidate_id"] == "cand_today_nov01"
+    assert res1.candidates[0]["published_at_utc"] == "2026-11-01T08:00:00Z"
+
+    # Consume today's topic; second run should pick yesterday's 31/10 topic
+    discovery.mark_candidate_consumed("cand_today_nov01")
+    res2 = discovery.discover_candidates(count=1)
+    assert res2.is_eligible is True
+    assert res2.candidates[0]["candidate_id"] == "cand_yesterday_oct31"
+    assert res2.candidates[0]["published_at_utc"] == "2026-10-31T14:00:00Z"
+
+    # Consume yesterday's topic; cand_stale_oct15 is > 3 days old and MUST be rejected
+    discovery.mark_candidate_consumed("cand_yesterday_oct31")
+    res3 = discovery.discover_candidates(count=1)
+    # Stale candidate is skipped; discovery cascades to feed
+    assert res3.candidates[0]["candidate_id"] != "cand_stale_oct15"
+
+
+def test_sliding_window_fails_closed_when_all_topics_older_than_3_days(discovery_env):
+    """When strict_news_only is active and all topics are older than 3 days, halts NO_ELIGIBLE_TOPIC."""
+    simulated_run_date = datetime(2026, 11, 1, 12, 0, 0, tzinfo=timezone.utc)
+    stale_only = [
+        {
+            "candidate_id": "cand_old_oct10",
+            "title": "Agent Testing Standard from Early October",
+            "topic_family": "agent_evaluation",
+            "canonical_url": "https://example.com/oct10",
+            "summary": "Published 22 days ago.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-10-10T00:00:00Z",
+        }
+    ]
+    curated_path = discovery_env["root"] / "data" / "stale_only.json"
+    curated_path.write_text(json.dumps(stale_only, indent=2), encoding="utf-8")
+
+    empty_feed = discovery_env["root"] / "data" / "empty_feed.json"
+    empty_feed.write_text("[]", encoding="utf-8")
+
+    discovery = HybridCandidateDiscovery(
+        curated_path=curated_path,
+        feed_path=empty_feed,
+        root_dir=discovery_env["root"],
+        require_latest_news=True,
+        strict_news_only=True,
+        max_age_days=3,
+        reference_time=simulated_run_date,
+    )
+
+    res = discovery.discover_candidates(count=1)
+    assert res.is_eligible is False
+    assert res.tier == DiscoveryTier.NONE
+    assert res.status == OutcomeStatus.NO_ELIGIBLE_TOPIC.value
+
 
