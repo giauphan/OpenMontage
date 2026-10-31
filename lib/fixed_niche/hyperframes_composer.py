@@ -513,14 +513,18 @@ def render_hyperframes_composition(
     ]
     env = dict(os.environ)
     if "HYPERFRAMES_BROWSER_PATH" not in env:
+        playwright_shell = Path("/home/ubuntu/.cache/ms-playwright/chromium_headless_shell-1228/chrome-linux/headless_shell")
         brave_sh = Path("/tmp/brave_headless.sh")
-        if not brave_sh.is_file() and Path("/opt/brave.com/brave/brave").is_file():
+        if playwright_shell.is_file():
+            env["HYPERFRAMES_BROWSER_PATH"] = str(playwright_shell)
+        elif not brave_sh.is_file() and Path("/opt/brave.com/brave/brave").is_file():
             brave_sh.write_text(
                 "#!/bin/bash\nexec /opt/brave.com/brave/brave --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \"$@\"\n",
                 encoding="utf-8",
             )
             brave_sh.chmod(0o755)
-        if brave_sh.is_file():
+            env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
+        elif brave_sh.is_file():
             env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
 
     logger.info("Executing HyperFrames render: %s", " ".join(cmd))
