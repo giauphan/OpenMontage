@@ -146,56 +146,36 @@ FAMILY_CONFIGS: Dict[str, Dict[str, str]] = {
 STEP_COUNTS: Dict[int, int] = {1: 4, 2: 3, 3: 3, 4: 4, 5: 4, 6: 4, 7: 4}
 
 
-def generate_pipeline_svg(
-    asset_id: str,
-    topic_family: str,
-    title: str,
-    beat_num: int,
-    total_beats: int = 6,
-    is_vertical: bool = True,
-    step_timings: Optional[List[float]] = None,
-    progressive: bool = True,
-    duration: float = 11.0,
-    narration: str = "",
-    word_timestamps: Optional[List[Dict[str, Any]]] = None,
-    beat_start_s: float = 0.0,
+def _resolve_progressive_style(
+    progressive: bool,
+    step_timings: Optional[List[float]],
+    num_steps: int,
+    narration: str,
+    duration: float,
+    word_timestamps: Optional[List[Dict[str, Any]]],
+    beat_start_s: float,
 ) -> str:
-    """Generate high-contrast, informative vector geometry showing the AI Agent Pipeline flow.
+    """Resolve progressive CSS timing animations for SVG reveals."""
+    if not progressive:
+        return ""
+    if step_timings is None or len(step_timings) != num_steps:
+        step_timings = compute_step_timings_for_beat(
+            narration=narration,
+            duration=duration,
+            num_steps=num_steps,
+            word_timestamps=word_timestamps,
+            beat_start_s=beat_start_s,
+        )
+    return generate_progressive_svg_style(step_timings)
 
-    When `progressive=True`, steps display sequentially in order of the voice narration.
-    """
-    fam = topic_family.lower().strip()
-    cfg = FAMILY_CONFIGS.get(fam, FAMILY_CONFIGS["context_memory"])
-    fam_label = (
-        fam.replace("_", " ")
-        .upper()
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-    safe_title = html.escape(title[:60], quote=True)
 
-    w = 980 if is_vertical else 960
-    h = 1100 if is_vertical else 540
-    vb = f"0 0 {w} {h}"
-
-    num_steps = STEP_COUNTS.get(beat_num, 4)
-    if progressive:
-        if step_timings is None or len(step_timings) != num_steps:
-            step_timings = compute_step_timings_for_beat(
-                narration=narration,
-                duration=duration,
-                num_steps=num_steps,
-                word_timestamps=word_timestamps,
-                beat_start_s=beat_start_s,
-            )
-        style_block = generate_progressive_svg_style(step_timings)
-    else:
-        style_block = ""
-
-    if not is_vertical:
-        return _generate_horizontal_svg(fam_label, safe_title, beat_num, total_beats, style_block)
-
+def _build_vertical_beat(
+    beat_num: int,
+    total_beats: int,
+    fam_label: str,
+    cfg: Dict[str, str],
+) -> tuple[str, str, str]:
+    """Build the accent color, header badge, and SVG body elements for a vertical pipeline beat."""
     if beat_num == 1:
         accent, badge = "#ef4444", f"{fam_label} // AI AGENT PIPELINE HOOK"
         body = f"""
@@ -595,6 +575,57 @@ def generate_pipeline_svg(
     <text x="490" y="933" fill="#22c55e" font-family="monospace" font-size="14" text-anchor="middle">{cfg['principle_assert']}</text>
   </g>
 """
+    return accent, badge, body
+
+
+def generate_pipeline_svg(
+    asset_id: str,
+    topic_family: str,
+    title: str,
+    beat_num: int,
+    total_beats: int = 6,
+    is_vertical: bool = True,
+    step_timings: Optional[List[float]] = None,
+    progressive: bool = True,
+    duration: float = 11.0,
+    narration: str = "",
+    word_timestamps: Optional[List[Dict[str, Any]]] = None,
+    beat_start_s: float = 0.0,
+) -> str:
+    """Generate high-contrast, informative vector geometry showing the AI Agent Pipeline flow.
+
+    When `progressive=True`, steps display sequentially in order of the voice narration.
+    """
+    fam = topic_family.lower().strip()
+    cfg = FAMILY_CONFIGS.get(fam, FAMILY_CONFIGS["context_memory"])
+    fam_label = (
+        fam.replace("_", " ")
+        .upper()
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    safe_title = html.escape(title[:60], quote=True)
+
+    w = 980 if is_vertical else 960
+    h = 1100 if is_vertical else 540
+    vb = f"0 0 {w} {h}"
+
+    num_steps = STEP_COUNTS.get(beat_num, 4)
+    style_block = _resolve_progressive_style(
+        progressive=progressive,
+        step_timings=step_timings,
+        num_steps=num_steps,
+        narration=narration,
+        duration=duration,
+        word_timestamps=word_timestamps,
+        beat_start_s=beat_start_s,
+    )
+
+    if not is_vertical:
+        return _generate_horizontal_svg(fam_label, safe_title, beat_num, total_beats, style_block)
+
+    accent, badge, body = _build_vertical_beat(beat_num, total_beats, fam_label, cfg)
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}" width="{w}" height="{h}">
   <defs>

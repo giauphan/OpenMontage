@@ -35,6 +35,252 @@ class VisualAssetOrchestrator:
         self.cache = cache or VisualAssetCache()
         self.storyboard_director = FixedNicheStoryboardDirector()
 
+    def _build_beat_context(
+        self,
+        beat: Dict[str, Any],
+        idx: int,
+        total_beats: int,
+        topic_family: str,
+        topic_title: str,
+        word_timestamps: Optional[List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        """Extract and normalize execution context for a single storyboard beat."""
+        beat_id = beat.get("beat_id") or beat.get("id", f"vb-{idx+1:02d}")
+        fallback_policy = beat.get("fallback_policy", "use_builtin_verified_icon_diagram")
+        intent = beat.get("visual_intent", "")
+        asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [f"asset_{beat_id}"])
+        start_s = float(beat.get("start_seconds", 0.0))
+        end_s = float(beat.get("end_seconds", 11.0))
+        return {
+            "beat_id": beat_id,
+            "primary_asset_id": asset_ids[0],
+            "fallback_policy": fallback_policy,
+            "intent": intent,
+            "start_s": start_s,
+            "end_s": end_s,
+            "beat_dur": max(1.0, end_s - start_s),
+            "beat_narration": str(beat.get("narration") or intent),
+            "beat_num": idx + 1,
+            "total_beats": total_beats,
+            "topic_family": topic_family,
+            "topic_title": topic_title,
+            "word_timestamps": word_timestamps,
+        }
+
+    def _orchestrate_authentic_capture(
+        self,
+        project_dir: Path,
+        visuals_dir: Path,
+        beat: Dict[str, Any],
+        ctx: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+        """Resolve authentic proof capture or contextual SVG fallback."""
+        primary_asset_id = ctx["primary_asset_id"]
+        capture_path = self._find_authentic_capture(project_dir, beat)
+        if capture_path and capture_path.is_file():
+            dest_file = visuals_dir / f"{primary_asset_id}{capture_path.suffix}"
+            if capture_path != dest_file:
+                shutil.copy2(capture_path, dest_file)
+            asset = {
+                "id": primary_asset_id,
+                "file": str(dest_file.relative_to(project_dir)),
+                "kind": "authentic_photo",
+                "origin": "local_authorized_source",
+            }
+            res = {
+                "status": self.STATUS_READY_CAPTURE,
+                "file": str(dest_file),
+                "asset_id": primary_asset_id,
+            }
+            return res, asset
+
+        if ctx["fallback_policy"] == "block" or beat.get("evidence_class") in ("authentic_photo", "approved_source_visual"):
+            res = {
+                "status": self.STATUS_BLOCKED_MISSING_PROOF,
+                "error": f"Proof-bearing beat {ctx['beat_id']} missing authentic capture; release blocked",
+                "asset_id": primary_asset_id,
+            }
+            return res, None
+
+        svg_path = self._get_or_generate_svg(
+            visuals_dir,
+            primary_asset_id,
+            ctx["topic_family"],
+            ctx["topic_title"],
+            ctx["beat_num"],
+            total_beats=ctx["total_beats"],
+            duration=ctx["beat_dur"],
+            narration=ctx["beat_narration"],
+            word_timestamps=ctx["word_timestamps"],
+            beat_start_s=ctx["start_s"],
+        )
+        asset = {
+            "id": primary_asset_id,
+            "file": str(svg_path.relative_to(project_dir)),
+            "kind": "svg_diagram",
+            "origin": "deterministic_code",
+        }
+        res = {
+            "status": self.STATUS_FALLBACK_CONTEXTUAL,
+            "file": str(svg_path),
+            "asset_id": primary_asset_id,
+        }
+        return res, asset
+
+    def _fallback_to_contextual_svg(
+        self,
+        project_dir: Path,
+        visuals_dir: Path,
+        ctx: Dict[str, Any],
+        err_msg: Optional[str] = None,
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """Fallback helper producing deterministic contextual SVG when AI or proof is unavailable."""
+        primary_asset_id = ctx["primary_asset_id"]
+        svg_path = self._get_or_generate_svg(
+            visuals_dir,
+            primary_asset_id,
+            ctx["topic_family"],
+            ctx["topic_title"],
+            ctx["beat_num"],
+            total_beats=ctx["total_beats"],
+            cleanup_raster=True,
+            duration=ctx["beat_dur"],
+            narration=ctx["beat_narration"],
+            word_timestamps=ctx["word_timestamps"],
+            beat_start_s=ctx["start_s"],
+        )
+        asset = {
+            "id": primary_asset_id,
+            "file": str(svg_path.relative_to(project_dir)),
+            "kind": "svg_diagram",
+            "origin": "deterministic_code",
+        }
+        res: Dict[str, Any] = {
+            "status": self.STATUS_FALLBACK_CONTEXTUAL,
+            "file": str(svg_path),
+            "asset_id": primary_asset_id,
+        }
+        if err_msg:
+            res["error"] = err_msg
+        return res, asset
+
+    def _orchestrate_ai_illustration(
+        self,
+        project_dir: Path,
+        visuals_dir: Path,
+        beat: Dict[str, Any],
+        ctx: Dict[str, Any],
+        ai_visual_enabled: bool,
+        ai_images_generated: int,
+        max_ai_images: int,
+    ) -> tuple[Dict[str, Any], Optional[Dict[str, Any]], bool]:
+        """Resolve AI conceptual illustration or fallback to contextual SVG."""
+        primary_asset_id = ctx["primary_asset_id"]
+        intent = ctx["intent"]
+        topic_family = ctx["topic_family"]
+
+        if not (ai_visual_enabled and ai_images_generated < max_ai_images):
+            res, asset = self._fallback_to_contextual_svg(project_dir, visuals_dir, ctx)
+            return res, asset, False
+
+        prompt = VisualPromptBuilder.build_prompt(topic_family, intent)
+        ar = beat.get("aspect_ratio") or ("9:16" if beat.get("visual_kind") == "illustration" else "16:9")
+        cache_key = self.cache.compute_cache_key(
+            prompt=prompt,
+            aspect_ratio=ar,
+            provider="muse",
+            model="muse-image",
+            visual_intent=intent,
+            visual_plan_sha256=primary_asset_id,
+        )
+        cached_img = self.cache.get_cached_asset(cache_key)
+
+        if cached_img:
+            dest_file = visuals_dir / f"{primary_asset_id}{cached_img.suffix}"
+            shutil.copy2(cached_img, dest_file)
+            asset = {
+                "id": primary_asset_id,
+                "file": str(dest_file.relative_to(project_dir)),
+                "kind": "illustration",
+                "origin": "ai_generated",
+                "cache_hit": True,
+            }
+            res = {
+                "status": self.STATUS_READY_AI,
+                "file": str(dest_file),
+                "asset_id": primary_asset_id,
+                "cache_hit": True,
+            }
+            return res, asset, True
+
+        temp_dest = visuals_dir / f"{primary_asset_id}.png"
+        ai_result = self._dispatch_muse_generation(temp_dest, prompt, cache_key, aspect_ratio=ar)
+        if ai_result.get("success"):
+            mime = ai_result.get("data", {}).get("mime", "image/png")
+            ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+            actual_ext = ext_map.get(mime, ".png")
+            dest_file = visuals_dir / f"{primary_asset_id}{actual_ext}"
+            if temp_dest != dest_file and temp_dest.is_file():
+                temp_dest.replace(dest_file)
+                ai_result["data"]["output_file"] = str(dest_file)
+            self.cache.store_cached_asset(cache_key, dest_file)
+            asset = {
+                "id": primary_asset_id,
+                "file": str(dest_file.relative_to(project_dir)),
+                "kind": "illustration",
+                "origin": "ai_generated",
+                "provenance": ai_result.get("data", {}),
+            }
+            res = {
+                "status": self.STATUS_READY_AI,
+                "file": str(dest_file),
+                "asset_id": primary_asset_id,
+                "cache_hit": False,
+            }
+            return res, asset, True
+
+        logger.info(
+            "AI generation for beat %s failed (%s); falling back to contextual SVG",
+            ctx["beat_id"],
+            ai_result.get("error"),
+        )
+        res, asset = self._fallback_to_contextual_svg(project_dir, visuals_dir, ctx, err_msg=ai_result.get("error"))
+        return res, asset, False
+
+    def _orchestrate_deterministic_svg(
+        self,
+        project_dir: Path,
+        visuals_dir: Path,
+        ctx: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """Resolve deterministic technical SVG diagram asset."""
+        primary_asset_id = ctx["primary_asset_id"]
+        svg_path = self._get_or_generate_svg(
+            visuals_dir,
+            primary_asset_id,
+            ctx["topic_family"],
+            ctx["topic_title"],
+            ctx["beat_num"],
+            total_beats=ctx["total_beats"],
+            cleanup_raster=False,
+            duration=ctx["beat_dur"],
+            narration=ctx["beat_narration"],
+            word_timestamps=ctx["word_timestamps"],
+            beat_start_s=ctx["start_s"],
+        )
+        asset = {
+            "id": primary_asset_id,
+            "file": str(svg_path.relative_to(project_dir)),
+            "kind": "svg_diagram",
+            "origin": "deterministic_code",
+        }
+        res = {
+            "status": self.STATUS_READY_SVG,
+            "file": str(svg_path),
+            "asset_id": primary_asset_id,
+        }
+        return res, asset
+
     def orchestrate_plan_assets(
         self,
         project_dir: Path,
@@ -54,7 +300,6 @@ class VisualAssetOrchestrator:
 
         topic_family = topic.get("topic_family", "context_memory")
         topic_title = topic.get("title", "AI Agent Engineering")
-        plan_sha = hashlib.sha256(json.dumps(plan, sort_keys=True).encode("utf-8")).hexdigest()
 
         # Check feature flags
         ai_visual_enabled = os.environ.get("AI_VISUAL_ENABLED", "0") in ("1", "true", "True")
@@ -72,211 +317,34 @@ class VisualAssetOrchestrator:
                 pass
 
         for idx, beat in enumerate(beats):
-            beat_id = beat.get("beat_id") or beat.get("id", f"vb-{idx+1:02d}")
             strategy = beat.get("render_strategy")
             if not strategy:
                 # Beats without explicit render_strategy keep existing raster/vector assets and are left for resolver
                 continue
 
-            fallback_policy = beat.get("fallback_policy", "use_builtin_verified_icon_diagram")
-            intent = beat.get("visual_intent", "")
-            asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [f"asset_{beat_id}"])
-            primary_asset_id = asset_ids[0]
-            start_s = float(beat.get("start_seconds", 0.0))
-            end_s = float(beat.get("end_seconds", 11.0))
-            beat_dur = max(1.0, end_s - start_s)
-            beat_narration = str(beat.get("narration") or intent)
+            ctx = self._build_beat_context(beat, idx, total_beats, topic_family, topic_title, word_timestamps)
+            beat_id = ctx["beat_id"]
 
-            # 1. Strategy: Authentic Capture (Proof-bearing)
             if strategy == "authentic_capture":
-                capture_path = self._find_authentic_capture(project_dir, beat)
-                if capture_path and capture_path.is_file():
-                    dest_file = visuals_dir / f"{primary_asset_id}{capture_path.suffix}"
-                    if capture_path != dest_file:
-                        shutil.copy2(capture_path, dest_file)
-                    staged_assets.append({
-                        "id": primary_asset_id,
-                        "file": str(dest_file.relative_to(project_dir)),
-                        "kind": "authentic_photo",
-                        "origin": "local_authorized_source",
-                    })
-                    beat_results[beat_id] = {
-                        "status": self.STATUS_READY_CAPTURE,
-                        "file": str(dest_file),
-                        "asset_id": primary_asset_id,
-                    }
-                else:
-                    if fallback_policy == "block" or beat.get("evidence_class") in ("authentic_photo", "approved_source_visual"):
-                        beat_results[beat_id] = {
-                            "status": self.STATUS_BLOCKED_MISSING_PROOF,
-                            "error": f"Proof-bearing beat {beat_id} missing authentic capture; release blocked",
-                            "asset_id": primary_asset_id,
-                        }
-                    else:
-                        svg_path = self._get_or_generate_svg(
-                            visuals_dir,
-                            primary_asset_id,
-                            topic_family,
-                            topic_title,
-                            idx + 1,
-                            total_beats=total_beats,
-                            duration=beat_dur,
-                            narration=beat_narration,
-                            word_timestamps=word_timestamps,
-                            beat_start_s=start_s,
-                        )
-                        staged_assets.append({
-                            "id": primary_asset_id,
-                            "file": str(svg_path.relative_to(project_dir)),
-                            "kind": "svg_diagram",
-                            "origin": "deterministic_code",
-                        })
-                        beat_results[beat_id] = {
-                            "status": self.STATUS_FALLBACK_CONTEXTUAL,
-                            "file": str(svg_path),
-                            "asset_id": primary_asset_id,
-                        }
-
-            # 2. Strategy: AI Illustration (Conceptual Non-Proof)
+                res, asset = self._orchestrate_authentic_capture(project_dir, visuals_dir, beat, ctx)
+                beat_results[beat_id] = res
+                if asset:
+                    staged_assets.append(asset)
             elif strategy == "ai_illustration_eligible":
-                if ai_visual_enabled and ai_images_generated < max_ai_images:
-                    prompt = VisualPromptBuilder.build_prompt(topic_family, intent)
-                    ar = beat.get("aspect_ratio") or ("9:16" if beat.get("visual_kind") == "illustration" else "16:9")
-                    cache_key = self.cache.compute_cache_key(
-                        prompt=prompt,
-                        aspect_ratio=ar,
-                        provider="muse",
-                        model="muse-image",
-                        visual_intent=intent,
-                        visual_plan_sha256=primary_asset_id,
-                    )
-                    cached_img = self.cache.get_cached_asset(cache_key)
-
-                    if cached_img:
-                        dest_file = visuals_dir / f"{primary_asset_id}{cached_img.suffix}"
-                        shutil.copy2(cached_img, dest_file)
-                        staged_assets.append({
-                            "id": primary_asset_id,
-                            "file": str(dest_file.relative_to(project_dir)),
-                            "kind": "illustration",
-                            "origin": "ai_generated",
-                            "cache_hit": True,
-                        })
-                        beat_results[beat_id] = {
-                            "status": self.STATUS_READY_AI,
-                            "file": str(dest_file),
-                            "asset_id": primary_asset_id,
-                            "cache_hit": True,
-                        }
-                        ai_images_generated += 1
-                    else:
-                        # Invoke ImageSelector / MuseGatewayImage
-                        temp_dest = visuals_dir / f"{primary_asset_id}.png"
-                        ai_result = self._dispatch_muse_generation(temp_dest, prompt, cache_key, aspect_ratio=ar)
-                        if ai_result.get("success"):
-                            mime = ai_result.get("data", {}).get("mime", "image/png")
-                            ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
-                            actual_ext = ext_map.get(mime, ".png")
-                            dest_file = visuals_dir / f"{primary_asset_id}{actual_ext}"
-                            if temp_dest != dest_file and temp_dest.is_file():
-                                temp_dest.replace(dest_file)
-                                ai_result["data"]["output_file"] = str(dest_file)
-                            self.cache.store_cached_asset(cache_key, dest_file)
-                            staged_assets.append({
-                                "id": primary_asset_id,
-                                "file": str(dest_file.relative_to(project_dir)),
-                                "kind": "illustration",
-                                "origin": "ai_generated",
-                                "provenance": ai_result.get("data", {}),
-                            })
-                            beat_results[beat_id] = {
-                                "status": self.STATUS_READY_AI,
-                                "file": str(dest_file),
-                                "asset_id": primary_asset_id,
-                                "cache_hit": False,
-                            }
-                            ai_images_generated += 1
-                        else:
-                            # Non-proof beat fallback to contextual explanatory SVG
-                            logger.info(f"AI generation for beat {beat_id} failed ({ai_result.get('error')}); falling back to contextual SVG")
-                            svg_path = self._get_or_generate_svg(
-                                visuals_dir,
-                                primary_asset_id,
-                                topic_family,
-                                topic_title,
-                                idx + 1,
-                                total_beats=total_beats,
-                                cleanup_raster=True,
-                                duration=beat_dur,
-                                narration=beat_narration,
-                                word_timestamps=word_timestamps,
-                                beat_start_s=start_s,
-                            )
-                            staged_assets.append({
-                                "id": primary_asset_id,
-                                "file": str(svg_path.relative_to(project_dir)),
-                                "kind": "svg_diagram",
-                                "origin": "deterministic_code",
-                            })
-                            beat_results[beat_id] = {
-                                "status": self.STATUS_FALLBACK_CONTEXTUAL,
-                                "file": str(svg_path),
-                                "asset_id": primary_asset_id,
-                                "error": ai_result.get("error"),
-                            }
-                else:
-                    # AI visual disabled or quota reached: fallback to deterministic contextual SVG
-                    svg_path = self._get_or_generate_svg(
-                        visuals_dir,
-                        primary_asset_id,
-                        topic_family,
-                        topic_title,
-                        idx + 1,
-                        total_beats=total_beats,
-                        cleanup_raster=True,
-                        duration=beat_dur,
-                        narration=beat_narration,
-                        word_timestamps=word_timestamps,
-                        beat_start_s=start_s,
-                    )
-                    staged_assets.append({
-                        "id": primary_asset_id,
-                        "file": str(svg_path.relative_to(project_dir)),
-                        "kind": "svg_diagram",
-                        "origin": "deterministic_code",
-                    })
-                    beat_results[beat_id] = {
-                        "status": self.STATUS_FALLBACK_CONTEXTUAL,
-                        "file": str(svg_path),
-                        "asset_id": primary_asset_id,
-                    }
-
-            # 3. Strategy: Deterministic SVG (Default Technical Diagram)
-            elif strategy == "deterministic_svg":
-                svg_path = self._get_or_generate_svg(
-                    visuals_dir,
-                    primary_asset_id,
-                    topic_family,
-                    topic_title,
-                    idx + 1,
-                    total_beats=total_beats,
-                    cleanup_raster=False,
-                    duration=beat_dur,
-                    narration=beat_narration,
-                    word_timestamps=word_timestamps,
-                    beat_start_s=start_s,
+                res, asset, inc = self._orchestrate_ai_illustration(
+                    project_dir, visuals_dir, beat, ctx,
+                    ai_visual_enabled, ai_images_generated, max_ai_images,
                 )
-                staged_assets.append({
-                    "id": primary_asset_id,
-                    "file": str(svg_path.relative_to(project_dir)),
-                    "kind": "svg_diagram",
-                    "origin": "deterministic_code",
-                })
-                beat_results[beat_id] = {
-                    "status": self.STATUS_READY_SVG,
-                    "file": str(svg_path),
-                    "asset_id": primary_asset_id,
-                }
+                beat_results[beat_id] = res
+                if inc:
+                    ai_images_generated += 1
+                if asset:
+                    staged_assets.append(asset)
+            elif strategy == "deterministic_svg":
+                res, asset = self._orchestrate_deterministic_svg(project_dir, visuals_dir, ctx)
+                beat_results[beat_id] = res
+                if asset:
+                    staged_assets.append(asset)
 
         summary = {
             "total_beats": len(beats),

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import hashlib
 import ipaddress
 import json
+from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlparse
@@ -198,6 +199,38 @@ class FixedNicheSourceAdapter:
             d["independent_fact_check"] = item.independent_fact_check
         return d
 
+    def _resolve_feed_paths(self, sources_feed_path: Optional[Path] = None) -> List[Path]:
+        """Resolve production feed paths according to configuration."""
+        if sources_feed_path:
+            return [Path(sources_feed_path)]
+
+        paths: List[Path] = []
+        curated_feed = Path("data/daily_candidates.json")
+        if curated_feed.is_file():
+            paths.append(curated_feed)
+        default_feed = Path("config/sources/production_agent_engineering_feed.json")
+        if default_feed.is_file():
+            paths.append(default_feed)
+        return paths
+
+    def _parse_feed_items(self, fp: Path) -> List[Dict[str, Any]]:
+        """Parse raw candidate feed file into candidate dictionaries."""
+        if not fp.is_file():
+            return []
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+            raw_items = data.get("items", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            candidates: List[Dict[str, Any]] = []
+            for raw in raw_items:
+                norm = self.normalize_source_item(raw)
+                if norm:
+                    candidates.append(self.to_candidate_dict(norm))
+            return candidates
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed parsing production feed %s: %s", fp, e)
+            return []
+
     def discover_production_candidates(
         self,
         sources_feed_path: Optional[Path] = None,
@@ -207,31 +240,8 @@ class FixedNicheSourceAdapter:
         Reads from authorized primary feeds or an explicit sources_feed_path.
         Returns an empty list if no primary production feeds are configured.
         """
-        from pathlib import Path
-        feed_paths: List[Path] = []
-        if sources_feed_path:
-            feed_paths.append(Path(sources_feed_path))
-        else:
-            curated_feed = Path("data/daily_candidates.json")
-            if curated_feed.is_file():
-                feed_paths.append(curated_feed)
-            default_feed = Path("config/sources/production_agent_engineering_feed.json")
-            if default_feed.is_file():
-                feed_paths.append(default_feed)
-
+        feed_paths = self._resolve_feed_paths(sources_feed_path)
         candidates: List[Dict[str, Any]] = []
         for fp in feed_paths:
-            if not fp.is_file():
-                continue
-            try:
-                data = json.loads(fp.read_text(encoding="utf-8"))
-                items = data.get("items", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-                for raw in items:
-                    norm = self.normalize_source_item(raw)
-                    if norm:
-                        candidates.append(self.to_candidate_dict(norm))
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("Failed parsing production feed %s: %s", fp, e)
-
+            candidates.extend(self._parse_feed_items(fp))
         return candidates

@@ -18,6 +18,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from lib.fixed_niche.gate import FixedNicheScopeGate
@@ -105,42 +106,54 @@ class HybridCandidateDiscovery:
 
         self.reference_time = reference_time or datetime.now(timezone.utc)
 
-    def get_used_project_ids(self) -> Set[str]:
-        """Aggregate all used or in-progress candidate/project IDs across storage."""
-        used_ids: Set[str] = set()
+    @staticmethod
+    def _sanitize_log_val(val: Any, max_len: int = 80) -> str:
+        """Sanitize user/file-provided strings to prevent CRLF log injection."""
+        return re.sub(r"[\r\n\t]", "_", str(val or "")).strip()[:max_len]
 
-        # 1. Scheduled / active projects in publish_schedule.json
+    def _get_scheduled_project_ids(self) -> Set[str]:
         sched_file = self.root_dir / "config" / "publish_schedule.json"
-        if sched_file.is_file():
-            try:
-                data = json.loads(sched_file.read_text(encoding="utf-8"))
-                for item in data.get("active_projects", []):
-                    if isinstance(item, dict) and item.get("project_id"):
-                        used_ids.add(str(item["project_id"]))
-            except Exception as e:
-                logger.debug(f"Could not parse publish_schedule.json: {e}")
+        if not sched_file.is_file():
+            return set()
+        try:
+            data = json.loads(sched_file.read_text(encoding="utf-8"))
+            return {
+                str(item["project_id"])
+                for item in data.get("active_projects", [])
+                if isinstance(item, dict) and item.get("project_id")
+            }
+        except Exception as e:
+            logger.debug(f"Could not parse publish_schedule.json: {e}")
+            return set()
 
-        # 2. Existing rendered or validated projects on disk
+    def _get_disk_project_ids(self) -> Set[str]:
+        used: Set[str] = set()
         for p_dirname in ("projects", "projects_news"):
             p_dir = self.root_dir / p_dirname
-            if p_dir.is_dir():
-                for p in p_dir.iterdir():
-                    if p.is_dir():
-                        has_renders = (p / "renders").is_dir() and any((p / "renders").glob("*.mp4"))
-                        is_validated = (p / "validation_status.json").is_file()
-                        if has_renders or is_validated:
-                            used_ids.add(p.name)
+            if not p_dir.is_dir():
+                continue
+            for p in p_dir.iterdir():
+                if not p.is_dir():
+                    continue
+                has_renders = (p / "renders").is_dir() and any((p / "renders").glob("*.mp4"))
+                is_validated = (p / "validation_status.json").is_file()
+                if has_renders or is_validated:
+                    used.add(p.name)
+        return used
 
-        # 3. Explicitly tracked consumed candidate IDs
-        if self.tracker_path.is_file():
-            try:
-                t_data = json.loads(self.tracker_path.read_text(encoding="utf-8"))
-                for cid in t_data.get("consumed_ids", []):
-                    used_ids.add(str(cid))
-            except Exception as e:
-                logger.debug(f"Could not parse consumed_candidates.json: {e}")
+    def _get_consumed_project_ids(self) -> Set[str]:
+        if not self.tracker_path.is_file():
+            return set()
+        try:
+            t_data = json.loads(self.tracker_path.read_text(encoding="utf-8"))
+            return {str(cid) for cid in t_data.get("consumed_ids", [])}
+        except Exception as e:
+            logger.debug(f"Could not parse consumed_candidates.json: {e}")
+            return set()
 
-        return used_ids
+    def get_used_project_ids(self) -> Set[str]:
+        """Aggregate all used or in-progress candidate/project IDs across storage."""
+        return self._get_scheduled_project_ids() | self._get_disk_project_ids() | self._get_consumed_project_ids()
 
     def mark_candidate_consumed(self, candidate_id: str) -> None:
         """Record candidate ID as consumed so it is not re-selected on subsequent runs."""
@@ -163,7 +176,8 @@ class HybridCandidateDiscovery:
                 "consumed_ids": consumed,
             }
             self.tracker_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            logger.info(f"Marked candidate '{candidate_id}' as consumed in {self.tracker_path}")
+            safe_id = self._sanitize_log_val(candidate_id)
+            logger.info("Marked candidate '%s' as consumed in %s", safe_id, self.tracker_path)
 
     def load_curated_candidates(self) -> List[Dict[str, Any]]:
         """Load candidate list from Tier 1 curated backlog file."""
@@ -206,6 +220,76 @@ class HybridCandidateDiscovery:
             logger.warning(f"Failed loading automated feed candidates from {self.feed_path}: {e}")
             return []
 
+    def _is_candidate_eligible(
+        self,
+        cand: Dict[str, Any],
+        cid: str,
+        used_ids: Set[str],
+        cutoff_dt: datetime,
+    ) -> Tuple[bool, Optional[ScopeVerdict]]:
+        """Evaluate whether a candidate passes niche gate, deduplication, and freshness cutoff."""
+        if not cid or cid in used_ids:
+            return False, None
+
+        verdict = self.gate.evaluate_candidate(cand)
+        if not verdict.is_eligible:
+            safe_cid = self._sanitize_log_val(cid)
+            logger.debug("Candidate %s rejected by FixedNicheScopeGate: %s", safe_cid, verdict.reason)
+            return False, None
+
+        content_kind = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
+        is_evergreen = bool(cand.get("is_evergreen", content_kind == "evergreen_explainer"))
+
+        if self.strict_news_only and is_evergreen:
+            safe_cid = self._sanitize_log_val(cid)
+            logger.info("Candidate %s rejected: strict_news_only is active and candidate is evergreen", safe_cid)
+            return False, None
+
+        if self.require_latest_news and not is_evergreen:
+            pub_raw = cand.get("published_at") or cand.get("published_at_utc")
+            pub_ts = self.parse_timestamp(pub_raw)
+            if pub_ts > 0.0:
+                cand_dt = datetime.fromtimestamp(pub_ts, tz=timezone.utc)
+                if cand_dt < cutoff_dt:
+                    safe_cid = self._sanitize_log_val(cid)
+                    safe_pub = self._sanitize_log_val(pub_raw)
+                    logger.info(
+                        "Candidate %s published at %s is older than max_age_days=%d (cutoff: %s). Skipping stale topic.",
+                        safe_cid, safe_pub, self.max_age_days, cutoff_dt.isoformat()
+                    )
+                    return False, None
+
+        return True, verdict
+
+    def _normalize_candidate_dict(
+        self,
+        cand: Dict[str, Any],
+        cid: str,
+        verdict: ScopeVerdict,
+    ) -> Dict[str, Any]:
+        """Normalize an eligible candidate into a uniform dictionary representation."""
+        content_kind = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
+        normalized = dict(cand)
+        normalized["candidate_id"] = cid
+        normalized["id"] = cid
+        normalized["topic_family"] = verdict.topic_family
+        normalized["content_kind"] = content_kind
+        has_pub = bool(cand.get("published_at") or cand.get("published_at_utc"))
+        normalized["has_explicit_date"] = has_pub
+        pub_at = cand.get("published_at") or cand.get("published_at_utc") or datetime.now(timezone.utc).isoformat()
+        normalized["published_at_utc"] = pub_at
+        normalized["published_at"] = pub_at
+        pub_name = str(cand.get("publisher") or "Unknown")
+        normalized["publisher"] = pub_name
+        normalized["normalized_publisher"] = str(cand.get("normalized_publisher") or pub_name).lower()
+        url = cand.get("canonical_url") or cand.get("url") or ""
+        normalized["url"] = url
+        normalized["canonical_url"] = url
+        body = cand.get("body") or cand.get("summary") or cand.get("description") or ""
+        normalized["body"] = body
+        normalized["summary"] = cand.get("summary") or body[:300]
+        return normalized
+
     def filter_and_validate_candidates(
         self,
         candidates: List[Dict[str, Any]],
@@ -216,58 +300,9 @@ class HybridCandidateDiscovery:
         valid: List[Dict[str, Any]] = []
         for cand in candidates:
             cid = str(cand.get("candidate_id") or cand.get("id") or "")
-            if not cid or cid in used_ids:
-                continue
-
-            verdict = self.gate.evaluate_candidate(cand)
-            if not verdict.is_eligible:
-                logger.debug(f"Candidate {cid} rejected by FixedNicheScopeGate: {verdict.reason}")
-                continue
-
-            content_kind = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
-            is_evergreen = bool(cand.get("is_evergreen", content_kind == "evergreen_explainer"))
-
-            if self.strict_news_only and is_evergreen:
-                logger.info(f"Candidate {cid} rejected: strict_news_only is active and candidate is evergreen")
-                continue
-
-            # Sliding window freshness check: for news topics, published_at must be >= (reference_time - max_age_days)
-            if self.require_latest_news and not is_evergreen:
-                pub_raw = cand.get("published_at") or cand.get("published_at_utc")
-                pub_ts = self.parse_timestamp(pub_raw)
-                if pub_ts > 0.0:
-                    cand_dt = datetime.fromtimestamp(pub_ts, tz=timezone.utc)
-                    if cand_dt < cutoff_dt:
-                        logger.info(
-                            f"Candidate {cid} published at {pub_raw} is older than max_age_days={self.max_age_days} "
-                            f"(cutoff: {cutoff_dt.isoformat()}). Skipping stale topic."
-                        )
-                        continue
-
-            normalized = dict(cand)
-            normalized["candidate_id"] = cid
-            normalized["id"] = cid
-            normalized["topic_family"] = verdict.topic_family
-            normalized["content_kind"] = content_kind
-            has_pub = bool(cand.get("published_at") or cand.get("published_at_utc"))
-            normalized["has_explicit_date"] = has_pub
-            if not normalized.get("published_at_utc"):
-                normalized["published_at_utc"] = cand.get("published_at") or datetime.now(timezone.utc).isoformat()
-            if not normalized.get("published_at"):
-                normalized["published_at"] = normalized["published_at_utc"]
-            if not normalized.get("normalized_publisher"):
-                normalized["normalized_publisher"] = str(cand.get("publisher") or "unknown").lower()
-            if not normalized.get("publisher"):
-                normalized["publisher"] = cand.get("normalized_publisher") or "Unknown"
-            if not normalized.get("url"):
-                normalized["url"] = cand.get("canonical_url") or ""
-            if not normalized.get("canonical_url"):
-                normalized["canonical_url"] = normalized["url"]
-            if not normalized.get("body"):
-                normalized["body"] = cand.get("summary") or cand.get("description") or ""
-            if not normalized.get("summary"):
-                normalized["summary"] = normalized["body"][:300]
-            valid.append(normalized)
+            is_ok, verdict = self._is_candidate_eligible(cand, cid, used_ids, cutoff_dt)
+            if is_ok and verdict:
+                valid.append(self._normalize_candidate_dict(cand, cid, verdict))
         return valid
 
     @staticmethod
@@ -311,9 +346,67 @@ class HybridCandidateDiscovery:
             ts = self.parse_timestamp(item.get("published_at_utc")) if has_date else 0.0
             return (is_news, has_date, ts, -idx)
 
-        indexed = list(enumerate(candidates))
-        sorted_indexed = sorted(indexed, key=recency_key, reverse=True)
+        sorted_indexed = sorted(enumerate(candidates), key=recency_key, reverse=True)
         return [item for _, item in sorted_indexed]
+
+    def _discover_tier_1_curated(
+        self,
+        used_ids: Set[str],
+        count: int,
+        diagnostics: Dict[str, Any],
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Ingest and validate candidate queue from Tier 1 curated backlog."""
+        diagnostics["tier_1_checked"] = True
+        raw_curated = self.load_curated_candidates()
+        diagnostics["tier_1_raw_count"] = len(raw_curated)
+        if not raw_curated:
+            return None
+
+        valid_curated = self.filter_and_validate_candidates(raw_curated, used_ids)
+        diagnostics["tier_1_valid_count"] = len(valid_curated)
+        if not valid_curated:
+            logger.info(
+                "[Tier 1: Curated Queue] Backlog file exists (%d items), "
+                "but all candidates are already used or off-niche. Cascading to Tier 2.",
+                len(raw_curated)
+            )
+            return None
+
+        if self.require_latest_news:
+            valid_curated = self.sort_by_recency(valid_curated)
+        return valid_curated[:count]
+
+    def _discover_tier_2_feed(
+        self,
+        used_ids: Set[str],
+        count: int,
+        diagnostics: Dict[str, Any],
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Ingest and validate candidate queue from Tier 2 automated feed."""
+        diagnostics["tier_2_checked"] = True
+        raw_feed = self.load_automated_feed_candidates()
+        diagnostics["tier_2_raw_count"] = len(raw_feed)
+        if not raw_feed:
+            return None
+
+        valid_feed = self.filter_and_validate_candidates(raw_feed, used_ids)
+        diagnostics["tier_2_valid_count"] = len(valid_feed)
+        if not valid_feed:
+            return None
+
+        if self.require_latest_news:
+            valid_feed = self.sort_by_recency(valid_feed)
+
+        try:
+            from lib.fixed_niche.ranker import FixedNicheTopicScorer
+            scored_pairs = [(c, self.gate.evaluate_candidate(c)) for c in valid_feed]
+            ranked = FixedNicheTopicScorer().rank_candidates(scored_pairs)
+            if ranked:
+                valid_feed = ranked
+        except Exception as e:
+            logger.debug(f"Optional topic ranking skipped: {e}")
+
+        return valid_feed[:count]
 
     def discover_candidates(self, count: int = 1) -> TieredDiscoveryResult:
         """Execute Option C: Hybrid Tiered Strategy discovery.
@@ -333,67 +426,34 @@ class HybridCandidateDiscovery:
         }
 
         # --- TIER 1: Curated Backlog ---
-        diagnostics["tier_1_checked"] = True
-        raw_curated = self.load_curated_candidates()
-        diagnostics["tier_1_raw_count"] = len(raw_curated)
-
-        if raw_curated:
-            valid_curated = self.filter_and_validate_candidates(raw_curated, used_ids)
-            diagnostics["tier_1_valid_count"] = len(valid_curated)
-            if valid_curated:
-                if self.require_latest_news:
-                    valid_curated = self.sort_by_recency(valid_curated)
-                selected = valid_curated[:count]
-                logger.info(
-                    f"[Tier 1: Curated Queue] Selected {len(selected)} in-scope candidate(s) "
-                    f"from {self.curated_path} (require_latest_news={self.require_latest_news})"
-                )
-                return TieredDiscoveryResult(
-                    tier=DiscoveryTier.TIER_1_CURATED,
-                    status="ELIGIBLE",
-                    candidates=selected,
-                    source_file=str(self.curated_path),
-                    diagnostics=diagnostics,
-                )
-            else:
-                logger.info(
-                    f"[Tier 1: Curated Queue] Backlog file exists ({len(raw_curated)} items), "
-                    "but all candidates are already used or off-niche. Cascading to Tier 2."
-                )
+        selected_t1 = self._discover_tier_1_curated(used_ids, count, diagnostics)
+        if selected_t1:
+            logger.info(
+                "[Tier 1: Curated Queue] Selected %d in-scope candidate(s) from %s (require_latest_news=%s)",
+                len(selected_t1), self.curated_path, self.require_latest_news
+            )
+            return TieredDiscoveryResult(
+                tier=DiscoveryTier.TIER_1_CURATED,
+                status="ELIGIBLE",
+                candidates=selected_t1,
+                source_file=str(self.curated_path),
+                diagnostics=diagnostics,
+            )
 
         # --- TIER 2: Automated Live Feed Fallback ---
-        diagnostics["tier_2_checked"] = True
-        raw_feed = self.load_automated_feed_candidates()
-        diagnostics["tier_2_raw_count"] = len(raw_feed)
-
-        if raw_feed:
-            valid_feed = self.filter_and_validate_candidates(raw_feed, used_ids)
-            diagnostics["tier_2_valid_count"] = len(valid_feed)
-            if valid_feed:
-                if self.require_latest_news:
-                    valid_feed = self.sort_by_recency(valid_feed)
-                # Rank candidates by editorial signal if scorer is available
-                try:
-                    from lib.fixed_niche.ranker import FixedNicheTopicScorer
-                    scored_pairs = [(c, self.gate.evaluate_candidate(c)) for c in valid_feed]
-                    ranked = FixedNicheTopicScorer().rank_candidates(scored_pairs)
-                    if ranked:
-                        valid_feed = ranked
-                except Exception as e:
-                    logger.debug(f"Optional topic ranking skipped: {e}")
-
-                selected = valid_feed[:count]
-                logger.info(
-                    f"[Tier 2: Automated Feed] Selected {len(selected)} in-scope candidate(s) "
-                    f"from {self.feed_path} (require_latest_news={self.require_latest_news})"
-                )
-                return TieredDiscoveryResult(
-                    tier=DiscoveryTier.TIER_2_AUTOMATED,
-                    status="ELIGIBLE",
-                    candidates=selected,
-                    source_file=str(self.feed_path),
-                    diagnostics=diagnostics,
-                )
+        selected_t2 = self._discover_tier_2_feed(used_ids, count, diagnostics)
+        if selected_t2:
+            logger.info(
+                "[Tier 2: Automated Feed] Selected %d in-scope candidate(s) from %s (require_latest_news=%s)",
+                len(selected_t2), self.feed_path, self.require_latest_news
+            )
+            return TieredDiscoveryResult(
+                tier=DiscoveryTier.TIER_2_AUTOMATED,
+                status="ELIGIBLE",
+                candidates=selected_t2,
+                source_file=str(self.feed_path),
+                diagnostics=diagnostics,
+            )
 
         # --- TIER 3: Clean Fail-Closed ---
         logger.warning(

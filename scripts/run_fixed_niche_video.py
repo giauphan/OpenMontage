@@ -630,6 +630,102 @@ class FixedNicheVideoRunner:
         }
 
 
+def _configure_cli_environment(args: argparse.Namespace) -> None:
+    """Set global environment variables based on CLI flags."""
+    if args.enable_ai_visuals:
+        os.environ["AI_VISUAL_ENABLED"] = "1"
+    else:
+        os.environ["AI_VISUAL_ENABLED"] = "0"
+
+    if args.enable_diagram_animation:
+        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
+        os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
+    else:
+        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
+        os.environ["OPENMONTAGE_VISUAL_STYLE"] = "legacy"
+
+
+def _load_cli_candidates_pool(args: argparse.Namespace) -> List[Dict[str, Any]]:
+    """Load candidates from specified file, test fixtures, or production source adapter."""
+    candidates_pool: List[Dict[str, Any]] = []
+
+    if args.candidates_file:
+        c_file = Path(args.candidates_file)
+        if c_file.is_file():
+            try:
+                import yaml
+                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+            except Exception as e:
+                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
+    elif args.use_test_fixtures:
+        c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
+        if c_file.is_file():
+            try:
+                import yaml
+                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
+                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
+            except Exception as e:
+                logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
+
+    if not candidates_pool:
+        adapter = FixedNicheSourceAdapter()
+        candidates_pool = adapter.discover_production_candidates()
+
+    return candidates_pool
+
+
+def _resolve_cli_topic_and_candidate(
+    args: argparse.Namespace,
+    candidates_pool: List[Dict[str, Any]],
+    gate: FixedNicheScopeGate,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Resolve target candidate ID and topic dictionary according to auto-select/explicit args."""
+    candidate_id = args.candidate_id
+    matched_cand = next(
+        (c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)),
+        None
+    ) if candidate_id else None
+
+    if matched_cand:
+        topic = dict(matched_cand)
+        topic["candidate_id"] = candidate_id
+        if args.title:
+            topic["title"] = args.title
+        if args.topic_family:
+            topic["topic_family"] = args.topic_family
+        if args.canonical_url:
+            topic["canonical_url"] = args.canonical_url
+        return candidate_id, topic
+
+    if args.auto_select or not candidate_id:
+        eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
+        if not eligible:
+            return None, None
+
+        from lib.fixed_niche.ranker import FixedNicheTopicScorer
+        ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
+        top_cand = ranked[0] if ranked else eligible[0]
+        selected_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
+        topic = dict(top_cand)
+        topic["candidate_id"] = selected_id
+        if args.title:
+            topic["title"] = args.title
+        if args.topic_family:
+            topic["topic_family"] = args.topic_family
+        if args.canonical_url:
+            topic["canonical_url"] = args.canonical_url
+        return selected_id, topic
+
+    fallback_topic = {
+        "candidate_id": candidate_id,
+        "title": args.title or "Why coding agents lose project requirements between sessions",
+        "topic_family": args.topic_family or "context_memory",
+        "canonical_url": args.canonical_url or "https://docs.anthropic.com/claude/context-window",
+    }
+    return candidate_id, fallback_topic
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Fixed Niche Video Production CLI")
     parser.add_argument("--candidate-id", required=False, default=None, help="Candidate ID to produce")
@@ -654,96 +750,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--max-age-days", type=int, default=7, help="Sliding freshness window in days (default: 7 days, meaning [run_date - 7 days, run_date])")
     args = parser.parse_args(argv)
 
-    if args.enable_ai_visuals:
-        os.environ["AI_VISUAL_ENABLED"] = "1"
-    else:
-        os.environ["AI_VISUAL_ENABLED"] = "0"
-
-    if args.enable_diagram_animation:
-        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
-        os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
-    else:
-        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
-        os.environ["OPENMONTAGE_VISUAL_STYLE"] = "legacy"
+    _configure_cli_environment(args)
 
     policy = load_locked_policy()
     gate = FixedNicheScopeGate(policy)
 
-    # Automatic topic selection when requested or candidate-id is omitted
-    topic: Dict[str, Any]
-    candidate_id = args.candidate_id
+    candidates_pool = _load_cli_candidates_pool(args)
+    candidate_id, topic = _resolve_cli_topic_and_candidate(args, candidates_pool, gate)
 
-    candidates_pool: List[Dict[str, Any]] = []
-    if args.candidates_file:
-        c_file = Path(args.candidates_file)
-        if c_file.is_file():
-            try:
-                import yaml
-                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-            except Exception as e:
-                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
-    elif args.use_test_fixtures:
-        c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
-        if c_file.is_file():
-            try:
-                import yaml
-                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-            except Exception as e:
-                logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
-    if not candidates_pool:
-        from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
-        disc = HybridCandidateDiscovery(
-            require_latest_news=getattr(args, "require_latest_news", True),
-            max_age_days=getattr(args, "max_age_days", 7),
-        )
-        res = disc.discover_candidates(count=10)
-        if res.is_eligible and res.candidates:
-            candidates_pool = res.candidates
-        else:
-            adapter = FixedNicheSourceAdapter()
-            candidates_pool = adapter.discover_production_candidates()
-
-    matched_cand = next((c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)), None) if candidate_id else None
-
-    if matched_cand:
-        topic = dict(matched_cand)
-        topic["candidate_id"] = candidate_id
-        if args.title:
-            topic["title"] = args.title
-        if args.topic_family:
-            topic["topic_family"] = args.topic_family
-        if args.canonical_url:
-            topic["canonical_url"] = args.canonical_url
-    elif args.auto_select or not candidate_id:
-        eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
-        if not eligible:
-            print(json.dumps({
-                "status": "NO_ELIGIBLE_TOPIC",
-                "message": "Zero eligible topics found in candidate pool; no project staged.",
-            }, indent=2))
-            return 0
-
-        from lib.fixed_niche.ranker import FixedNicheTopicScorer
-        ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
-        top_cand = ranked[0] if ranked else eligible[0]
-        candidate_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
-        topic = dict(top_cand)
-        topic["candidate_id"] = candidate_id
-        if args.title:
-            topic["title"] = args.title
-        if args.topic_family:
-            topic["topic_family"] = args.topic_family
-        if args.canonical_url:
-            topic["canonical_url"] = args.canonical_url
-    else:
-        topic = {
-            "candidate_id": candidate_id,
-            "title": args.title or "Why coding agents lose project requirements between sessions",
-            "topic_family": args.topic_family or "context_memory",
-            "canonical_url": args.canonical_url or "https://docs.anthropic.com/claude/context-window",
-        }
+    if not candidate_id or not topic:
+        print(json.dumps({
+            "status": "NO_ELIGIBLE_TOPIC",
+            "message": "Zero eligible topics found in candidate pool; no project staged.",
+        }, indent=2))
+        return 0
 
     proj_dir = Path(args.project_dir) if args.project_dir else ROOT / "projects" / candidate_id
     runner = FixedNicheVideoRunner(
@@ -759,8 +779,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     runner.synthesize_narration(provider=args.provider, voice=args.voice, speed=args.speed)
     render_res = runner.render(burn_captions=args.burn_captions, renderer=args.renderer)
     print(json.dumps(render_res, indent=2))
-    if render_res.get("status") == "VIDEO_READY_FOR_PRIVATE_REVIEW":
-        disc.mark_candidate_consumed(candidate_id)
     return 0 if render_res.get("status") == "VIDEO_READY_FOR_PRIVATE_REVIEW" else 1
 
 

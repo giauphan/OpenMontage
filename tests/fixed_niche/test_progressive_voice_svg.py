@@ -178,7 +178,7 @@ def test_backward_compatibility_static_svg():
     assert "@keyframes flowStepAppear" not in svg
 
 
-def test_hyperframes_composer_inlines_and_animates_steps(tmp_path: Path):
+def test_hyperframes_composer_inlines_and_animates_steps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Verify compose_hyperframes_html registers GSAP tweens for progressive flow steps."""
     visuals_dir = tmp_path / "assets" / "visuals"
     visuals_dir.mkdir(parents=True)
@@ -208,32 +208,27 @@ def test_hyperframes_composer_inlines_and_animates_steps(tmp_path: Path):
         }
     ]
 
-    import os
-    # Run with standard HyperFrames stage card composer
-    os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
-    os.environ["OPENMONTAGE_VISUAL_STYLE"] = "stage_card"
-    os.environ["OPENMONTAGE_PROGRESSIVE_SVG"] = "1"
-    try:
-        html = compose_hyperframes_html(
-            title="Memory Compaction Resilience",
-            duration=11.0,
-            beats=beats,
-            visuals_src=visuals_dir,
-        )
+    # Run with standard HyperFrames stage card composer using monkeypatch
+    monkeypatch.setenv("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0")
+    monkeypatch.setenv("OPENMONTAGE_VISUAL_STYLE", "stage_card")
+    monkeypatch.setenv("OPENMONTAGE_PROGRESSIVE_SVG", "1")
 
-        assert '<!doctype html>' in html
-        assert 'id="scene-b01"' in html
-        # Inlined SVG or diagram-viewport present
-        assert 'class="diagram-viewport"' in html
-        assert 'flow-step-1' in html
+    html = compose_hyperframes_html(
+        title="Memory Compaction Resilience",
+        duration=11.0,
+        beats=beats,
+        visuals_src=visuals_dir,
+    )
 
-        # GSAP timeline tweens registered for progressive steps
-        assert 'tl.set("#scene-b01 .flow-step"' in html
-        assert 'tl.to("#scene-b01 #flow-header"' in html
-        assert 'tl.to("#scene-b01 #flow-step-1"' in html
-        assert 'tl.to("#scene-b01 #flow-step-2"' in html
-        assert 'tl.to("#scene-b01 #flow-arrow-1"' in html
-    finally:
-        os.environ.pop("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", None)
-        os.environ.pop("OPENMONTAGE_VISUAL_STYLE", None)
-        os.environ.pop("OPENMONTAGE_PROGRESSIVE_SVG", None)
+    assert '<!doctype html>' in html
+    assert 'id="scene-b01"' in html
+    # Inlined SVG or diagram-viewport present
+    assert 'class="diagram-viewport"' in html
+    assert 'flow-step-1' in html
+
+    # GSAP timeline tweens registered for progressive steps
+    assert 'tl.set("#scene-b01 .flow-step"' in html
+    assert 'tl.to("#scene-b01 #flow-header"' in html
+    assert 'tl.to("#scene-b01 #flow-step-1"' in html
+    assert 'tl.to("#scene-b01 #flow-step-2"' in html
+    assert 'tl.to("#scene-b01 #flow-arrow-1"' in html

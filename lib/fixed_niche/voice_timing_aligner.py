@@ -45,7 +45,6 @@ def compute_step_timings_for_beat(
             beat_start_s=beat_start_s,
             duration=duration,
             num_steps=num_steps,
-            narration=narration,
         )
         if timings and len(timings) == num_steps:
             return timings
@@ -64,7 +63,6 @@ def _align_via_word_timestamps(
     beat_start_s: float,
     duration: float,
     num_steps: int,
-    narration: str,
 ) -> Optional[List[float]]:
     """Extract step timings from word timestamps bounded within [beat_start_s, beat_start_s + duration]."""
     beat_end_s = beat_start_s + duration
@@ -147,11 +145,8 @@ def _align_via_sentence_proportions(
 def generate_progressive_svg_style(
     step_timings: List[float],
     arrow_lead_time: float = 0.35,
-    appear_duration: float = 0.45,
-    arrow_duration: float = 0.35,
 ) -> str:
     """Generate CSS keyframe animation rules embedded inside SVG for voice-timed display."""
-    num_steps = len(step_timings)
     lines: List[str] = [
         "  <style>",
         "    @keyframes flowStepAppear {",

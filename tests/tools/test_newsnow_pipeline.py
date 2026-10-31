@@ -235,6 +235,7 @@ def _newsnow_payload(source: str, count: int) -> dict:
 
 
 def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SKIP_SCOPE_GATE", "1")
     monkeypatch.chdir(tmp_path)
     Path("data").mkdir()
     published_at = datetime.datetime.now(datetime.timezone.utc).isoformat()

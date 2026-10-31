@@ -32,6 +32,189 @@ def _fmt_time(t: float) -> str:
     return f"{val:.3f}".rstrip("0").rstrip(".")
 
 
+def _resolve_beat_visual_file(beat: Dict[str, Any], visuals_src: Optional[Path], default_aid: str) -> str:
+    """Resolve the visual asset file name for a beat, prioritizing AI raster formats when appropriate."""
+    vis_file = f"{default_aid}.svg"
+    if visuals_src and visuals_src.is_dir():
+        is_ai_beat = (
+            beat.get("visual_kind") == "illustration"
+            or beat.get("render_strategy") == "ai_illustration_eligible"
+        )
+        pref_exts = (
+            (".webp", ".png", ".jpg", ".jpeg", ".svg")
+            if is_ai_beat
+            else (".svg", ".webp", ".png", ".jpg", ".jpeg")
+        )
+        for ext in pref_exts:
+            if (visuals_src / f"{default_aid}{ext}").is_file():
+                return f"{default_aid}{ext}"
+            for alt_aid in beat.get("asset_ids", []):
+                if (visuals_src / f"{alt_aid}{ext}").is_file():
+                    return f"{alt_aid}{ext}"
+    elif beat.get("file"):
+        return Path(beat["file"]).name
+    return vis_file
+
+
+def _inline_svg_file(visuals_src: Optional[Path], vis_file: str) -> str:
+    """Inline and clean SVG markup from disk if valid SVG."""
+    if not (visuals_src and (visuals_src / vis_file).is_file() and vis_file.lower().endswith(".svg")):
+        return ""
+    try:
+        import re
+        raw_svg = (visuals_src / vis_file).read_text(encoding="utf-8")
+        return re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+    except Exception:
+        return ""
+
+
+def _build_illustration_beat(
+    i: int,
+    beat: Dict[str, Any],
+    vis_file: str,
+    total_beats: int,
+    duration: float,
+) -> tuple[str, List[str]]:
+    """Build HTML section and GSAP tweens for an illustration scene."""
+    bid = str(beat.get("beat_id", f"B{i+1:02d}")).lower()
+    start_s = float(beat.get("start_s", 0.0))
+    end_s = float(beat.get("end_s", duration))
+    beat_dur = max(0.5, end_s - start_s)
+    s_func = str(beat.get("story_function", "scene")).replace("_", " ").upper()
+    scr_state = html_mod.escape(str(beat.get("expected_screen_state", s_func)), quote=True)
+    track_idx = i + 1
+    sec_id = f"scene-{bid}"
+
+    html = (
+        f'    <section id="{sec_id}" class="clip scene illustration-scene" '
+        f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
+        f'      <div class="illustration-viewport">\n'
+        f'        <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="hero-illustration" />\n'
+        f'        <div class="vignette-overlay"></div>\n'
+        f'      </div>\n'
+        f'      <div class="stage-header stage-header-overlay">\n'
+        f'        <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
+        f'      </div>\n'
+        f'    </section>'
+    )
+    entry_t = _fmt_time(max(0.0, start_s))
+    tweens = [
+        f'  tl.fromTo("#{sec_id}", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5, ease: "power2.out" }}, {entry_t});',
+        f'  tl.fromTo("#{sec_id} .hero-illustration", {{ scale: 1.0 }}, {{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, {entry_t});',
+    ]
+    if i < total_beats - 1:
+        exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
+        exit_end_t = _fmt_time(max(0.0, end_s))
+        tweens.extend([
+            f'  tl.to("#{sec_id}", {{ opacity: 0, duration: 0.25, ease: "power2.in" }}, {exit_start_t});',
+            f'  tl.set("#{sec_id}", {{ opacity: 0 }}, {exit_end_t});',
+        ])
+    return html, tweens
+
+
+def _build_svg_beat(
+    i: int,
+    beat: Dict[str, Any],
+    vis_file: str,
+    visuals_src: Optional[Path],
+    total_beats: int,
+    duration: float,
+) -> tuple[str, List[str]]:
+    """Build HTML section and GSAP tweens for a technical SVG diagram scene."""
+    bid = str(beat.get("beat_id", f"B{i+1:02d}")).lower()
+    start_s = float(beat.get("start_s", 0.0))
+    end_s = float(beat.get("end_s", duration))
+    beat_dur = max(0.5, end_s - start_s)
+    s_func = str(beat.get("story_function", "scene")).replace("_", " ").upper()
+    scr_state = html_mod.escape(str(beat.get("expected_screen_state", s_func)), quote=True)
+    track_idx = i + 1
+    sec_id = f"scene-{bid}"
+
+    bg_art = f"bg_{bid}.webp" if visuals_src and (visuals_src / f"bg_{bid}.webp").is_file() else ""
+    bg_snippet = (
+        f'      <div class="illustration-viewport">\n'
+        f'        <img src="assets/visuals/{bg_art}" alt="" class="hero-illustration" />\n'
+        f'        <div class="vignette-overlay"></div>\n'
+        f'      </div>\n'
+        if bg_art else ""
+    )
+    card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
+
+    inline_svg = _inline_svg_file(visuals_src, vis_file)
+    viewport_content = inline_svg if inline_svg else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
+
+    html = (
+        f'    <section id="{sec_id}" class="clip scene" '
+        f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
+        f'{bg_snippet}'
+        f'      <div class="{card_cls}">\n'
+        f'        <div class="stage-header">\n'
+        f'          <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
+        f'        </div>\n'
+        f'        <div class="diagram-viewport" data-asset-file="assets/visuals/{vis_file}">\n'
+        f'          {viewport_content}\n'
+        f'        </div>\n'
+        f'      </div>\n'
+        f'    </section>'
+    )
+
+    entry_t = _fmt_time(max(0.0, start_s))
+    tweens: List[str] = []
+    if bg_art:
+        tweens.append(
+            f'  tl.fromTo("#{sec_id} .hero-illustration", '
+            f'{{ scale: 1.0 }}, '
+            f'{{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, '
+            f'{entry_t});'
+        )
+    tweens.append(
+        f'  tl.fromTo("#{sec_id} .stage-card", '
+        f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
+        f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
+        f'{entry_t});'
+    )
+
+    progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
+    if progressive_reveal and vis_file.lower().endswith(".svg"):
+        from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
+        from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
+        num_steps = STEP_COUNTS.get(i + 1, 4)
+        narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+        step_timings = compute_step_timings_for_beat(
+            narration=narration,
+            duration=beat_dur,
+            num_steps=num_steps,
+            beat_start_s=start_s,
+        )
+        tweens.extend([
+            f'  tl.set("#{sec_id} .flow-step", {{ opacity: 0, y: 16 }}, {entry_t});',
+            f'  tl.set("#{sec_id} .flow-arrow", {{ opacity: 0 }}, {entry_t});',
+            f'  tl.to("#{sec_id} #flow-header", {{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, {_fmt_time(start_s + 0.1)});',
+        ])
+        for s_idx, rel_t in enumerate(step_timings, start=1):
+            step_abs_t = _fmt_time(start_s + rel_t)
+            tweens.append(
+                f'  tl.to("#{sec_id} #flow-step-{s_idx}", '
+                f'{{ opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }}, {step_abs_t});'
+            )
+            if s_idx > 1:
+                arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
+                tweens.append(
+                    f'  tl.to("#{sec_id} #flow-arrow-{s_idx-1}", '
+                    f'{{ opacity: 1, duration: 0.3, ease: "power1.inOut" }}, {arrow_abs_t});'
+                )
+
+    if i < total_beats - 1:
+        exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
+        exit_end_t = _fmt_time(max(0.0, end_s))
+        tweens.extend([
+            f'  tl.to("#{sec_id} .stage-card", {{ opacity: 0, duration: 0.25, ease: "power2.in" }}, {exit_start_t});',
+            f'  tl.set("#{sec_id} .stage-card", {{ opacity: 0 }}, {exit_end_t});',
+        ])
+
+    return html, tweens
+
+
 def compose_hyperframes_html(
     title: str,
     duration: float,
@@ -64,182 +247,22 @@ def compose_hyperframes_html(
     dia_h = 1100 if is_vertical else 540
     escaped_title = html_mod.escape(title, quote=True)
 
-    # Build clip sections and GSAP timeline tweens
     sections_html: List[str] = []
     tweens_js: List[str] = []
 
     for i, beat in enumerate(beats):
-        bid = str(beat.get("beat_id", f"B{i+1:02d}")).lower()
-        start_s = float(beat.get("start_s", 0.0))
-        end_s = float(beat.get("end_s", duration))
-        beat_dur = max(0.5, end_s - start_s)
         aid = beat.get("asset_id") or f"beat_{i+1}"
-        s_func = str(beat.get("story_function", "scene")).replace("_", " ").upper()
-        scr_state = html_mod.escape(str(beat.get("expected_screen_state", s_func)), quote=True)
-        track_idx = i + 1
-
-        # Resolve asset file type
-        vis_file = f"{aid}.svg"
-        if visuals_src and visuals_src.is_dir():
-            found = False
-            is_ai_beat = (
-                beat.get("visual_kind") == "illustration"
-                or beat.get("render_strategy") == "ai_illustration_eligible"
-            )
-            pref_exts = (
-                (".webp", ".png", ".jpg", ".jpeg", ".svg")
-                if is_ai_beat
-                else (".svg", ".webp", ".png", ".jpg", ".jpeg")
-            )
-            for ext in pref_exts:
-                if (visuals_src / f"{aid}{ext}").is_file():
-                    vis_file = f"{aid}{ext}"
-                    found = True
-                    break
-                for alt_aid in beat.get("asset_ids", []):
-                    if (visuals_src / f"{alt_aid}{ext}").is_file():
-                        vis_file = f"{alt_aid}{ext}"
-                        found = True
-                        break
-                if found:
-                    break
-        elif beat.get("file"):
-            vis_file = Path(beat["file"]).name
-
-        sec_id = f"scene-{bid}"
+        vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
         is_illustration = vis_file.lower().endswith((".webp", ".png", ".jpg", ".jpeg"))
 
         if is_illustration:
-            sections_html.append(
-                f'    <section id="{sec_id}" class="clip scene illustration-scene" '
-                f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
-                f'      <div class="illustration-viewport">\n'
-                f'        <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="hero-illustration" />\n'
-                f'        <div class="vignette-overlay"></div>\n'
-                f'      </div>\n'
-                f'      <div class="stage-header stage-header-overlay">\n'
-                f'        <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
-                f'      </div>\n'
-                f'    </section>'
-            )
-            entry_t = _fmt_time(max(0.0, start_s))
-            tweens_js.append(
-                f'  tl.fromTo("#{sec_id}", '
-                f'{{ opacity: 0 }}, '
-                f'{{ opacity: 1, duration: 0.5, ease: "power2.out" }}, '
-                f'{entry_t});'
-            )
-            tweens_js.append(
-                f'  tl.fromTo("#{sec_id} .hero-illustration", '
-                f'{{ scale: 1.0 }}, '
-                f'{{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, '
-                f'{entry_t});'
-            )
-            if i < len(beats) - 1:
-                exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
-                exit_end_t = _fmt_time(max(0.0, end_s))
-                tweens_js.append(
-                    f'  tl.to("#{sec_id}", '
-                    f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
-                    f'{exit_start_t});'
-                )
-                tweens_js.append(
-                    f'  tl.set("#{sec_id}", {{ opacity: 0 }}, {exit_end_t});'
-                )
+            sec_html, sec_tweens = _build_illustration_beat(i, beat, vis_file, len(beats), duration)
+            sections_html.append(sec_html)
+            tweens_js.extend(sec_tweens)
         else:
-            bg_art = f"bg_{bid}.webp" if visuals_src and (visuals_src / f"bg_{bid}.webp").is_file() else ""
-            bg_snippet = (
-                f'      <div class="illustration-viewport">\n'
-                f'        <img src="assets/visuals/{bg_art}" alt="" class="hero-illustration" />\n'
-                f'        <div class="vignette-overlay"></div>\n'
-                f'      </div>\n'
-                if bg_art else ""
-            )
-            card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
-
-            # Read and inline progressive SVG if available
-            inline_svg = ""
-            if visuals_src and (visuals_src / vis_file).is_file() and vis_file.lower().endswith(".svg"):
-                try:
-                    import re
-                    raw_svg = (visuals_src / vis_file).read_text(encoding="utf-8")
-                    clean_svg = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
-                    inline_svg = clean_svg
-                except Exception:
-                    inline_svg = ""
-
-            viewport_content = inline_svg if inline_svg else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
-
-            sections_html.append(
-                f'    <section id="{sec_id}" class="clip scene" '
-                f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
-                f'{bg_snippet}'
-                f'      <div class="{card_cls}">\n'
-                f'        <div class="stage-header">\n'
-                f'          <span class="stage-badge">Stage {i+1} of {len(beats)} // {html_mod.escape(s_func, quote=True)}</span>\n'
-                f'        </div>\n'
-                f'        <div class="diagram-viewport" data-asset-file="assets/visuals/{vis_file}">\n'
-                f'          {viewport_content}\n'
-                f'        </div>\n'
-                f'      </div>\n'
-                f'    </section>'
-            )
-
-            # GSAP animation per beat: smooth fade and subtle rise on entry
-            entry_t = _fmt_time(max(0.0, start_s))
-            if bg_art:
-                tweens_js.append(
-                    f'  tl.fromTo("#{sec_id} .hero-illustration", '
-                    f'{{ scale: 1.0 }}, '
-                    f'{{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, '
-                    f'{entry_t});'
-                )
-            tweens_js.append(
-                f'  tl.fromTo("#{sec_id} .stage-card", '
-                f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
-                f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
-                f'{entry_t});'
-            )
-
-            # Progressive voice-ordered reveals for SVG diagrams
-            progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
-            if progressive_reveal and vis_file.lower().endswith(".svg"):
-                from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
-                from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
-                num_steps = STEP_COUNTS.get(i + 1, 4)
-                narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
-                step_timings = compute_step_timings_for_beat(
-                    narration=narration,
-                    duration=beat_dur,
-                    num_steps=num_steps,
-                    beat_start_s=start_s,
-                )
-                tweens_js.append(f'  tl.set("#{sec_id} .flow-step", {{ opacity: 0, y: 16 }}, {entry_t});')
-                tweens_js.append(f'  tl.set("#{sec_id} .flow-arrow", {{ opacity: 0 }}, {entry_t});')
-                tweens_js.append(f'  tl.to("#{sec_id} #flow-header", {{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, {_fmt_time(start_s + 0.1)});')
-                for s_idx, rel_t in enumerate(step_timings, start=1):
-                    step_abs_t = _fmt_time(start_s + rel_t)
-                    tweens_js.append(
-                        f'  tl.to("#{sec_id} #flow-step-{s_idx}", '
-                        f'{{ opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }}, {step_abs_t});'
-                    )
-                    if s_idx > 1:
-                        arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
-                        tweens_js.append(
-                            f'  tl.to("#{sec_id} #flow-arrow-{s_idx-1}", '
-                            f'{{ opacity: 1, duration: 0.3, ease: "power1.inOut" }}, {arrow_abs_t});'
-                        )
-            if i < len(beats) - 1:
-                exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
-                exit_end_t = _fmt_time(max(0.0, end_s))
-                tweens_js.append(
-                    f'  tl.to("#{sec_id} .stage-card", '
-                    f'{{ opacity: 0, duration: 0.25, ease: "power2.in" }}, '
-                    f'{exit_start_t});'
-                )
-                tweens_js.append(
-                    f'  tl.set("#{sec_id} .stage-card", {{ opacity: 0 }}, {exit_end_t});'
-                )
+            sec_html, sec_tweens = _build_svg_beat(i, beat, vis_file, visuals_src, len(beats), duration)
+            sections_html.append(sec_html)
+            tweens_js.extend(sec_tweens)
 
     clips_block = "\n".join(sections_html)
     tweens_block = "\n".join(tweens_js)
@@ -548,6 +571,130 @@ def render_hyperframes_composition(
     return output_mp4
 
 
+def _build_ffmpeg_filter(
+    width: int,
+    height: int,
+    burn_captions: bool,
+    project_dir: Path,
+) -> tuple[str, str]:
+    """Build FFmpeg video filtergraph and aspect ratio flag."""
+    dar_str = "9/16" if (width < height) else "16/9"
+    aspect_flag = "9:16" if (width < height) else "16:9"
+    vf = (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=#0b1120,"
+        f"setsar=1/1,setdar={dar_str},"
+        f"format=yuv420p"
+    )
+
+    ass_path = project_dir / "artifacts" / "captions.ass"
+    srt_path = project_dir / "artifacts" / "captions.srt"
+    if burn_captions:
+        if ass_path.is_file():
+            esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+            vf += f",ass='{esc_ass}'"
+        elif srt_path.is_file():
+            esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
+            vf += (
+                f",subtitles='{esc_srt}':force_style="
+                f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
+                f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
+                f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
+            )
+    return vf, aspect_flag
+
+
+def _write_beats_concat_list(
+    beats: List[Dict[str, Any]],
+    render_dur: float,
+    visuals_dir: Path,
+    svg_assets: List[Path],
+    concat_list: Path,
+) -> None:
+    """Generate concat demuxer text list matching beat timings."""
+    planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
+    scale = (render_dur / planned_total) if planned_total > 0 else 1.0
+
+    with concat_list.open("w", encoding="utf-8") as f:
+        for b in beats:
+            beat_dur = max(0.1, (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale)
+            aid = b.get("asset_id") or (b.get("asset_ids", [""])[0] if b.get("asset_ids") else "")
+            svg_cand = visuals_dir / f"{aid}.svg"
+            if not svg_cand.is_file():
+                matches = list(visuals_dir.glob(f"{aid}.*"))
+                svg_cand = matches[0] if matches else (svg_assets[0] if svg_assets else None)
+            if svg_cand and svg_cand.is_file():
+                f.write(f"file '{svg_cand.resolve()}'\n")
+                f.write(f"duration {beat_dur:.3f}\n")
+        if svg_assets:
+            last_aid = beats[-1].get("asset_id") or (beats[-1].get("asset_ids", [""])[0] if beats[-1].get("asset_ids") else "")
+            last_svg = visuals_dir / f"{last_aid}.svg"
+            if not last_svg.is_file():
+                last_svg = svg_assets[-1]
+            f.write(f"file '{last_svg.resolve()}'\n")
+
+
+def _write_slides_concat_list(
+    svg_assets: List[Path],
+    slide_dur: float,
+    concat_list: Path,
+) -> None:
+    """Generate concat demuxer text list evenly distributing assets."""
+    with concat_list.open("w", encoding="utf-8") as f:
+        for svg in svg_assets:
+            f.write(f"file '{svg.resolve()}'\n")
+            f.write(f"duration {slide_dur:.2f}\n")
+        f.write(f"file '{svg_assets[-1].resolve()}'\n")
+
+
+def _execute_ffmpeg_concat(
+    concat_list: Path,
+    audio_path: Path,
+    vf: str,
+    aspect_flag: str,
+    render_dur: float,
+    output_mp4: Path,
+) -> None:
+    """Execute FFmpeg concat render and clean up list file."""
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "concat", "-safe", "0", "-i", str(concat_list),
+        "-i", str(audio_path),
+        "-vf", vf,
+        "-aspect", aspect_flag,
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+        "-c:a", "aac", "-b:a", "192k",
+        "-t", str(render_dur),
+        str(output_mp4),
+    ]
+    subprocess.run(cmd, check=True)
+    concat_list.unlink(missing_ok=True)
+
+
+def _execute_ffmpeg_color(
+    width: int,
+    height: int,
+    audio_path: Path,
+    vf: str,
+    aspect_flag: str,
+    render_dur: float,
+    output_mp4: Path,
+) -> None:
+    """Execute FFmpeg blank-canvas fallback render."""
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
+        "-i", str(audio_path),
+        "-vf", vf,
+        "-aspect", aspect_flag,
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+        "-c:a", "aac", "-b:a", "192k",
+        "-t", str(render_dur),
+        str(output_mp4),
+    ]
+    subprocess.run(cmd, check=True)
+
+
 def render_ffmpeg_composition(
     project_dir: Path,
     output_mp4: Path,
@@ -557,7 +704,6 @@ def render_ffmpeg_composition(
     burn_captions: bool = False,
 ) -> Path:
     """Render composition via FFmpeg concat demuxer for fast offline/CI execution."""
-    import os
     visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
     flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
     if (visual_style == "animated_agent_diagram_v1") and flag_enabled:
@@ -583,101 +729,16 @@ def render_ffmpeg_composition(
             logger.warning(f"Could not load news_visual_plan.json: {e}")
 
     svg_assets = sorted(list(visuals_dir.glob("*.svg"))) if visuals_dir.is_dir() else []
+    vf, aspect_flag = _build_ffmpeg_filter(width, height, burn_captions, project_dir)
 
-    dar_str = "9/16" if (width < height) else "16/9"
-    aspect_flag = "9:16" if (width < height) else "16:9"
-    vf = (
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=#0b1120,"
-        f"setsar=1/1,setdar={dar_str},"
-        f"format=yuv420p"
-    )
-
-    ass_path = project_dir / "artifacts" / "captions.ass"
-    srt_path = project_dir / "artifacts" / "captions.srt"
-    if burn_captions:
-        if ass_path.is_file():
-            esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
-            vf += f",ass='{esc_ass}'"
-        elif srt_path.is_file():
-            esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-            vf += (
-                f",subtitles='{esc_srt}':force_style="
-                f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
-                f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
-                f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
-            )
-
+    concat_list = renders_dir / "slides_concat.txt"
     if beats:
-        planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
-        scale = (render_dur / planned_total) if planned_total > 0 else 1.0
-
-        concat_list = renders_dir / "slides_concat.txt"
-        with concat_list.open("w", encoding="utf-8") as f:
-            for b in beats:
-                beat_dur = max(0.1, (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale)
-                aid = b.get("asset_id") or (b.get("asset_ids", [""])[0] if b.get("asset_ids") else "")
-                svg_cand = visuals_dir / f"{aid}.svg"
-                if not svg_cand.is_file():
-                    matches = list(visuals_dir.glob(f"{aid}.*"))
-                    svg_cand = matches[0] if matches else (svg_assets[0] if svg_assets else None)
-                if svg_cand and svg_cand.is_file():
-                    f.write(f"file '{svg_cand.resolve()}'\n")
-                    f.write(f"duration {beat_dur:.3f}\n")
-            if svg_assets:
-                last_aid = beats[-1].get("asset_id") or (beats[-1].get("asset_ids", [""])[0] if beats[-1].get("asset_ids") else "")
-                last_svg = visuals_dir / f"{last_aid}.svg"
-                if not last_svg.is_file():
-                    last_svg = svg_assets[-1]
-                f.write(f"file '{last_svg.resolve()}'\n")
-
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "concat", "-safe", "0", "-i", str(concat_list),
-            "-i", str(audio_path),
-            "-vf", vf,
-            "-aspect", aspect_flag,
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-            "-c:a", "aac", "-b:a", "192k",
-            "-t", str(render_dur),
-            str(output_mp4),
-        ]
-        subprocess.run(cmd, check=True)
-        concat_list.unlink(missing_ok=True)
+        _write_beats_concat_list(beats, render_dur, visuals_dir, svg_assets, concat_list)
+        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4)
     elif svg_assets:
-        slide_dur = render_dur / len(svg_assets)
-        concat_list = renders_dir / "slides_concat.txt"
-        with concat_list.open("w", encoding="utf-8") as f:
-            for svg in svg_assets:
-                f.write(f"file '{svg.resolve()}'\n")
-                f.write(f"duration {slide_dur:.2f}\n")
-            f.write(f"file '{svg_assets[-1].resolve()}'\n")
-
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "concat", "-safe", "0", "-i", str(concat_list),
-            "-i", str(audio_path),
-            "-vf", vf,
-            "-aspect", aspect_flag,
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-            "-c:a", "aac", "-b:a", "192k",
-            "-t", str(render_dur),
-            str(output_mp4),
-        ]
-        subprocess.run(cmd, check=True)
-        concat_list.unlink(missing_ok=True)
+        _write_slides_concat_list(svg_assets, render_dur / len(svg_assets), concat_list)
+        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4)
     else:
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
-            "-i", str(audio_path),
-            "-vf", vf,
-            "-aspect", aspect_flag,
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-            "-c:a", "aac", "-b:a", "192k",
-            "-t", str(render_dur),
-            str(output_mp4),
-        ]
-        subprocess.run(cmd, check=True)
+        _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4)
 
     return output_mp4
