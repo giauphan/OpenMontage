@@ -26,6 +26,16 @@ def _iso_utc(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _is_valid_iso(val: Any) -> bool:
+    if not isinstance(val, str) or not val.strip():
+        return False
+    try:
+        dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+        return dt.tzinfo is not None
+    except Exception:
+        return False
+
+
 def _is_valid_url(url: str) -> bool:
     try:
         parsed = urlsplit(url)
@@ -119,10 +129,9 @@ def bind_news_evidence(project_dir: Path) -> bool:
         return False
 
     now = datetime.now(timezone.utc)
-    pub_time = now - timedelta(hours=2)
-    upd_time = now - timedelta(hours=1)
-    ret_time = now - timedelta(minutes=15)
-    rev_time = now - timedelta(minutes=5)
+    ret_time = now
+    upd_time = now
+    rev_time = now
 
     sources_in_brief = brief_data.get("sources", [])
     if not isinstance(sources_in_brief, list) or not sources_in_brief:
@@ -182,15 +191,30 @@ def bind_news_evidence(project_dir: Path) -> bool:
 
     capture_corpus_lines: list[str] = []
     capture_files_map: dict[str, tuple[str, str]] = {}
+    provenance_map: dict[str, dict[str, Any]] = {}
     if capture_dir.is_dir():
-        for cap_txt in sorted(capture_dir.glob("*.txt")):
+        for prov_file in sorted(capture_dir.glob("*provenance*.json")):
             try:
-                cap_content = cap_txt.read_text(encoding="utf-8", errors="replace").strip()
+                p_data = json.loads(prov_file.read_text(encoding="utf-8"))
+                if isinstance(p_data, dict):
+                    provenance_map[prov_file.name] = p_data
+                    if p_data.get("url"):
+                        provenance_map[p_data["url"]] = p_data
+            except Exception:
+                pass
+
+        for cap_file in sorted(list(capture_dir.glob("*.txt")) + list(capture_dir.glob("*extracted*.json"))):
+            try:
+                if cap_file.suffix == ".json":
+                    cap_data = json.loads(cap_file.read_text(encoding="utf-8"))
+                    cap_content = str(cap_data.get("text") or "").strip()
+                else:
+                    cap_content = cap_file.read_text(encoding="utf-8", errors="replace").strip()
                 if cap_content:
                     capture_corpus_lines.append(cap_content)
                     cap_sha = hashlib.sha256(cap_content.encode("utf-8")).hexdigest()
-                    capture_files_map[cap_txt.name] = (cap_content, cap_sha)
-                    research_lines.append(f"CapturedSource ({cap_txt.name}): {cap_content[:4000]}")
+                    capture_files_map[cap_file.name] = (cap_content, cap_sha)
+                    research_lines.append(f"CapturedSource ({cap_file.name}): {cap_content[:4000]}")
             except OSError:
                 pass
 
@@ -217,13 +241,18 @@ def bind_news_evidence(project_dir: Path) -> bool:
         title = src.get("title") or f"Tài liệu tham khảo {idx + 1}"
         used_for = src.get("used_for") or "Tài liệu kiểm chứng"
 
+        matched_prov = provenance_map.get(url) or (list(provenance_map.values())[0] if provenance_map else None)
+        pub_date_str = matched_prov.get("published_at") if matched_prov else None
+        ret_date_str = (matched_prov.get("retrieved_at") if matched_prov else None) or _iso_utc(ret_time)
+        effective_pub_str = pub_date_str if (pub_date_str and _is_valid_iso(pub_date_str)) else None
+
         content_filename = f"source_evidence_{sid}.txt"
         content_path = artifacts_dir / content_filename
         excerpt_text = f"Tài liệu nguồn {title}"
         full_content = (
             f"{excerpt_text}\n"
             f"URL: {url}\nMục đích: {used_for}\n"
-            f"Thời điểm thu thập: {_iso_utc(ret_time)}\n"
+            f"Thời điểm thu thập: {ret_date_str}\n"
             f"Frozen Research Grounding:\n{frozen_research_excerpt}\n"
         ).encode("utf-8")
 
@@ -234,9 +263,9 @@ def bind_news_evidence(project_dir: Path) -> bool:
             "id": sid,
             "url": url,
             "status": "available",
-            "published_at": _iso_utc(pub_time),
-            "updated_at": _iso_utc(upd_time),
-            "retrieved_at": _iso_utc(ret_time),
+            "published_at": effective_pub_str,
+            "updated_at": effective_pub_str,
+            "retrieved_at": ret_date_str,
             "content_path": f"artifacts/{content_filename}",
             "content_sha256": content_sha256,
             "excerpt": excerpt_text,
@@ -282,12 +311,23 @@ def bind_news_evidence(project_dir: Path) -> bool:
 
         # 2. Semantic grounding check: for en-US claims, every claim (including non-numeric statements)
         # must be substantiated by key content terms / entities from the research brief and captured sources
+        from lib.fixed_niche.claim_grounding import verify_independent_claim
+        grounding_result = verify_independent_claim(
+            statement=sec_text,
+            snapshot_text=target_corpus,
+            publisher=str(primary_title),
+            canonical_url=primary_source["url"],
+        )
+
         sec_tokens = _extract_content_tokens(sec_text)
         source_tokens = _extract_content_tokens(target_corpus)
         common_tokens = {tok for tok in sec_tokens if _tokens_match(tok, source_tokens)}
         
         has_semantic_error = False
-        if script_path.name == "script_en_US.json":
+        if grounding_result.get("verification_status") != "INDEPENDENT_FACT_CHECK_VERIFIED":
+            if strict_capture_required or script_path.name == "script_en_US.json":
+                has_semantic_error = True
+        elif script_path.name == "script_en_US.json":
             min_overlap = 2 if len(sec_tokens) >= 4 else (1 if len(sec_tokens) >= 1 else 0)
             if len(common_tokens) < min_overlap:
                 has_semantic_error = True
@@ -301,8 +341,9 @@ def bind_news_evidence(project_dir: Path) -> bool:
                 f"Section '{sec_id}' (C{idx + 1:03d}) asserts unsubstantiated figure(s) {missing_figs} not present in {corpus_source_desc}"
             )
         elif has_semantic_error:
+            reason = grounding_result.get("attestation") if grounding_result.get("verification_status") != "INDEPENDENT_FACT_CHECK_VERIFIED" else f"found {len(common_tokens)} matching terms"
             unverified_errors.append(
-                f"Section '{sec_id}' (C{idx + 1:03d}) lacks substantive semantic/entity grounding in {corpus_source_desc} (found {len(common_tokens)} matching terms: {list(common_tokens)})"
+                f"Section '{sec_id}' (C{idx + 1:03d}) lacks substantive semantic/entity grounding in {corpus_source_desc} ({reason})"
             )
 
         claims.append({
@@ -331,8 +372,12 @@ def bind_news_evidence(project_dir: Path) -> bool:
             snap_file = best_cap_file if (strict_capture_required and best_cap_file) else f"source_evidence_{source_ids[0]}.txt"
             snap_sha = best_cap_sha if (strict_capture_required and best_cap_sha) else primary_source["content_sha256"]
 
+            primary_prov = provenance_map.get(primary_source["url"]) or (list(provenance_map.values())[0] if provenance_map else None)
+            authentic_pub_date = primary_prov.get("published_at") if primary_prov else None
+
             ledger_claims.append({
                 "claim_id": f"C{idx + 1:03d}",
+                "section_id": sec_id,
                 "statement": sec_text,
                 "confidence": "verified" if is_verified else "unverified",
                 "scope": {
@@ -342,7 +387,7 @@ def bind_news_evidence(project_dir: Path) -> bool:
                 "source": {
                     "canonical_url": primary_source["url"],
                     "publisher": str(primary_title),
-                    "published_at": _iso_utc(pub_time),
+                    "published_at": authentic_pub_date,
                     "retrieved_at": _iso_utc(ret_time),
                     "snapshot_file": snap_file,
                     "snapshot_sha256": snap_sha,

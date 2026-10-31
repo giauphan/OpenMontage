@@ -232,6 +232,10 @@ PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
 TEE_STATUS="${PRODUCER_PIPE_STATUS[1]}"
+if grep -q "STATUS=NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG" || grep -q "NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG"; then
+  echo "[$(date -u +%FT%TZ)] NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate. Exiting cleanly without retry."
+  exit 0
+fi
 if [ "$PRODUCE_STATUS" -ne 0 ]; then
   echo "[$(date -u +%FT%TZ)] ERROR: topic production failed (exit=$PRODUCE_STATUS); refusing partial candidate output." >&2
   exit "$PRODUCE_STATUS"
@@ -883,6 +887,7 @@ materialize_hyperframes_assets() {
     if "$PY" -m tools.audio.narration_cli "$project_root" --output "$narration" >/dev/null 2>&1; then
       rm -f "$reels_narration" "$project_root/hyperframes/assets/narration.mp3" "$project_root/hyperframes_reels/assets/narration.mp3"
     elif command -v "$edge_tts_cmd" >/dev/null 2>&1 || [ -x "$edge_tts_cmd" ]; then
+      # edge-tts --voice synthesis fallback
       if [ "$is_en" -eq 1 ]; then
         "$edge_tts_cmd" --voice "$default_voice" --text "$(cat "$narration_text")" --write-media "$narration"
       else
@@ -905,7 +910,8 @@ materialize_hyperframes_assets() {
     local max_narration_cap=74.5
     if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
       if command -v "$edge_tts_cmd" >/dev/null 2>&1 || [ -x "$edge_tts_cmd" ]; then
-        for try_rate in "+5%" "-5%" "+8%" "+10%" "-10%" "+12%" "+15%" "-15%" "+18%" "+20%" "-20%" "+25%" "+30%"; do
+        # Preserve natural speech pacing: allow only subtle conversational adjustments (max +/-10%)
+        for try_rate in "+3%" "-3%" "+5%" "-5%" "+8%" "-8%" "+10%" "-10%"; do
           if "$edge_tts_cmd" --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
             try_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration.rate_try.mp3" 2>/dev/null || echo 0)
             if awk -v d="$try_dur" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
@@ -925,7 +931,7 @@ materialize_hyperframes_assets() {
           local target_dur=69.0
           local tempo
           tempo=$(awk -v d="$narration_duration" -v t="$target_dur" 'BEGIN{printf "%.4f", d / t}')
-          if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.7 && t <= 1.4)}'; then
+          if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.9 && t <= 1.1)}'; then
             if "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -filter:a "atempo=$tempo" -vn "$narration.tempo_adj.mp3" >/dev/null 2>&1; then
               mv "$narration.tempo_adj.mp3" "$narration"
               narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
@@ -961,10 +967,16 @@ except Exception:
     pass
 ' "$script_json" "$narration_duration"
       # Re-bind news evidence so evidence manifest and claim ledger hash the realigned script_en_US.json
-      "$PY" "$ROOT/scripts/bind_news_evidence.py" "$project_root" >/dev/null 2>&1 || true
+      if ! "$PY" "$ROOT/scripts/bind_news_evidence.py" "$project_root"; then
+        echo "[$(date -u +%FT%TZ)] ERROR: bind_news_evidence failed during retiming for $project_root" >&2
+        return 1
+      fi
       # Retime news visual plan so beat timings match the realigned script sections
       if [ -f "$project_root/artifacts/news_visual_plan.json" ]; then
-        "$PY" "$ROOT/scripts/prepare_news_visuals.py" "$project_root" >/dev/null 2>&1 || true
+        if ! "$PY" "$ROOT/scripts/prepare_news_visuals.py" "$project_root"; then
+          echo "[$(date -u +%FT%TZ)] ERROR: prepare_news_visuals failed during retiming for $project_root" >&2
+          return 1
+        fi
       fi
     fi
   fi
@@ -1229,8 +1241,6 @@ if [ $VALIDATE_RENDER_EXIT -ne 0 ]; then
 fi
 
 if [ "$NEWS_VISUAL_MODE" = "1" ]; then
-  # Ensure visual plan is synchronized with script before running Visual QA
-  "$PY" "$ROOT/scripts/prepare_news_visuals.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
   echo "[$(date -u +%FT%TZ)] Running Content-Aware Visual QA for $PROJECT_ID..."
   if ! "$PY" "$ROOT/scripts/validate_news_visuals.py" --project-dir "$PROJECT_DIR" --mode strict; then
     echo "[$(date -u +%FT%TZ)] ERROR: Content-Aware Visual QA failed for $PROJECT_ID" >&2

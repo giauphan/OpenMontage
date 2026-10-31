@@ -77,11 +77,18 @@ def schedule_day(day, strict=False):
     date = day.isoformat()
 
     planned = []
+    seen_projects = set()
     for idx, project in enumerate(cfg.get("active_projects", [])):
+        if len(planned) >= min(3, len(slot_times)):
+            break
         proj = project.get("project_id") if isinstance(project, dict) else project
         if not isinstance(proj, str) or not proj:
             print(f"skip malformed active project: {project!r}")
             continue
+        if proj in seen_projects:
+            print(f"skip duplicate active project: {proj}")
+            continue
+        seen_projects.add(proj)
         project_dir = ROOT / "projects" / proj
         meta_path = project_dir / "publish_metadata.json"
         if not meta_path.is_file():
@@ -113,7 +120,7 @@ def schedule_day(day, strict=False):
             fb_rel = topic_meta.get("fb_video", topic_meta.get("fb_reels"))
             if fb_rel and (project_dir / fb_rel).is_file():
                 validate_publish_asset(project_dir / fb_rel, project_dir, "facebook", strict=True)
-        slot_time = slot_times[idx % len(slot_times)]
+        slot_time = slot_times[len(planned) % len(slot_times)]
         dt = datetime.combine(day, slot_time, tz)
         planned.append((proj, project_dir, topic_meta, "yt_shorts", dt))
 

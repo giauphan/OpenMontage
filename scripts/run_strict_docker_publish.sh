@@ -593,10 +593,14 @@ QUEUED_PIDS=()
 TODAY_QUEUED_PIDS=()
 NEXT_QUEUED_PIDS=()
 
-TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_vn // .slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
+if [ "${PUBLISH_LOCALE:-}" = "en-US" ] || [ "${is_en:-0}" -eq 1 ] || [ "${PUBLISH_TZ:-}" = "America/New_York" ]; then
+  TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_us // .slots.publish_slots_us // ["09:00", "13:00", "18:00"]' "$SCHEDULE")
+  NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots_us // ["09:00", "13:00", "18:00"]' "$SCHEDULE")
+else
+  TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_vn // .slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
+  NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
+fi
 mapfile -t TODAY_CANDIDATE_SLOTS < <(jq -r '.[]' <<< "$TODAY_SLOTS_JSON")
-
-NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
 mapfile -t NEXT_CANDIDATE_SLOTS < <(jq -r '.[]' <<< "$NEXT_SLOTS_JSON")
 
 declare -A TODAY_OCCUPIED=()

@@ -71,12 +71,15 @@ def compute_manifest_sha256(
     metadata_sha256: str = "",
     captions_sha256: str = "",
     script_sha256: str = "",
+    visual_plan_sha256: str = "",
 ) -> str:
     """Compute SHA-256 digest over the complete release manifest envelope."""
     manifest_str = (
         f"project:{project_id}|media:{media_sha256}|ledger:{claim_ledger_sha256}|"
         f"meta:{metadata_sha256}|captions:{captions_sha256}|script:{script_sha256}"
     )
+    if visual_plan_sha256:
+        manifest_str += f"|visual_plan:{visual_plan_sha256}"
     return hashlib.sha256(manifest_str.encode("utf-8")).hexdigest()
 
 
@@ -101,24 +104,57 @@ def sign_approval_record(
     project_id: str,
     media_sha256: str,
     claim_ledger_sha256: str,
-    timestamp_iso: str,
+    timestamp_iso: str | None = None,
     reviewer: str = "independent_qa_supervisor",
     metadata_sha256: str = "",
     captions_sha256: str = "",
     script_sha256: str = "",
+    visual_plan_sha256: str = "",
     format_type: str = "short",
     audit_trail: dict | None = None,
     supervisor_role: str = "Editorial Lead & Safety Officer",
+    project_dir: Path | str | None = None,
+    use_manifest: bool = True,
 ) -> dict:
     """Generate a cryptographically signed approval record bound to release manifest and audit trail."""
-    manifest_sha = compute_manifest_sha256(
-        project_id=project_id,
-        media_sha256=media_sha256,
-        claim_ledger_sha256=claim_ledger_sha256,
-        metadata_sha256=metadata_sha256,
-        captions_sha256=captions_sha256,
-        script_sha256=script_sha256,
-    )
+    from datetime import datetime, timezone
+    if timestamp_iso is None:
+        timestamp_iso = datetime.now(timezone.utc).isoformat()
+
+    if project_dir is not None:
+        p_dir = Path(project_dir)
+        if not script_sha256:
+            for s_rel in ("artifacts/script_en_US.json", "artifacts/script_vi.json", "artifacts/script.json"):
+                sp = p_dir / s_rel
+                if sp.is_file():
+                    script_sha256 = hashlib.sha256(sp.read_bytes()).hexdigest()
+                    break
+        if not visual_plan_sha256:
+            vp = p_dir / "artifacts" / "news_visual_plan.json"
+            if vp.is_file():
+                visual_plan_sha256 = hashlib.sha256(vp.read_bytes()).hexdigest()
+        if not metadata_sha256:
+            mp = p_dir / "publish_metadata.json"
+            if mp.is_file():
+                metadata_sha256 = hashlib.sha256(mp.read_bytes()).hexdigest()
+        if not captions_sha256:
+            for c_rel in ("artifacts/captions_en_US.srt", "artifacts/captions_vi.srt", "artifacts/captions.srt"):
+                cp = p_dir / c_rel
+                if cp.is_file():
+                    captions_sha256 = hashlib.sha256(cp.read_bytes()).hexdigest()
+                    break
+
+    manifest_sha = ""
+    if use_manifest:
+        manifest_sha = compute_manifest_sha256(
+            project_id=project_id,
+            media_sha256=media_sha256,
+            claim_ledger_sha256=claim_ledger_sha256,
+            metadata_sha256=metadata_sha256,
+            captions_sha256=captions_sha256,
+            script_sha256=script_sha256,
+            visual_plan_sha256=visual_plan_sha256,
+        )
     sig = compute_signature(
         project_id=project_id,
         media_sha256=media_sha256,
@@ -143,6 +179,7 @@ def sign_approval_record(
             "metadata_sha256": metadata_sha256,
             "captions_sha256": captions_sha256,
             "script_sha256": script_sha256,
+            "visual_plan_sha256": visual_plan_sha256,
         },
         "audit_trail": audit_trail or {},
         "approved_media_sha256": media_sha256,
@@ -151,6 +188,7 @@ def sign_approval_record(
         "metadata_sha256": metadata_sha256,
         "captions_sha256": captions_sha256,
         "script_sha256": script_sha256,
+        "visual_plan_sha256": visual_plan_sha256,
         "signature": sig,
         "signature_algorithm": "HMAC-SHA256",
         "approved_media_hashes": [media_sha256],
@@ -202,6 +240,7 @@ def verify_approval_record(
             metadata_sha256=approval_data.get("metadata_sha256", ""),
             captions_sha256=approval_data.get("captions_sha256", ""),
             script_sha256=approval_data.get("script_sha256", ""),
+            visual_plan_sha256=approval_data.get("visual_plan_sha256", ""),
         )
         if calc_manifest != manifest_sha:
             return False, f"Release manifest hash mismatch ({calc_manifest[:16]} != {manifest_sha[:16]})"
@@ -261,7 +300,16 @@ def verify_approval_record(
             if actual_script_sha != approval_data["script_sha256"]:
                 return False, f"Disk verification failed: script SHA mismatch ({actual_script_sha[:16]} != {approval_data['script_sha256'][:16]})"
 
-        # E. Media verification
+        # E. Visual plan verification
+        if approval_data.get("visual_plan_sha256"):
+            plan_path = p_dir / "artifacts" / "news_visual_plan.json"
+            if not plan_path.is_file():
+                return False, "Disk verification failed: visual plan file missing"
+            actual_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+            if actual_plan_sha != approval_data["visual_plan_sha256"]:
+                return False, f"Disk verification failed: visual plan SHA mismatch ({actual_plan_sha[:16]} != {approval_data['visual_plan_sha256'][:16]})"
+
+        # F. Media verification
         if media_sha:
             rel_media = None
             meta_file = p_dir / "publish_metadata.json"

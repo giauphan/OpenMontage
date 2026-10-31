@@ -610,11 +610,11 @@ def run_news_visual_qa(
                     for r in safe_reasons:
                         findings.append({
                             "severity": "blocker" if mode == "strict" else "warning",
-                            "category": "CAPTION_COLLISION",
+                            "category": "CAPTION_UI_COLLISION",
                             "message": r,
                         })
-                    if "CAPTION_COLLISION" not in failure_categories:
-                        failure_categories.append("CAPTION_COLLISION")
+                    if "CAPTION_UI_COLLISION" not in failure_categories:
+                        failure_categories.append("CAPTION_UI_COLLISION")
             except Exception:
                 pass
 
@@ -652,18 +652,34 @@ def run_news_visual_qa(
                 asset_keys = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [])
                 bid_str = str(bid).lower() if bid else ""
                 bid_orig = str(bid) if bid else ""
+                is_proof_beat = (
+                    beat.get("render_strategy") == "authentic_capture"
+                    or beat.get("evidence_class") in ("approved_source_visual", "authentic_photo")
+                )
+                proof_bound = any(aid in html_content for aid in asset_keys)
+                if is_proof_beat and not proof_bound:
+                    findings.append({
+                        "severity": "blocker" if mode == "strict" else "warning",
+                        "category": "VISUAL_NOT_RENDERED",
+                        "message": f"Proof beat '{bid}' asset {asset_keys} is not referenced in HTML DOM",
+                        "beat_id": bid,
+                    })
+                    if mode == "strict" and "VISUAL_NOT_RENDERED" not in failure_categories:
+                        failure_categories.append("VISUAL_NOT_RENDERED")
+
                 # Look for beat ID, section ID, scene index, or asset reference in HTML
                 if (
                     (bid and (bid_orig in html_content or bid_str in html_content))
-                    or any(aid in html_content for aid in asset_keys)
+                    or proof_bound
                     or (sec_id and (f'id="{sec_id}"' in html_content or f'data-scene-id="{sec_id}"' in html_content or f'scene-{sec_id}' in html_content))
                     or f'id="scene-{idx + 1}"' in html_content
                     or f'id="scene{idx + 1}"' in html_content
                     or (bid and (f'id="scene-{bid_str}"' in html_content or f'id="badge-{bid_str}"' in html_content or f'id="scene-{bid_orig}"' in html_content))
                     or (f'class="scene' in html_content and (f'#scene-{idx + 1}' in html_content or f'#scene{idx + 1}' in html_content or (bid and (f'#scene-{bid_orig}' in html_content or f'#scene-{bid_str}' in html_content))))
                 ):
-                    bound_beats += 1
-                    bound_beat_indices.add(idx)
+                    if not is_proof_beat or proof_bound:
+                        bound_beats += 1
+                        bound_beat_indices.add(idx)
                 elif beat.get("visual_kind") == "typographic_focus":
                     bound_beats += 1
                     bound_beat_indices.add(idx)
@@ -683,11 +699,13 @@ def run_news_visual_qa(
                     )
                     if not has_semantic_match and sec_keywords:
                         findings.append({
-                            "severity": "warning",
-                            "category": "VISUAL_SEMANTIC_MISMATCH",
+                            "severity": "blocker" if mode == "strict" else "warning",
+                            "category": "CLAIM_VISUAL_MISMATCH",
                             "message": f"Beat '{bid}' (section '{sec_id}') visual elements in HTML do not reflect script semantic keywords: {sec_keywords[:3]}",
                             "beat_id": bid,
                         })
+                        if mode == "strict" and "CLAIM_VISUAL_MISMATCH" not in failure_categories:
+                            failure_categories.append("CLAIM_VISUAL_MISMATCH")
         binding_pct = round((bound_beats / len(beats)) * 100.0, 1)
     else:
         binding_pct = 100.0 if mode != "strict" else 0.0
@@ -708,8 +726,18 @@ def run_news_visual_qa(
 
     # 6. Repetitive layout check
     if len(beats) >= 3:
+        layouts = [b.get("layout") for b in beats if b.get("layout")]
         kinds = [b.get("visual_kind") for b in beats]
-        if all(k == "typographic_focus" for k in kinds):
+        if layouts and len(beats) >= 4 and len(set(layouts)) == 1:
+            repetitive_layout_flag = True
+            findings.append({
+                "severity": "blocker" if mode == "strict" else "warning",
+                "category": "REPEATED_LAYOUT_NO_INFORMATION_GAIN",
+                "message": f"All {len(beats)} beats use identical layout '{layouts[0]}' without functional variation",
+            })
+            if "REPEATED_LAYOUT_NO_INFORMATION_GAIN" not in failure_categories:
+                failure_categories.append("REPEATED_LAYOUT_NO_INFORMATION_GAIN")
+        elif all(k == "typographic_focus" for k in kinds):
             repetitive_layout_flag = True
             findings.append({
                 "severity": "warning",

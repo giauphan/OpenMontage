@@ -149,7 +149,8 @@ def run_produce(args: argparse.Namespace) -> None:
     available_candidates = [c for c in candidates if c.get("candidate_id") not in used_ids]
     candidate_pool = available_candidates if len(available_candidates) >= count else candidates
 
-    if os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True") or os.environ.get("OPENMONTAGE_NICHE_LOCKED", "0") in ("1", "true", "True"):
+    should_enforce_niche = os.environ.get("SKIP_SCOPE_GATE", "0") not in ("1", "true", "True")
+    if should_enforce_niche:
         from lib.fixed_niche.gate import FixedNicheScopeGate
         gate = FixedNicheScopeGate()
         niche_filtered = []
@@ -162,8 +163,22 @@ def run_produce(args: argparse.Namespace) -> None:
                 logger.info(f"FixedNicheScopeGate rejected candidate '{cand.get('candidate_id')}': {verdict.reason}")
         candidate_pool = niche_filtered
         if not candidate_pool:
-            logger.error("NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
-            sys.exit(1)
+            logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
+            print("STATUS=NO_ELIGIBLE_TOPIC")
+            marker_file = Path("data/.no_eligible_topic_marker")
+            try:
+                marker_file.parent.mkdir(parents=True, exist_ok=True)
+                marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            except OSError:
+                pass
+            sys.exit(2)
+        else:
+            marker_file = Path("data/.no_eligible_topic_marker")
+            if marker_file.is_file():
+                try:
+                    marker_file.unlink()
+                except OSError:
+                    pass
 
     logger.info("Scoring and ranking...")
     scorer = NewsCandidateScorer()

@@ -40,6 +40,15 @@ fi
 NEXT_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
 TODAY=$(TZ="$PUBLISH_TZ" date +%F)
 
+# 3.5 Check if NO_ELIGIBLE_TOPIC was recorded for today.
+if [ -f "$ROOT/data/.no_eligible_topic_marker" ]; then
+  MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
+  if [ "$MARKER_DATE" = "$TODAY" ]; then
+    log "NO_ELIGIBLE_TOPIC was recorded for today ($TODAY). Skipping retry loop to prevent infinite retry storms."
+    exit 0
+  fi
+fi
+
 # 4. Count projects scheduled for NEXT_DATE.
 SCHEDULED_COUNT=$(jq --arg d "$NEXT_DATE" '
   [.active_projects[]? | select(type == "object" and (.publish_date // "") == $d)] | length
