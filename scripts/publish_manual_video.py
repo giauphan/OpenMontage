@@ -1484,7 +1484,19 @@ def main():
                 yt_field = "yt_shorts" if yt_kind == "short" else "yt_longform"
                 from tools.publishers.platform_routes import PLATFORM_ROUTES
                 field = yt_field if only_platform == "youtube" else PLATFORM_ROUTES.get(only_platform, ("", "video"))[1]
-                acct = YT_ACCOUNT if only_platform == "youtube" else (IG_ACCOUNT_ID if only_platform == "instagram" else (FB_PAGE_ID if only_platform == "facebook" else ""))
+                acct = (
+                    YT_ACCOUNT
+                    if only_platform == "youtube"
+                    else (
+                        IG_ACCOUNT_ID
+                        if only_platform == "instagram"
+                        else (
+                            FB_PAGE_ID
+                            if only_platform == "facebook"
+                            else ("tiktok" if only_platform == "tiktok" else "")
+                        )
+                    )
+                )
                 if field in metadata:
                     preflight_platforms = [{"platform": only_platform, "account": acct, "video_path": metadata[field]}]
             enforce_release_preflight(project_path, metadata, platforms=preflight_platforms, strict=True, force=args.force)
