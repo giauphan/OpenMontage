@@ -86,7 +86,7 @@ class HybridCandidateDiscovery:
             env_latest = os.environ.get("REQUIRE_LATEST_NEWS", "1").strip().lower()
             self.require_latest_news = env_latest in ("1", "true", "yes", "on")
 
-        # Sliding freshness window: 1 to 3 days (default: 3 days, meaning [run_date - 3 days, run_date])
+        # Sliding freshness window: 1 to 7 days (Tiered Hybrid: 0-3d priority, 4-7d buffer, default 7 days / 168 hours)
         if max_age_days is not None:
             self.max_age_days = max(1, int(max_age_days))
         elif os.environ.get("NEWS_MAX_AGE_DAYS"):
@@ -94,7 +94,7 @@ class HybridCandidateDiscovery:
         elif os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS"):
             self.max_age_days = max(1, int(float(os.environ["NEWS_MAX_SOURCE_AGE_HOURS"]) / 24.0))
         else:
-            self.max_age_days = 3
+            self.max_age_days = 7
 
         # Strict news only: if True, completely disallows evergreen explainers
         if strict_news_only is not None:

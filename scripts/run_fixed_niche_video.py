@@ -651,7 +651,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"], help="Visual presentation style (progressive animated diagram vs legacy static)")
     parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True, help="Enable progressive animated diagram reveals synchronized to speech (default: True, per JEV decision)")
     parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True, help="Prioritize discovery of latest breaking news with real published timestamps (default: True)")
-    parser.add_argument("--max-age-days", type=int, default=3, help="Sliding freshness window in days (default: 3 days, meaning [run_date - 3 days, run_date])")
+    parser.add_argument("--max-age-days", type=int, default=7, help="Sliding freshness window in days (default: 7 days, meaning [run_date - 7 days, run_date])")
     args = parser.parse_args(argv)
 
     if args.enable_ai_visuals:
@@ -696,7 +696,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
         disc = HybridCandidateDiscovery(
             require_latest_news=getattr(args, "require_latest_news", True),
-            max_age_days=getattr(args, "max_age_days", 3),
+            max_age_days=getattr(args, "max_age_days", 7),
         )
         res = disc.discover_candidates(count=10)
         if res.is_eligible and res.candidates:

@@ -114,7 +114,7 @@ def run_produce(args: argparse.Namespace) -> None:
     # Option C: Hybrid Tiered Strategy (Tier 1 Curated Backlog -> Tier 2 Live Feed)
     from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery, DiscoveryTier
     require_latest = getattr(args, "require_latest_news", True)
-    max_age_days = getattr(args, "max_age_days", 3)
+    max_age_days = getattr(args, "max_age_days", 7)
     discovery = HybridCandidateDiscovery(
         require_latest_news=require_latest,
         max_age_days=max_age_days,
@@ -365,8 +365,8 @@ def main(argv: List[str] | None = None) -> int:
     produce_parser.add_argument(
         "--max-age-days",
         type=int,
-        default=3,
-        help="Sliding freshness window in days (default: 3 days, meaning [run_date - 3 days, run_date]).",
+        default=7,
+        help="Sliding freshness window in days (default: 7 days, meaning [run_date - 7 days, run_date]).",
     )
 
     fetch_parser = subparsers.add_parser("fetch", help="Fetch NewsNow source feeds into a raw feed file")

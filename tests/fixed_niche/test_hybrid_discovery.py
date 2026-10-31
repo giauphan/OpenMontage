@@ -291,8 +291,20 @@ def test_sort_by_recency_ranks_newer_news_first(discovery_env):
     assert res.candidates[0]["candidate_id"] == "cand_news_late_oct"
 
 
+def test_default_max_age_days_is_7(discovery_env):
+    """HybridCandidateDiscovery must activate max_age_days=7 (168h) by default."""
+    discovery = HybridCandidateDiscovery(
+        curated_path=discovery_env["curated_file"],
+        feed_path=discovery_env["feed_file"],
+        root_dir=discovery_env["root"],
+    )
+    assert discovery.max_age_days == 7
+    res = discovery.discover_candidates(count=1)
+    assert res.diagnostics.get("max_age_days") == 7
+
+
 def test_sliding_window_freshness_for_november_run(discovery_env):
-    """Simulates running on 01/11 (Nov 1): only topics from 01/11, 31/10, or up to 3 days prior are accepted."""
+    """Simulates running on 01/11 (Nov 1): 0-3d primary pick, 4-7d buffer, >7d rejected."""
     # Simulated run on Nov 1, 2026 at 12:00 UTC
     simulated_run_date = datetime(2026, 11, 1, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -305,7 +317,17 @@ def test_sliding_window_freshness_for_november_run(discovery_env):
             "summary": "Published 17 days ago.",
             "content_kind": "news",
             "is_evergreen": False,
-            "published_at_utc": "2026-10-15T00:00:00Z",  # 17 days old -> STALE
+            "published_at_utc": "2026-10-15T00:00:00Z",  # 17 days old -> STALE (>7d)
+        },
+        {
+            "candidate_id": "cand_buffer_oct26",
+            "title": "Previous Monday MCP Registry Specification",
+            "topic_family": "agent_tool_use",
+            "canonical_url": "https://example.com/oct26",
+            "summary": "Published 6 days ago.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-10-26T10:00:00Z",  # 6 days old -> BUFFER (4-7d)
         },
         {
             "candidate_id": "cand_yesterday_oct31",
@@ -315,7 +337,7 @@ def test_sliding_window_freshness_for_november_run(discovery_env):
             "summary": "Published on 31/10.",
             "content_kind": "news",
             "is_evergreen": False,
-            "published_at_utc": "2026-10-31T14:00:00Z",  # 1 day old (31/10) -> ACCEPTED
+            "published_at_utc": "2026-10-31T14:00:00Z",  # 1 day old (31/10) -> PRIMARY (0-3d)
         },
         {
             "candidate_id": "cand_today_nov01",
@@ -325,7 +347,7 @@ def test_sliding_window_freshness_for_november_run(discovery_env):
             "summary": "Published on 01/11.",
             "content_kind": "news",
             "is_evergreen": False,
-            "published_at_utc": "2026-11-01T08:00:00Z",  # Today (01/11) -> ACCEPTED
+            "published_at_utc": "2026-11-01T08:00:00Z",  # Today (01/11) -> PRIMARY (0-3d)
         },
     ]
     curated_path = discovery_env["root"] / "data" / "november_feed.json"
@@ -336,32 +358,38 @@ def test_sliding_window_freshness_for_november_run(discovery_env):
         feed_path=discovery_env["feed_file"],
         root_dir=discovery_env["root"],
         require_latest_news=True,
-        max_age_days=3,  # Window: [2026-10-29, 2026-11-01]
+        max_age_days=7,  # Tiered Hybrid Window: 7 days
         reference_time=simulated_run_date,
     )
 
-    # First discovery should pick today's 01/11 topic
+    # 1. First run picks today's 01/11 topic (newest primary)
     res1 = discovery.discover_candidates(count=1)
     assert res1.is_eligible is True
     assert res1.candidates[0]["candidate_id"] == "cand_today_nov01"
     assert res1.candidates[0]["published_at_utc"] == "2026-11-01T08:00:00Z"
 
-    # Consume today's topic; second run should pick yesterday's 31/10 topic
+    # 2. Consume today's topic; second run picks yesterday's 31/10 topic
     discovery.mark_candidate_consumed("cand_today_nov01")
     res2 = discovery.discover_candidates(count=1)
     assert res2.is_eligible is True
     assert res2.candidates[0]["candidate_id"] == "cand_yesterday_oct31"
     assert res2.candidates[0]["published_at_utc"] == "2026-10-31T14:00:00Z"
 
-    # Consume yesterday's topic; cand_stale_oct15 is > 3 days old and MUST be rejected
+    # 3. Consume yesterday's topic; third run picks 6-day old buffer candidate (cand_buffer_oct26)
     discovery.mark_candidate_consumed("cand_yesterday_oct31")
     res3 = discovery.discover_candidates(count=1)
-    # Stale candidate is skipped; discovery cascades to feed
-    assert res3.candidates[0]["candidate_id"] != "cand_stale_oct15"
+    assert res3.is_eligible is True
+    assert res3.candidates[0]["candidate_id"] == "cand_buffer_oct26"
+    assert res3.candidates[0]["published_at_utc"] == "2026-10-26T10:00:00Z"
+
+    # 4. Consume buffer candidate; cand_stale_oct15 is 17 days old (>7d) and MUST be rejected
+    discovery.mark_candidate_consumed("cand_buffer_oct26")
+    res4 = discovery.discover_candidates(count=1)
+    assert res4.candidates[0]["candidate_id"] != "cand_stale_oct15"
 
 
-def test_sliding_window_fails_closed_when_all_topics_older_than_3_days(discovery_env):
-    """When strict_news_only is active and all topics are older than 3 days, halts NO_ELIGIBLE_TOPIC."""
+def test_sliding_window_fails_closed_when_all_topics_older_than_7_days(discovery_env):
+    """When strict_news_only is active and all topics are older than 7 days, halts NO_ELIGIBLE_TOPIC."""
     simulated_run_date = datetime(2026, 11, 1, 12, 0, 0, tzinfo=timezone.utc)
     stale_only = [
         {
@@ -372,7 +400,7 @@ def test_sliding_window_fails_closed_when_all_topics_older_than_3_days(discovery
             "summary": "Published 22 days ago.",
             "content_kind": "news",
             "is_evergreen": False,
-            "published_at_utc": "2026-10-10T00:00:00Z",
+            "published_at_utc": "2026-10-10T00:00:00Z",  # 22 days old
         }
     ]
     curated_path = discovery_env["root"] / "data" / "stale_only.json"
@@ -387,7 +415,7 @@ def test_sliding_window_fails_closed_when_all_topics_older_than_3_days(discovery
         root_dir=discovery_env["root"],
         require_latest_news=True,
         strict_news_only=True,
-        max_age_days=3,
+        max_age_days=7,
         reference_time=simulated_run_date,
     )
 
