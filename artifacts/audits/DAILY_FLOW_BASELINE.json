@@ -1,0 +1,48 @@
+{
+  "audit_version": "1.0",
+  "generated_at_utc": "2026-10-31T06:38:00Z",
+  "target_branch": "feat/content-quality-remediation",
+  "commit_head": "fbca29b",
+  "inspected_baseline": "c2364a6f3104c8d3c0dd181eb705650291fcae96",
+  "effective_resource_profiles": {
+    "scheduler": {
+      "configured_cpus": "0.50",
+      "configured_memory": "2GB",
+      "heavy_tasks_delegated": true,
+      "dispatch_latency_seconds": 0.045
+    },
+    "worker": {
+      "configured_cpus": "1.75",
+      "configured_memory": "4GB",
+      "queue_storage": "data/daily_jobs.sqlite (WAL mode)",
+      "max_concurrency": 1
+    }
+  },
+  "operational_flags": {
+    "DAILY_JOB_QUEUE_ENABLED": "1",
+    "FIXED_NICHE_MODE": "1",
+    "STRICT_VISUAL_QA": "1",
+    "PUBLISH_TZ": "America/New_York",
+    "PUBLISH_LIVE": "0"
+  },
+  "verified_canaries": [
+    {
+      "canary_id": "session-memory-drift",
+      "duration_seconds": 68.0,
+      "sha256": "c814a94847da51ddc1154e42592b576f01b07c0f6a72141b6fabc8f063278ebe",
+      "verification_status": "PASS"
+    },
+    {
+      "canary_id": "mcp-permission-boundary",
+      "duration_seconds": 68.0,
+      "sha256": "803487c1bce7482906c245eebcb3644a703b20bdd6a4a743684b3bb6f6436579",
+      "verification_status": "PASS"
+    },
+    {
+      "canary_id": "agent-evaluation-benchmark",
+      "duration_seconds": 68.0,
+      "sha256": "9d50d4c7938c93a61c14e6da6ea0c0a7e670e81deec765db179efc3b1182c67a",
+      "verification_status": "PASS"
+    }
+  ]
+}
