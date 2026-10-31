@@ -35,6 +35,9 @@ Three distinct, production-grade canaries within the locked `Practical AI Agent 
 - **Source Verification:** Grounded against authentic Anthropic Research technical release notes with canonical URL and verbatim sentence attestation (`INDEPENDENT_FACT_CHECK_VERIFIED`).
 - **Visual Planning:** 6-beat planned sequence (68.0s total). Beat 3 contextually assigned `diagram_left_copy_right` with `deterministic_svg` proof. No AI illustration masquerading as empirical proof.
 - **Approval Sign-off:** Manifest cryptographic binding verified against visual plan SHA256.
+- **Render Deliverable:** [`projects/session-memory-drift/renders/final.mp4`](file:///home/ubuntu/OpenMontage/.claude/worktrees/content-quality-remediation/projects/session-memory-drift/renders/final.mp4) (68.0s, 1080×1920 @ 30 fps)
+- **SHA256:** `c814a94847da51ddc1154e42592b576f01b07c0f6a72141b6fabc8f063278ebe`
+- **Contact Sheet:** [`projects/session-memory-drift/renders/contact_sheet.jpg`](file:///home/ubuntu/OpenMontage/.claude/worktrees/content-quality-remediation/projects/session-memory-drift/renders/contact_sheet.jpg)
 
 ### Canary 2: Model Context Protocol (MCP) Tool Permission Isolation
 - **Topic:** MCP tool permission boundaries prevent unauthorized tool calls
@@ -42,6 +45,10 @@ Three distinct, production-grade canaries within the locked `Practical AI Agent 
 - **Claim:** `"MCP permission boundaries block unauthorized file writes effectively in all runs."`
 - **Source Verification:** Algorithmic semantic grounding verified against Model Context Protocol security specification.
 - **Visual Planning:** Contextual split comparison layout isolating client socket permissions from sandbox execution.
+- **Approval Sign-off:** Manifest cryptographic binding verified against visual plan SHA256.
+- **Render Deliverable:** [`projects/mcp-permission-boundary/renders/final.mp4`](file:///home/ubuntu/OpenMontage/.claude/worktrees/content-quality-remediation/projects/mcp-permission-boundary/renders/final.mp4) (68.0s, 1080×1920 @ 30 fps)
+- **SHA256:** `803487c1bce7482906c245eebcb3644a703b20bdd6a4a743684b3bb6f6436579`
+- **Contact Sheet:** [`projects/mcp-permission-boundary/renders/contact_sheet.jpg`](file:///home/ubuntu/OpenMontage/.claude/worktrees/content-quality-remediation/projects/mcp-permission-boundary/renders/contact_sheet.jpg)
 
 ### Canary 3: Reproducible Multi-Agent Evaluation Harnesses
 - **Topic:** SWE-bench agent evaluation reproducibility requires isolated task environments
@@ -49,6 +56,10 @@ Three distinct, production-grade canaries within the locked `Practical AI Agent 
 - **Claim:** `"Dockerized task isolation improves benchmark reproducibility to 99.4% across 500 tasks."`
 - **Source Verification:** Verbatim quantitative figure (`99.4%`) verified in source benchmark snapshot.
 - **Visual Planning:** Metric grid layout displaying reproducibility variance across unisolated vs containerized evaluation harnesses.
+- **Approval Sign-off:** Manifest cryptographic binding verified against visual plan SHA256.
+- **Render Deliverable:** [`projects/agent-evaluation-benchmark/renders/final.mp4`](file:///home/ubuntu/OpenMontage/.claude/worktrees/content-quality-remediation/projects/agent-evaluation-benchmark/renders/final.mp4) (68.0s, 1080×1920 @ 30 fps)
+- **SHA256:** `9d50d4c7938c93a61c14e6da6ea0c0a7e670e81deec765db179efc3b1182c67a`
+- **Contact Sheet:** [`projects/agent-evaluation-benchmark/renders/contact_sheet.jpg`](file:///home/ubuntu/OpenMontage/.claude/worktrees/content-quality-remediation/projects/agent-evaluation-benchmark/renders/contact_sheet.jpg)
 
 ---
 
