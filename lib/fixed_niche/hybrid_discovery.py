@@ -64,7 +64,7 @@ class HybridCandidateDiscovery:
     ) -> None:
         self.policy = policy or load_locked_policy()
         self.gate = gate or FixedNicheScopeGate(self.policy)
-        self.root_dir = Path(root_dir or Path.cwd()).resolve()
+        self.root_dir = Path(root_dir or Path(__file__).resolve().parent.parent.parent).resolve()
 
         # Configurable paths with environment variable overrides
         env_curated = os.environ.get("DAILY_CANDIDATES_FILE") or os.environ.get("OPENMONTAGE_CANDIDATES_FILE")
