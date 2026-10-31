@@ -279,28 +279,31 @@ class ClaimAwareVisualPlanner:
         existing_captures: List[str],
     ) -> List[PlannedBeat]:
         beats: List[PlannedBeat] = []
-        claim_ids = [c["claim_id"] for c in claim_ledger]
         num_sections = len(sections)
 
-        # Standard layouts rotation for visual diversity
-        layouts = [
-            "hero_center",
-            "diagram_left_copy_right",
-            "split_comparison",
-            "metric_grid",
-            "device_showcase",
-            "diagram_fullscreen",
-            "accent_badge_headline",
-            "card_minimal",
-        ]
+        # Match claims by section_id or statement
+        claim_by_sec: Dict[str, List[str]] = {}
+        for c in claim_ledger:
+            cid = c.get("claim_id")
+            if not cid:
+                continue
+            sec_id = c.get("section_id")
+            if sec_id is not None:
+                claim_by_sec.setdefault(str(sec_id), []).append(str(cid))
+
+        # Functional layout mapping by story role
+        layout_by_function = {
+            "problem_hook": "hero_center",
+            "developer_impact": "split_comparison",
+            "root_cause_mechanism": "diagram_left_copy_right",
+            "architecture_remedy": "diagram_fullscreen",
+            "verification_repro": "device_showcase",
+            "summary_payoff": "card_minimal",
+            "ci_pipeline_defense": "metric_grid",
+            "final_takeaway": "accent_badge_headline",
+        }
 
         # Target 2 to 4 conceptual AI illustration beats; proof beats are SVG or authentic capture
-        # Beat 1 (Hook/Problem): Conceptual Illustration 1
-        # Beat 2 (Symptom/Impact): SVG Diagram / Authentic Capture
-        # Beat 3 (Root Cause/Mechanism): Conceptual Illustration 2
-        # Beat 4 (Remedy/Fix): SVG Diagram / Proof
-        # Beat 5 (Verification/Demo): Authentic Capture / SVG Diagram
-        # Beat 6 (Takeaway/Principle): Conceptual Illustration 3 or Typographic Focus
         ai_eligible_indices = {0, 2}
         if num_sections >= 7:
             ai_eligible_indices.add(num_sections - 1)
@@ -312,17 +315,29 @@ class ClaimAwareVisualPlanner:
             start = float(sec.get("start_seconds", 0.0))
             end = float(sec.get("end_seconds", 0.0))
             text = sec.get("narration") or sec.get("text") or ""
-
-            # Assign associated claims
-            assigned_cids = [claim_ids[idx % len(claim_ids)]]
             beat_id = f"vb-{idx + 1:02d}"
 
-            # Visual intent generation
-            intent = self._formulate_visual_intent(idx, text)
+            # Assign associated claims semantically (no modulo fallback)
+            assigned_cids = list(claim_by_sec.get(sec_id, []))
+            if not assigned_cids:
+                t_low = text.strip().lower()
+                if len(t_low) >= 10:
+                    for c in claim_ledger:
+                        c_stmt = str(c.get("statement") or "").strip().lower()
+                        if c_stmt and len(c_stmt) >= 10 and (c_stmt in t_low or t_low in c_stmt):
+                            cid = c.get("claim_id")
+                            if cid and cid not in assigned_cids:
+                                assigned_cids.append(str(cid))
+
+            story_fn = self._get_story_function(idx, num_sections)
+            layout = layout_by_function.get(story_fn, "card_minimal")
+
+            # Visual intent generation based on story function and text
+            intent = self._formulate_visual_intent(story_fn, text)
             if not intent:
                 raise VisualPlannerError(f"Beat {beat_id} has empty visual intent")
 
-            is_conceptual = idx in ai_eligible_indices
+            is_conceptual = (idx in ai_eligible_indices) and not bool(assigned_cids)
             has_matching_capture = bool(existing_captures and idx < len(existing_captures))
 
             if is_conceptual:
@@ -359,12 +374,12 @@ class ClaimAwareVisualPlanner:
                 script_section_id=sec_id,
                 start_seconds=start,
                 end_seconds=end,
-                story_function=self._get_story_function(idx, num_sections),
+                story_function=story_fn,
                 visual_kind=visual_kind,
                 evidence_class=evidence_class,
                 claim_ids=assigned_cids,
                 asset_ids=[asset_id],
-                layout=layouts[idx % len(layouts)],
+                layout=layout,
                 visual_intent=intent,
                 render_strategy=render_strategy,
                 fallback_policy=fallback_policy,
@@ -375,19 +390,20 @@ class ClaimAwareVisualPlanner:
         return beats
 
     @staticmethod
-    def _formulate_visual_intent(beat_index: int, narration_text: str) -> str:
+    def _formulate_visual_intent(story_fn: str, narration_text: str) -> str:
         clean_text = narration_text[:120].strip()
-        intents = [
-            f"Hook illustration capturing developer frustration with agent failure: {clean_text}",
-            f"Technical schematic depicting developer impact and error propagation: {clean_text}",
-            f"Architectural diagram illustrating session memory boundary failure: {clean_text}",
-            f"Engineering blueprint of declarative configuration remedy: {clean_text}",
-            f"Terminal execution trace proving reproduction and test fix: {clean_text}",
-            f"Summary card reinforcing defensive verification principle: {clean_text}",
-            f"Secondary verification checklist for CI regression suite: {clean_text}",
-            f"Takeaway diagram highlighting production boundary safety: {clean_text}",
-        ]
-        return intents[beat_index % len(intents)]
+        fn_titles = {
+            "problem_hook": "Hook illustration highlighting developer issue",
+            "developer_impact": "Technical schematic depicting impact and error propagation",
+            "root_cause_mechanism": "Architectural diagram showing internal root cause boundary",
+            "architecture_remedy": "Engineering blueprint of declarative configuration remedy",
+            "verification_repro": "Terminal execution trace proving reproduction and test fix",
+            "summary_payoff": "Summary card reinforcing defensive verification principle",
+            "ci_pipeline_defense": "Secondary verification checklist for CI regression suite",
+            "final_takeaway": "Takeaway diagram highlighting production boundary safety",
+        }
+        prefix = fn_titles.get(story_fn, "Explanatory diagram illustrating engineering concept")
+        return f"{prefix}: {clean_text}" if clean_text else prefix
 
     @staticmethod
     def _get_story_function(index: int, total: int) -> str:
