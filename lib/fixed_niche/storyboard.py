@@ -399,12 +399,20 @@ class FixedNicheStoryboardDirector:
         # Generate SVGs on disk
         for i, beat in enumerate(beats_spec):
             asset_id = beat["asset_id"]
+            beat_start_s = float(beat.get("start_s", 0.0))
+            beat_end_s = float(beat.get("end_s", beat_start_s + 11.0))
+            beat_dur = max(1.0, beat_end_s - beat_start_s)
+            narration = beat.get("narration", "")
             svg_content = self.generate_technical_svg(
                 asset_id=asset_id,
                 topic_family=family,
                 title=title,
                 beat_num=i + 1,
                 total_beats=len(beats_spec),
+                duration=beat_dur,
+                narration=narration,
+                beat_start_s=beat_start_s,
+                progressive=True,
             )
             svg_file = visuals_dir / f"{asset_id}.svg"
             svg_file.write_text(svg_content, encoding="utf-8")

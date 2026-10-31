@@ -20,6 +20,7 @@ Content & Quality for both:
   * For major technical concepts, hardware, or architecture, author an actual SVG diagram or bind an approved staged source image from `assets/visuals/` — do NOT rely on text-only cards. A text-only card requires explicit editorial rationale.
   * Never fabricate arbitrary unverified asset paths. In visual mode, consume staged local files from `assets/visuals/` or inline deterministic SVG layers.
   * Scene-specific art direction: Distinct scenes must have distinct, context-relevant visual treatment (e.g. technical diagram layout, flow arrows, or authentic device imagery). Do not wrap every scene in an identical glassmorphic text box on a uniform gradient.
+  * Progressive voice-synchronized diagrams: NEVER display all diagram blocks simultaneously at t=0 when explaining workflows, architectures, or multi-step agent pipelines (e.g. hook -> agent -> tools -> output). Structure diagrams into semantic groups (`#flow-step-1`, `#flow-arrow-1`, `#flow-step-2`...) and reveal blocks sequentially matching the spoken voice narration via GSAP tweens on `window.__timelines['main']` or embedded keyframes.
   * Wrap text callouts in readable, high-contrast containers with dynamic bounds (`width: fit-content; max-width: 90vw; word-break: break-word; box-sizing: border-box;`).
   * Include distinct graphic elements across scenes:
     - Scene 1: Authentic product photo or clear illustrative hardware icon + bold headline title.
