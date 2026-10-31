@@ -650,6 +650,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False, help="Enable Muse AI image generation for conceptual illustration beats (operator opt-in)")
     parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"], help="Visual presentation style (progressive animated diagram vs legacy static)")
     parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True, help="Enable progressive animated diagram reveals synchronized to speech (default: True, per JEV decision)")
+    parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True, help="Prioritize discovery of latest breaking news with real published timestamps (default: True)")
     args = parser.parse_args(argv)
 
     if args.enable_ai_visuals:
@@ -690,11 +691,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                 candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
             except Exception as e:
                 logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
-    from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
-    disc = HybridCandidateDiscovery()
     if not candidates_pool:
-        adapter = FixedNicheSourceAdapter()
-        candidates_pool = adapter.discover_production_candidates()
+        from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+        disc = HybridCandidateDiscovery(
+            require_latest_news=getattr(args, "require_latest_news", True)
+        )
+        res = disc.discover_candidates(count=10)
+        if res.is_eligible and res.candidates:
+            candidates_pool = res.candidates
+        else:
+            adapter = FixedNicheSourceAdapter()
+            candidates_pool = adapter.discover_production_candidates()
 
     matched_cand = next((c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)), None) if candidate_id else None
 

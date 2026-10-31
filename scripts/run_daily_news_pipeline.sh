@@ -240,7 +240,7 @@ fi
 # PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
 set +e
-"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count "${NEWS_PRODUCE_COUNT:-8}" 2>&1 | tee "$PRODUCE_LOG"
+"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news 2>&1 | tee "$PRODUCE_LOG"
 PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"

@@ -113,7 +113,8 @@ def run_produce(args: argparse.Namespace) -> None:
 
     # Option C: Hybrid Tiered Strategy (Tier 1 Curated Backlog -> Tier 2 Live Feed)
     from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery, DiscoveryTier
-    discovery = HybridCandidateDiscovery()
+    require_latest = getattr(args, "require_latest_news", True)
+    discovery = HybridCandidateDiscovery(require_latest_news=require_latest)
 
     input_path = Path(args.input)
     is_daily_feed = input_path.name in ("newsnow_feed.json", "daily_candidates.json")
@@ -351,6 +352,12 @@ def main(argv: List[str] | None = None) -> int:
     produce_parser.add_argument("--input", required=True, help="Path to raw JSON list")
     produce_parser.add_argument("--count", type=int, default=1, help="Number of distinct topics/projects to produce")
     produce_parser.add_argument("--dry-run", action="store_true", help="Skip LLM calls and project creation")
+    produce_parser.add_argument(
+        "--require-latest-news",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Prioritize discovery of latest breaking news with real published timestamps (default: True).",
+    )
 
     fetch_parser = subparsers.add_parser("fetch", help="Fetch NewsNow source feeds into a raw feed file")
     fetch_parser.add_argument("--url", required=True, help="NewsNow base URL, e.g. http://127.0.0.1:4444")

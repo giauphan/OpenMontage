@@ -18,7 +18,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from lib.fixed_niche.gate import FixedNicheScopeGate
 from lib.fixed_niche.policy import LockedNichePolicy, OutcomeStatus, load_locked_policy
@@ -61,6 +61,7 @@ class HybridCandidateDiscovery:
         curated_path: Optional[Path] = None,
         feed_path: Optional[Path] = None,
         root_dir: Optional[Path] = None,
+        require_latest_news: Optional[bool] = None,
     ) -> None:
         self.policy = policy or load_locked_policy()
         self.gate = gate or FixedNicheScopeGate(self.policy)
@@ -74,6 +75,13 @@ class HybridCandidateDiscovery:
         self.feed_path = Path(feed_path or env_feed or (self.root_dir / self.DEFAULT_FEED_FILE)).resolve()
         
         self.tracker_path = self.root_dir / self.CONSUMED_TRACKER_FILE
+
+        # Enforce and activate latest news discovery (default: True, active)
+        if require_latest_news is not None:
+            self.require_latest_news = require_latest_news
+        else:
+            env_latest = os.environ.get("REQUIRE_LATEST_NEWS", "1").strip().lower()
+            self.require_latest_news = env_latest in ("1", "true", "yes", "on")
 
     def get_used_project_ids(self) -> Set[str]:
         """Aggregate all used or in-progress candidate/project IDs across storage."""
@@ -195,6 +203,8 @@ class HybridCandidateDiscovery:
                 normalized["id"] = cid
                 normalized["topic_family"] = verdict.topic_family
                 normalized["content_kind"] = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
+                has_pub = bool(cand.get("published_at") or cand.get("published_at_utc"))
+                normalized["has_explicit_date"] = has_pub
                 if not normalized.get("published_at_utc"):
                     normalized["published_at_utc"] = cand.get("published_at") or datetime.now(timezone.utc).isoformat()
                 if not normalized.get("published_at"):
@@ -216,6 +226,36 @@ class HybridCandidateDiscovery:
                 logger.debug(f"Candidate {cid} rejected by FixedNicheScopeGate: {verdict.reason}")
         return valid
 
+    @staticmethod
+    def parse_timestamp(val: Any) -> float:
+        """Parse ISO timestamp or date into float epoch seconds."""
+        if not val:
+            return 0.0
+        try:
+            if isinstance(val, (int, float)):
+                return float(val)
+            dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+            return dt.timestamp()
+        except Exception:
+            return 0.0
+
+    def sort_by_recency(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Sort candidates so recent/latest published items appear first.
+
+        Breaking news items with real published dates take priority over evergreen explainers.
+        Items without explicit dates preserve their original backlog insertion order.
+        """
+        def recency_key(pair: Tuple[int, Dict[str, Any]]) -> Tuple[int, int, float, int]:
+            idx, item = pair
+            is_news = 1 if (item.get("content_kind") == "news" and not item.get("is_evergreen")) else 0
+            has_date = 1 if item.get("has_explicit_date") else 0
+            ts = self.parse_timestamp(item.get("published_at_utc")) if has_date else 0.0
+            return (is_news, has_date, ts, -idx)
+
+        indexed = list(enumerate(candidates))
+        sorted_indexed = sorted(indexed, key=recency_key, reverse=True)
+        return [item for _, item in sorted_indexed]
+
     def discover_candidates(self, count: int = 1) -> TieredDiscoveryResult:
         """Execute Option C: Hybrid Tiered Strategy discovery.
 
@@ -226,6 +266,7 @@ class HybridCandidateDiscovery:
             "used_ids_count": len(used_ids),
             "tier_1_checked": False,
             "tier_2_checked": False,
+            "require_latest_news_active": self.require_latest_news,
         }
 
         # --- TIER 1: Curated Backlog ---
@@ -237,10 +278,12 @@ class HybridCandidateDiscovery:
             valid_curated = self.filter_and_validate_candidates(raw_curated, used_ids)
             diagnostics["tier_1_valid_count"] = len(valid_curated)
             if valid_curated:
+                if self.require_latest_news:
+                    valid_curated = self.sort_by_recency(valid_curated)
                 selected = valid_curated[:count]
                 logger.info(
                     f"[Tier 1: Curated Queue] Selected {len(selected)} in-scope candidate(s) "
-                    f"from {self.curated_path}"
+                    f"from {self.curated_path} (require_latest_news={self.require_latest_news})"
                 )
                 return TieredDiscoveryResult(
                     tier=DiscoveryTier.TIER_1_CURATED,
@@ -264,6 +307,8 @@ class HybridCandidateDiscovery:
             valid_feed = self.filter_and_validate_candidates(raw_feed, used_ids)
             diagnostics["tier_2_valid_count"] = len(valid_feed)
             if valid_feed:
+                if self.require_latest_news:
+                    valid_feed = self.sort_by_recency(valid_feed)
                 # Rank candidates by editorial signal if scorer is available
                 try:
                     from lib.fixed_niche.ranker import FixedNicheTopicScorer
@@ -277,7 +322,7 @@ class HybridCandidateDiscovery:
                 selected = valid_feed[:count]
                 logger.info(
                     f"[Tier 2: Automated Feed] Selected {len(selected)} in-scope candidate(s) "
-                    f"from {self.feed_path}"
+                    f"from {self.feed_path} (require_latest_news={self.require_latest_news})"
                 )
                 return TieredDiscoveryResult(
                     tier=DiscoveryTier.TIER_2_AUTOMATED,

@@ -139,13 +139,14 @@ class FixedNicheTopicScorer:
         return 0.10 if is_dup else 0.90
 
     def score_timeliness(self, candidate: Dict[str, Any], verdict: ScopeVerdict) -> float:
-        """Score timeliness (10%). Evergreen receives neutral 0.80; timely news decays by age."""
-        if verdict.content_kind == "evergreen_explainer" or candidate.get("content_kind") == "evergreen_explainer":
-            return 0.80
+        """Score timeliness (10%). Breaking news prioritized by recency; evergreen receives baseline score."""
+        is_evergreen = verdict.content_kind == "evergreen_explainer" or candidate.get("content_kind") == "evergreen_explainer"
+        if is_evergreen:
+            return 0.70  # Baseline for evergreen architectural explainers
 
-        pub_at = candidate.get("published_at")
+        pub_at = candidate.get("published_at") or candidate.get("published_at_utc")
         if not pub_at:
-            return 0.80
+            return 0.70
 
         try:
             if isinstance(pub_at, str):
@@ -153,19 +154,21 @@ class FixedNicheTopicScorer:
             elif isinstance(pub_at, datetime):
                 dt = pub_at
             else:
-                return 0.80
+                return 0.70
 
             age_hours = (self.reference_time - dt).total_seconds() / 3600.0
             if age_hours <= 12.0:
                 return 1.0
             elif age_hours <= 24.0:
+                return 0.95
+            elif age_hours <= 72.0:
+                return 0.90
+            elif age_hours <= 168.0:  # Within 7 days
                 return 0.85
-            elif age_hours <= 48.0:
-                return 0.60
             else:
-                return 0.40
+                return 0.50
         except Exception:
-            return 0.80
+            return 0.70
 
     def score_candidate(
         self,

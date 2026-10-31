@@ -193,3 +193,96 @@ def test_existing_rendered_project_is_deduplicated(discovery_env):
     res = discovery.discover_candidates(count=1)
     assert res.is_eligible is True
     assert res.candidates[0]["candidate_id"] == "cand_curated_02"
+
+
+def test_require_latest_news_active_by_default(discovery_env):
+    """HybridCandidateDiscovery must activate require_latest_news=True by default."""
+    discovery = HybridCandidateDiscovery(
+        curated_path=discovery_env["curated_file"],
+        feed_path=discovery_env["feed_file"],
+        root_dir=discovery_env["root"],
+    )
+    assert discovery.require_latest_news is True
+    res = discovery.discover_candidates(count=1)
+    assert res.diagnostics.get("require_latest_news_active") is True
+
+
+def test_sort_by_recency_prioritizes_breaking_news_over_evergreen(discovery_env):
+    """Breaking news candidates with publication dates take priority over evergreen explainers."""
+    candidates = [
+        {
+            "candidate_id": "cand_evergreen_older",
+            "title": "Why coding agents lose project requirements between sessions",
+            "topic_family": "context_memory",
+            "canonical_url": "https://docs.anthropic.com/claude/context-window",
+            "summary": "Evergreen context persistence explainer.",
+            "content_kind": "evergreen_explainer",
+            "is_evergreen": True,
+        },
+        {
+            "candidate_id": "cand_breaking_news_recent",
+            "title": "SEP-2127 Finalized: MCP Server Cards Eliminate Agent Handshake Latency",
+            "topic_family": "agent_tool_use",
+            "canonical_url": "https://modelcontextprotocol.io/specification/sep-2127",
+            "summary": "Latest breaking specification finalized in October 2026.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-10-15T00:00:00Z",
+        },
+    ]
+    curated_path = discovery_env["root"] / "data" / "mixed_candidates.json"
+    curated_path.write_text(json.dumps(candidates, indent=2), encoding="utf-8")
+
+    discovery = HybridCandidateDiscovery(
+        curated_path=curated_path,
+        feed_path=discovery_env["feed_file"],
+        root_dir=discovery_env["root"],
+        require_latest_news=True,
+    )
+
+    res = discovery.discover_candidates(count=1)
+    assert res.is_eligible is True
+    # Even though cand_evergreen_older was first in the JSON list, cand_breaking_news_recent must be selected
+    assert res.candidates[0]["candidate_id"] == "cand_breaking_news_recent"
+    assert res.candidates[0]["content_kind"] == "news"
+
+
+def test_sort_by_recency_ranks_newer_news_first(discovery_env):
+    """When multiple news items are present, the newer published date is selected first."""
+    candidates = [
+        {
+            "candidate_id": "cand_news_early_oct",
+            "title": "Early October AI Agent Tool Routing Specification",
+            "topic_family": "agent_tool_use",
+            "canonical_url": "https://example.com/spec-early",
+            "summary": "Published on October 1st.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-10-01T12:00:00Z",
+        },
+        {
+            "candidate_id": "cand_news_late_oct",
+            "title": "Late October AI Agent Context Memory Standard",
+            "topic_family": "context_memory",
+            "canonical_url": "https://example.com/spec-late",
+            "summary": "Published on October 25th.",
+            "content_kind": "news",
+            "is_evergreen": False,
+            "published_at_utc": "2026-10-25T12:00:00Z",
+        },
+    ]
+    curated_path = discovery_env["root"] / "data" / "dated_candidates.json"
+    curated_path.write_text(json.dumps(candidates, indent=2), encoding="utf-8")
+
+    discovery = HybridCandidateDiscovery(
+        curated_path=curated_path,
+        feed_path=discovery_env["feed_file"],
+        root_dir=discovery_env["root"],
+        require_latest_news=True,
+    )
+
+    res = discovery.discover_candidates(count=1)
+    assert res.is_eligible is True
+    # cand_news_late_oct (Oct 25) must be chosen before cand_news_early_oct (Oct 1)
+    assert res.candidates[0]["candidate_id"] == "cand_news_late_oct"
+
