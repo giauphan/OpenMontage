@@ -23,7 +23,7 @@ def test_semantic_claim_scene_assignment():
     """T06: Claims are assigned to beats semantically by section_id/statement, not modulo."""
     planner = ClaimAwareVisualPlanner()
     sections = [
-        {"id": "sec_0", "start_seconds": 0.0, "end_seconds": 10.0, "text": "Hook introducing agent failure."},
+        {"id": "sec_0", "start_seconds": 0.0, "end_seconds": 10.0, "text": "Specific benchmark shows 45% recovery mentioned early."},
         {"id": "sec_1", "start_seconds": 10.0, "end_seconds": 22.0, "text": "Transition discussing architecture."},
         {"id": "sec_2", "start_seconds": 22.0, "end_seconds": 34.0, "text": "Specific benchmark shows 45% recovery."},
     ]
@@ -45,7 +45,7 @@ def test_semantic_claim_scene_assignment():
     )
 
     assert len(beats) == 3
-    # Beat 0 and 1 must NOT have C001 assigned via modulo!
+    # Beat 0 must NOT steal C001 despite matching text because C001 has explicit section_id="sec_2"
     assert beats[0].claim_ids == [], f"Beat 0 should have no claim, got {beats[0].claim_ids}"
     assert beats[1].claim_ids == [], f"Beat 1 should have no claim, got {beats[1].claim_ids}"
     assert beats[2].claim_ids == ["C001"], f"Beat 2 must have C001, got {beats[2].claim_ids}"

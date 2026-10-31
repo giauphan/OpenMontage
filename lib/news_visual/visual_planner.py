@@ -323,6 +323,8 @@ class ClaimAwareVisualPlanner:
                 t_low = text.strip().lower()
                 if len(t_low) >= 10:
                     for c in claim_ledger:
+                        if c.get("section_id"):
+                            continue
                         c_stmt = str(c.get("statement") or "").strip().lower()
                         if c_stmt and len(c_stmt) >= 10 and (c_stmt in t_low or t_low in c_stmt):
                             cid = c.get("claim_id")
