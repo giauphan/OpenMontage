@@ -383,7 +383,6 @@ def bind_news_evidence(project_dir: Path) -> bool:
 
             ledger_claims.append({
                 "claim_id": f"C{idx + 1:03d}",
-                "section_id": sec_id,
                 "statement": sec_text,
                 "confidence": "verified" if is_verified else "unverified",
                 "scope": {
