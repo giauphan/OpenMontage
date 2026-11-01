@@ -460,13 +460,94 @@ class FixedNicheVideoRunner:
 
         return out_audio
 
+    def _sample_and_validate_frames(self, output_mp4: Path, render_dur: float, frames_dir: Path) -> bool:
+        """Sample key frames and validate visual quality/variance."""
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        sample_points = [
+            (0, "frame_00s_hook.png"),
+            (3, "frame_03s_impact.png"),
+            (int(render_dur / 2), "frame_mid_mechanism.png"),
+            (int(render_dur - 2), "frame_end_payoff.png"),
+        ]
+        for sec, fname in sample_points:
+            fpath = frames_dir / fname
+            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
+            if subprocess.run(cmd, capture_output=True).returncode != 0:
+                return False
+            if not fpath.is_file():
+                return False
+            ok, _ = self.storyboard_director.validate_frame_sample(fpath)
+            if not ok:
+                return False
+        return True
+
+    def _record_approval_and_status(
+        self,
+        qa_pass: bool,
+        output_mp4: Path,
+        actual_dur: float,
+        target_dur: float,
+        video_sha: Optional[str],
+        audio_sha: Optional[str],
+        ledger_sha: Optional[str],
+    ) -> str:
+        """Sign approval record if QA passed and persist validation status."""
+        app_status = "APPROVED_FOR_PRIVATE_CANARY" if qa_pass else "QA_FAILED"
+        val_status_code = "VIDEO_READY_FOR_PRIVATE_REVIEW" if qa_pass else "QA_FAILED"
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        if qa_pass:
+            from lib.qa_signing import sign_approval_record
+            audit_trail = {
+                "status": app_status, "audio_sha256": audio_sha, "video_sha256": video_sha,
+                "target_aspect": "9:16", "duration": actual_dur, "target_duration": target_dur,
+                "policy_sha256": self.policy.policy_sha256, "strict_quality_pass": True,
+            }
+            app_record = sign_approval_record(
+                project_id=self.candidate_id, media_sha256=video_sha, claim_ledger_sha256=ledger_sha,
+                timestamp_iso=timestamp, reviewer="independent_qa_supervisor", format_type="short",
+                audit_trail=audit_trail,
+            )
+            app_record.update(audit_trail)
+        else:
+            app_record = {
+                "approved": False, "status": app_status, "claim_ledger_sha256": ledger_sha,
+                "audio_sha256": audio_sha, "video_sha256": video_sha, "target_aspect": "9:16",
+                "duration": actual_dur, "target_duration": target_dur,
+                "policy_sha256": self.policy.policy_sha256, "timestamp": timestamp,
+            }
+        (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
+        val_status = {
+            "project_id": self.candidate_id, "status": val_status_code, "strict_quality_pass": qa_pass,
+            "rendered_mp4": str(output_mp4), "duration": actual_dur, "target_duration": target_dur,
+            "policy_sha256": self.policy.policy_sha256,
+        }
+        (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
+        return val_status_code
+
+    def _generate_thumbnail_if_approved(self) -> None:
+        """Generate thumbnail when QA validation passes."""
+        try:
+            from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
+            topic_data = getattr(self, "_staged_topic", None) or {}
+            tb_file = self.project_dir / "artifacts" / "topic_brief.json"
+            if not topic_data and tb_file.is_file():
+                topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
+            ThumbnailOrchestrator.generate_thumbnail(
+                project_dir=self.project_dir,
+                title=topic_data.get("title") or self.candidate_id,
+                topic=topic_data.get("summary", ""),
+                format_type="short",
+                allow_fallback=True,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
+
     def render(self, burn_captions: bool = False, renderer: str = "auto") -> Dict[str, Any]:
         """Render final 9:16 video and perform strict signed QA gating."""
         target_dur = self.get_target_duration()
         output_mp4 = self.project_dir / "renders" / "final_short_en_US_9x16.mp4"
         audio_path = self.project_dir / "assets" / "narration.mp3"
         audio_dur = probe_audio_duration(audio_path) if audio_path.is_file() else -1.0
-        # Enforce shorts duration contract: select audio_dur within [65.0, 75.0], fallback to target_dur
         render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else target_dur
 
         render_project_composition(
@@ -480,42 +561,13 @@ class FixedNicheVideoRunner:
         probe_json = json.loads(probe_out.stdout) if probe_out.returncode == 0 else {}
         (self.project_dir / "renders" / "ffprobe.json").write_text(json.dumps(probe_json, indent=2), encoding="utf-8")
 
-        # Sample frames using argument lists
         frames_dir = self.project_dir / "renders" / "frame_samples"
-        frames_dir.mkdir(parents=True, exist_ok=True)
-        sample_points = [
-            (0, "frame_00s_hook.png"),
-            (3, "frame_03s_impact.png"),
-            (int(render_dur / 2), "frame_mid_mechanism.png"),
-            (int(render_dur - 2), "frame_end_payoff.png"),
-        ]
-        sampling_ok = True
-        for sec, fname in sample_points:
-            fpath = frames_dir / fname
-            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
-            sample_proc = subprocess.run(cmd, capture_output=True)
-            if sample_proc.returncode != 0:
-                sampling_ok = False
+        frames_valid = self._sample_and_validate_frames(output_mp4, render_dur, frames_dir)
 
-        # Validate probe duration and output video
         video_ok = output_mp4.is_file() and output_mp4.stat().st_size > 0 and probe_out.returncode == 0
         probe_dur_str = probe_json.get("format", {}).get("duration")
         probe_dur = float(probe_dur_str) if probe_dur_str else 0.0
 
-        # Validate frame samples with visual variance check
-        frames_valid = sampling_ok
-        if frames_valid:
-            for _, fname in sample_points:
-                fpath = frames_dir / fname
-                if not fpath.is_file():
-                    frames_valid = False
-                    break
-                ok, _ = self.storyboard_director.validate_frame_sample(fpath)
-                if not ok:
-                    frames_valid = False
-                    break
-
-        # Validate claim ledger integrity
         claim_ledger_path = self.project_dir / "artifacts" / "claim_ledger.json"
         ledger_valid = claim_ledger_path.is_file() and claim_ledger_path.stat().st_size > 0
         ledger_sha = FixedNicheResearcher.compute_file_sha(claim_ledger_path) if ledger_valid else None
@@ -523,7 +575,6 @@ class FixedNicheVideoRunner:
         audio_sha = FixedNicheResearcher.compute_file_sha(audio_path) if audio_path.is_file() else None
         video_sha = FixedNicheResearcher.compute_file_sha(output_mp4) if video_ok else None
 
-        # Run independent QA validator
         from lib.fixed_niche.qa import FixedNicheQAValidator
         qa_validator = FixedNicheQAValidator(self.policy)
         qa_report = qa_validator.audit_fixed_niche_deliverable(
@@ -532,131 +583,26 @@ class FixedNicheVideoRunner:
         )
 
         qa_pass = bool(
-            video_ok
-            and probe_dur > 0
-            and frames_valid
-            and ledger_valid
-            and audio_sha is not None
-            and video_sha is not None
-            and qa_report.get("strict_quality_pass")
+            video_ok and probe_dur > 0 and frames_valid and ledger_valid
+            and audio_sha is not None and video_sha is not None and qa_report.get("strict_quality_pass")
         )
-
-        app_status = "APPROVED_FOR_PRIVATE_CANARY" if qa_pass else "QA_FAILED"
-        val_status_code = "VIDEO_READY_FOR_PRIVATE_REVIEW" if qa_pass else "QA_FAILED"
-
         actual_dur = probe_dur if probe_dur > 0 else render_dur
-
+        val_status_code = self._record_approval_and_status(
+            qa_pass, output_mp4, actual_dur, target_dur, video_sha, audio_sha, ledger_sha
+        )
         if qa_pass:
-            from lib.qa_signing import sign_approval_record
-            app_record = sign_approval_record(
-                project_id=self.candidate_id,
-                media_sha256=video_sha,
-                claim_ledger_sha256=ledger_sha,
-                timestamp_iso=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                reviewer="independent_qa_supervisor",
-                format_type="short",
-                audit_trail={
-                    "status": app_status,
-                    "audio_sha256": audio_sha,
-                    "video_sha256": video_sha,
-                    "target_aspect": "9:16",
-                    "duration": actual_dur,
-                    "target_duration": target_dur,
-                    "policy_sha256": self.policy.policy_sha256,
-                    "strict_quality_pass": True,
-                },
-            )
-            # Retain top-level attributes for compatibility
-            app_record["status"] = app_status
-            app_record["audio_sha256"] = audio_sha
-            app_record["video_sha256"] = video_sha
-            app_record["target_aspect"] = "9:16"
-            app_record["duration"] = actual_dur
-            app_record["target_duration"] = target_dur
-            app_record["policy_sha256"] = self.policy.policy_sha256
-        else:
-            app_record = {
-                "approved": False,
-                "status": app_status,
-                "claim_ledger_sha256": ledger_sha,
-                "audio_sha256": audio_sha,
-                "video_sha256": video_sha,
-                "target_aspect": "9:16",
-                "duration": actual_dur,
-                "target_duration": target_dur,
-                "policy_sha256": self.policy.policy_sha256,
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            }
-        (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
-
-        val_status = {
-            "project_id": self.candidate_id,
-            "status": val_status_code,
-            "strict_quality_pass": qa_pass,
-            "rendered_mp4": str(output_mp4),
-            "duration": actual_dur,
-            "target_duration": target_dur,
-            "policy_sha256": self.policy.policy_sha256,
-        }
-        (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
-
-        # Generate YouTube thumbnail via Muse
-        if qa_pass:
-            try:
-                from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
-                topic_data = getattr(self, "_staged_topic", None) or {}
-                if not topic_data:
-                    tb_file = self.project_dir / "artifacts" / "topic_brief.json"
-                    if tb_file.is_file():
-                        topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
-                title = topic_data.get("title") or self.candidate_id
-                ThumbnailOrchestrator.generate_thumbnail(
-                    project_dir=self.project_dir,
-                    title=title,
-                    topic=topic_data.get("summary", ""),
-                    format_type="short",
-                    allow_fallback=True,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
+            self._generate_thumbnail_if_approved()
 
         return {
-            "status": val_status_code,
-            "rendered_mp4": str(output_mp4),
-            "duration": actual_dur,
-            "target_duration": target_dur,
-            "frames_dir": str(frames_dir),
+            "status": val_status_code, "rendered_mp4": str(output_mp4), "duration": actual_dur,
+            "target_duration": target_dur, "frames_dir": str(frames_dir),
             "approval_path": str(self.project_dir / "approval.json"),
         }
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Fixed Niche Video Production CLI")
-    parser.add_argument("--candidate-id", required=False, default=None, help="Candidate ID to produce")
-    parser.add_argument("--auto-select", action="store_true", default=False, help="Automatically discover, filter, and score top in-scope candidate")
-    parser.add_argument("--candidates-file", required=False, default=None, help="Path to YAML/JSON candidates pool file")
-    parser.add_argument("--use-test-fixtures", action="store_true", default=False, help="Explicitly allow loading test fixtures for testing/rehearsals")
-    parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Video composition renderer (auto, hyperframes, ffmpeg)")
-    parser.add_argument("--project-dir", required=False, help="Custom project output directory")
-    parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format (locked to shorts)")
-    parser.add_argument("--provider", default=None, help="TTS provider (kokoro, flite, edge, pocket18, omniroute)")
-    parser.add_argument("--voice", default=None, help="TTS voice override")
-    parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
-    parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
-    parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video (default: False, clean video)")
-    parser.add_argument("--title", default=None)
-    parser.add_argument("--topic-family", default=None)
-    parser.add_argument("--canonical-url", default=None)
-    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False, help="Enable Muse AI image generation for conceptual illustration beats (operator opt-in)")
-    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"], help="Visual presentation style (progressive animated diagram vs legacy static)")
-    parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True, help="Enable progressive animated diagram reveals synchronized to speech (default: True, per JEV decision)")
-    args = parser.parse_args(argv)
-
-    if args.enable_ai_visuals:
-        os.environ["AI_VISUAL_ENABLED"] = "1"
-    else:
-        os.environ["AI_VISUAL_ENABLED"] = "0"
-
+def _configure_cli_environment(args: argparse.Namespace) -> None:
+    """Set global environment variables based on CLI flags."""
+    os.environ["AI_VISUAL_ENABLED"] = "1" if args.enable_ai_visuals else "0"
     if args.enable_diagram_animation:
         os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
         os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
@@ -664,75 +610,165 @@ def main(argv: Optional[List[str]] = None) -> int:
         os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
         os.environ["OPENMONTAGE_VISUAL_STYLE"] = "legacy"
 
+
+def _validate_safe_path(path: Path | str) -> Path:
+    """Validate path against traversal attacks (CWE-22 / CWE-73)."""
+    import tempfile
+    p = Path(path).expanduser().resolve()
+    repo_root = ROOT.resolve()
+    home_dir = Path.home().resolve()
+    cwd_dir = Path.cwd().resolve()
+    tmp_dir = Path(tempfile.gettempdir()).resolve()
+    is_in_repo = p.is_relative_to(repo_root)
+    is_in_home = p.is_relative_to(home_dir)
+    is_in_cwd = cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)
+    is_in_tmp = p.is_relative_to(tmp_dir)
+    if not (is_in_repo or is_in_home or is_in_cwd or is_in_tmp):
+        raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
+    if not p.is_file():
+        raise FileNotFoundError(f"Candidate file does not exist: {path}")
+    if is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
+        raise PermissionError(f"Candidate file in temp directory must be owned by current user: {path}")
+    return p
+
+
+def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
+    """Safely load candidate dictionaries from a YAML file."""
+    try:
+        import yaml
+        raw_data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+        if isinstance(raw_data, dict):
+            return raw_data.get("positive_cases", [])
+        if isinstance(raw_data, list):
+            return raw_data
+        return []
+    except Exception as e:
+        logger.warning("Failed to load candidates from %s: %s", file_path, e)
+        return []
+
+
+def _load_cli_candidates_pool(args: argparse.Namespace) -> List[Dict[str, Any]]:
+    """Load candidates from specified file, test fixtures, or production source adapter."""
+    if args.candidates_file:
+        cand_path = _validate_safe_path(args.candidates_file)
+        candidates = _load_yaml_candidates(cand_path)
+        if not candidates:
+            raise ValueError(
+                f"No candidates could be loaded from specified --candidates-file: {args.candidates_file}"
+            )
+        return candidates
+
+    if args.use_test_fixtures:
+        fixture_path = _validate_safe_path(ROOT / "tests/fixtures/fixed_niche_cases.yaml")
+        candidates = _load_yaml_candidates(fixture_path)
+        if not candidates:
+            raise ValueError("No candidates could be loaded from test fixtures")
+        return candidates
+
+    adapter = FixedNicheSourceAdapter()
+    return adapter.discover_production_candidates()
+
+
+def _apply_topic_overrides(topic: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    """Apply explicit CLI argument overrides to topic metadata."""
+    result = dict(topic)
+    if args.title:
+        result["title"] = args.title
+    if args.topic_family:
+        result["topic_family"] = args.topic_family
+    if args.canonical_url:
+        result["canonical_url"] = args.canonical_url
+    return result
+
+
+def _auto_select_topic(
+    candidates_pool: List[Dict[str, Any]],
+    gate: FixedNicheScopeGate,
+    args: argparse.Namespace,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Auto-select the highest ranked eligible candidate from pool."""
+    eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
+    if not eligible:
+        return None, None
+
+    from lib.fixed_niche.ranker import FixedNicheTopicScorer
+    ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
+    top_cand = ranked[0] if ranked else eligible[0]
+    selected_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
+    topic = _apply_topic_overrides(top_cand, args)
+    topic["candidate_id"] = selected_id
+    return selected_id, topic
+
+
+def _resolve_cli_topic_and_candidate(
+    args: argparse.Namespace,
+    candidates_pool: List[Dict[str, Any]],
+    gate: FixedNicheScopeGate,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Resolve target candidate ID and topic dictionary according to auto-select/explicit args."""
+    candidate_id = args.candidate_id
+    if candidate_id:
+        matched = next(
+            (c for c in candidates_pool if c.get("candidate_id") == candidate_id or c.get("id") == candidate_id),
+            None,
+        )
+        if matched:
+            topic = _apply_topic_overrides(matched, args)
+            topic["candidate_id"] = candidate_id
+            return candidate_id, topic
+
+    if args.auto_select or not candidate_id:
+        return _auto_select_topic(candidates_pool, gate, args)
+
+    fallback = _apply_topic_overrides({
+        "candidate_id": candidate_id,
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+    }, args)
+    fallback["candidate_id"] = candidate_id
+    return candidate_id, fallback
+
+
+def _build_cli_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Fixed Niche Video Production CLI")
+    parser.add_argument("--candidate-id", default=None, help="Candidate ID to produce")
+    parser.add_argument("--auto-select", action="store_true", default=False, help="Auto-discover in-scope candidate")
+    parser.add_argument("--candidates-file", default=None, help="Path to YAML/JSON candidates pool file")
+    parser.add_argument("--use-test-fixtures", action="store_true", default=False, help="Allow loading test fixtures")
+    parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Renderer")
+    parser.add_argument("--project-dir", help="Custom project output directory")
+    parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format")
+    parser.add_argument("--provider", default=None, help="TTS provider")
+    parser.add_argument("--voice", default=None, help="TTS voice override")
+    parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
+    parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
+    parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video")
+    parser.add_argument("--title", default=None)
+    parser.add_argument("--topic-family", default=None)
+    parser.add_argument("--canonical-url", default=None)
+    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"])
+    parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--max-age-days", type=int, default=7)
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _build_cli_parser().parse_args(argv)
+
+    _configure_cli_environment(args)
+
     policy = load_locked_policy()
     gate = FixedNicheScopeGate(policy)
 
-    # Automatic topic selection when requested or candidate-id is omitted
-    topic: Dict[str, Any]
-    candidate_id = args.candidate_id
+    candidates_pool = _load_cli_candidates_pool(args)
+    candidate_id, topic = _resolve_cli_topic_and_candidate(args, candidates_pool, gate)
 
-    candidates_pool: List[Dict[str, Any]] = []
-    if args.candidates_file:
-        c_file = Path(args.candidates_file)
-        if c_file.is_file():
-            try:
-                import yaml
-                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-            except Exception as e:
-                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
-    elif args.use_test_fixtures:
-        c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
-        if c_file.is_file():
-            try:
-                import yaml
-                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-            except Exception as e:
-                logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
-    if not candidates_pool:
-        adapter = FixedNicheSourceAdapter()
-        candidates_pool = adapter.discover_production_candidates()
-
-    matched_cand = next((c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)), None) if candidate_id else None
-
-    if matched_cand:
-        topic = dict(matched_cand)
-        topic["candidate_id"] = candidate_id
-        if args.title:
-            topic["title"] = args.title
-        if args.topic_family:
-            topic["topic_family"] = args.topic_family
-        if args.canonical_url:
-            topic["canonical_url"] = args.canonical_url
-    elif args.auto_select or not candidate_id:
-        eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
-        if not eligible:
-            print(json.dumps({
-                "status": "NO_ELIGIBLE_TOPIC",
-                "message": "Zero eligible topics found in candidate pool; no project staged.",
-            }, indent=2))
-            return 0
-
-        from lib.fixed_niche.ranker import FixedNicheTopicScorer
-        ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
-        top_cand = ranked[0] if ranked else eligible[0]
-        candidate_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
-        topic = dict(top_cand)
-        topic["candidate_id"] = candidate_id
-        if args.title:
-            topic["title"] = args.title
-        if args.topic_family:
-            topic["topic_family"] = args.topic_family
-        if args.canonical_url:
-            topic["canonical_url"] = args.canonical_url
-    else:
-        topic = {
-            "candidate_id": candidate_id,
-            "title": args.title or "Why coding agents lose project requirements between sessions",
-            "topic_family": args.topic_family or "context_memory",
-            "canonical_url": args.canonical_url or "https://docs.anthropic.com/claude/context-window",
-        }
+    if not candidate_id or not topic:
+        print(json.dumps({"status": "NO_ELIGIBLE_TOPIC", "message": "Zero eligible topics found in candidate pool; no project staged."}, indent=2))
+        return 0
 
     proj_dir = Path(args.project_dir) if args.project_dir else ROOT / "projects" / candidate_id
     runner = FixedNicheVideoRunner(

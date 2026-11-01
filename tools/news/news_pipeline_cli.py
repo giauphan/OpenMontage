@@ -5,8 +5,9 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from lib.checkpoint import init_project, write_checkpoint
 from lib.codex_news_selector import CodexNewsSelector as NewsSelector
@@ -96,8 +97,38 @@ def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]
         artifacts={"research_brief": research_brief},
         human_approval_required=False,
     )
-    logger.info(f"Project initialized: projects/{project_id}")
+    logger.info("Project initialized: projects/%s", _sanitize_log_val(project_id))
     return project_id
+
+
+def _sanitize_log_val(val: Any) -> str:
+    """Sanitize strings before logging to prevent log injection (CWE-117)."""
+    clean = str(val).replace("\r", " ").replace("\n", " ").strip()
+    return clean[:120]
+
+
+def _validate_safe_input_path(path: Path | str) -> Path:
+    """Validate path against traversal attacks (CWE-22 / CWE-73)."""
+    import tempfile
+    p = Path(path).expanduser().resolve()
+    repo_root = Path(__file__).resolve().parents[2]
+    home_dir = Path.home().resolve()
+    cwd_dir = Path.cwd().resolve()
+    tmp_dir = Path(tempfile.gettempdir()).resolve()
+    is_in_repo = p.is_relative_to(repo_root)
+    is_in_home = p.is_relative_to(home_dir)
+    is_in_cwd = cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)
+    is_in_tmp = p.is_relative_to(tmp_dir)
+    if not (is_in_repo or is_in_home or is_in_cwd or is_in_tmp):
+        logger.error("Path traversal detected or path outside allowed root: %s", _sanitize_log_val(path))
+        sys.exit(1)
+    if not p.is_file():
+        logger.error("Input file not found: %s", _sanitize_log_val(path))
+        sys.exit(1)
+    if is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
+        logger.error("Input file in temp directory must be owned by current user: %s", _sanitize_log_val(path))
+        sys.exit(1)
+    return p
 
 
 def run_fetch(args: argparse.Namespace) -> None:
@@ -106,15 +137,94 @@ def run_fetch(args: argparse.Namespace) -> None:
     logger.info(f"Wrote {count} raw items to {args.output}")
 
 
-def run_produce(args: argparse.Namespace) -> None:
-    """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
-    count = max(1, getattr(args, "count", 1))
-    input_path = Path(args.input)
-    if not input_path.exists():
-        logger.error(f"Input file not found: {input_path}")
+def _collect_scheduled_ids() -> Set[str]:
+    sched_path = Path("config/publish_schedule.json")
+    if not sched_path.is_file():
+        return set()
+    try:
+        with sched_path.open("r", encoding="utf-8") as f:
+            sched_data = json.load(f)
+        return {
+            item["project_id"]
+            for item in sched_data.get("active_projects", [])
+            if isinstance(item, dict) and item.get("project_id")
+        }
+    except Exception:
+        return set()
+
+
+def _is_completed_project_dir(p: Path) -> bool:
+    if not p.is_dir():
+        return False
+    if (p / "validation_status.json").is_file():
+        return True
+    renders = p / "renders"
+    return renders.is_dir() and any(renders.glob("*.mp4"))
+
+
+def _collect_directory_project_ids(p_dir: Path) -> Set[str]:
+    if not p_dir.is_dir():
+        return set()
+    return {p.name for p in p_dir.iterdir() if _is_completed_project_dir(p)}
+
+
+def _collect_used_project_ids() -> Set[str]:
+    """Collect project IDs that are already scheduled or completed."""
+    used_ids = _collect_scheduled_ids()
+    for p_dir in (Path("projects"), Path("projects_news")):
+        used_ids.update(_collect_directory_project_ids(p_dir))
+    return used_ids
+
+
+def _filter_by_scope_gate(candidate_pool: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Enforce fixed niche scope gating unless explicitly skipped."""
+    should_enforce_niche = os.environ.get("SKIP_SCOPE_GATE", "0") not in ("1", "true", "True")
+    if not should_enforce_niche:
+        return candidate_pool
+
+    from lib.fixed_niche.gate import FixedNicheScopeGate
+    gate = FixedNicheScopeGate()
+    niche_filtered: List[Dict[str, Any]] = []
+    for cand in candidate_pool:
+        verdict = gate.evaluate_candidate(cand)
+        if verdict.is_eligible:
+            cand["topic_family"] = verdict.topic_family
+            niche_filtered.append(cand)
+        else:
+            logger.info("FixedNicheScopeGate rejected candidate '%s': %s", cand.get("candidate_id"), verdict.reason)
+
+    if not niche_filtered:
+        logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
+        print("STATUS=NO_ELIGIBLE_TOPIC")
+        marker_file = Path("data/.no_eligible_topic_marker")
+        try:
+            marker_file.parent.mkdir(parents=True, exist_ok=True)
+            marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+        except OSError:
+            pass
+        sys.exit(2)
+
+    marker_file = Path("data/.no_eligible_topic_marker")
+    if marker_file.is_file():
+        try:
+            marker_file.unlink()
+        except OSError:
+            pass
+    return niche_filtered
+
+
+def _ingest_and_filter_candidates(
+    input_path: Path,
+    count: int,
+    used_ids: Set[str],
+) -> List[Dict[str, Any]]:
+    """Ingest candidates from input file and apply initial filtering."""
+    safe_path = _validate_safe_input_path(input_path)
+    if not safe_path.is_file():
+        logger.error("Input file not found: %s", _sanitize_log_val(safe_path))
         sys.exit(1)
 
-    with input_path.open("r", encoding="utf-8") as f:
+    with safe_path.open("r", encoding="utf-8") as f:
         raw_items = json.load(f)
 
     logger.info("Ingesting and normalizing...")
@@ -123,62 +233,99 @@ def run_produce(args: argparse.Namespace) -> None:
     if diagnostics:
         logger.warning(f"Encountered {len(diagnostics)} invalid items during ingestion.")
 
-    used_ids: set[str] = set()
+    available = [c for c in candidates if c.get("candidate_id") not in used_ids]
+    candidate_pool = available if len(available) >= count else candidates
+    return _filter_by_scope_gate(candidate_pool)
 
-    # Pre-populate used_ids with already scheduled projects and completed validated/rendered projects
-    sched_path = Path("config/publish_schedule.json")
-    if sched_path.is_file():
+
+def _select_single_candidate(
+    selector: NewsSelector,
+    pool: List[Dict[str, Any]],
+    used_ids: Set[str],
+    attempts: int,
+    max_attempts: int,
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """Execute one LLM selection attempt and return (candidate, selection) if valid."""
+    selection = selector.select_and_research(pool)
+    if not isinstance(selection, dict):
+        logger.warning(
+            "Codex returned a non-object selection; retrying selection "
+            f"(attempt {attempts}/{max_attempts})."
+        )
+        return None
+
+    selected_id = selection.get("selected_candidate_id")
+    if not isinstance(selected_id, str) or not selected_id:
+        logger.warning(
+            "Codex selection omitted selected_candidate_id; retrying selection "
+            f"(attempt {attempts}/{max_attempts})."
+        )
+        return None
+
+    if selected_id in used_ids:
+        logger.warning(f"Codex selected duplicate candidate {selected_id}; retrying selection.")
+        return None
+
+    candidate = next((c for c in pool if c["candidate_id"] == selected_id), None)
+    if candidate is None:
+        logger.warning(
+            "Codex selected candidate outside the current pool; retrying selection "
+            f"(attempt {attempts}/{max_attempts})."
+        )
+        return None
+
+    return candidate, selection
+
+
+def _select_and_initialize_projects(
+    selector: NewsSelector,
+    ranked: List[Dict[str, Any]],
+    used_ids: Set[str],
+    count: int,
+) -> Tuple[List[str], int]:
+    """Perform bounded selection and project initialization loop."""
+    project_ids: List[str] = []
+    max_attempts = max(count * 3, len(ranked))
+    attempts = 0
+
+    while len(project_ids) < count and attempts < max_attempts:
+        pool = [c for c in ranked if c["candidate_id"] not in used_ids]
+        if not pool:
+            break
+        attempts += 1
+        res = _select_single_candidate(selector, pool, used_ids, attempts, max_attempts)
+        if res is None:
+            continue
+
+        candidate, selection = res
+        selected_id = candidate["candidate_id"]
+        used_ids.add(selected_id)
+
+        logger.info("Selected candidate: %s (%s)", _sanitize_log_val(selected_id), _sanitize_log_val(candidate.get("title", "")))
+        logger.info("Rationale: %s", _sanitize_log_val(selection.get("selection_rationale", "")))
+
+        logger.info("Bridging to research artifact...")
         try:
-            with sched_path.open("r", encoding="utf-8") as f:
-                sched_data = json.load(f)
-            for item in sched_data.get("active_projects", []):
-                if isinstance(item, dict) and item.get("project_id"):
-                    used_ids.add(item["project_id"])
-        except Exception:
-            pass
+            project_id = _init_candidate_project(candidate, selection)
+            project_ids.append(project_id)
+        except Exception as e:
+            logger.warning(
+                "Failed to initialize project for %s: %s; retrying selection "
+                "(attempt %s/%s).",
+                _sanitize_log_val(selected_id),
+                e,
+                attempts,
+                max_attempts,
+            )
 
-    for p_dir in (Path("projects"), Path("projects_news")):
-        if p_dir.is_dir():
-            for p in p_dir.iterdir():
-                if p.is_dir():
-                    has_video = (p / "renders").is_dir() and any((p / "renders").glob("*.mp4"))
-                    if (p / "validation_status.json").is_file() or has_video:
-                        used_ids.add(p.name)
+    return project_ids, attempts
 
-    # Filter out already used candidates before ranking so we do not artificially truncate the usable pool
-    available_candidates = [c for c in candidates if c.get("candidate_id") not in used_ids]
-    candidate_pool = available_candidates if len(available_candidates) >= count else candidates
 
-    should_enforce_niche = os.environ.get("SKIP_SCOPE_GATE", "0") not in ("1", "true", "True")
-    if should_enforce_niche:
-        from lib.fixed_niche.gate import FixedNicheScopeGate
-        gate = FixedNicheScopeGate()
-        niche_filtered = []
-        for cand in candidate_pool:
-            verdict = gate.evaluate_candidate(cand)
-            if verdict.is_eligible:
-                cand["topic_family"] = verdict.topic_family
-                niche_filtered.append(cand)
-            else:
-                logger.info(f"FixedNicheScopeGate rejected candidate '{cand.get('candidate_id')}': {verdict.reason}")
-        candidate_pool = niche_filtered
-        if not candidate_pool:
-            logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
-            print("STATUS=NO_ELIGIBLE_TOPIC")
-            marker_file = Path("data/.no_eligible_topic_marker")
-            try:
-                marker_file.parent.mkdir(parents=True, exist_ok=True)
-                marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-            except OSError:
-                pass
-            sys.exit(2)
-        else:
-            marker_file = Path("data/.no_eligible_topic_marker")
-            if marker_file.is_file():
-                try:
-                    marker_file.unlink()
-                except OSError:
-                    pass
+def run_produce(args: argparse.Namespace) -> None:
+    """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
+    count = max(1, getattr(args, "count", 1))
+    used_ids = _collect_used_project_ids()
+    candidate_pool = _ingest_and_filter_candidates(Path(args.input), count, used_ids)
 
     logger.info("Scoring and ranking...")
     scorer = NewsCandidateScorer()
@@ -200,70 +347,8 @@ def run_produce(args: argparse.Namespace) -> None:
 
     logger.info("Running bounded Codex selection...")
     selector = NewsSelector()
+    project_ids, attempts = _select_and_initialize_projects(selector, ranked, used_ids, count)
 
-    project_ids: List[str] = []
-
-    max_attempts = max(count * 3, len(ranked))
-    attempts = 0
-    while len(project_ids) < count and attempts < max_attempts:
-        pool = [c for c in ranked if c["candidate_id"] not in used_ids]
-        if not pool:
-            break
-        attempts += 1
-        selection = selector.select_and_research(pool)
-        if not selection:
-            logger.warning(
-                "Codex returned invalid candidate-bound research; retrying selection "
-                f"(attempt {attempts}/{max_attempts})."
-            )
-            continue
-
-        if not isinstance(selection, dict):
-            logger.warning(
-                "Codex returned a non-object selection; retrying selection "
-                f"(attempt {attempts}/{max_attempts})."
-            )
-            continue
-
-        selected_id = selection.get("selected_candidate_id")
-        if not isinstance(selected_id, str) or not selected_id:
-            logger.warning(
-                "Codex selection omitted selected_candidate_id; retrying selection "
-                f"(attempt {attempts}/{max_attempts})."
-            )
-            continue
-        if selected_id in used_ids:
-            logger.warning(f"Codex selected duplicate candidate {selected_id}; retrying selection.")
-            continue
-
-        candidate = next((c for c in pool if c["candidate_id"] == selected_id), None)
-        if candidate is None:
-            logger.warning(
-                "Codex selected candidate outside the current pool; retrying selection "
-                f"(attempt {attempts}/{max_attempts})."
-            )
-            continue
-        used_ids.add(selected_id)
-
-        logger.info(f"Selected candidate: {selected_id} ({candidate['title']})")
-        logger.info(f"Rationale: {selection.get('selection_rationale')}")
-
-        logger.info("Bridging to research artifact...")
-        try:
-            project_id = _init_candidate_project(candidate, selection)
-        except Exception as e:
-            logger.warning(
-                "Failed to initialize project for %s: %s; retrying selection "
-                "(attempt %s/%s).",
-                selected_id,
-                e,
-                attempts,
-                max_attempts,
-            )
-            continue
-        project_ids.append(project_id)
-
-    min_required = min(count, int(os.environ.get("MIN_PRODUCE_COUNT", 3)))
     if len(project_ids) < min_required:
         logger.error(
             f"Initialized {len(project_ids)} of {count} requested project(s) (minimum {min_required} required) after "
@@ -351,6 +436,18 @@ def main(argv: List[str] | None = None) -> int:
     produce_parser.add_argument("--input", required=True, help="Path to raw JSON list")
     produce_parser.add_argument("--count", type=int, default=1, help="Number of distinct topics/projects to produce")
     produce_parser.add_argument("--dry-run", action="store_true", help="Skip LLM calls and project creation")
+    produce_parser.add_argument(
+        "--require-latest-news",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Prioritize discovery of latest breaking news with real published timestamps (default: True).",
+    )
+    produce_parser.add_argument(
+        "--max-age-days",
+        type=int,
+        default=7,
+        help="Sliding freshness window in days (default: 7 days, meaning [run_date - 7 days, run_date]).",
+    )
 
     fetch_parser = subparsers.add_parser("fetch", help="Fetch NewsNow source feeds into a raw feed file")
     fetch_parser.add_argument("--url", required=True, help="NewsNow base URL, e.g. http://127.0.0.1:4444")

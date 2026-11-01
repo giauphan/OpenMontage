@@ -70,6 +70,11 @@ class FixedNicheStoryboardDirector:
         beat_num: int,
         total_beats: int = 6,
         is_vertical: bool = True,
+        duration: float = 11.0,
+        narration: str = "",
+        word_timestamps: Optional[List[Dict[str, Any]]] = None,
+        beat_start_s: float = 0.0,
+        progressive: bool = True,
     ) -> str:
         """Generate high-contrast, informative vector geometry tailored to the engineering concept and screen state."""
         return generate_pipeline_svg(
@@ -79,6 +84,11 @@ class FixedNicheStoryboardDirector:
             beat_num=beat_num,
             total_beats=total_beats,
             is_vertical=is_vertical,
+            duration=duration,
+            narration=narration,
+            word_timestamps=word_timestamps,
+            beat_start_s=beat_start_s,
+            progressive=progressive,
         )
 
     def compose_dynamic_narration(
@@ -389,12 +399,20 @@ class FixedNicheStoryboardDirector:
         # Generate SVGs on disk
         for i, beat in enumerate(beats_spec):
             asset_id = beat["asset_id"]
+            beat_start_s = float(beat.get("start_s", 0.0))
+            beat_end_s = float(beat.get("end_s", beat_start_s + 11.0))
+            beat_dur = max(1.0, beat_end_s - beat_start_s)
+            narration = beat.get("narration", "")
             svg_content = self.generate_technical_svg(
                 asset_id=asset_id,
                 topic_family=family,
                 title=title,
                 beat_num=i + 1,
                 total_beats=len(beats_spec),
+                duration=beat_dur,
+                narration=narration,
+                beat_start_s=beat_start_s,
+                progressive=True,
             )
             svg_file = visuals_dir / f"{asset_id}.svg"
             svg_file.write_text(svg_content, encoding="utf-8")

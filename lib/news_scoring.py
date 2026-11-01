@@ -133,7 +133,7 @@ class NewsCandidateScorer:
 
     def score_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         """Compute individual axis scores and total weighted score."""
-        dt = datetime.datetime.fromisoformat(candidate["published_at_utc"])
+        dt = datetime.datetime.fromisoformat(candidate["published_at_utc"].replace("Z", "+00:00"))
         norm_pub = candidate["normalized_publisher"]
         title = candidate["title"]
         body = candidate.get("body") or candidate.get("description") or ""

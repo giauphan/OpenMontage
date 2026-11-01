@@ -190,11 +190,22 @@ raise SystemExit(0 if resolved.is_dir() and resolved.is_relative_to(root) else 1
     fi
   done
 else
-# Step 0: Fetch current NewsNow sources with stale fallback.
+# Step 0: Check Tier 1 curated candidate queue first; fetch live NewsNow feed only if needed.
 FEED_STALE=0
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
-if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 3; then
-  if [ ! -f data/newsnow_feed.json ]; then
+HAS_CURATED_READY=0
+if "$PY" -c "
+import sys
+from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery, DiscoveryTier
+res = HybridCandidateDiscovery().discover_candidates(count=1)
+sys.exit(0 if res.tier == DiscoveryTier.TIER_1_CURATED else 1)
+" 2>/dev/null; then
+  HAS_CURATED_READY=1
+  echo "[$(date -u +%FT%TZ)] [HYBRID DISCOVERY] Tier 1 curated candidate backlog detected; proceeding directly to production."
+fi
+
+if [[ "$HAS_CURATED_READY" -eq 0 ]] && ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 3; then
+  if [[ ! -f data/newsnow_feed.json ]]; then
     echo "[$(date -u +%FT%TZ)] ERROR: NewsNow fetch failed and no prior feed exists."
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
       --error-type "NEWSNOW_FETCH_FAILED" --message "NewsNow fetch failed and no prior feed exists" || true
@@ -209,10 +220,10 @@ if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output d
   # produces stale news content, so fail closed rather than generate from it.
   MAX_STALE_FEED_AGE_HOURS="${MAX_STALE_FEED_AGE_HOURS:-48}"
   FEED_FILE="$ROOT/data/newsnow_feed.json"
-  if [ -f "$FEED_FILE" ]; then
+  if [[ -f "$FEED_FILE" ]]; then
     FEED_MTIME="$(stat -c %Y "$FEED_FILE" 2>/dev/null || echo 0)"
     FEED_AGE_H=$(( ( $(date +%s) - FEED_MTIME ) / 3600 ))
-    if [ "$FEED_AGE_H" -gt "$MAX_STALE_FEED_AGE_HOURS" ]; then
+    if [[ "$FEED_AGE_H" -gt "$MAX_STALE_FEED_AGE_HOURS" ]]; then
       echo "[$(date -u +%FT%TZ)] ERROR: fallback NewsNow feed is ${FEED_AGE_H}h old (max ${MAX_STALE_FEED_AGE_HOURS}h); refusing to generate from stale feed."
       "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
         --error-type "STALE_NEWSNOW_FEED" --message "fallback NewsNow feed ${FEED_AGE_H}h old exceeds max ${MAX_STALE_FEED_AGE_HOURS}h" || true
@@ -227,7 +238,7 @@ fi
 # PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
 set +e
-"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count "${NEWS_PRODUCE_COUNT:-8}" 2>&1 | tee "$PRODUCE_LOG"
+"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news 2>&1 | tee "$PRODUCE_LOG"
 PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
