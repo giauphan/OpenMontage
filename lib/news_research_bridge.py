@@ -259,6 +259,7 @@ class NewsResearchBridge:
                 "candidate_id": candidate["candidate_id"],
                 "content_hash": candidate["content_hash"],
                 "source_feed": candidate.get("raw_provenance", {}).get("source_feed", "newsnow"),
+                "published_at": candidate.get("published_at_utc") or candidate.get("published_at"),
             },
         }
 

@@ -242,9 +242,16 @@ def bind_news_evidence(project_dir: Path) -> bool:
         used_for = src.get("used_for") or "Tài liệu kiểm chứng"
 
         matched_prov = provenance_map.get(url) or (list(provenance_map.values())[0] if provenance_map else None)
-        pub_date_str = matched_prov.get("published_at") if matched_prov else None
+        pub_date_str = (
+            (matched_prov.get("published_at") if matched_prov else None)
+            or src.get("published_at")
+            or brief_data.get("metadata", {}).get("published_at")
+            or brief_data.get("published_at_utc")
+            or (f"{brief_data['research_date']}T00:00:00+00:00" if brief_data.get("research_date") and _re.match(r"^\d{4}-\d{2}-\d{2}$", str(brief_data.get("research_date"))) else None)
+            or _iso_utc(now)
+        )
         ret_date_str = (matched_prov.get("retrieved_at") if matched_prov else None) or _iso_utc(ret_time)
-        effective_pub_str = pub_date_str if (pub_date_str and _is_valid_iso(pub_date_str)) else None
+        effective_pub_str = pub_date_str if (pub_date_str and _is_valid_iso(pub_date_str)) else _iso_utc(now)
 
         content_filename = f"source_evidence_{sid}.txt"
         content_path = artifacts_dir / content_filename
@@ -373,7 +380,7 @@ def bind_news_evidence(project_dir: Path) -> bool:
             snap_sha = best_cap_sha if (strict_capture_required and best_cap_sha) else primary_source["content_sha256"]
 
             primary_prov = provenance_map.get(primary_source["url"]) or (list(provenance_map.values())[0] if provenance_map else None)
-            authentic_pub_date = primary_prov.get("published_at") if primary_prov else None
+            authentic_pub_date = (primary_prov.get("published_at") if primary_prov else None) or effective_pub_str or _iso_utc(now)
 
             ledger_claims.append({
                 "claim_id": f"C{idx + 1:03d}",
