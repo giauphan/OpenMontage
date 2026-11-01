@@ -23,6 +23,18 @@ logger = logging.getLogger(__name__)
 
 GSAP_CDN_URL = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"
 
+EXT_WEBP = ".webp"
+EXT_JPEG = ".jpeg"
+EXT_JPG = ".jpg"
+EXT_PNG = ".png"
+EXT_SVG = ".svg"
+AI_PREFERRED_EXTS = (EXT_WEBP, EXT_PNG, EXT_JPG, EXT_JPEG, EXT_SVG)
+SVG_PREFERRED_EXTS = (EXT_SVG, EXT_WEBP, EXT_PNG, EXT_JPG, EXT_JPEG)
+RASTER_EXTENSIONS = (EXT_WEBP, EXT_PNG, EXT_JPG, EXT_JPEG)
+ALL_SUPPORTED_MEDIA_EXTS = (EXT_SVG, EXT_PNG, EXT_JPG, EXT_JPEG, EXT_WEBP, ".mp4", ".webm")
+NARRATION_MP3_FILENAME = "narration.mp3"
+DEFAULT_AUDIO_SRC = f"assets/{NARRATION_MP3_FILENAME}"
+
 
 def _fmt_time(t: float) -> str:
     """Format duration or timestamp cleanly for HyperFrames data attributes."""
@@ -32,28 +44,35 @@ def _fmt_time(t: float) -> str:
     return f"{val:.3f}".rstrip("0").rstrip(".")
 
 
+def _find_matching_visual_asset(visuals_src: Path, aid: str, exts: tuple[str, ...]) -> Optional[str]:
+    for ext in exts:
+        fname = f"{aid}{ext}"
+        if (visuals_src / fname).is_file():
+            return fname
+    return None
+
+
 def _resolve_beat_visual_file(beat: Dict[str, Any], visuals_src: Optional[Path], default_aid: str) -> str:
     """Resolve the visual asset file name for a beat, prioritizing AI raster formats when appropriate."""
-    vis_file = f"{default_aid}.svg"
-    if visuals_src and visuals_src.is_dir():
-        is_ai_beat = (
-            beat.get("visual_kind") == "illustration"
-            or beat.get("render_strategy") == "ai_illustration_eligible"
-        )
-        pref_exts = (
-            (".webp", ".png", ".jpg", ".jpeg", ".svg")
-            if is_ai_beat
-            else (".svg", ".webp", ".png", ".jpg", ".jpeg")
-        )
-        for ext in pref_exts:
-            if (visuals_src / f"{default_aid}{ext}").is_file():
-                return f"{default_aid}{ext}"
-            for alt_aid in beat.get("asset_ids", []):
-                if (visuals_src / f"{alt_aid}{ext}").is_file():
-                    return f"{alt_aid}{ext}"
-    elif beat.get("file"):
-        return Path(beat["file"]).name
-    return vis_file
+    if not visuals_src or not visuals_src.is_dir():
+        return Path(beat["file"]).name if beat.get("file") else f"{default_aid}{EXT_SVG}"
+
+    is_ai_beat = (
+        beat.get("visual_kind") == "illustration"
+        or beat.get("render_strategy") == "ai_illustration_eligible"
+    )
+    pref_exts = AI_PREFERRED_EXTS if is_ai_beat else SVG_PREFERRED_EXTS
+
+    match = _find_matching_visual_asset(visuals_src, default_aid, pref_exts)
+    if match:
+        return match
+
+    for alt_aid in beat.get("asset_ids", []):
+        alt_match = _find_matching_visual_asset(visuals_src, alt_aid, pref_exts)
+        if alt_match:
+            return alt_match
+
+    return f"{default_aid}{EXT_SVG}"
 
 
 def _inline_svg_file(visuals_src: Optional[Path], vis_file: str) -> str:
@@ -130,7 +149,7 @@ def _build_svg_beat(
     track_idx = i + 1
     sec_id = f"scene-{bid}"
 
-    bg_art = f"bg_{bid}.webp" if visuals_src and (visuals_src / f"bg_{bid}.webp").is_file() else ""
+    bg_art = f"bg_{bid}{EXT_WEBP}" if visuals_src and (visuals_src / f"bg_{bid}{EXT_WEBP}").is_file() else ""
     bg_snippet = (
         f'      <div class="illustration-viewport">\n'
         f'        <img src="assets/visuals/{bg_art}" alt="" class="hero-illustration" />\n'
@@ -221,7 +240,7 @@ def compose_hyperframes_html(
     beats: List[Dict[str, Any]],
     *,
     is_vertical: bool = True,
-    audio_src: str = "assets/narration.mp3",
+    audio_src: str = DEFAULT_AUDIO_SRC,
     visuals_src: Optional[Path] = None,
     diagram_plan: Optional[Any] = None,
 ) -> str:
@@ -253,7 +272,7 @@ def compose_hyperframes_html(
     for i, beat in enumerate(beats):
         aid = beat.get("asset_id") or f"beat_{i+1}"
         vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
-        is_illustration = vis_file.lower().endswith((".webp", ".png", ".jpg", ".jpeg"))
+        is_illustration = vis_file.lower().endswith(RASTER_EXTENSIONS)
 
         if is_illustration:
             sec_html, sec_tweens = _build_illustration_beat(i, beat, vis_file, len(beats), duration)
@@ -436,7 +455,7 @@ def materialize_hyperframes_project(
     """Materialize HyperFrames composition directories and valid index.html entrypoints."""
     project_dir = Path(project_dir).resolve()
     visuals_src = project_dir / "assets" / "visuals"
-    audio_src = project_dir / "assets" / "narration.mp3"
+    audio_src = project_dir / "assets" / NARRATION_MP3_FILENAME
     beats = visual_plan.get("beats", [])
     title = topic.get("title", "Practical AI Agent Engineering")
 
@@ -466,7 +485,7 @@ def materialize_hyperframes_project(
         comp_vis.mkdir(parents=True, exist_ok=True)
         if visuals_src.is_dir():
             for vis_file in visuals_src.iterdir():
-                if vis_file.is_file() and vis_file.suffix.lower() in (".svg", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm"):
+                if vis_file.is_file() and vis_file.suffix.lower() in ALL_SUPPORTED_MEDIA_EXTS:
                     shutil.copy2(vis_file, comp_vis / vis_file.name)
 
         # Copy local vendor scripts (e.g. pinned gsap.min.js) if present for offline render
@@ -483,7 +502,7 @@ def materialize_hyperframes_project(
         comp_assets = comp_dir / "assets"
         comp_assets.mkdir(parents=True, exist_ok=True)
         if audio_src.is_file():
-            shutil.copy2(audio_src, comp_assets / "narration.mp3")
+            shutil.copy2(audio_src, comp_assets / NARRATION_MP3_FILENAME)
 
         is_vertical = "reels" in comp_name or "short" in comp_name
         html_content = compose_hyperframes_html(
@@ -491,7 +510,7 @@ def materialize_hyperframes_project(
             duration=duration,
             beats=beats,
             is_vertical=is_vertical,
-            audio_src="assets/narration.mp3",
+            audio_src=DEFAULT_AUDIO_SRC,
             visuals_src=visuals_src,
             diagram_plan=diagram_plan,
         )
@@ -521,8 +540,8 @@ def render_hyperframes_composition(
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
 
     # Ensure narration.mp3 exists in comp_dir/assets if present in parent project assets
-    parent_audio = comp_dir.parent / "assets" / "narration.mp3"
-    comp_audio = comp_dir / "assets" / "narration.mp3"
+    parent_audio = comp_dir.parent / "assets" / NARRATION_MP3_FILENAME
+    comp_audio = comp_dir / "assets" / NARRATION_MP3_FILENAME
     if parent_audio.is_file() and (not comp_audio.is_file() or comp_audio.stat().st_size != parent_audio.stat().st_size):
         comp_audio.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(parent_audio, comp_audio)
@@ -604,6 +623,25 @@ def _build_ffmpeg_filter(
     return vf, aspect_flag
 
 
+def _resolve_asset_id_for_beat(beat: Dict[str, Any]) -> str:
+    """Extract primary asset ID from beat dictionary."""
+    if beat.get("asset_id"):
+        return beat["asset_id"]
+    asset_ids = beat.get("asset_ids")
+    return asset_ids[0] if asset_ids else ""
+
+
+def _find_fallback_asset_file(visuals_dir: Path, aid: str, fallback: Optional[Path]) -> Optional[Path]:
+    """Find matching asset file by aid prefix or fallback to default."""
+    if not aid:
+        return fallback
+    svg_cand = visuals_dir / f"{aid}.svg"
+    if svg_cand.is_file():
+        return svg_cand
+    matches = list(visuals_dir.glob(f"{aid}.*"))
+    return matches[0] if matches else fallback
+
+
 def _write_beats_concat_list(
     beats: List[Dict[str, Any]],
     render_dur: float,
@@ -614,23 +652,20 @@ def _write_beats_concat_list(
     """Generate concat demuxer text list matching beat timings."""
     planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
     scale = (render_dur / planned_total) if planned_total > 0 else 1.0
+    fallback = svg_assets[0] if svg_assets else None
 
     with concat_list.open("w", encoding="utf-8") as f:
         for b in beats:
             beat_dur = max(0.1, (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale)
-            aid = b.get("asset_id") or (b.get("asset_ids", [""])[0] if b.get("asset_ids") else "")
-            svg_cand = visuals_dir / f"{aid}.svg"
-            if not svg_cand.is_file():
-                matches = list(visuals_dir.glob(f"{aid}.*"))
-                svg_cand = matches[0] if matches else (svg_assets[0] if svg_assets else None)
+            aid = _resolve_asset_id_for_beat(b)
+            svg_cand = _find_fallback_asset_file(visuals_dir, aid, fallback)
             if svg_cand and svg_cand.is_file():
                 f.write(f"file '{svg_cand.resolve()}'\n")
                 f.write(f"duration {beat_dur:.3f}\n")
+
         if svg_assets:
-            last_aid = beats[-1].get("asset_id") or (beats[-1].get("asset_ids", [""])[0] if beats[-1].get("asset_ids") else "")
-            last_svg = visuals_dir / f"{last_aid}.svg"
-            if not last_svg.is_file():
-                last_svg = svg_assets[-1]
+            last_aid = _resolve_asset_id_for_beat(beats[-1])
+            last_svg = _find_fallback_asset_file(visuals_dir, last_aid, svg_assets[-1]) or svg_assets[-1]
             f.write(f"file '{last_svg.resolve()}'\n")
 
 
@@ -716,7 +751,7 @@ def render_ffmpeg_composition(
     output_mp4 = Path(output_mp4).resolve()
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
     visuals_dir = project_dir / "assets" / "visuals"
-    audio_path = project_dir / "assets" / "narration.mp3"
+    audio_path = project_dir / "assets" / NARRATION_MP3_FILENAME
     renders_dir = output_mp4.parent
 
     visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
@@ -728,7 +763,7 @@ def render_ffmpeg_composition(
         except Exception as e:
             logger.warning(f"Could not load news_visual_plan.json: {e}")
 
-    svg_assets = sorted(list(visuals_dir.glob("*.svg"))) if visuals_dir.is_dir() else []
+    svg_assets = sorted(visuals_dir.glob("*.svg")) if visuals_dir.is_dir() else []
     vf, aspect_flag = _build_ffmpeg_filter(width, height, burn_captions, project_dir)
 
     concat_list = renders_dir / "slides_concat.txt"

@@ -567,35 +567,24 @@ class FixedNicheVideoRunner:
                 },
             )
             # Retain top-level attributes for compatibility
-            app_record["status"] = app_status
-            app_record["audio_sha256"] = audio_sha
-            app_record["video_sha256"] = video_sha
-            app_record["target_aspect"] = "9:16"
-            app_record["duration"] = actual_dur
-            app_record["target_duration"] = target_dur
-            app_record["policy_sha256"] = self.policy.policy_sha256
+            app_record.update({
+                "status": app_status, "audio_sha256": audio_sha, "video_sha256": video_sha,
+                "target_aspect": "9:16", "duration": actual_dur, "target_duration": target_dur,
+                "policy_sha256": self.policy.policy_sha256,
+            })
         else:
             app_record = {
-                "approved": False,
-                "status": app_status,
-                "claim_ledger_sha256": ledger_sha,
-                "audio_sha256": audio_sha,
-                "video_sha256": video_sha,
-                "target_aspect": "9:16",
-                "duration": actual_dur,
-                "target_duration": target_dur,
+                "approved": False, "status": app_status, "claim_ledger_sha256": ledger_sha,
+                "audio_sha256": audio_sha, "video_sha256": video_sha, "target_aspect": "9:16",
+                "duration": actual_dur, "target_duration": target_dur,
                 "policy_sha256": self.policy.policy_sha256,
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
         (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
 
         val_status = {
-            "project_id": self.candidate_id,
-            "status": val_status_code,
-            "strict_quality_pass": qa_pass,
-            "rendered_mp4": str(output_mp4),
-            "duration": actual_dur,
-            "target_duration": target_dur,
+            "project_id": self.candidate_id, "status": val_status_code, "strict_quality_pass": qa_pass,
+            "rendered_mp4": str(output_mp4), "duration": actual_dur, "target_duration": target_dur,
             "policy_sha256": self.policy.policy_sha256,
         }
         (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
@@ -605,14 +594,12 @@ class FixedNicheVideoRunner:
             try:
                 from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
                 topic_data = getattr(self, "_staged_topic", None) or {}
-                if not topic_data:
-                    tb_file = self.project_dir / "artifacts" / "topic_brief.json"
-                    if tb_file.is_file():
-                        topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
-                title = topic_data.get("title") or self.candidate_id
+                tb_file = self.project_dir / "artifacts" / "topic_brief.json"
+                if not topic_data and tb_file.is_file():
+                    topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
                 ThumbnailOrchestrator.generate_thumbnail(
                     project_dir=self.project_dir,
-                    title=title,
+                    title=topic_data.get("title") or self.candidate_id,
                     topic=topic_data.get("summary", ""),
                     format_type="short",
                     allow_fallback=True,
@@ -621,22 +608,15 @@ class FixedNicheVideoRunner:
                 logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
 
         return {
-            "status": val_status_code,
-            "rendered_mp4": str(output_mp4),
-            "duration": actual_dur,
-            "target_duration": target_dur,
-            "frames_dir": str(frames_dir),
+            "status": val_status_code, "rendered_mp4": str(output_mp4), "duration": actual_dur,
+            "target_duration": target_dur, "frames_dir": str(frames_dir),
             "approval_path": str(self.project_dir / "approval.json"),
         }
 
 
 def _configure_cli_environment(args: argparse.Namespace) -> None:
     """Set global environment variables based on CLI flags."""
-    if args.enable_ai_visuals:
-        os.environ["AI_VISUAL_ENABLED"] = "1"
-    else:
-        os.environ["AI_VISUAL_ENABLED"] = "0"
-
+    os.environ["AI_VISUAL_ENABLED"] = "1" if args.enable_ai_visuals else "0"
     if args.enable_diagram_animation:
         os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
         os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
@@ -645,34 +625,86 @@ def _configure_cli_environment(args: argparse.Namespace) -> None:
         os.environ["OPENMONTAGE_VISUAL_STYLE"] = "legacy"
 
 
+def _validate_safe_path(path: Path | str) -> Path:
+    """Validate path against traversal attacks (CWE-22 / CWE-73)."""
+    p = Path(path).expanduser().resolve()
+    repo_root, home_dir, tmp_dir = ROOT.resolve(), Path.home().resolve(), Path("/tmp").resolve()
+    is_in_repo = p.is_relative_to(repo_root)
+    is_in_tmp = p.is_relative_to(tmp_dir)
+    is_in_home = p.is_relative_to(home_dir)
+    if not (is_in_repo or is_in_tmp or is_in_home):
+        raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
+    if not p.is_file():
+        raise FileNotFoundError(f"Candidate file does not exist: {path}")
+    return p
+
+
+def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
+    """Safely load candidate dictionaries from a YAML file."""
+    try:
+        import yaml
+        raw_data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+        if isinstance(raw_data, dict):
+            return raw_data.get("positive_cases", [])
+        if isinstance(raw_data, list):
+            return raw_data
+        return []
+    except Exception as e:
+        logger.warning("Failed to load candidates from %s: %s", file_path, e)
+        return []
+
+
 def _load_cli_candidates_pool(args: argparse.Namespace) -> List[Dict[str, Any]]:
     """Load candidates from specified file, test fixtures, or production source adapter."""
-    candidates_pool: List[Dict[str, Any]] = []
-
     if args.candidates_file:
-        c_file = Path(args.candidates_file)
-        if c_file.is_file():
-            try:
-                import yaml
-                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-            except Exception as e:
-                logger.warning(f"Failed to load candidates pool from {c_file}: {e}")
-    elif args.use_test_fixtures:
-        c_file = ROOT / "tests/fixtures/fixed_niche_cases.yaml"
-        if c_file.is_file():
-            try:
-                import yaml
-                raw_data = yaml.safe_load(c_file.read_text(encoding="utf-8"))
-                candidates_pool = raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else raw_data
-            except Exception as e:
-                logger.warning(f"Failed to load test fixtures from {c_file}: {e}")
+        cand_path = _validate_safe_path(args.candidates_file)
+        candidates = _load_yaml_candidates(cand_path)
+        if not candidates:
+            raise ValueError(
+                f"No candidates could be loaded from specified --candidates-file: {args.candidates_file}"
+            )
+        return candidates
 
-    if not candidates_pool:
-        adapter = FixedNicheSourceAdapter()
-        candidates_pool = adapter.discover_production_candidates()
+    if args.use_test_fixtures:
+        fixture_path = _validate_safe_path(ROOT / "tests/fixtures/fixed_niche_cases.yaml")
+        candidates = _load_yaml_candidates(fixture_path)
+        if not candidates:
+            raise ValueError("No candidates could be loaded from test fixtures")
+        return candidates
 
-    return candidates_pool
+    adapter = FixedNicheSourceAdapter()
+    return adapter.discover_production_candidates()
+
+
+def _apply_topic_overrides(topic: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    """Apply explicit CLI argument overrides to topic metadata."""
+    result = dict(topic)
+    if args.title:
+        result["title"] = args.title
+    if args.topic_family:
+        result["topic_family"] = args.topic_family
+    if args.canonical_url:
+        result["canonical_url"] = args.canonical_url
+    return result
+
+
+def _auto_select_topic(
+    candidates_pool: List[Dict[str, Any]],
+    gate: FixedNicheScopeGate,
+    args: argparse.Namespace,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Auto-select the highest ranked eligible candidate from pool."""
+    eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
+    if not eligible:
+        return None, None
+
+    from lib.fixed_niche.ranker import FixedNicheTopicScorer
+    ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
+    top_cand = ranked[0] if ranked else eligible[0]
+    selected_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
+    topic = _apply_topic_overrides(top_cand, args)
+    topic["candidate_id"] = selected_id
+    return selected_id, topic
 
 
 def _resolve_cli_topic_and_candidate(
@@ -682,73 +714,56 @@ def _resolve_cli_topic_and_candidate(
 ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Resolve target candidate ID and topic dictionary according to auto-select/explicit args."""
     candidate_id = args.candidate_id
-    matched_cand = next(
-        (c for c in candidates_pool if (c.get("candidate_id") == candidate_id or c.get("id") == candidate_id)),
-        None
-    ) if candidate_id else None
-
-    if matched_cand:
-        topic = dict(matched_cand)
-        topic["candidate_id"] = candidate_id
-        if args.title:
-            topic["title"] = args.title
-        if args.topic_family:
-            topic["topic_family"] = args.topic_family
-        if args.canonical_url:
-            topic["canonical_url"] = args.canonical_url
-        return candidate_id, topic
+    if candidate_id:
+        matched = next(
+            (c for c in candidates_pool if c.get("candidate_id") == candidate_id or c.get("id") == candidate_id),
+            None,
+        )
+        if matched:
+            topic = _apply_topic_overrides(matched, args)
+            topic["candidate_id"] = candidate_id
+            return candidate_id, topic
 
     if args.auto_select or not candidate_id:
-        eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
-        if not eligible:
-            return None, None
+        return _auto_select_topic(candidates_pool, gate, args)
 
-        from lib.fixed_niche.ranker import FixedNicheTopicScorer
-        ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
-        top_cand = ranked[0] if ranked else eligible[0]
-        selected_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
-        topic = dict(top_cand)
-        topic["candidate_id"] = selected_id
-        if args.title:
-            topic["title"] = args.title
-        if args.topic_family:
-            topic["topic_family"] = args.topic_family
-        if args.canonical_url:
-            topic["canonical_url"] = args.canonical_url
-        return selected_id, topic
-
-    fallback_topic = {
+    fallback = _apply_topic_overrides({
         "candidate_id": candidate_id,
-        "title": args.title or "Why coding agents lose project requirements between sessions",
-        "topic_family": args.topic_family or "context_memory",
-        "canonical_url": args.canonical_url or "https://docs.anthropic.com/claude/context-window",
-    }
-    return candidate_id, fallback_topic
+        "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory",
+        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+    }, args)
+    fallback["candidate_id"] = candidate_id
+    return candidate_id, fallback
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def _build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fixed Niche Video Production CLI")
-    parser.add_argument("--candidate-id", required=False, default=None, help="Candidate ID to produce")
-    parser.add_argument("--auto-select", action="store_true", default=False, help="Automatically discover, filter, and score top in-scope candidate")
-    parser.add_argument("--candidates-file", required=False, default=None, help="Path to YAML/JSON candidates pool file")
-    parser.add_argument("--use-test-fixtures", action="store_true", default=False, help="Explicitly allow loading test fixtures for testing/rehearsals")
-    parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Video composition renderer (auto, hyperframes, ffmpeg)")
-    parser.add_argument("--project-dir", required=False, help="Custom project output directory")
-    parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format (locked to shorts)")
-    parser.add_argument("--provider", default=None, help="TTS provider (kokoro, flite, edge, pocket18, omniroute)")
+    parser.add_argument("--candidate-id", default=None, help="Candidate ID to produce")
+    parser.add_argument("--auto-select", action="store_true", default=False, help="Auto-discover in-scope candidate")
+    parser.add_argument("--candidates-file", default=None, help="Path to YAML/JSON candidates pool file")
+    parser.add_argument("--use-test-fixtures", action="store_true", default=False, help="Allow loading test fixtures")
+    parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Renderer")
+    parser.add_argument("--project-dir", help="Custom project output directory")
+    parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format")
+    parser.add_argument("--provider", default=None, help="TTS provider")
     parser.add_argument("--voice", default=None, help="TTS voice override")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
     parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
-    parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video (default: False, clean video)")
+    parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video")
     parser.add_argument("--title", default=None)
     parser.add_argument("--topic-family", default=None)
     parser.add_argument("--canonical-url", default=None)
-    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False, help="Enable Muse AI image generation for conceptual illustration beats (operator opt-in)")
-    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"], help="Visual presentation style (progressive animated diagram vs legacy static)")
-    parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True, help="Enable progressive animated diagram reveals synchronized to speech (default: True, per JEV decision)")
-    parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True, help="Prioritize discovery of latest breaking news with real published timestamps (default: True)")
-    parser.add_argument("--max-age-days", type=int, default=7, help="Sliding freshness window in days (default: 7 days, meaning [run_date - 7 days, run_date])")
-    args = parser.parse_args(argv)
+    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"])
+    parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--max-age-days", type=int, default=7)
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _build_cli_parser().parse_args(argv)
 
     _configure_cli_environment(args)
 
@@ -759,10 +774,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     candidate_id, topic = _resolve_cli_topic_and_candidate(args, candidates_pool, gate)
 
     if not candidate_id or not topic:
-        print(json.dumps({
-            "status": "NO_ELIGIBLE_TOPIC",
-            "message": "Zero eligible topics found in candidate pool; no project staged.",
-        }, indent=2))
+        print(json.dumps({"status": "NO_ELIGIBLE_TOPIC", "message": "Zero eligible topics found in candidate pool; no project staged."}, indent=2))
         return 0
 
     proj_dir = Path(args.project_dir) if args.project_dir else ROOT / "projects" / candidate_id

@@ -20,6 +20,18 @@ from tools.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
+EXT_PNG = ".png"
+EXT_JPG = ".jpg"
+EXT_JPEG = ".jpeg"
+EXT_WEBP = ".webp"
+EXT_SVG = ".svg"
+RASTER_EXTENSIONS = (EXT_PNG, EXT_JPG, EXT_JPEG, EXT_WEBP)
+MIME_TO_EXT = {
+    "image/png": EXT_PNG,
+    "image/jpeg": EXT_JPG,
+    "image/webp": EXT_WEBP,
+}
+
 
 class VisualAssetOrchestrator:
     """Orchestrates asset resolution per beat, enforcing proof integrity."""
@@ -213,12 +225,11 @@ class VisualAssetOrchestrator:
             }
             return res, asset, True
 
-        temp_dest = visuals_dir / f"{primary_asset_id}.png"
+        temp_dest = visuals_dir / f"{primary_asset_id}{EXT_PNG}"
         ai_result = self._dispatch_muse_generation(temp_dest, prompt, cache_key, aspect_ratio=ar)
         if ai_result.get("success"):
             mime = ai_result.get("data", {}).get("mime", "image/png")
-            ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
-            actual_ext = ext_map.get(mime, ".png")
+            actual_ext = MIME_TO_EXT.get(mime, EXT_PNG)
             dest_file = visuals_dir / f"{primary_asset_id}{actual_ext}"
             if temp_dest != dest_file and temp_dest.is_file():
                 temp_dest.replace(dest_file)
@@ -281,6 +292,77 @@ class VisualAssetOrchestrator:
         }
         return res, asset
 
+    @staticmethod
+    def _load_word_timestamps(project_dir: Path) -> Optional[List[Dict[str, Any]]]:
+        """Load word timestamps if available for voice synchronization."""
+        wt_path = project_dir / "assets" / "word_timestamps.json"
+        if not wt_path.is_file():
+            return None
+        try:
+            wt_data = json.loads(wt_path.read_text(encoding="utf-8"))
+            return wt_data.get("word_timestamps")
+        except Exception:
+            return None
+
+    def _dispatch_beat_strategy(
+        self,
+        strategy: str,
+        project_dir: Path,
+        visuals_dir: Path,
+        beat: Dict[str, Any],
+        ctx: Dict[str, Any],
+        ai_visual_enabled: bool,
+        ai_images_generated: int,
+        max_ai_images: int,
+    ) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+        """Dispatch beat asset resolution to the appropriate strategy handler."""
+        if strategy == "authentic_capture":
+            res, asset = self._orchestrate_authentic_capture(project_dir, visuals_dir, beat, ctx)
+            return res, asset, False
+        if strategy == "ai_illustration_eligible":
+            return self._orchestrate_ai_illustration(
+                project_dir,
+                visuals_dir,
+                beat,
+                ctx,
+                ai_visual_enabled,
+                ai_images_generated,
+                max_ai_images,
+            )
+        if strategy == "deterministic_svg":
+            res, asset = self._orchestrate_deterministic_svg(project_dir, visuals_dir, ctx)
+            return res, asset, False
+        return None, None, False
+
+    def _build_orchestration_summary(
+        self,
+        total_beats: int,
+        beat_results: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, int]:
+        """Build counts summary across beat orchestration results."""
+        status_counts: Dict[str, int] = {}
+        for r in beat_results.values():
+            st = r.get("status", "")
+            status_counts[st] = status_counts.get(st, 0) + 1
+        return {
+            "total_beats": total_beats,
+            "ready_capture": status_counts.get(self.STATUS_READY_CAPTURE, 0),
+            "ready_svg": status_counts.get(self.STATUS_READY_SVG, 0),
+            "ready_ai": status_counts.get(self.STATUS_READY_AI, 0),
+            "fallback_contextual": status_counts.get(self.STATUS_FALLBACK_CONTEXTUAL, 0),
+            "blocked_missing_proof": status_counts.get(self.STATUS_BLOCKED_MISSING_PROOF, 0),
+        }
+
+    @staticmethod
+    def _persist_orchestration_result(project_dir: Path, payload: Dict[str, Any]) -> None:
+        """Persist orchestration summary artifact."""
+        try:
+            orch_file = project_dir / "artifacts" / "orchestrated_assets.json"
+            orch_file.parent.mkdir(parents=True, exist_ok=True)
+            orch_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning("Could not persist orchestrated_assets.json: %s", e)
+
     def orchestrate_plan_assets(
         self,
         project_dir: Path,
@@ -301,73 +383,44 @@ class VisualAssetOrchestrator:
         topic_family = topic.get("topic_family", "context_memory")
         topic_title = topic.get("title", "AI Agent Engineering")
 
-        # Check feature flags
         ai_visual_enabled = os.environ.get("AI_VISUAL_ENABLED", "0") in ("1", "true", "True")
         max_ai_images = int(os.environ.get("AI_VISUAL_MAX_IMAGES_PER_SHORT", "4"))
         ai_images_generated = 0
 
-        # Load word timestamps if available for voice synchronization
-        word_timestamps: Optional[List[Dict[str, Any]]] = None
-        wt_path = project_dir / "assets" / "word_timestamps.json"
-        if wt_path.is_file():
-            try:
-                wt_data = json.loads(wt_path.read_text(encoding="utf-8"))
-                word_timestamps = wt_data.get("word_timestamps")
-            except Exception:
-                pass
+        word_timestamps = self._load_word_timestamps(project_dir)
 
         for idx, beat in enumerate(beats):
             strategy = beat.get("render_strategy")
             if not strategy:
-                # Beats without explicit render_strategy keep existing raster/vector assets and are left for resolver
                 continue
 
             ctx = self._build_beat_context(beat, idx, total_beats, topic_family, topic_title, word_timestamps)
-            beat_id = ctx["beat_id"]
+            res, asset, inc = self._dispatch_beat_strategy(
+                strategy,
+                project_dir,
+                visuals_dir,
+                beat,
+                ctx,
+                ai_visual_enabled,
+                ai_images_generated,
+                max_ai_images,
+            )
+            if not res:
+                continue
 
-            if strategy == "authentic_capture":
-                res, asset = self._orchestrate_authentic_capture(project_dir, visuals_dir, beat, ctx)
-                beat_results[beat_id] = res
-                if asset:
-                    staged_assets.append(asset)
-            elif strategy == "ai_illustration_eligible":
-                res, asset, inc = self._orchestrate_ai_illustration(
-                    project_dir, visuals_dir, beat, ctx,
-                    ai_visual_enabled, ai_images_generated, max_ai_images,
-                )
-                beat_results[beat_id] = res
-                if inc:
-                    ai_images_generated += 1
-                if asset:
-                    staged_assets.append(asset)
-            elif strategy == "deterministic_svg":
-                res, asset = self._orchestrate_deterministic_svg(project_dir, visuals_dir, ctx)
-                beat_results[beat_id] = res
-                if asset:
-                    staged_assets.append(asset)
-
-        summary = {
-            "total_beats": len(beats),
-            "ready_capture": sum(1 for r in beat_results.values() if r["status"] == self.STATUS_READY_CAPTURE),
-            "ready_svg": sum(1 for r in beat_results.values() if r["status"] == self.STATUS_READY_SVG),
-            "ready_ai": sum(1 for r in beat_results.values() if r["status"] == self.STATUS_READY_AI),
-            "fallback_contextual": sum(1 for r in beat_results.values() if r["status"] == self.STATUS_FALLBACK_CONTEXTUAL),
-            "blocked_missing_proof": sum(1 for r in beat_results.values() if r["status"] == self.STATUS_BLOCKED_MISSING_PROOF),
-        }
+            beat_results[ctx["beat_id"]] = res
+            if inc:
+                ai_images_generated += 1
+            if asset:
+                staged_assets.append(asset)
 
         out_payload = {
             "project_id": project_dir.name,
             "beat_results": beat_results,
             "assets": staged_assets,
-            "summary": summary,
+            "summary": self._build_orchestration_summary(total_beats, beat_results),
         }
-        try:
-            orch_file = project_dir / "artifacts" / "orchestrated_assets.json"
-            orch_file.parent.mkdir(parents=True, exist_ok=True)
-            orch_file.write_text(json.dumps(out_payload, indent=2), encoding="utf-8")
-        except Exception as e:
-            logger.warning(f"Could not persist orchestrated_assets.json: {e}")
-
+        self._persist_orchestration_result(project_dir, out_payload)
         return out_payload
 
     def _find_authentic_capture(self, project_dir: Path, beat: Dict[str, Any]) -> Optional[Path]:
@@ -388,7 +441,7 @@ class VisualAssetOrchestrator:
             if not cdir.is_dir():
                 continue
             for aid in check_ids:
-                for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                for ext in RASTER_EXTENSIONS:
                     target = cdir / f"{aid}{ext}"
                     if target.is_file() and target.stat().st_size > 500:
                         return target
@@ -396,7 +449,7 @@ class VisualAssetOrchestrator:
 
     def _cleanup_stale_raster(self, visuals_dir: Path, asset_id: str) -> None:
         """Remove any stale raster files when falling back to vector SVG."""
-        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        for ext in RASTER_EXTENSIONS:
             stale = visuals_dir / f"{asset_id}{ext}"
             if stale.is_file():
                 try:

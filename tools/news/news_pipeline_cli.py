@@ -97,8 +97,29 @@ def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]
         artifacts={"research_brief": research_brief},
         human_approval_required=False,
     )
-    logger.info(f"Project initialized: projects/{project_id}")
+    logger.info("Project initialized: projects/%s", _sanitize_log_val(project_id))
     return project_id
+
+
+def _sanitize_log_val(val: Any) -> str:
+    """Sanitize strings before logging to prevent log injection (CWE-117)."""
+    clean = str(val).replace("\r", " ").replace("\n", " ").strip()
+    return clean[:120]
+
+
+def _validate_safe_input_path(path: Path | str) -> Path:
+    """Validate path against traversal attacks (CWE-22 / CWE-73)."""
+    p = Path(path).expanduser().resolve()
+    repo_root = Path(__file__).resolve().parents[2]
+    home_dir = Path.home().resolve()
+    tmp_dir = Path("/tmp").resolve()
+    is_in_repo = p.is_relative_to(repo_root)
+    is_in_tmp = p.is_relative_to(tmp_dir)
+    is_in_home = p.is_relative_to(home_dir)
+    if not (is_in_repo or is_in_tmp or is_in_home):
+        logger.error("Path traversal detected or path outside allowed root: %s", _sanitize_log_val(path))
+        sys.exit(1)
+    return p
 
 
 def run_fetch(args: argparse.Namespace) -> None:
@@ -107,27 +128,42 @@ def run_fetch(args: argparse.Namespace) -> None:
     logger.info(f"Wrote {count} raw items to {args.output}")
 
 
+def _collect_scheduled_ids() -> Set[str]:
+    sched_path = Path("config/publish_schedule.json")
+    if not sched_path.is_file():
+        return set()
+    try:
+        with sched_path.open("r", encoding="utf-8") as f:
+            sched_data = json.load(f)
+        return {
+            item["project_id"]
+            for item in sched_data.get("active_projects", [])
+            if isinstance(item, dict) and item.get("project_id")
+        }
+    except Exception:
+        return set()
+
+
+def _is_completed_project_dir(p: Path) -> bool:
+    if not p.is_dir():
+        return False
+    if (p / "validation_status.json").is_file():
+        return True
+    renders = p / "renders"
+    return renders.is_dir() and any(renders.glob("*.mp4"))
+
+
+def _collect_directory_project_ids(p_dir: Path) -> Set[str]:
+    if not p_dir.is_dir():
+        return set()
+    return {p.name for p in p_dir.iterdir() if _is_completed_project_dir(p)}
+
+
 def _collect_used_project_ids() -> Set[str]:
     """Collect project IDs that are already scheduled or completed."""
-    used_ids: Set[str] = set()
-    sched_path = Path("config/publish_schedule.json")
-    if sched_path.is_file():
-        try:
-            with sched_path.open("r", encoding="utf-8") as f:
-                sched_data = json.load(f)
-            for item in sched_data.get("active_projects", []):
-                if isinstance(item, dict) and item.get("project_id"):
-                    used_ids.add(item["project_id"])
-        except Exception:
-            pass
-
+    used_ids = _collect_scheduled_ids()
     for p_dir in (Path("projects"), Path("projects_news")):
-        if p_dir.is_dir():
-            for p in p_dir.iterdir():
-                if p.is_dir():
-                    has_video = (p / "renders").is_dir() and any((p / "renders").glob("*.mp4"))
-                    if (p / "validation_status.json").is_file() or has_video:
-                        used_ids.add(p.name)
+        used_ids.update(_collect_directory_project_ids(p_dir))
     return used_ids
 
 
@@ -174,11 +210,12 @@ def _ingest_and_filter_candidates(
     used_ids: Set[str],
 ) -> List[Dict[str, Any]]:
     """Ingest candidates from input file and apply initial filtering."""
-    if not input_path.exists():
-        logger.error(f"Input file not found: {input_path}")
+    safe_path = _validate_safe_input_path(input_path)
+    if not safe_path.is_file():
+        logger.error("Input file not found: %s", _sanitize_log_val(safe_path))
         sys.exit(1)
 
-    with input_path.open("r", encoding="utf-8") as f:
+    with safe_path.open("r", encoding="utf-8") as f:
         raw_items = json.load(f)
 
     logger.info("Ingesting and normalizing...")
@@ -255,8 +292,8 @@ def _select_and_initialize_projects(
         selected_id = candidate["candidate_id"]
         used_ids.add(selected_id)
 
-        logger.info(f"Selected candidate: {selected_id} ({candidate['title']})")
-        logger.info(f"Rationale: {selection.get('selection_rationale')}")
+        logger.info("Selected candidate: %s (%s)", _sanitize_log_val(selected_id), _sanitize_log_val(candidate.get("title", "")))
+        logger.info("Rationale: %s", _sanitize_log_val(selection.get("selection_rationale", "")))
 
         logger.info("Bridging to research artifact...")
         try:
@@ -266,7 +303,7 @@ def _select_and_initialize_projects(
             logger.warning(
                 "Failed to initialize project for %s: %s; retrying selection "
                 "(attempt %s/%s).",
-                selected_id,
+                _sanitize_log_val(selected_id),
                 e,
                 attempts,
                 max_attempts,

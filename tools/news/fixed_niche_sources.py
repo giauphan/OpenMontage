@@ -219,7 +219,12 @@ class FixedNicheSourceAdapter:
             return []
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
-            raw_items = data.get("items", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            if isinstance(data, dict):
+                raw_items = data.get("items", [])
+            elif isinstance(data, list):
+                raw_items = data
+            else:
+                raw_items = []
             candidates: List[Dict[str, Any]] = []
             for raw in raw_items:
                 norm = self.normalize_source_item(raw)
