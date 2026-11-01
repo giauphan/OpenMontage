@@ -460,13 +460,94 @@ class FixedNicheVideoRunner:
 
         return out_audio
 
+    def _sample_and_validate_frames(self, output_mp4: Path, render_dur: float, frames_dir: Path) -> bool:
+        """Sample key frames and validate visual quality/variance."""
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        sample_points = [
+            (0, "frame_00s_hook.png"),
+            (3, "frame_03s_impact.png"),
+            (int(render_dur / 2), "frame_mid_mechanism.png"),
+            (int(render_dur - 2), "frame_end_payoff.png"),
+        ]
+        for sec, fname in sample_points:
+            fpath = frames_dir / fname
+            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
+            if subprocess.run(cmd, capture_output=True).returncode != 0:
+                return False
+            if not fpath.is_file():
+                return False
+            ok, _ = self.storyboard_director.validate_frame_sample(fpath)
+            if not ok:
+                return False
+        return True
+
+    def _record_approval_and_status(
+        self,
+        qa_pass: bool,
+        output_mp4: Path,
+        actual_dur: float,
+        target_dur: float,
+        video_sha: Optional[str],
+        audio_sha: Optional[str],
+        ledger_sha: Optional[str],
+    ) -> str:
+        """Sign approval record if QA passed and persist validation status."""
+        app_status = "APPROVED_FOR_PRIVATE_CANARY" if qa_pass else "QA_FAILED"
+        val_status_code = "VIDEO_READY_FOR_PRIVATE_REVIEW" if qa_pass else "QA_FAILED"
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        if qa_pass:
+            from lib.qa_signing import sign_approval_record
+            audit_trail = {
+                "status": app_status, "audio_sha256": audio_sha, "video_sha256": video_sha,
+                "target_aspect": "9:16", "duration": actual_dur, "target_duration": target_dur,
+                "policy_sha256": self.policy.policy_sha256, "strict_quality_pass": True,
+            }
+            app_record = sign_approval_record(
+                project_id=self.candidate_id, media_sha256=video_sha, claim_ledger_sha256=ledger_sha,
+                timestamp_iso=timestamp, reviewer="independent_qa_supervisor", format_type="short",
+                audit_trail=audit_trail,
+            )
+            app_record.update(audit_trail)
+        else:
+            app_record = {
+                "approved": False, "status": app_status, "claim_ledger_sha256": ledger_sha,
+                "audio_sha256": audio_sha, "video_sha256": video_sha, "target_aspect": "9:16",
+                "duration": actual_dur, "target_duration": target_dur,
+                "policy_sha256": self.policy.policy_sha256, "timestamp": timestamp,
+            }
+        (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
+        val_status = {
+            "project_id": self.candidate_id, "status": val_status_code, "strict_quality_pass": qa_pass,
+            "rendered_mp4": str(output_mp4), "duration": actual_dur, "target_duration": target_dur,
+            "policy_sha256": self.policy.policy_sha256,
+        }
+        (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
+        return val_status_code
+
+    def _generate_thumbnail_if_approved(self) -> None:
+        """Generate thumbnail when QA validation passes."""
+        try:
+            from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
+            topic_data = getattr(self, "_staged_topic", None) or {}
+            tb_file = self.project_dir / "artifacts" / "topic_brief.json"
+            if not topic_data and tb_file.is_file():
+                topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
+            ThumbnailOrchestrator.generate_thumbnail(
+                project_dir=self.project_dir,
+                title=topic_data.get("title") or self.candidate_id,
+                topic=topic_data.get("summary", ""),
+                format_type="short",
+                allow_fallback=True,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
+
     def render(self, burn_captions: bool = False, renderer: str = "auto") -> Dict[str, Any]:
         """Render final 9:16 video and perform strict signed QA gating."""
         target_dur = self.get_target_duration()
         output_mp4 = self.project_dir / "renders" / "final_short_en_US_9x16.mp4"
         audio_path = self.project_dir / "assets" / "narration.mp3"
         audio_dur = probe_audio_duration(audio_path) if audio_path.is_file() else -1.0
-        # Enforce shorts duration contract: select audio_dur within [65.0, 75.0], fallback to target_dur
         render_dur = audio_dur if 65.0 <= audio_dur <= 75.0 else target_dur
 
         render_project_composition(
@@ -480,42 +561,13 @@ class FixedNicheVideoRunner:
         probe_json = json.loads(probe_out.stdout) if probe_out.returncode == 0 else {}
         (self.project_dir / "renders" / "ffprobe.json").write_text(json.dumps(probe_json, indent=2), encoding="utf-8")
 
-        # Sample frames using argument lists
         frames_dir = self.project_dir / "renders" / "frame_samples"
-        frames_dir.mkdir(parents=True, exist_ok=True)
-        sample_points = [
-            (0, "frame_00s_hook.png"),
-            (3, "frame_03s_impact.png"),
-            (int(render_dur / 2), "frame_mid_mechanism.png"),
-            (int(render_dur - 2), "frame_end_payoff.png"),
-        ]
-        sampling_ok = True
-        for sec, fname in sample_points:
-            fpath = frames_dir / fname
-            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
-            sample_proc = subprocess.run(cmd, capture_output=True)
-            if sample_proc.returncode != 0:
-                sampling_ok = False
+        frames_valid = self._sample_and_validate_frames(output_mp4, render_dur, frames_dir)
 
-        # Validate probe duration and output video
         video_ok = output_mp4.is_file() and output_mp4.stat().st_size > 0 and probe_out.returncode == 0
         probe_dur_str = probe_json.get("format", {}).get("duration")
         probe_dur = float(probe_dur_str) if probe_dur_str else 0.0
 
-        # Validate frame samples with visual variance check
-        frames_valid = sampling_ok
-        if frames_valid:
-            for _, fname in sample_points:
-                fpath = frames_dir / fname
-                if not fpath.is_file():
-                    frames_valid = False
-                    break
-                ok, _ = self.storyboard_director.validate_frame_sample(fpath)
-                if not ok:
-                    frames_valid = False
-                    break
-
-        # Validate claim ledger integrity
         claim_ledger_path = self.project_dir / "artifacts" / "claim_ledger.json"
         ledger_valid = claim_ledger_path.is_file() and claim_ledger_path.stat().st_size > 0
         ledger_sha = FixedNicheResearcher.compute_file_sha(claim_ledger_path) if ledger_valid else None
@@ -523,7 +575,6 @@ class FixedNicheVideoRunner:
         audio_sha = FixedNicheResearcher.compute_file_sha(audio_path) if audio_path.is_file() else None
         video_sha = FixedNicheResearcher.compute_file_sha(output_mp4) if video_ok else None
 
-        # Run independent QA validator
         from lib.fixed_niche.qa import FixedNicheQAValidator
         qa_validator = FixedNicheQAValidator(self.policy)
         qa_report = qa_validator.audit_fixed_niche_deliverable(
@@ -532,80 +583,15 @@ class FixedNicheVideoRunner:
         )
 
         qa_pass = bool(
-            video_ok
-            and probe_dur > 0
-            and frames_valid
-            and ledger_valid
-            and audio_sha is not None
-            and video_sha is not None
-            and qa_report.get("strict_quality_pass")
+            video_ok and probe_dur > 0 and frames_valid and ledger_valid
+            and audio_sha is not None and video_sha is not None and qa_report.get("strict_quality_pass")
         )
-
-        app_status = "APPROVED_FOR_PRIVATE_CANARY" if qa_pass else "QA_FAILED"
-        val_status_code = "VIDEO_READY_FOR_PRIVATE_REVIEW" if qa_pass else "QA_FAILED"
-
         actual_dur = probe_dur if probe_dur > 0 else render_dur
-
+        val_status_code = self._record_approval_and_status(
+            qa_pass, output_mp4, actual_dur, target_dur, video_sha, audio_sha, ledger_sha
+        )
         if qa_pass:
-            from lib.qa_signing import sign_approval_record
-            app_record = sign_approval_record(
-                project_id=self.candidate_id,
-                media_sha256=video_sha,
-                claim_ledger_sha256=ledger_sha,
-                timestamp_iso=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                reviewer="independent_qa_supervisor",
-                format_type="short",
-                audit_trail={
-                    "status": app_status,
-                    "audio_sha256": audio_sha,
-                    "video_sha256": video_sha,
-                    "target_aspect": "9:16",
-                    "duration": actual_dur,
-                    "target_duration": target_dur,
-                    "policy_sha256": self.policy.policy_sha256,
-                    "strict_quality_pass": True,
-                },
-            )
-            # Retain top-level attributes for compatibility
-            app_record.update({
-                "status": app_status, "audio_sha256": audio_sha, "video_sha256": video_sha,
-                "target_aspect": "9:16", "duration": actual_dur, "target_duration": target_dur,
-                "policy_sha256": self.policy.policy_sha256,
-            })
-        else:
-            app_record = {
-                "approved": False, "status": app_status, "claim_ledger_sha256": ledger_sha,
-                "audio_sha256": audio_sha, "video_sha256": video_sha, "target_aspect": "9:16",
-                "duration": actual_dur, "target_duration": target_dur,
-                "policy_sha256": self.policy.policy_sha256,
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            }
-        (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
-
-        val_status = {
-            "project_id": self.candidate_id, "status": val_status_code, "strict_quality_pass": qa_pass,
-            "rendered_mp4": str(output_mp4), "duration": actual_dur, "target_duration": target_dur,
-            "policy_sha256": self.policy.policy_sha256,
-        }
-        (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
-
-        # Generate YouTube thumbnail via Muse
-        if qa_pass:
-            try:
-                from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
-                topic_data = getattr(self, "_staged_topic", None) or {}
-                tb_file = self.project_dir / "artifacts" / "topic_brief.json"
-                if not topic_data and tb_file.is_file():
-                    topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
-                ThumbnailOrchestrator.generate_thumbnail(
-                    project_dir=self.project_dir,
-                    title=topic_data.get("title") or self.candidate_id,
-                    topic=topic_data.get("summary", ""),
-                    format_type="short",
-                    allow_fallback=True,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
+            self._generate_thumbnail_if_approved()
 
         return {
             "status": val_status_code, "rendered_mp4": str(output_mp4), "duration": actual_dur,
@@ -627,15 +613,22 @@ def _configure_cli_environment(args: argparse.Namespace) -> None:
 
 def _validate_safe_path(path: Path | str) -> Path:
     """Validate path against traversal attacks (CWE-22 / CWE-73)."""
+    import tempfile
     p = Path(path).expanduser().resolve()
-    repo_root, home_dir, tmp_dir = ROOT.resolve(), Path.home().resolve(), Path("/tmp").resolve()
+    repo_root = ROOT.resolve()
+    home_dir = Path.home().resolve()
+    cwd_dir = Path.cwd().resolve()
+    tmp_dir = Path(tempfile.gettempdir()).resolve()
     is_in_repo = p.is_relative_to(repo_root)
-    is_in_tmp = p.is_relative_to(tmp_dir)
     is_in_home = p.is_relative_to(home_dir)
-    if not (is_in_repo or is_in_tmp or is_in_home):
+    is_in_cwd = cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)
+    is_in_tmp = p.is_relative_to(tmp_dir)
+    if not (is_in_repo or is_in_home or is_in_cwd or is_in_tmp):
         raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
     if not p.is_file():
         raise FileNotFoundError(f"Candidate file does not exist: {path}")
+    if is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
+        raise PermissionError(f"Candidate file in temp directory must be owned by current user: {path}")
     return p
 
 

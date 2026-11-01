@@ -423,28 +423,46 @@ class VisualAssetOrchestrator:
         self._persist_orchestration_result(project_dir, out_payload)
         return out_payload
 
+    @staticmethod
+    def _collect_capture_check_ids(beat: Dict[str, Any]) -> List[str]:
+        """Collect potential asset/beat/claim IDs to check for authentic proof."""
+        check_ids: List[str] = []
+        raw_asset_ids = beat.get("asset_ids")
+        if isinstance(raw_asset_ids, list):
+            check_ids.extend(str(aid) for aid in raw_asset_ids if aid)
+        single_aid = beat.get("asset_id")
+        if single_aid and single_aid not in check_ids:
+            check_ids.append(str(single_aid))
+        beat_id = beat.get("id") or beat.get("beat_id")
+        if beat_id and beat_id not in check_ids:
+            check_ids.append(str(beat_id))
+        for cid in beat.get("claim_ids", []):
+            if cid and cid not in check_ids:
+                check_ids.append(str(cid))
+        return check_ids
+
+    @staticmethod
+    def _find_capture_in_dir(cdir: Path, check_ids: List[str]) -> Optional[Path]:
+        """Find matching raster proof in candidate directory."""
+        if not cdir.is_dir():
+            return None
+        for aid in check_ids:
+            for ext in RASTER_EXTENSIONS:
+                target = cdir / f"{aid}{ext}"
+                if target.is_file() and target.stat().st_size > 500:
+                    return target
+        return None
+
     def _find_authentic_capture(self, project_dir: Path, beat: Dict[str, Any]) -> Optional[Path]:
         """Locate verified screenshot or capture file on disk for authentic proof."""
         candidate_dirs = [
             project_dir / "artifacts" / "news_source_capture",
         ]
-        asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [])
-        beat_id = beat.get("id") or beat.get("beat_id")
-        check_ids = list(asset_ids)
-        if beat_id and beat_id not in check_ids:
-            check_ids.append(beat_id)
-        for cid in beat.get("claim_ids", []):
-            if cid not in check_ids:
-                check_ids.append(cid)
-
+        check_ids = self._collect_capture_check_ids(beat)
         for cdir in candidate_dirs:
-            if not cdir.is_dir():
-                continue
-            for aid in check_ids:
-                for ext in RASTER_EXTENSIONS:
-                    target = cdir / f"{aid}{ext}"
-                    if target.is_file() and target.stat().st_size > 500:
-                        return target
+            matched = self._find_capture_in_dir(cdir, check_ids)
+            if matched:
+                return matched
         return None
 
     def _cleanup_stale_raster(self, visuals_dir: Path, asset_id: str) -> None:

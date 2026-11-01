@@ -445,6 +445,80 @@ def compose_hyperframes_html(
 """
 
 
+def _load_diagram_plan(project_dir: Path) -> Optional[Any]:
+    sidecar_file = project_dir / "artifacts" / "diagram_animation_plan.json"
+    if not sidecar_file.is_file():
+        return None
+    try:
+        from lib.visual_style.spec import DiagramAnimationPlan
+        from lib.visual_style.validation import validate_diagram_plan_data
+        plan_data = json.loads(sidecar_file.read_text(encoding="utf-8"))
+        errs = validate_diagram_plan_data(plan_data)
+        if errs:
+            raise ValueError(f"Sidecar failed validation ({len(errs)} errors): {errs}")
+        return DiagramAnimationPlan.from_dict(plan_data)
+    except Exception as exc:
+        logger.warning(f"Could not load sidecar {sidecar_file}: {exc}")
+        return None
+
+
+def _copy_composition_visuals(visuals_src: Path, comp_vis: Path) -> None:
+    comp_vis.mkdir(parents=True, exist_ok=True)
+    if not visuals_src.is_dir():
+        return
+    for vis_file in visuals_src.iterdir():
+        if vis_file.is_file() and vis_file.suffix.lower() in ALL_SUPPORTED_MEDIA_EXTS:
+            shutil.copy2(vis_file, comp_vis / vis_file.name)
+
+
+def _copy_composition_vendor(comp_dir: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    local_gsap = repo_root / "assets" / "vendor" / "gsap.min.js"
+    if not local_gsap.is_file():
+        local_gsap = Path("assets/vendor/gsap.min.js")
+    if local_gsap.is_file():
+        comp_vendor = comp_dir / "assets" / "vendor"
+        comp_vendor.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(local_gsap, comp_vendor / "gsap.min.js")
+
+
+def _copy_composition_audio(audio_src: Path, comp_dir: Path) -> None:
+    if audio_src.is_file():
+        comp_assets = comp_dir / "assets"
+        comp_assets.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(audio_src, comp_assets / NARRATION_MP3_FILENAME)
+
+
+def _materialize_single_composition(
+    comp_name: str,
+    project_dir: Path,
+    title: str,
+    duration: float,
+    beats: List[Dict[str, Any]],
+    visuals_src: Path,
+    audio_src: Path,
+    diagram_plan: Optional[Any],
+) -> Path:
+    comp_dir = project_dir / comp_name
+    comp_dir.mkdir(parents=True, exist_ok=True)
+    _copy_composition_visuals(visuals_src, comp_dir / "assets" / "visuals")
+    _copy_composition_vendor(comp_dir)
+    _copy_composition_audio(audio_src, comp_dir)
+    is_vertical = "reels" in comp_name or "short" in comp_name
+    html_content = compose_hyperframes_html(
+        title=title,
+        duration=duration,
+        beats=beats,
+        is_vertical=is_vertical,
+        audio_src=DEFAULT_AUDIO_SRC,
+        visuals_src=visuals_src,
+        diagram_plan=diagram_plan,
+    )
+    index_file = comp_dir / "index.html"
+    index_file.write_text(html_content, encoding="utf-8")
+    return index_file
+
+
 def materialize_hyperframes_project(
     project_dir: Path,
     topic: Dict[str, Any],
@@ -458,67 +532,20 @@ def materialize_hyperframes_project(
     audio_src = project_dir / "assets" / NARRATION_MP3_FILENAME
     beats = visual_plan.get("beats", [])
     title = topic.get("title", "Practical AI Agent Engineering")
-
-    # Resolve diagram animation plan if available
-    diagram_plan = None
-    sidecar_file = project_dir / "artifacts" / "diagram_animation_plan.json"
-    if sidecar_file.is_file():
-        try:
-            from lib.visual_style.spec import DiagramAnimationPlan
-            from lib.visual_style.validation import validate_diagram_plan_data
-            plan_data = json.loads(sidecar_file.read_text(encoding="utf-8"))
-            errs = validate_diagram_plan_data(plan_data)
-            if errs:
-                raise ValueError(f"Sidecar failed validation ({len(errs)} errors): {errs}")
-            diagram_plan = DiagramAnimationPlan.from_dict(plan_data)
-        except Exception as exc:
-            logger.warning(f"Could not load sidecar {sidecar_file}: {exc}")
+    diagram_plan = _load_diagram_plan(project_dir)
 
     result_paths: Dict[str, Path] = {}
-
     for comp_name in composition_names:
-        comp_dir = project_dir / comp_name
-        comp_dir.mkdir(parents=True, exist_ok=True)
-
-        # Copy visual media assets (SVG diagrams, PNG/JPEG/WEBP illustrations, captures)
-        comp_vis = comp_dir / "assets" / "visuals"
-        comp_vis.mkdir(parents=True, exist_ok=True)
-        if visuals_src.is_dir():
-            for vis_file in visuals_src.iterdir():
-                if vis_file.is_file() and vis_file.suffix.lower() in ALL_SUPPORTED_MEDIA_EXTS:
-                    shutil.copy2(vis_file, comp_vis / vis_file.name)
-
-        # Copy local vendor scripts (e.g. pinned gsap.min.js) if present for offline render
-        repo_root = Path(__file__).resolve().parents[2]
-        local_gsap = repo_root / "assets" / "vendor" / "gsap.min.js"
-        if not local_gsap.is_file():
-            local_gsap = Path("assets/vendor/gsap.min.js")
-        if local_gsap.is_file():
-            comp_vendor = comp_dir / "assets" / "vendor"
-            comp_vendor.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(local_gsap, comp_vendor / "gsap.min.js")
-
-        # Copy or reference narration audio
-        comp_assets = comp_dir / "assets"
-        comp_assets.mkdir(parents=True, exist_ok=True)
-        if audio_src.is_file():
-            shutil.copy2(audio_src, comp_assets / NARRATION_MP3_FILENAME)
-
-        is_vertical = "reels" in comp_name or "short" in comp_name
-        html_content = compose_hyperframes_html(
+        result_paths[comp_name] = _materialize_single_composition(
+            comp_name=comp_name,
+            project_dir=project_dir,
             title=title,
             duration=duration,
             beats=beats,
-            is_vertical=is_vertical,
-            audio_src=DEFAULT_AUDIO_SRC,
             visuals_src=visuals_src,
+            audio_src=audio_src,
             diagram_plan=diagram_plan,
         )
-
-        index_file = comp_dir / "index.html"
-        index_file.write_text(html_content, encoding="utf-8")
-        result_paths[comp_name] = index_file
-
     return result_paths
 
 
@@ -692,15 +719,9 @@ def _execute_ffmpeg_concat(
 ) -> None:
     """Execute FFmpeg concat render and clean up list file."""
     cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "concat", "-safe", "0", "-i", str(concat_list),
-        "-i", str(audio_path),
-        "-vf", vf,
-        "-aspect", aspect_flag,
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "192k",
-        "-t", str(render_dur),
-        str(output_mp4),
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+        "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+        "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
     ]
     subprocess.run(cmd, check=True)
     concat_list.unlink(missing_ok=True)
@@ -717,15 +738,9 @@ def _execute_ffmpeg_color(
 ) -> None:
     """Execute FFmpeg blank-canvas fallback render."""
     cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
-        "-i", str(audio_path),
-        "-vf", vf,
-        "-aspect", aspect_flag,
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "192k",
-        "-t", str(render_dur),
-        str(output_mp4),
+        "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
+        "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+        "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
     ]
     subprocess.run(cmd, check=True)
 

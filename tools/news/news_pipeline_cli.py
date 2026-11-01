@@ -109,15 +109,24 @@ def _sanitize_log_val(val: Any) -> str:
 
 def _validate_safe_input_path(path: Path | str) -> Path:
     """Validate path against traversal attacks (CWE-22 / CWE-73)."""
+    import tempfile
     p = Path(path).expanduser().resolve()
     repo_root = Path(__file__).resolve().parents[2]
     home_dir = Path.home().resolve()
-    tmp_dir = Path("/tmp").resolve()
+    cwd_dir = Path.cwd().resolve()
+    tmp_dir = Path(tempfile.gettempdir()).resolve()
     is_in_repo = p.is_relative_to(repo_root)
-    is_in_tmp = p.is_relative_to(tmp_dir)
     is_in_home = p.is_relative_to(home_dir)
-    if not (is_in_repo or is_in_tmp or is_in_home):
+    is_in_cwd = cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)
+    is_in_tmp = p.is_relative_to(tmp_dir)
+    if not (is_in_repo or is_in_home or is_in_cwd or is_in_tmp):
         logger.error("Path traversal detected or path outside allowed root: %s", _sanitize_log_val(path))
+        sys.exit(1)
+    if not p.is_file():
+        logger.error("Input file not found: %s", _sanitize_log_val(path))
+        sys.exit(1)
+    if is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
+        logger.error("Input file in temp directory must be owned by current user: %s", _sanitize_log_val(path))
         sys.exit(1)
     return p
 
