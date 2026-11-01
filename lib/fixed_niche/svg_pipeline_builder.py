@@ -180,8 +180,10 @@ def _build_vertical_beat(
         accent, badge = "#ef4444", f"{fam_label} // AI AGENT PIPELINE HOOK"
         body = f"""
   <g id="flow-header" class="flow-step flow-header" data-step-order="0">
-    <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">AI Agent Execution Pipeline</text>
-    <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">{cfg['hook_sub']}</text>
+    <rect x="50" y="80" width="460" height="28" rx="6" fill="#7f1d1d" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="280" y="99" fill="#fca5a5" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">⚡ CRITICAL FAILURE // RECURRING BREAKDOWN</text>
+    <text x="50" y="135" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">AI Agent Execution Pipeline</text>
+    <text x="50" y="160" fill="#94a3b8" font-family="sans-serif" font-size="15">{cfg['hook_sub']}</text>
   </g>
 
   <g id="flow-step-1" class="flow-step" data-step-order="1">
@@ -562,17 +564,21 @@ def _build_vertical_beat(
   </g>
 
   <g id="flow-step-4" class="flow-step" data-step-order="7">
-    <rect x="50" y="660" width="880" height="130" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>
-    <rect x="80" y="680" width="820" height="90" rx="10" fill="#14532d"/>
-    <circle cx="120" cy="725" r="16" fill="#22c55e"/>
-    <text x="120" y="731" fill="#0f172a" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">4</text>
-    <text x="155" y="715" fill="#86efac" font-family="sans-serif" font-size="16" font-weight="bold">Continuous Integration Gate</text>
-    <text x="155" y="743" fill="#ffffff" font-family="sans-serif" font-size="13">Re-verifies contract tests across fresh process checkouts.</text>
-    <rect x="50" y="810" width="880" height="155" rx="16" fill="#1e1b4b" stroke="#38bdf8" stroke-width="2"/>
-    <text x="490" y="850" fill="#38bdf8" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">THE CORE ENGINEERING PRINCIPLE</text>
-    <text x="490" y="885" fill="#f8fafc" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle">{cfg['principle_title']}</text>
-    <rect x="90" y="905" width="800" height="45" rx="8" fill="#0f172a"/>
-    <text x="490" y="933" fill="#22c55e" font-family="monospace" font-size="14" text-anchor="middle">{cfg['principle_assert']}</text>
+    <rect x="50" y="660" width="880" height="110" rx="14" fill="#0f172a" stroke="#22c55e" stroke-width="2"/>
+    <rect x="80" y="675" width="820" height="80" rx="10" fill="#14532d"/>
+    <circle cx="120" cy="715" r="16" fill="#22c55e"/>
+    <text x="120" y="721" fill="#0f172a" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">4</text>
+    <text x="155" y="705" fill="#86efac" font-family="sans-serif" font-size="16" font-weight="bold">Continuous Integration Gate</text>
+    <text x="155" y="733" fill="#ffffff" font-family="sans-serif" font-size="13">Re-verifies contract tests across fresh process checkouts.</text>
+    <g id="flow-cta-banner">
+      <rect x="50" y="785" width="880" height="185" rx="16" fill="#1e1b4b" stroke="#38bdf8" stroke-width="2.5"/>
+      <rect x="80" y="800" width="280" height="26" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-width="1"/>
+      <text x="220" y="817" fill="#38bdf8" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">CALL TO ACTION // ARCHITECTURAL BLUEPRINT</text>
+      <text x="490" y="855" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">Follow @OpenMontage for Daily Agent Engineering Patterns</text>
+      <rect x="140" y="880" width="700" height="42" rx="8" fill="#0f172a" stroke="#22c55e" stroke-width="1.5"/>
+      <text x="490" y="906" fill="#86efac" font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle">★ Star Repository on GitHub: github.com/openmontage/openmontage</text>
+      <text x="490" y="945" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">Defensive Contracts • Schema Validation • Hermetic Reproduction</text>
+    </g>
   </g>
 """
     return accent, badge, body

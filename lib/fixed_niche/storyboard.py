@@ -109,18 +109,22 @@ class FixedNicheStoryboardDirector:
         stmt_1 = statements[1] if len(statements) > 1 else ""
         stmt_2 = statements[2] if len(statements) > 2 else ""
 
-        # Beat 1: Hook
+        # Beat 1: Hook (0-3s stop-the-scroll quantifiable claim)
+        hook = topic.get("hook")
         q = topic.get("viewer_question")
-        if q and len(q.split()) >= 6:
+        if hook and len(hook.split()) >= 6:
+            b1 = hook if hook.endswith((".", "!")) else f"{hook}."
+        elif q and len(q.split()) >= 6:
             b1 = q if q.endswith("?") else f"{q}?"
         elif title:
-            b1 = f"Why do autonomous coding agents encounter recurring failures with {title.rstrip('.')}?"
+            clean_title = title.rstrip(".").strip()
+            b1 = f"Coding agents encounter recurring failures with {clean_title}. Here is why multi-turn loops break, and the production fix."
         elif family == "agent_tool_use":
-            b1 = "Why do tool calls fail when an AI coding agent executes Model Context Protocol functions?"
+            b1 = "A single schema mismatch silently crashes autonomous tool calls. Here is what breaks inside the Model Context Protocol, and the defensive fix."
         elif family == "debugging_reliability":
-            b1 = "Why do AI agent pull requests pass generated tests but break continuous integration builds?"
+            b1 = "Automated coding agent pull requests pass isolated unit tests, yet silently break continuous integration builds. Here is the architectural breakdown."
         else:
-            b1 = "Why does your AI coding agent forget repository guidelines between sessions?"
+            b1 = "Autonomous coding agents silently lose memory across process restarts. Here is why prompts reset back to zero, and the repository fix."
 
         # Beat 2: Developer Impact / Symptom
         symptom = topic.get("symptom") or (stmt_0 if len(stmt_0.split()) >= 4 else "")
@@ -170,17 +174,18 @@ class FixedNicheStoryboardDirector:
         else:
             b5 = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
 
-        # Beat 6: Takeaway & Version Scope
+        # Beat 6: Takeaway & Call to Action (CTA)
+        cta_suffix = "Follow @OpenMontage for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint."
         takeaway = topic.get("key_takeaway") or topic.get("thesis")
         if takeaway and len(takeaway.split()) >= 4:
             clean_ta = takeaway.rstrip(".")
-            b6 = f"Always enforce {clean_ta} in code and CI, rather than trusting conversational memory."
+            b6 = f"Always enforce {clean_ta} in code and CI. {cta_suffix}"
         elif family == "agent_tool_use":
-            b6 = "Strict schema adherence and defensive payload coercion are mandatory for resilient agent tool integration across production environments."
+            b6 = f"Enforce strict schema validation and payload coercion in production. {cta_suffix}"
         elif family == "debugging_reliability":
-            b6 = "Always require full regression test suites and clean contract assertions before merging automated agent bug repairs into continuous delivery pipelines."
+            b6 = f"Always author hermetic reproduction tests before merging automated patches. {cta_suffix}"
         else:
-            b6 = "Always enforce deterministic state persistence across sessions in code and CI, rather than assuming conversational memory survives."
+            b6 = f"Always enforce declarative AGENTS contracts in code and CI. {cta_suffix}"
 
         return {
             "b1": b1, "b2": b2, "b3": b3, "b4": b4, "b5": b5, "b6": b6
@@ -367,7 +372,7 @@ class FixedNicheStoryboardDirector:
                 "script_section_id": "S07",
                 "start_s": timestamps[6],
                 "end_s": timestamps[7],
-                "story_function": "payoff_and_caveat",
+                "story_function": "payoff_and_cta",
                 "narration": b6b_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
@@ -375,8 +380,8 @@ class FixedNicheStoryboardDirector:
                 "render_strategy": "deterministic_svg",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b07_payoff",
-                "expected_screen_state": "Summary payoff card with version qualifier",
-                "visual_intent": f"Summary card reinforcing defensive verification principle: {b6b_narration[:80]}",
+                "expected_screen_state": "Summary payoff card with repository star badge and follow call to action",
+                "visual_intent": f"Call to action card reinforcing defensive verification principle: {b6b_narration[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             })
         else:
@@ -385,7 +390,7 @@ class FixedNicheStoryboardDirector:
                 "script_section_id": "S06",
                 "start_s": timestamps[5],
                 "end_s": timestamps[6],
-                "story_function": "payoff_and_caveat",
+                "story_function": "payoff_and_cta",
                 "narration": b6_narration,
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
@@ -393,8 +398,8 @@ class FixedNicheStoryboardDirector:
                 "render_strategy": "deterministic_svg",
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b06_payoff",
-                "expected_screen_state": "Summary payoff card with version qualifier",
-                "visual_intent": f"Summary card reinforcing defensive verification principle: {b6_narration[:80]}",
+                "expected_screen_state": "Summary payoff card with repository star badge and follow call to action",
+                "visual_intent": f"Call to action card reinforcing defensive verification principle: {b6_narration[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             })
 

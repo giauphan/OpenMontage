@@ -80,6 +80,8 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
 
     for idx, claim in enumerate(claims):
         cid = claim.get("claim_id", f"claim_{idx}")
+        if claim.get("verdict") == "REJECTED":
+            continue
         source = claim.get("source", {})
         url = source.get("canonical_url", "")
         

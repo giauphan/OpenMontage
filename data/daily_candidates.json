@@ -15,8 +15,8 @@
     "viewer_question": "Why do coding agents enter runaway retry loops when an MCP server experiences transient failure?",
     "symptom": "Autonomous coding agents encounter cascading timeout errors and retry storms when probing failing MCP tool servers",
     "root_cause": "Legacy MCP tool dispatchers lacked client-side failure thresholds, causing repeated RPC invocations that exhaust context token budgets",
-    "remedy": "MCP SDK 1.4 implements declarative three-strike circuit breakers that fail closed immediately on successive connection errors",
-    "evidence_excerpt": "MCP SDK 1.4 standardizes client-side circuit breakers and exponential backoff filters to eliminate cascading tool retry loops.",
+    "remedy": "Client-Side Circuit Breakers implement declarative trip thresholds that fail closed immediately on successive connection errors",
+    "evidence_excerpt": "Standardizes automated exponential backoff and trip thresholds to prevent coding agents from entering cascading retry storms on remote server failure.",
     "source_snapshot": "Model Context Protocol Specification Extension: Client-Side Circuit Breakers. Standardizes automated exponential backoff and trip thresholds to prevent coding agents from entering cascading retry storms on remote server failure. Eliminates runaway token consumption.",
     "snapshot_sha256": "847143fc118b35bfd96ff7269dba8403600a91b68b929a20db562794ba9576e7",
     "independent_fact_check": {

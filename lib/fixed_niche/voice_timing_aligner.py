@@ -181,5 +181,8 @@ def generate_progressive_svg_style(
             arrow_t = max(0.1, t - arrow_lead_time)
             lines.append(f"    #{arrow_id} {{ animation-delay: {arrow_t:.2f}s; }}")
 
+    if step_timings:
+        lines.append(f"    #flow-cta-banner {{ animation-delay: {step_timings[-1]:.2f}s; }}")
+
     lines.append("  </style>")
     return "\n".join(lines)

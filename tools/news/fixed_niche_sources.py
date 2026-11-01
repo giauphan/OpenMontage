@@ -204,11 +204,12 @@ class FixedNicheSourceAdapter:
         if sources_feed_path:
             return [Path(sources_feed_path)]
 
+        repo_root = Path(__file__).resolve().parents[2]
         paths: List[Path] = []
-        curated_feed = Path("data/daily_candidates.json")
+        curated_feed = repo_root / "data" / "daily_candidates.json"
         if curated_feed.is_file():
             paths.append(curated_feed)
-        default_feed = Path("config/sources/production_agent_engineering_feed.json")
+        default_feed = repo_root / "config" / "sources" / "production_agent_engineering_feed.json"
         if default_feed.is_file():
             paths.append(default_feed)
         return paths

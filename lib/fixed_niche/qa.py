@@ -204,6 +204,25 @@ class FixedNicheQAValidator:
             except Exception as e:
                 findings.append({"category": "DURATION", "severity": "warning", "message": f"Could not parse ffprobe duration: {e}"})
 
+        # 4.5. Call to Action (CTA) audit - prevents 0/10 CTA grade
+        script_file = project_dir / "artifacts" / "script_en_US.json"
+        if script_file.is_file():
+            try:
+                s_data = json.loads(script_file.read_text(encoding="utf-8"))
+                sections = s_data.get("sections", [])
+                if sections:
+                    final_narration = sections[-1].get("narration", "").lower()
+                    has_cta_verb = any(v in final_narration for v in ("follow", "subscribe", "star"))
+                    has_channel = "openmontage" in final_narration or "@" in final_narration
+                    if not (has_cta_verb and has_channel):
+                        findings.append({
+                            "category": "CALL_TO_ACTION",
+                            "severity": "blocker",
+                            "message": "Final beat narration lacks explicit Call to Action (@OpenMontage follow / star repo)",
+                        })
+            except Exception as e:
+                findings.append({"category": "CALL_TO_ACTION", "severity": "warning", "message": f"CTA audit error: {e}"})
+
         # 5. Claim ledger & Source snapshot provenance audit
         claim_ledger_file = project_dir / "artifacts" / "claim_ledger.json"
         snapshot_file = project_dir / "artifacts" / "source_snapshot.txt"

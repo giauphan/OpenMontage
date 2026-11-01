@@ -296,13 +296,18 @@ def _build_svg_beat(
             step_abs_t = _fmt_time(start_s + rel_t)
             tweens.append(
                 f'  tl.to("#{sec_id} #flow-step-{s_idx}", '
-                f'{{ opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }}, {step_abs_t});'
+                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.4)" }}, {step_abs_t});'
             )
             if s_idx > 1:
                 arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
                 tweens.append(
                     f'  tl.to("#{sec_id} #flow-arrow-{s_idx-1}", '
                     f'{{ opacity: 1, duration: 0.3, ease: "power1.inOut" }}, {arrow_abs_t});'
+                )
+            if s_idx == num_steps:
+                tweens.append(
+                    f'  tl.to("#{sec_id} #flow-cta-banner", '
+                    f'{{ opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.7)" }}, {step_abs_t});'
                 )
 
     if i < total_beats - 1:
@@ -383,9 +388,25 @@ def compose_hyperframes_html(
             sections_html.append(sec_html)
             tweens_js.extend(sec_tweens)
 
+    sfx_clips: List[str] = []
+    for idx, beat in enumerate(beats):
+        b_start = float(beat.get("start_s") if beat.get("start_s") is not None else beat.get("start_seconds", 0.0))
+        sfx_clips.append(
+            f'    <audio class="clip sfx" data-start="{_fmt_time(b_start)}" data-duration="0.8" data-track-index="{10 + idx}" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>'
+        )
+    last_b = beats[-1] if beats else {}
+    last_st = float(last_b.get("start_s") if last_b.get("start_s") is not None else 0.0)
+    last_end = float(last_b.get("end_s", duration))
+    cta_sfx_t = max(last_st + 0.5, last_end - 3.5)
+    sfx_clips.append(
+        f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="20" src="assets/sfx/chime.mp3" data-volume="0.28"></audio>'
+    )
+    sfx_block = "\n".join(sfx_clips)
+
     clips_block = "\n".join(sections_html)
     tweens_block = "\n".join(tweens_js)
     starts_js = ", ".join(_fmt_time(b.get("start_s") if b.get("start_s") is not None else b.get("start_seconds", 0.0)) for b in beats)
+    bgm_fadeout_t = _fmt_time(max(0.0, duration - 1.5))
 
     return f"""<!doctype html>
 <html lang="en">
@@ -543,6 +564,8 @@ def compose_hyperframes_html(
   <div id="root" data-composition-id="main" data-start="0" data-width="{width}" data-height="{height}" data-duration="{_fmt_time(duration)}">
     <div class="bg-fill"></div>
     <audio id="narration" class="clip" data-start="0" data-duration="{_fmt_time(duration)}" data-track-index="0" src="{audio_src}"></audio>
+    <audio id="bgm" class="clip" data-start="0" data-duration="{_fmt_time(duration)}" data-track-index="1" src="assets/music-bg.mp3" data-volume="0.12" loop></audio>
+{sfx_block}
 {clips_block}
   </div>
   <script>
@@ -550,6 +573,8 @@ def compose_hyperframes_html(
     const starts = [{starts_js}];
     window.__timelines = window.__timelines || {{}};
     const tl = gsap.timeline({{ paused: true }});
+    tl.fromTo("#bgm", {{ volume: 0 }}, {{ volume: 0.12, duration: 1.5, ease: "power2.out" }}, 0);
+    tl.to("#bgm", {{ volume: 0, duration: 1.5, ease: "power2.in" }}, {bgm_fadeout_t});
 {tweens_block}
     window.__timelines["main"] = tl;
   }})();
@@ -609,10 +634,44 @@ def _copy_composition_vendor(comp_dir: Path) -> None:
 
 
 def _copy_composition_audio(audio_src: Path, comp_dir: Path) -> None:
+    comp_assets = comp_dir / "assets"
+    comp_assets.mkdir(parents=True, exist_ok=True)
     if audio_src.is_file():
-        comp_assets = comp_dir / "assets"
-        comp_assets.mkdir(parents=True, exist_ok=True)
         shutil.copy2(audio_src, comp_assets / NARRATION_MP3_FILENAME)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    parent_assets = comp_dir.parent / "assets"
+
+    # Copy background music bed
+    for bgm_cand in (
+        parent_assets / "music-bg.mp3",
+        audio_src.parent / "music-bg.mp3",
+        repo_root / "assets" / "audio" / "music-bg.mp3",
+    ):
+        if bgm_cand.is_file():
+            shutil.copy2(bgm_cand, comp_assets / "music-bg.mp3")
+            if not (parent_assets / "music-bg.mp3").is_file():
+                parent_assets.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(bgm_cand, parent_assets / "music-bg.mp3")
+            break
+
+    # Copy sound effects library
+    for sfx_dir in (
+        parent_assets / "sfx",
+        audio_src.parent / "sfx",
+        repo_root / "assets" / "audio" / "sfx",
+    ):
+        if sfx_dir.is_dir():
+            comp_sfx = comp_assets / "sfx"
+            comp_sfx.mkdir(parents=True, exist_ok=True)
+            for f in sfx_dir.glob("*.mp3"):
+                shutil.copy2(f, comp_sfx / f.name)
+            parent_sfx = parent_assets / "sfx"
+            if not parent_sfx.is_dir():
+                parent_sfx.mkdir(parents=True, exist_ok=True)
+                for f in sfx_dir.glob("*.mp3"):
+                    shutil.copy2(f, parent_sfx / f.name)
+            break
 
 
 def _materialize_single_composition(
@@ -696,12 +755,8 @@ def render_hyperframes_composition(
     output_mp4 = Path(output_mp4).resolve()
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
 
-    # Ensure narration.mp3 exists in comp_dir/assets if present in parent project assets
-    parent_audio = comp_dir.parent / "assets" / NARRATION_MP3_FILENAME
-    comp_audio = comp_dir / "assets" / NARRATION_MP3_FILENAME
-    if parent_audio.is_file() and (not comp_audio.is_file() or comp_audio.stat().st_size != parent_audio.stat().st_size):
-        comp_audio.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(parent_audio, comp_audio)
+    # Ensure narration and audio assets exist in comp_dir/assets
+    _copy_composition_audio(comp_dir.parent / "assets" / NARRATION_MP3_FILENAME, comp_dir)
 
     raw_mp4 = output_mp4 if not burn_captions else output_mp4.with_suffix(".raw.mp4")
     cmd = [

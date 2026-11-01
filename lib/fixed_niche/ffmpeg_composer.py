@@ -110,6 +110,17 @@ def _write_slides_concat_list(
         f.write(f"file '{svg_assets[-1].resolve()}'\n")
 
 
+def _resolve_bgm_path(project_dir: Path) -> Optional[Path]:
+    """Find background music track in project assets or repository fallback."""
+    project_bgm = project_dir / "assets" / "music-bg.mp3"
+    if project_bgm.is_file():
+        return project_bgm
+    repo_bgm = Path(__file__).resolve().parents[2] / "assets" / "audio" / "music-bg.mp3"
+    if repo_bgm.is_file():
+        return repo_bgm
+    return None
+
+
 def _execute_ffmpeg_concat(
     concat_list: Path,
     audio_path: Path,
@@ -117,13 +128,33 @@ def _execute_ffmpeg_concat(
     aspect_flag: str,
     render_dur: float,
     output_mp4: Path,
+    bgm_path: Optional[Path] = None,
 ) -> None:
     """Execute FFmpeg concat render and clean up list file."""
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_list),
-        "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
-        "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
-    ]
+    if bgm_path and bgm_path.is_file():
+        filter_complex = (
+            f"[0:v]{vf}[vout];"
+            f"[1:a]volume=1.0[narr];"
+            f"[2:a]volume=0.12[bgm];"
+            f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+        )
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-i", str(audio_path),
+            "-stream_loop", "-1", "-i", str(bgm_path),
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "[aout]",
+            "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur),
+            str(output_mp4),
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
+        ]
     subprocess.run(cmd, check=True)
     concat_list.unlink(missing_ok=True)
 
@@ -136,13 +167,33 @@ def _execute_ffmpeg_color(
     aspect_flag: str,
     render_dur: float,
     output_mp4: Path,
+    bgm_path: Optional[Path] = None,
 ) -> None:
     """Execute FFmpeg blank-canvas fallback render."""
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
-        "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
-        "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
-    ]
+    if bgm_path and bgm_path.is_file():
+        filter_complex = (
+            f"[0:v]{vf}[vout];"
+            f"[1:a]volume=1.0[narr];"
+            f"[2:a]volume=0.12[bgm];"
+            f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+        )
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
+            "-i", str(audio_path),
+            "-stream_loop", "-1", "-i", str(bgm_path),
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "[aout]",
+            "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur),
+            str(output_mp4),
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
+            "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
+        ]
     subprocess.run(cmd, check=True)
 
 
@@ -183,13 +234,14 @@ def render_ffmpeg_composition(
     vf, aspect_flag = _build_ffmpeg_filter(width, height, burn_captions, project_dir)
 
     concat_list = renders_dir / "slides_concat.txt"
+    bgm_path = _resolve_bgm_path(project_dir)
     if beats:
         _write_beats_concat_list(beats, render_dur, visuals_dir, svg_assets, concat_list)
-        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4)
+        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
     elif svg_assets:
         _write_slides_concat_list(svg_assets, render_dur / len(svg_assets), concat_list)
-        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4)
+        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
     else:
-        _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4)
+        _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
 
     return output_mp4
