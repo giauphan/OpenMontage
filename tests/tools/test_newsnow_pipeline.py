@@ -318,3 +318,23 @@ def test_feed_write_requires_minimum(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="need at least 3"):
         newsnow_feed.write_feed("http://127.0.0.1:4444", tmp_path / "feed.json", minimum=3)
 
+
+def test_produce_hydrates_from_hybrid_discovery_when_input_insufficient(tmp_path):
+    args = argparse.Namespace(
+        count=3,
+        require_latest_news=True,
+        max_age_days=7,
+    )
+    initial_pool = []
+    used_ids = set()
+    hydrated = news_pipeline_cli._hydrate_from_hybrid_discovery(
+        initial_pool, count=3, min_required=3, used_ids=used_ids, args=args
+    )
+    assert len(hydrated) >= 3
+    for c in hydrated:
+        assert c.get("candidate_id") is not None
+        assert c.get("topic_family") in {
+            "agent_tool_use", "context_memory", "agent_architecture",
+            "agent_evaluation", "debugging_reliability"
+        }
+

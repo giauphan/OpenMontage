@@ -176,7 +176,28 @@ def _collect_used_project_ids() -> Set[str]:
     return used_ids
 
 
-def _filter_by_scope_gate(candidate_pool: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _record_no_eligible_marker() -> None:
+    marker_file = Path("data/.no_eligible_topic_marker")
+    try:
+        marker_file.parent.mkdir(parents=True, exist_ok=True)
+        marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _clear_no_eligible_marker() -> None:
+    marker_file = Path("data/.no_eligible_topic_marker")
+    if marker_file.is_file():
+        try:
+            marker_file.unlink()
+        except OSError:
+            pass
+
+
+def _filter_by_scope_gate(
+    candidate_pool: List[Dict[str, Any]],
+    fail_closed: bool = True,
+) -> List[Dict[str, Any]]:
     """Enforce fixed niche scope gating unless explicitly skipped."""
     should_enforce_niche = os.environ.get("SKIP_SCOPE_GATE", "0") not in ("1", "true", "True")
     if not should_enforce_niche:
@@ -193,23 +214,14 @@ def _filter_by_scope_gate(candidate_pool: List[Dict[str, Any]]) -> List[Dict[str
         else:
             logger.info("FixedNicheScopeGate rejected candidate '%s': %s", cand.get("candidate_id"), verdict.reason)
 
-    if not niche_filtered:
+    if not niche_filtered and fail_closed:
         logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate.")
         print("STATUS=NO_ELIGIBLE_TOPIC")
-        marker_file = Path("data/.no_eligible_topic_marker")
-        try:
-            marker_file.parent.mkdir(parents=True, exist_ok=True)
-            marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-        except OSError:
-            pass
+        _record_no_eligible_marker()
         sys.exit(2)
 
-    marker_file = Path("data/.no_eligible_topic_marker")
-    if marker_file.is_file():
-        try:
-            marker_file.unlink()
-        except OSError:
-            pass
+    if niche_filtered:
+        _clear_no_eligible_marker()
     return niche_filtered
 
 
@@ -217,6 +229,7 @@ def _ingest_and_filter_candidates(
     input_path: Path,
     count: int,
     used_ids: Set[str],
+    fail_closed: bool = True,
 ) -> List[Dict[str, Any]]:
     """Ingest candidates from input file and apply initial filtering."""
     safe_path = _validate_safe_input_path(input_path)
@@ -235,7 +248,7 @@ def _ingest_and_filter_candidates(
 
     available = [c for c in candidates if c.get("candidate_id") not in used_ids]
     candidate_pool = available if len(available) >= count else candidates
-    return _filter_by_scope_gate(candidate_pool)
+    return _filter_by_scope_gate(candidate_pool, fail_closed=fail_closed)
 
 
 def _select_single_candidate(
@@ -321,17 +334,69 @@ def _select_and_initialize_projects(
     return project_ids, attempts
 
 
+def _hydrate_from_hybrid_discovery(
+    candidate_pool: List[Dict[str, Any]],
+    count: int,
+    min_required: int,
+    used_ids: Set[str],
+    args: argparse.Namespace,
+) -> List[Dict[str, Any]]:
+    """Augment candidate pool with Tier 1 / Tier 2 discovery candidates if below required minimum."""
+    if len(candidate_pool) >= min_required:
+        return candidate_pool
+
+    logger.info(
+        "Candidate pool has %d eligible candidate(s) (need %d); activating HybridCandidateDiscovery.",
+        len(candidate_pool),
+        min_required,
+    )
+    from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+    discovery = HybridCandidateDiscovery(
+        require_latest_news=getattr(args, "require_latest_news", True),
+        max_age_days=getattr(args, "max_age_days", 7),
+    )
+    disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
+    if not disc_result.is_eligible:
+        return candidate_pool
+
+    seen_ids = {c.get("candidate_id") for c in candidate_pool}
+    for c in disc_result.candidates:
+        cid = c.get("candidate_id") or c.get("id")
+        if cid and cid not in seen_ids and cid not in used_ids:
+            candidate_pool.append(c)
+            seen_ids.add(cid)
+    return candidate_pool
+
+
 def run_produce(args: argparse.Namespace) -> None:
     """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
     count = max(1, getattr(args, "count", 1))
     used_ids = _collect_used_project_ids()
-    candidate_pool = _ingest_and_filter_candidates(Path(args.input), count, used_ids)
+    min_required = min(count, int(os.environ.get("MIN_PRODUCE_COUNT", 3)))
+
+    candidate_pool: List[Dict[str, Any]] = []
+    input_file = Path(args.input)
+    if input_file.is_file():
+        candidate_pool = _ingest_and_filter_candidates(
+            input_file, count, used_ids, fail_closed=False
+        )
+
+    candidate_pool = _hydrate_from_hybrid_discovery(
+        candidate_pool, count, min_required, used_ids, args
+    )
+
+    if not candidate_pool:
+        logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate across input and hybrid discovery.")
+        print("STATUS=NO_ELIGIBLE_TOPIC")
+        _record_no_eligible_marker()
+        sys.exit(2)
+
+    _clear_no_eligible_marker()
 
     logger.info("Scoring and ranking...")
     scorer = NewsCandidateScorer()
     ranked = scorer.rank_candidates(candidate_pool, limit=max(30, count * 4))
 
-    min_required = min(count, int(os.environ.get("MIN_PRODUCE_COUNT", 3)))
     if not ranked:
         logger.error("No valid candidates found.")
         sys.exit(1)

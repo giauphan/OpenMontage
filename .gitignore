@@ -136,6 +136,8 @@ venv/
 !config/publish_platforms.json.example
 !config/publish_schedule.json
 !config/sources/*.json
+!data/daily_candidates.json
+!data/daily_candidates.example.json
 logs
 *.lock
 !uv.lock

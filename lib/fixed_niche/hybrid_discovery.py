@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import hashlib
 import json
 import logging
 import os
@@ -179,15 +180,16 @@ class HybridCandidateDiscovery:
             safe_id = self._sanitize_log_val(candidate_id)
             logger.info("Marked candidate '%s' as consumed in %s", safe_id, self.tracker_path)
 
-    def load_curated_candidates(self) -> List[Dict[str, Any]]:
-        """Load candidate list from Tier 1 curated backlog file."""
-        if not self.curated_path.is_file():
+    @staticmethod
+    def _load_candidates_from_file(file_path: Path) -> List[Dict[str, Any]]:
+        """Safely load candidates from a JSON or YAML file."""
+        if not file_path.is_file():
             return []
         try:
-            content = self.curated_path.read_text(encoding="utf-8")
+            content = file_path.read_text(encoding="utf-8")
             if not content.strip():
                 return []
-            if self.curated_path.suffix in (".yaml", ".yml"):
+            if file_path.suffix in (".yaml", ".yml"):
                 import yaml
                 raw = yaml.safe_load(content)
             else:
@@ -199,26 +201,21 @@ class HybridCandidateDiscovery:
                 return raw.get("candidates", []) or raw.get("positive_cases", []) or raw.get("items", [])
             return []
         except Exception as e:
-            logger.warning(f"Failed loading curated candidates from {self.curated_path}: {e}")
+            logger.warning("Failed loading candidates from %s: %s", file_path, e)
             return []
+
+    def load_curated_candidates(self) -> List[Dict[str, Any]]:
+        """Load candidate list from Tier 1 curated backlog file and production source feed."""
+        candidates = self._load_candidates_from_file(self.curated_path)
+        if not candidates:
+            prod_feed = self.root_dir / "config" / "sources" / "production_agent_engineering_feed.json"
+            if prod_feed.is_file():
+                candidates = self._load_candidates_from_file(prod_feed)
+        return candidates
 
     def load_automated_feed_candidates(self) -> List[Dict[str, Any]]:
         """Load candidate list from Tier 2 automated feed file."""
-        if not self.feed_path.is_file():
-            return []
-        try:
-            content = self.feed_path.read_text(encoding="utf-8")
-            if not content.strip():
-                return []
-            raw = json.loads(content)
-            if isinstance(raw, list):
-                return raw
-            if isinstance(raw, dict):
-                return raw.get("items", []) or raw.get("candidates", [])
-            return []
-        except Exception as e:
-            logger.warning(f"Failed loading automated feed candidates from {self.feed_path}: {e}")
-            return []
+        return self._load_candidates_from_file(self.feed_path)
 
     def _is_candidate_eligible(
         self,
@@ -300,6 +297,10 @@ class HybridCandidateDiscovery:
         valid: List[Dict[str, Any]] = []
         for cand in candidates:
             cid = str(cand.get("candidate_id") or cand.get("id") or "")
+            if not cid:
+                seed = str(cand.get("title", "")) + str(cand.get("canonical_url") or cand.get("url") or "")
+                cid = f"cand_{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:16]}"
+                cand["candidate_id"] = cid
             is_ok, verdict = self._is_candidate_eligible(cand, cid, used_ids, cutoff_dt)
             if is_ok and verdict:
                 valid.append(self._normalize_candidate_dict(cand, cid, verdict))

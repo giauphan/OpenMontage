@@ -237,8 +237,12 @@ fi
 # like a successful generation attempt.
 # PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
+PRODUCE_INPUT="data/newsnow_feed.json"
+if [[ "$HAS_CURATED_READY" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.json" ]]; then
+  PRODUCE_INPUT="data/daily_candidates.json"
+fi
 set +e
-"$PY" tools/news/news_pipeline_cli.py produce --input data/newsnow_feed.json --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news 2>&1 | tee "$PRODUCE_LOG"
+"$PY" tools/news/news_pipeline_cli.py produce --input "$PRODUCE_INPUT" --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news 2>&1 | tee "$PRODUCE_LOG"
 PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
@@ -247,11 +251,11 @@ if grep -q "STATUS=NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG" || grep -q "NO_ELIGIBLE_TOP
   echo "[$(date -u +%FT%TZ)] NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate. Exiting cleanly without retry."
   exit 0
 fi
-if [ "$PRODUCE_STATUS" -ne 0 ]; then
+if [[ "$PRODUCE_STATUS" -ne 0 ]]; then
   echo "[$(date -u +%FT%TZ)] ERROR: topic production failed (exit=$PRODUCE_STATUS); refusing partial candidate output." >&2
   exit "$PRODUCE_STATUS"
 fi
-if [ "$TEE_STATUS" -ne 0 ]; then
+if [[ "$TEE_STATUS" -ne 0 ]]; then
   echo "[$(date -u +%FT%TZ)] ERROR: could not persist topic production log (exit=$TEE_STATUS)." >&2
   exit "$TEE_STATUS"
 fi
