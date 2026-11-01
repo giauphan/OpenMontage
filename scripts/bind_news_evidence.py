@@ -247,7 +247,7 @@ def bind_news_evidence(project_dir: Path) -> bool:
             or src.get("published_at")
             or brief_data.get("metadata", {}).get("published_at")
             or brief_data.get("published_at_utc")
-            or (f"{brief_data['research_date']}T00:00:00+00:00" if brief_data.get("research_date") and _re.match(r"^\d{4}-\d{2}-\d{2}$", str(brief_data.get("research_date"))) else None)
+            or (f"{brief_data['research_date']}T00:00:00+00:00" if brief_data.get("research_date") and re.match(r"^\d{4}-\d{2}-\d{2}$", str(brief_data.get("research_date"))) else None)
             or _iso_utc(now)
         )
         ret_date_str = (matched_prov.get("retrieved_at") if matched_prov else None) or _iso_utc(ret_time)
@@ -283,7 +283,6 @@ def bind_news_evidence(project_dir: Path) -> bool:
         print("ERROR: failed to build evidence sources", file=sys.stderr)
         return False
 
-    import re as _re
     claims = []
     ledger_claims = []
     unverified_errors: list[str] = []
@@ -300,12 +299,12 @@ def bind_news_evidence(project_dir: Path) -> bool:
 
         # 1. Quantitative check: every quantitative figure in sec_text must appear in frozen_research_excerpt
         # Strip structural references like "Section 1", "Scene 1", "Đoạn 1" from factual figures
-        cleaned_text = _re.sub(r'\b(?:section|scene|part|đoạn|phần)\s+\d+\b', '', sec_text, flags=_re.IGNORECASE)
+        cleaned_text = re.sub(r'\b(?:section|scene|part|đoạn|phần)\s+\d+\b', '', sec_text, flags=re.IGNORECASE)
         should_verify_figures = (
             script_path.name == "script_en_US.json"
             or bool(brief_data.get("data_points"))
         )
-        figures = _re.findall(r"\b\d+(?:[\.,]\d+)?%?\b", cleaned_text) if should_verify_figures else []
+        figures = re.findall(r"\b\d+(?:[\.,]\d+)?%?\b", cleaned_text) if should_verify_figures else []
         target_corpus = captured_corpus if (strict_capture_required and captured_corpus) else frozen_research_excerpt
         if not target_corpus:
             target_corpus = frozen_research_excerpt
