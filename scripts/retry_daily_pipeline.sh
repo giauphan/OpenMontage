@@ -42,10 +42,21 @@ TODAY=$(TZ="$PUBLISH_TZ" date +%F)
 
 # 3.5 Check if NO_ELIGIBLE_TOPIC was recorded for today.
 if [ -f "$ROOT/data/.no_eligible_topic_marker" ]; then
-  MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
-  if [ "$MARKER_DATE" = "$TODAY" ]; then
-    log "NO_ELIGIBLE_TOPIC was recorded for today ($TODAY). Skipping retry loop to prevent infinite retry storms."
-    exit 0
+  # If eligible candidates are available in curated or source feeds, remove stale marker and proceed
+  if "$PY" -c "
+import sys
+from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+res = HybridCandidateDiscovery().discover_candidates(count=1)
+sys.exit(0 if res.is_eligible else 1)
+" 2>/dev/null; then
+    log "Eligible candidates available in curated/source backlog; clearing stale .no_eligible_topic_marker."
+    rm -f "$ROOT/data/.no_eligible_topic_marker"
+  else
+    MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
+    if [ "$MARKER_DATE" = "$TODAY" ]; then
+      log "NO_ELIGIBLE_TOPIC was recorded for today ($TODAY) and backlog is empty. Skipping retry loop to prevent infinite retry storms."
+      exit 0
+    fi
   fi
 fi
 

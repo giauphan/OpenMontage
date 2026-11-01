@@ -367,6 +367,17 @@ def _hydrate_from_hybrid_discovery(
         max_age_days=getattr(args, "max_age_days", 7),
     )
     disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
+    if not disc_result.is_eligible and getattr(args, "require_latest_news", True):
+        logger.info(
+            "HybridCandidateDiscovery with require_latest_news=True yielded 0 candidates; "
+            "falling back to authorized backlog without recency gate."
+        )
+        fallback_discovery = HybridCandidateDiscovery(
+            require_latest_news=False,
+            max_age_days=getattr(args, "max_age_days", 7),
+        )
+        disc_result = fallback_discovery.discover_candidates(count=max(count, min_required * 2))
+
     if not disc_result.is_eligible:
         return candidate_pool
 
@@ -387,14 +398,16 @@ def run_produce(args: argparse.Namespace) -> None:
 
     candidate_pool: List[Dict[str, Any]] = []
     input_file = Path(args.input)
+    is_live_feed = input_file.name in ("newsnow_feed.json", "daily_candidates.json") or getattr(args, "fallback_to_curated", False)
     if input_file.is_file():
         candidate_pool = _ingest_and_filter_candidates(
-            input_file, count, used_ids, fail_closed=False
+            input_file, count, used_ids, fail_closed=not is_live_feed
         )
 
-    candidate_pool = _hydrate_from_hybrid_discovery(
-        candidate_pool, count, min_required, used_ids, args
-    )
+    if is_live_feed:
+        candidate_pool = _hydrate_from_hybrid_discovery(
+            candidate_pool, count, min_required, used_ids, args
+        )
 
     if not candidate_pool:
         logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate across input and hybrid discovery.")

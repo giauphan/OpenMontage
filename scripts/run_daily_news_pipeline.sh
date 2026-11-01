@@ -205,29 +205,49 @@ sys.exit(0 if res.tier == DiscoveryTier.TIER_1_CURATED else 1)
 fi
 
 if [[ "$HAS_CURATED_READY" -eq 0 ]] && ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 3; then
-  if [[ ! -f data/newsnow_feed.json ]]; then
-    echo "[$(date -u +%FT%TZ)] ERROR: NewsNow fetch failed and no prior feed exists."
+  if "$PY" -c "
+import sys
+from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+res = HybridCandidateDiscovery().discover_candidates(count=1)
+sys.exit(0 if res.is_eligible else 1)
+" 2>/dev/null; then
+    echo "[$(date -u +%FT%TZ)] [HYBRID DISCOVERY] NewsNow fetch failed, but eligible candidates exist in hybrid discovery; proceeding with curated backlog."
+    HAS_CURATED_READY=1
+  elif [[ ! -f data/newsnow_feed.json ]]; then
+    echo "[$(date -u +%FT%TZ)] ERROR: NewsNow fetch failed and no prior feed or curated candidates exist."
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
       --error-type "NEWSNOW_FETCH_FAILED" --message "NewsNow fetch failed and no prior feed exists" || true
     exit 1
   fi
-  FEED_STALE=1
-  echo "[$(date -u +%FT%TZ)] WARN: NewsNow fetch failed; using existing feed."
-  "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "news_fetch" \
-    --reason "NewsNow fetch failed, using fallback feed" --attempt 1 --max-attempts 1 || true
+  if [[ "$HAS_CURATED_READY" -eq 0 ]]; then
+    FEED_STALE=1
+    echo "[$(date -u +%FT%TZ)] WARN: NewsNow fetch failed; using existing feed."
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "news_fetch" \
+      --reason "NewsNow fetch failed, using fallback feed" --attempt 1 --max-attempts 1 || true
 
-  # Enforce an acceptable stale-feed age on the fallback path. A very old feed
-  # produces stale news content, so fail closed rather than generate from it.
-  MAX_STALE_FEED_AGE_HOURS="${MAX_STALE_FEED_AGE_HOURS:-48}"
-  FEED_FILE="$ROOT/data/newsnow_feed.json"
-  if [[ -f "$FEED_FILE" ]]; then
-    FEED_MTIME="$(stat -c %Y "$FEED_FILE" 2>/dev/null || echo 0)"
-    FEED_AGE_H=$(( ( $(date +%s) - FEED_MTIME ) / 3600 ))
-    if [[ "$FEED_AGE_H" -gt "$MAX_STALE_FEED_AGE_HOURS" ]]; then
-      echo "[$(date -u +%FT%TZ)] ERROR: fallback NewsNow feed is ${FEED_AGE_H}h old (max ${MAX_STALE_FEED_AGE_HOURS}h); refusing to generate from stale feed."
-      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
-        --error-type "STALE_NEWSNOW_FEED" --message "fallback NewsNow feed ${FEED_AGE_H}h old exceeds max ${MAX_STALE_FEED_AGE_HOURS}h" || true
-      exit 1
+    # Enforce an acceptable stale-feed age on the fallback path. A very old feed
+    # produces stale news content, so fail closed rather than generate from it.
+    MAX_STALE_FEED_AGE_HOURS="${MAX_STALE_FEED_AGE_HOURS:-48}"
+    FEED_FILE="$ROOT/data/newsnow_feed.json"
+    if [[ -f "$FEED_FILE" ]]; then
+      FEED_MTIME="$(stat -c %Y "$FEED_FILE" 2>/dev/null || echo 0)"
+      FEED_AGE_H=$(( ( $(date +%s) - FEED_MTIME ) / 3600 ))
+      if [[ "$FEED_AGE_H" -gt "$MAX_STALE_FEED_AGE_HOURS" ]]; then
+        if "$PY" -c "
+import sys
+from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+res = HybridCandidateDiscovery().discover_candidates(count=1)
+sys.exit(0 if res.is_eligible else 1)
+" 2>/dev/null; then
+          echo "[$(date -u +%FT%TZ)] [HYBRID DISCOVERY] Fallback feed is stale (${FEED_AGE_H}h), but curated backlog is available; switching to curated backlog."
+          HAS_CURATED_READY=1
+        else
+          echo "[$(date -u +%FT%TZ)] ERROR: fallback NewsNow feed is ${FEED_AGE_H}h old (max ${MAX_STALE_FEED_AGE_HOURS}h); refusing to generate from stale feed."
+          "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
+            --error-type "STALE_NEWSNOW_FEED" --message "fallback NewsNow feed ${FEED_AGE_H}h old exceeds max ${MAX_STALE_FEED_AGE_HOURS}h" || true
+          exit 1
+        fi
+      fi
     fi
   fi
 fi
@@ -240,6 +260,8 @@ PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
 PRODUCE_INPUT="data/newsnow_feed.json"
 if [[ "$HAS_CURATED_READY" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.json" ]]; then
   PRODUCE_INPUT="data/daily_candidates.json"
+elif [[ "$HAS_CURATED_READY" -eq 1 ]] && [[ -f "$ROOT/config/sources/production_agent_engineering_feed.json" ]]; then
+  PRODUCE_INPUT="config/sources/production_agent_engineering_feed.json"
 fi
 set +e
 "$PY" tools/news/news_pipeline_cli.py produce --input "$PRODUCE_INPUT" --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news 2>&1 | tee "$PRODUCE_LOG"

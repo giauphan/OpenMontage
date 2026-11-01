@@ -205,12 +205,20 @@ class HybridCandidateDiscovery:
             return []
 
     def load_curated_candidates(self) -> List[Dict[str, Any]]:
-        """Load candidate list from Tier 1 curated backlog file and production source feed."""
+        """Load candidate list from Tier 1 curated backlog file and authorized production source feeds."""
         candidates = self._load_candidates_from_file(self.curated_path)
-        if not candidates:
-            prod_feed = self.root_dir / "config" / "sources" / "production_agent_engineering_feed.json"
-            if prod_feed.is_file():
-                candidates = self._load_candidates_from_file(prod_feed)
+        seen_keys = {
+            str(c.get("candidate_id") or c.get("id") or c.get("canonical_url") or c.get("url"))
+            for c in candidates
+        }
+        sources_dir = self.root_dir / "config" / "sources"
+        if sources_dir.is_dir():
+            for feed_file in sorted(sources_dir.glob("*.json")):
+                for fc in self._load_candidates_from_file(feed_file):
+                    key = str(fc.get("candidate_id") or fc.get("id") or fc.get("canonical_url") or fc.get("url"))
+                    if key not in seen_keys:
+                        candidates.append(fc)
+                        seen_keys.add(key)
         return candidates
 
     def load_automated_feed_candidates(self) -> List[Dict[str, Any]]:
