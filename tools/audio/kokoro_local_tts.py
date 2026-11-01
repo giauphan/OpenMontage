@@ -147,7 +147,7 @@ class KokoroLocalTTS(BaseTool):
                 "speed": speed,
                 "response_format": "mp3",
             }
-            resp = requests.post(service_url, json=payload, timeout=30)
+            resp = requests.post(service_url, json=payload, timeout=(0.5, 30))
             if resp.status_code == 200 and len(resp.content) > 100:
                 tmp_out = output_path.with_suffix(".tmp.mp3")
                 tmp_out.write_bytes(resp.content)

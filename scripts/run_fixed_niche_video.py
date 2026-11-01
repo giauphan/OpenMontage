@@ -302,6 +302,9 @@ class FixedNicheVideoRunner:
             from tools.audio.kokoro_local_tts import is_kokoro_available
             provider = "kokoro" if is_kokoro_available() else "flite"
 
+        if provider == "kokoro" and speed == 1.0:
+            speed = 1.36
+
         if voice is None:
             voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
 
@@ -318,6 +321,21 @@ class FixedNicheVideoRunner:
             raise RuntimeError(f"Narration synthesis failed: {res.get('error', 'Unknown error')}")
 
         dur = probe_audio_duration(out_audio)
+        if provider == "kokoro" and not (65.0 <= dur <= 75.0):
+            adjusted_speed = round(speed * (dur / 70.0), 2)
+            if adjusted_speed != speed and 0.8 <= adjusted_speed <= 1.8:
+                logger.info(f"Re-synthesizing narration with calibrated speed {adjusted_speed} (previous duration {dur:.2f}s)")
+                res = self.orchestrator.synthesize(
+                    text=text,
+                    output_path=out_audio,
+                    locale="en-US",
+                    provider=provider,
+                    voice=voice,
+                    settings={"speed": adjusted_speed},
+                    allow_fallback=True,
+                )
+                dur = probe_audio_duration(out_audio)
+
         logger.info(f"Synthesized voice track: duration={dur:.2f}s")
         target_dur = self.get_target_duration()
         n_beats = 0
@@ -615,19 +633,12 @@ def _validate_safe_path(path: Path | str) -> Path:
     """Validate path against traversal attacks (CWE-22 / CWE-73)."""
     import tempfile
     p = Path(path).expanduser().resolve()
-    repo_root = ROOT.resolve()
-    home_dir = Path.home().resolve()
-    cwd_dir = Path.cwd().resolve()
-    tmp_dir = Path(tempfile.gettempdir()).resolve()
-    is_in_repo = p.is_relative_to(repo_root)
-    is_in_home = p.is_relative_to(home_dir)
-    is_in_cwd = cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)
-    is_in_tmp = p.is_relative_to(tmp_dir)
-    if not (is_in_repo or is_in_home or is_in_cwd or is_in_tmp):
+    allowed = (ROOT.resolve(), Path.home().resolve(), Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
+    if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
         raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
     if not p.is_file():
         raise FileNotFoundError(f"Candidate file does not exist: {path}")
-    if is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
+    if p.is_relative_to(Path(tempfile.gettempdir()).resolve()) and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
         raise PermissionError(f"Candidate file in temp directory must be owned by current user: {path}")
     return p
 
@@ -637,11 +648,7 @@ def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
     try:
         import yaml
         raw_data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
-        if isinstance(raw_data, dict):
-            return raw_data.get("positive_cases", [])
-        if isinstance(raw_data, list):
-            return raw_data
-        return []
+        return raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else (raw_data if isinstance(raw_data, list) else [])
     except Exception as e:
         logger.warning("Failed to load candidates from %s: %s", file_path, e)
         return []
