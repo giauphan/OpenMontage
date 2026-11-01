@@ -57,6 +57,17 @@ def run_ingest(args: argparse.Namespace) -> None:
 
 def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]) -> str:
     """Build research brief and initialize one OpenMontage project for a candidate."""
+    if "content_hash" not in candidate:
+        import hashlib
+        body = candidate.get("body") or candidate.get("summary") or ""
+        url = candidate.get("canonical_url") or candidate.get("url") or ""
+        title = candidate.get("title") or ""
+        candidate["content_hash"] = hashlib.sha256(
+            f"{title.strip().lower()}|{url.strip().lower()}|{body[:500].strip().lower()}".encode("utf-8")
+        ).hexdigest()
+    if "raw_provenance" not in candidate:
+        candidate["raw_provenance"] = {"source_id": candidate.get("candidate_id", ""), "source_feed": "fixed_niche"}
+
     bridge = NewsResearchBridge()
     research_brief = bridge.build_brief(candidate, selection)
 

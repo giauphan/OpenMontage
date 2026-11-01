@@ -285,6 +285,17 @@ class HybridCandidateDiscovery:
         body = cand.get("body") or cand.get("summary") or cand.get("description") or ""
         normalized["body"] = body
         normalized["summary"] = cand.get("summary") or body[:300]
+        content_h = (
+            cand.get("content_hash")
+            or hashlib.sha256(
+                f"{str(cand.get('title', '')).strip().lower()}|{url.strip().lower()}|{body[:500].strip().lower()}".encode("utf-8")
+            ).hexdigest()
+        )
+        normalized["content_hash"] = content_h
+        normalized["raw_provenance"] = cand.get("raw_provenance") or {
+            "source_id": cid,
+            "source_feed": "fixed_niche",
+        }
         return normalized
 
     def filter_and_validate_candidates(
