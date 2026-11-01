@@ -232,3 +232,110 @@ def test_hyperframes_composer_inlines_and_animates_steps(tmp_path: Path, monkeyp
     assert 'tl.to("#scene-b01 #flow-step-1"' in html
     assert 'tl.to("#scene-b01 #flow-step-2"' in html
     assert 'tl.to("#scene-b01 #flow-arrow-1"' in html
+
+
+def test_materialize_hyperframes_project_folder_hygiene_no_svg_files(tmp_path: Path):
+    """Ensure materialized composition folders contain NO static SVG images.
+
+    Videos handle SVG diagrams dynamically via inline DOM in index.html,
+    so assets/visuals within hyperframes/ and hyperframes_reels/ must not
+    contain static .svg image files.
+    """
+    from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
+
+    proj_dir = tmp_path / "test_video_hygiene"
+    proj_dir.mkdir()
+    visuals_src = proj_dir / "assets" / "visuals"
+    visuals_src.mkdir(parents=True)
+
+    # Pre-populate static SVG files in project assets/visuals
+    for beat_num in range(1, 7):
+        (visuals_src / f"agent_tool_use_b{beat_num:02d}.svg").write_text("<svg></svg>", encoding="utf-8")
+
+    topic = {
+        "candidate_id": "cand_hygiene",
+        "title": "What actually happens when an AI agent calls an MCP tool",
+        "topic_family": "agent_tool_use",
+    }
+    visual_plan = {
+        "beats": [
+            {
+                "beat_id": f"b{i:02d}",
+                "start_s": float(i - 1) * 11.0,
+                "end_s": float(i) * 11.0,
+                "asset_id": f"agent_tool_use_b{i:02d}",
+                "topic_family": "agent_tool_use",
+                "story_function": "stage",
+                "visual_kind": "svg_diagram",
+                "narration": f"Stage {i} MCP execution step",
+            }
+            for i in range(1, 7)
+        ]
+    }
+
+    result_paths = materialize_hyperframes_project(
+        project_dir=proj_dir,
+        topic=topic,
+        visual_plan=visual_plan,
+        duration=66.0,
+    )
+
+    for comp_name, index_file in result_paths.items():
+        assert index_file.is_file()
+        comp_dir = index_file.parent
+        comp_visuals = comp_dir / "assets" / "visuals"
+
+        # 1. No .svg files copied or left in composition assets/visuals
+        if comp_visuals.is_dir():
+            svg_files = list(comp_visuals.glob("*.svg"))
+            assert len(svg_files) == 0, f"Found unexpected SVG files in {comp_visuals}: {svg_files}"
+
+        # 2. Composition index.html contains inlined SVG DOM with progressive flow steps
+        html = index_file.read_text(encoding="utf-8")
+        assert '<svg xmlns="http://www.w3.org/2000/svg"' in html
+        assert 'id="flow-step-1"' in html
+        assert 'id="flow-arrow-1"' in html
+        assert 'id="flow-step-2"' in html
+
+        # 3. Progressive GSAP tweens reveal items in voice order
+        assert 'tl.to("#scene-b01 #flow-step-1"' in html
+        assert 'tl.to("#scene-b01 #flow-arrow-1"' in html
+        assert 'tl.to("#scene-b01 #flow-step-2"' in html
+
+        # 4. No <img> fallback pointing to static .svg files
+        assert '<img src="assets/visuals/' not in html or not any(
+            f'assets/visuals/agent_tool_use_b{i:02d}.svg' in html for i in range(1, 7)
+        )
+
+
+def test_dynamic_in_memory_svg_when_no_svg_on_disk(tmp_path: Path):
+    """Ensure compose_hyperframes_html inlines dynamic SVG DOM even with no SVG files on disk."""
+    beats = [
+        {
+            "beat_id": "b01",
+            "start_s": 0.0,
+            "end_s": 11.0,
+            "asset_id": "agent_tool_use_b01_hook",
+            "topic_family": "agent_tool_use",
+            "story_function": "problem_hook",
+            "visual_kind": "svg_diagram",
+            "narration": "First, the developer assigns a tool calling instruction. Then the schema validation fails.",
+        }
+    ]
+
+    html = compose_hyperframes_html(
+        title="What actually happens when an AI agent calls an MCP tool",
+        duration=11.0,
+        beats=beats,
+        visuals_src=None,  # No files on disk
+    )
+
+    # Inlined SVG DOM must be generated in-memory rather than falling back to broken <img>
+    assert '<!doctype html>' in html
+    assert '<svg xmlns="http://www.w3.org/2000/svg"' in html
+    assert 'id="flow-step-1"' in html
+    assert 'id="flow-arrow-1"' in html
+    assert 'id="flow-step-2"' in html
+    assert '<img src="assets/visuals/' not in html
+    assert 'tl.to("#scene-b01 #flow-step-1"' in html
+

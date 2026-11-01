@@ -660,12 +660,16 @@ def _generate_horizontal_svg(
     <text x="210" y="53" fill="{accent}" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">{fam_label} // STAGE {beat_num}</text>
   </g>
   <g id="flow-step-1" class="flow-step" data-step-order="1">
-    <rect x="60" y="110" width="840" height="270" rx="16" fill="#0f172a" stroke="{accent}" stroke-width="2"/>
-    <text x="90" y="170" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">{safe_title}</text>
-    <text x="90" y="210" fill="#94a3b8" font-family="sans-serif" font-size="15">AI Agent Execution Pipeline Flow Diagram</text>
+    <rect x="60" y="90" width="840" height="230" rx="16" fill="#0f172a" stroke="{accent}" stroke-width="2"/>
+    <text x="90" y="145" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold">{safe_title}</text>
+    <text x="90" y="185" fill="#94a3b8" font-family="sans-serif" font-size="15">AI Agent Execution Pipeline Flow Diagram</text>
   </g>
-  <g id="flow-step-2" class="flow-step" data-step-order="2">
-    <rect x="60" y="420" width="840" height="60" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-    <text x="480" y="455" fill="#e2e8f0" font-family="sans-serif" font-size="15" text-anchor="middle">Stage {beat_num} of {total_beats} — Practical AI Agent Engineering</text>
+  <g id="flow-arrow-1" class="flow-arrow" data-step-order="2">
+    <line x1="480" y1="330" x2="480" y2="390" stroke="{accent}" stroke-width="3" stroke-dasharray="6,4"/>
+    <polygon points="474,390 486,390 480,402" fill="{accent}"/>
+  </g>
+  <g id="flow-step-2" class="flow-step" data-step-order="3">
+    <rect x="60" y="420" width="840" height="70" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+    <text x="480" y="460" fill="#e2e8f0" font-family="sans-serif" font-size="15" text-anchor="middle">Stage {beat_num} of {total_beats} — Practical AI Agent Engineering</text>
   </g>
 </svg>"""

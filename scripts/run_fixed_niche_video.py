@@ -188,9 +188,9 @@ class FixedNicheVideoRunner:
         (artifacts_dir / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         # 6.5. Generate animated diagram sidecar if visual style is active
-        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
+        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
             from lib.visual_style.diagram_director import AnimatedDiagramDirector
             director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
             diag_plan = director.plan_diagram_animation(
@@ -265,9 +265,9 @@ class FixedNicheVideoRunner:
         )
         (self.project_dir / "artifacts" / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
+        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
             from lib.visual_style.diagram_director import AnimatedDiagramDirector
             director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
             diag_plan = director.plan_diagram_animation(
@@ -431,9 +431,9 @@ class FixedNicheVideoRunner:
                         # Re-materialize HyperFrames compositions with the reconciled audio duration
                         from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
                         topic_for_comp = self._staged_topic or {"candidate_id": self.candidate_id}
-                        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-                        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-                        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+                        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+                        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
+                        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
                             from lib.visual_style.diagram_director import AnimatedDiagramDirector
                             cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
                             claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
@@ -604,12 +604,11 @@ class FixedNicheVideoRunner:
 def _configure_cli_environment(args: argparse.Namespace) -> None:
     """Set global environment variables based on CLI flags."""
     os.environ["AI_VISUAL_ENABLED"] = "1" if args.enable_ai_visuals else "0"
-    if args.enable_diagram_animation:
+    os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
+    if args.visual_style == "animated_agent_diagram_v1" and args.enable_diagram_animation:
         os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
-        os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
     else:
         os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
-        os.environ["OPENMONTAGE_VISUAL_STYLE"] = "legacy"
 
 
 def _validate_safe_path(path: Path | str) -> Path:
@@ -749,7 +748,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topic-family", default=None)
     parser.add_argument("--canonical-url", default=None)
     parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"])
+    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg"), choices=["progressive_svg", "animated_agent_diagram_v1", "legacy"])
     parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-age-days", type=int, default=7)

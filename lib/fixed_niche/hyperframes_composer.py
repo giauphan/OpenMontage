@@ -129,7 +129,10 @@ def _inline_svg_file(visuals_src: Optional[Path], vis_file: str) -> str:
     try:
         import re
         raw_svg = (visuals_src / vis_file).read_text(encoding="utf-8")
-        return re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+        clean = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+        if "<svg" in clean and "</svg>" in clean and len(clean) > 100 and ("<g" in clean or "<path" in clean):
+            return clean
+        return ""
     except Exception:
         return ""
 
@@ -188,6 +191,9 @@ def _build_svg_beat(
     visuals_src: Optional[Path],
     total_beats: int,
     duration: float,
+    *,
+    title: str = "Practical AI Agent Engineering",
+    is_vertical: bool = True,
     formatted_date: str = "",
 ) -> tuple[str, List[str]]:
     """Build HTML section and GSAP tweens for a technical SVG diagram scene."""
@@ -211,7 +217,28 @@ def _build_svg_beat(
     card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
 
     inline_svg = _inline_svg_file(visuals_src, vis_file)
-    viewport_content = inline_svg if inline_svg else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
+    is_legacy = os.environ.get("OPENMONTAGE_VISUAL_STYLE") == "legacy"
+    if not is_legacy and not inline_svg and vis_file.lower().endswith(".svg"):
+        from lib.fixed_niche.svg_pipeline_builder import generate_pipeline_svg
+        import re
+        topic_family = str(beat.get("topic_family") or "context_memory")
+        narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+        word_ts = beat.get("word_timestamps")
+        raw_svg = generate_pipeline_svg(
+            asset_id=str(beat.get("asset_id") or f"beat_{i+1}"),
+            topic_family=topic_family,
+            title=title,
+            beat_num=i + 1,
+            total_beats=total_beats,
+            is_vertical=is_vertical,
+            progressive=True,
+            duration=beat_dur,
+            narration=narration,
+            beat_start_s=start_s,
+            word_timestamps=word_ts,
+        )
+        inline_svg = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+    viewport_content = inline_svg if (inline_svg and not is_legacy) else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
 
     date_snippet = f'          <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
     html = (
@@ -252,11 +279,13 @@ def _build_svg_beat(
         from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
         num_steps = STEP_COUNTS.get(i + 1, 4)
         narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+        word_ts = beat.get("word_timestamps")
         step_timings = compute_step_timings_for_beat(
             narration=narration,
             duration=beat_dur,
             num_steps=num_steps,
             beat_start_s=start_s,
+            word_timestamps=word_ts,
         )
         tweens.extend([
             f'  tl.set("#{sec_id} .flow-step", {{ opacity: 0, y: 16 }}, {entry_t});',
@@ -312,8 +341,8 @@ def compose_hyperframes_html(
                 has_beat_visuals = True
                 break
 
-    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
+    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
     if (visual_style == "animated_agent_diagram_v1") and flag_enabled and not has_beat_visuals:
         from lib.visual_style.hyperframes_adapter import compose_animated_diagram_html
         return compose_animated_diagram_html(
@@ -347,7 +376,10 @@ def compose_hyperframes_html(
             sections_html.append(sec_html)
             tweens_js.extend(sec_tweens)
         else:
-            sec_html, sec_tweens = _build_svg_beat(i, beat, vis_file, visuals_src, len(beats), duration, formatted_date=formatted_date)
+            sec_html, sec_tweens = _build_svg_beat(
+                i, beat, vis_file, visuals_src, len(beats), duration,
+                title=title, is_vertical=is_vertical, formatted_date=formatted_date,
+            )
             sections_html.append(sec_html)
             tweens_js.extend(sec_tweens)
 
@@ -544,12 +576,24 @@ def _load_diagram_plan(project_dir: Path) -> Optional[Any]:
         return None
 
 
-def _copy_composition_visuals(visuals_src: Path, comp_vis: Path) -> None:
-    comp_vis.mkdir(parents=True, exist_ok=True)
-    if not visuals_src.is_dir():
+COPYABLE_MEDIA_EXTS = (EXT_PNG, EXT_JPG, EXT_JPEG, EXT_WEBP, ".mp4", ".webm")
+
+
+def _copy_composition_visuals(visuals_src: Optional[Path], comp_vis: Path) -> None:
+    """Ensure composition visuals directory has no static diagram SVGs in progressive mode."""
+    is_legacy = os.environ.get("OPENMONTAGE_VISUAL_STYLE") == "legacy"
+    if not is_legacy and comp_vis.is_dir():
+        for existing_svg in comp_vis.glob("*.svg"):
+            try:
+                existing_svg.unlink()
+            except OSError:
+                pass
+    if not visuals_src or not visuals_src.is_dir():
         return
+    copy_exts = ALL_SUPPORTED_MEDIA_EXTS if is_legacy else COPYABLE_MEDIA_EXTS
     for vis_file in visuals_src.iterdir():
-        if vis_file.is_file() and vis_file.suffix.lower() in ALL_SUPPORTED_MEDIA_EXTS:
+        if vis_file.is_file() and vis_file.suffix.lower() in copy_exts:
+            comp_vis.mkdir(parents=True, exist_ok=True)
             shutil.copy2(vis_file, comp_vis / vis_file.name)
 
 
@@ -701,3 +745,4 @@ def render_hyperframes_composition(
         raw_mp4.unlink(missing_ok=True)
 
     return output_mp4
+from lib.fixed_niche.ffmpeg_composer import render_ffmpeg_composition  # Facade re-export

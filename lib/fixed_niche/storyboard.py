@@ -192,6 +192,8 @@ class FixedNicheStoryboardDirector:
         claims: List[Dict[str, Any]],
         project_dir: Path,
         target_duration: float = 72.0,
+        *,
+        write_svg_to_disk: bool = True,
     ) -> Dict[str, Any]:
         """Generate a 6-beat, 65-75s visual plan and video proof map."""
         if not (65.0 <= target_duration <= 75.0):
@@ -396,26 +398,31 @@ class FixedNicheStoryboardDirector:
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             })
 
-        # Generate SVGs on disk
-        for i, beat in enumerate(beats_spec):
-            asset_id = beat["asset_id"]
-            beat_start_s = float(beat.get("start_s", 0.0))
-            beat_end_s = float(beat.get("end_s", beat_start_s + 11.0))
-            beat_dur = max(1.0, beat_end_s - beat_start_s)
-            narration = beat.get("narration", "")
-            svg_content = self.generate_technical_svg(
-                asset_id=asset_id,
-                topic_family=family,
-                title=title,
-                beat_num=i + 1,
-                total_beats=len(beats_spec),
-                duration=beat_dur,
-                narration=narration,
-                beat_start_s=beat_start_s,
-                progressive=True,
-            )
-            svg_file = visuals_dir / f"{asset_id}.svg"
-            svg_file.write_text(svg_content, encoding="utf-8")
+        for beat in beats_spec:
+            beat["topic_family"] = family
+            beat["title"] = title
+
+        # Generate SVGs on disk if requested
+        if write_svg_to_disk:
+            for i, beat in enumerate(beats_spec):
+                asset_id = beat["asset_id"]
+                beat_start_s = float(beat.get("start_s", 0.0))
+                beat_end_s = float(beat.get("end_s", beat_start_s + 11.0))
+                beat_dur = max(1.0, beat_end_s - beat_start_s)
+                narration = beat.get("narration", "")
+                svg_content = self.generate_technical_svg(
+                    asset_id=asset_id,
+                    topic_family=family,
+                    title=title,
+                    beat_num=i + 1,
+                    total_beats=len(beats_spec),
+                    duration=beat_dur,
+                    narration=narration,
+                    beat_start_s=beat_start_s,
+                    progressive=True,
+                )
+                svg_file = visuals_dir / f"{asset_id}.svg"
+                svg_file.write_text(svg_content, encoding="utf-8")
 
         # 1. news_visual_plan.json
         visual_plan = {
