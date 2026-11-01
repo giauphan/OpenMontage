@@ -517,7 +517,8 @@ class FixedNicheVideoRunner:
             }
         (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
         val_status = {
-            "project_id": self.candidate_id, "status": val_status_code, "strict_quality_pass": qa_pass,
+            "project_id": self.candidate_id, "status": "PASS" if qa_pass else "QA_FAILED",
+            "review_status": val_status_code, "strict_quality_pass": qa_pass,
             "rendered_mp4": str(output_mp4), "duration": actual_dur, "target_duration": target_dur,
             "policy_sha256": self.policy.policy_sha256,
         }

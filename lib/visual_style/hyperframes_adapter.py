@@ -11,6 +11,7 @@ import html as html_mod
 import json
 import logging
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional
 
 from lib.visual_style.diagram_director import AnimatedDiagramDirector
@@ -40,18 +41,39 @@ def compose_animated_diagram_html(
     audio_src: str = "assets/narration.mp3",
     visuals_src: Optional[Path] = None,
     diagram_plan: Optional[DiagramAnimationPlan] = None,
+    topic: Optional[Dict[str, Any]] = None,
+    formatted_date: str = "",
 ) -> str:
     """Compose production HyperFrames HTML for animated_agent_diagram_v1 style."""
     width = VIEWPORT_WIDTH if is_vertical else VIEWPORT_HEIGHT
     height = VIEWPORT_HEIGHT if is_vertical else VIEWPORT_WIDTH
     escaped_title = html_mod.escape(title, quote=True)
 
+    # Resolve date
+    if not formatted_date and topic:
+        date_str = topic.get("research_date") or topic.get("published_at") or topic.get("created_at") or topic.get("date") or ""
+        if date_str:
+            try:
+                import datetime
+                clean_d = str(date_str).split("T")[0]
+                dt = datetime.datetime.strptime(clean_d, "%Y-%m-%d")
+                formatted_date = dt.strftime("%b %d, %Y")
+            except Exception:
+                formatted_date = str(date_str).split("T")[0]
+    if not formatted_date:
+        import datetime
+        formatted_date = datetime.datetime.now(datetime.timezone.utc).strftime("%b %d, %Y")
+
     # 1. Resolve or generate DiagramAnimationPlan
     if diagram_plan is None:
         director = AnimatedDiagramDirector()
-        # Derive topic family and claims from beats or title
-        first_beat = beats[0] if beats else {}
-        topic_family = str(first_beat.get("topic_family") or "context_memory")
+        # Derive topic family and claims from topic, beats or title
+        topic_family = "context_memory"
+        if topic and topic.get("topic_family"):
+            topic_family = str(topic["topic_family"])
+        elif beats and beats[0].get("topic_family"):
+            topic_family = str(beats[0]["topic_family"])
+
         claims = []
         for b in beats:
             for cid in b.get("claim_ids", []):
@@ -59,14 +81,14 @@ def compose_animated_diagram_html(
         if not claims:
             claims = [{"claim_id": "C001", "statement": title}]
 
-        topic = {
+        topic_payload = {
             "title": title,
             "topic_family": topic_family,
             "viewer_question": title,
         }
         diagram_plan = director.plan_diagram_animation(
             project_id="comp",
-            topic=topic,
+            topic=topic_payload,
             claims=claims,
             target_duration=duration,
         )
@@ -91,12 +113,27 @@ def compose_animated_diagram_html(
         track_idx = i + 1
 
         sec_id = f"badge-{bid}"
+        date_snippet = f'        <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
+        vis_markup = ""
+        if visuals_src and visuals_src.is_dir():
+            aid = beat.get("asset_id") or f"beat_{i+1}"
+            vis_f = f"{aid}.svg"
+            if (visuals_src / vis_f).is_file():
+                try:
+                    raw_svg = (visuals_src / vis_f).read_text(encoding="utf-8")
+                    clean_svg = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+                    vis_markup = f'      <div class="beat-viewport">{clean_svg}</div>\n'
+                except Exception:
+                    pass
+
         sections_html.append(
             f'    <section id="{sec_id}" class="clip scene badge-overlay" '
             f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
             f'      <div class="stage-header stage-header-overlay">\n'
+            f'{date_snippet}'
             f'        <span class="stage-badge">Stage {i+1} of {len(beats)} // {escaped_s_func}</span>\n'
             f'      </div>\n'
+            f'{vis_markup}'
             f'    </section>'
         )
 
@@ -167,7 +204,6 @@ def compose_animated_diagram_html(
       top: 0;
       left: 0;
       right: 0;
-      height: 180px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -180,7 +216,45 @@ def compose_animated_diagram_html(
       text-align: center;
     }}
     .stage-badge {{
-      display: none;
+      display: inline-block;
+      padding: 8px 20px;
+      background: rgba(30, 41, 59, 0.85);
+      border: 1.5px solid #38bdf8;
+      border-radius: 9999px;
+      color: #38bdf8;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
+    }}
+    .date-badge {{
+      display: inline-block;
+      padding: 8px 18px;
+      margin-right: 12px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1.5px solid rgba(56, 189, 248, 0.5);
+      border-radius: 9999px;
+      color: #38bdf8;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
+    }}
+    .beat-viewport {{
+      max-width: 880px;
+      max-height: 400px;
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .beat-viewport svg {{
+      width: 100%;
+      height: auto;
+      max-height: 380px;
+      object-fit: contain;
     }}
   </style>
 </head>

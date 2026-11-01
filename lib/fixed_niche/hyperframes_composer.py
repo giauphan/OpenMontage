@@ -18,6 +18,8 @@ import shutil
 import subprocess
 from typing import Any, Dict, List, Optional
 
+from lib.fixed_niche.ffmpeg_composer import render_ffmpeg_composition
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,6 +44,51 @@ def _fmt_time(t: float) -> str:
     if val == int(val):
         return str(int(val))
     return f"{val:.3f}".rstrip("0").rstrip(".")
+
+
+def _extract_formatted_date(
+    topic: Optional[Dict[str, Any]] = None,
+    project_dir: Optional[Path] = None,
+) -> str:
+    """Extract and format publication/coverage date (e.g. 'Nov 1, 2026') from topic or artifacts."""
+    date_str = ""
+    if topic:
+        date_str = (
+            topic.get("research_date")
+            or topic.get("published_at")
+            or topic.get("created_at")
+            or topic.get("date")
+            or ""
+        )
+    if not date_str and project_dir:
+        rb_file = project_dir / "artifacts" / "research_brief.json"
+        if rb_file.is_file():
+            try:
+                rb_data = json.loads(rb_file.read_text(encoding="utf-8"))
+                meta = rb_data.get("metadata") if isinstance(rb_data.get("metadata"), dict) else {}
+                date_str = rb_data.get("research_date") or meta.get("published_at") or ""
+            except Exception:
+                pass
+    if not date_str and project_dir:
+        tb_file = project_dir / "artifacts" / "topic_brief.json"
+        if tb_file.is_file():
+            try:
+                tb_data = json.loads(tb_file.read_text(encoding="utf-8"))
+                date_str = tb_data.get("created_at") or tb_data.get("date") or ""
+            except Exception:
+                pass
+
+    if not date_str:
+        import datetime
+        return datetime.datetime.now(datetime.timezone.utc).strftime("%b %d, %Y")
+
+    try:
+        import datetime
+        clean_date = str(date_str).split("T")[0]
+        dt = datetime.datetime.strptime(clean_date, "%Y-%m-%d")
+        return dt.strftime("%b %d, %Y")
+    except Exception:
+        return str(date_str).split("T")[0]
 
 
 def _find_matching_visual_asset(visuals_src: Path, aid: str, exts: tuple[str, ...]) -> Optional[str]:
@@ -93,6 +140,7 @@ def _build_illustration_beat(
     vis_file: str,
     total_beats: int,
     duration: float,
+    formatted_date: str = "",
 ) -> tuple[str, List[str]]:
     """Build HTML section and GSAP tweens for an illustration scene."""
     bid = str(beat.get("beat_id", f"B{i+1:02d}")).lower()
@@ -104,6 +152,7 @@ def _build_illustration_beat(
     track_idx = i + 1
     sec_id = f"scene-{bid}"
 
+    date_snippet = f'        <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
     html = (
         f'    <section id="{sec_id}" class="clip scene illustration-scene" '
         f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
@@ -112,6 +161,7 @@ def _build_illustration_beat(
         f'        <div class="vignette-overlay"></div>\n'
         f'      </div>\n'
         f'      <div class="stage-header stage-header-overlay">\n'
+        f'{date_snippet}'
         f'        <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
         f'      </div>\n'
         f'    </section>'
@@ -138,6 +188,7 @@ def _build_svg_beat(
     visuals_src: Optional[Path],
     total_beats: int,
     duration: float,
+    formatted_date: str = "",
 ) -> tuple[str, List[str]]:
     """Build HTML section and GSAP tweens for a technical SVG diagram scene."""
     bid = str(beat.get("beat_id", f"B{i+1:02d}")).lower()
@@ -162,12 +213,14 @@ def _build_svg_beat(
     inline_svg = _inline_svg_file(visuals_src, vis_file)
     viewport_content = inline_svg if inline_svg else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
 
+    date_snippet = f'          <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
     html = (
         f'    <section id="{sec_id}" class="clip scene" '
         f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
         f'{bg_snippet}'
         f'      <div class="{card_cls}">\n'
         f'        <div class="stage-header">\n'
+        f'{date_snippet}'
         f'          <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
         f'        </div>\n'
         f'        <div class="diagram-viewport" data-asset-file="assets/visuals/{vis_file}">\n'
@@ -243,12 +296,25 @@ def compose_hyperframes_html(
     audio_src: str = DEFAULT_AUDIO_SRC,
     visuals_src: Optional[Path] = None,
     diagram_plan: Optional[Any] = None,
+    topic: Optional[Dict[str, Any]] = None,
+    project_dir: Optional[Path] = None,
 ) -> str:
     """Compose production HyperFrames HTML composition matching hyperframes-core contract."""
     import os
+    formatted_date = _extract_formatted_date(topic, project_dir)
+
+    has_beat_visuals = False
+    if visuals_src and visuals_src.is_dir():
+        for b in beats:
+            aid = b.get("asset_id") or ""
+            vis_f = _resolve_beat_visual_file(b, visuals_src, aid)
+            if (visuals_src / vis_f).is_file():
+                has_beat_visuals = True
+                break
+
     visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
     flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-    if (visual_style == "animated_agent_diagram_v1") and flag_enabled:
+    if (visual_style == "animated_agent_diagram_v1") and flag_enabled and not has_beat_visuals:
         from lib.visual_style.hyperframes_adapter import compose_animated_diagram_html
         return compose_animated_diagram_html(
             title=title,
@@ -258,6 +324,8 @@ def compose_hyperframes_html(
             audio_src=audio_src,
             visuals_src=visuals_src,
             diagram_plan=diagram_plan,
+            topic=topic,
+            formatted_date=formatted_date,
         )
 
     width = 1080 if is_vertical else 1920
@@ -275,11 +343,11 @@ def compose_hyperframes_html(
         is_illustration = vis_file.lower().endswith(RASTER_EXTENSIONS)
 
         if is_illustration:
-            sec_html, sec_tweens = _build_illustration_beat(i, beat, vis_file, len(beats), duration)
+            sec_html, sec_tweens = _build_illustration_beat(i, beat, vis_file, len(beats), duration, formatted_date=formatted_date)
             sections_html.append(sec_html)
             tweens_js.extend(sec_tweens)
         else:
-            sec_html, sec_tweens = _build_svg_beat(i, beat, vis_file, visuals_src, len(beats), duration)
+            sec_html, sec_tweens = _build_svg_beat(i, beat, vis_file, visuals_src, len(beats), duration, formatted_date=formatted_date)
             sections_html.append(sec_html)
             tweens_js.extend(sec_tweens)
 
@@ -340,6 +408,20 @@ def compose_hyperframes_html(
     .stage-header {{
       margin-bottom: 24px;
       text-align: center;
+    }}
+    .date-badge {{
+      display: inline-block;
+      padding: 8px 18px;
+      margin-right: 12px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1.5px solid rgba(56, 189, 248, 0.5);
+      border-radius: 9999px;
+      color: #38bdf8;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
     }}
     .stage-badge {{
       display: inline-block;
@@ -498,6 +580,7 @@ def _materialize_single_composition(
     visuals_src: Path,
     audio_src: Path,
     diagram_plan: Optional[Any],
+    topic: Optional[Dict[str, Any]] = None,
 ) -> Path:
     comp_dir = project_dir / comp_name
     comp_dir.mkdir(parents=True, exist_ok=True)
@@ -513,6 +596,8 @@ def _materialize_single_composition(
         audio_src=DEFAULT_AUDIO_SRC,
         visuals_src=visuals_src,
         diagram_plan=diagram_plan,
+        topic=topic,
+        project_dir=project_dir,
     )
     index_file = comp_dir / "index.html"
     index_file.write_text(html_content, encoding="utf-8")
@@ -545,6 +630,7 @@ def materialize_hyperframes_project(
             visuals_src=visuals_src,
             audio_src=audio_src,
             diagram_plan=diagram_plan,
+            topic=topic,
         )
     return result_paths
 
@@ -613,182 +699,5 @@ def render_hyperframes_composition(
         ]
         subprocess.run(burn_cmd, check=True)
         raw_mp4.unlink(missing_ok=True)
-
-    return output_mp4
-
-
-def _build_ffmpeg_filter(
-    width: int,
-    height: int,
-    burn_captions: bool,
-    project_dir: Path,
-) -> tuple[str, str]:
-    """Build FFmpeg video filtergraph and aspect ratio flag."""
-    dar_str = "9/16" if (width < height) else "16/9"
-    aspect_flag = "9:16" if (width < height) else "16:9"
-    vf = (
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=#0b1120,"
-        f"setsar=1/1,setdar={dar_str},"
-        f"format=yuv420p"
-    )
-
-    ass_path = project_dir / "artifacts" / "captions.ass"
-    srt_path = project_dir / "artifacts" / "captions.srt"
-    if burn_captions:
-        if ass_path.is_file():
-            esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
-            vf += f",ass='{esc_ass}'"
-        elif srt_path.is_file():
-            esc_srt = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
-            vf += (
-                f",subtitles='{esc_srt}':force_style="
-                f"'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H00FFFFFF,"
-                f"OutlineColour=&H000B0F19,BorderStyle=1,Outline=2.5,Shadow=0,"
-                f"MarginV=120,Alignment=2,MarginL=80,MarginR=80'"
-            )
-    return vf, aspect_flag
-
-
-def _resolve_asset_id_for_beat(beat: Dict[str, Any]) -> str:
-    """Extract primary asset ID from beat dictionary."""
-    if beat.get("asset_id"):
-        return beat["asset_id"]
-    asset_ids = beat.get("asset_ids")
-    return asset_ids[0] if asset_ids else ""
-
-
-def _find_fallback_asset_file(visuals_dir: Path, aid: str, fallback: Optional[Path]) -> Optional[Path]:
-    """Find matching asset file by aid prefix or fallback to default."""
-    if not aid:
-        return fallback
-    svg_cand = visuals_dir / f"{aid}.svg"
-    if svg_cand.is_file():
-        return svg_cand
-    matches = list(visuals_dir.glob(f"{aid}.*"))
-    return matches[0] if matches else fallback
-
-
-def _write_beats_concat_list(
-    beats: List[Dict[str, Any]],
-    render_dur: float,
-    visuals_dir: Path,
-    svg_assets: List[Path],
-    concat_list: Path,
-) -> None:
-    """Generate concat demuxer text list matching beat timings."""
-    planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
-    scale = (render_dur / planned_total) if planned_total > 0 else 1.0
-    fallback = svg_assets[0] if svg_assets else None
-
-    with concat_list.open("w", encoding="utf-8") as f:
-        for b in beats:
-            beat_dur = max(0.1, (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale)
-            aid = _resolve_asset_id_for_beat(b)
-            svg_cand = _find_fallback_asset_file(visuals_dir, aid, fallback)
-            if svg_cand and svg_cand.is_file():
-                f.write(f"file '{svg_cand.resolve()}'\n")
-                f.write(f"duration {beat_dur:.3f}\n")
-
-        if svg_assets:
-            last_aid = _resolve_asset_id_for_beat(beats[-1])
-            last_svg = _find_fallback_asset_file(visuals_dir, last_aid, svg_assets[-1]) or svg_assets[-1]
-            f.write(f"file '{last_svg.resolve()}'\n")
-
-
-def _write_slides_concat_list(
-    svg_assets: List[Path],
-    slide_dur: float,
-    concat_list: Path,
-) -> None:
-    """Generate concat demuxer text list evenly distributing assets."""
-    with concat_list.open("w", encoding="utf-8") as f:
-        for svg in svg_assets:
-            f.write(f"file '{svg.resolve()}'\n")
-            f.write(f"duration {slide_dur:.2f}\n")
-        f.write(f"file '{svg_assets[-1].resolve()}'\n")
-
-
-def _execute_ffmpeg_concat(
-    concat_list: Path,
-    audio_path: Path,
-    vf: str,
-    aspect_flag: str,
-    render_dur: float,
-    output_mp4: Path,
-) -> None:
-    """Execute FFmpeg concat render and clean up list file."""
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_list),
-        "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
-        "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
-    ]
-    subprocess.run(cmd, check=True)
-    concat_list.unlink(missing_ok=True)
-
-
-def _execute_ffmpeg_color(
-    width: int,
-    height: int,
-    audio_path: Path,
-    vf: str,
-    aspect_flag: str,
-    render_dur: float,
-    output_mp4: Path,
-) -> None:
-    """Execute FFmpeg blank-canvas fallback render."""
-    cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
-        "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
-        "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
-    ]
-    subprocess.run(cmd, check=True)
-
-
-def render_ffmpeg_composition(
-    project_dir: Path,
-    output_mp4: Path,
-    render_dur: float,
-    width: int = 1080,
-    height: int = 1920,
-    burn_captions: bool = False,
-) -> Path:
-    """Render composition via FFmpeg concat demuxer for fast offline/CI execution."""
-    visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-    flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-    if (visual_style == "animated_agent_diagram_v1") and flag_enabled:
-        raise RuntimeError(
-            "CRITICAL: Static slideshow fallback via FFmpeg is strictly forbidden for animated_agent_diagram_v1. "
-            "HyperFrames dynamic element-level animation is required."
-        )
-
-    project_dir = Path(project_dir).resolve()
-    output_mp4 = Path(output_mp4).resolve()
-    output_mp4.parent.mkdir(parents=True, exist_ok=True)
-    visuals_dir = project_dir / "assets" / "visuals"
-    audio_path = project_dir / "assets" / NARRATION_MP3_FILENAME
-    renders_dir = output_mp4.parent
-
-    visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
-    beats: List[Dict[str, Any]] = []
-    if visual_plan_file.is_file():
-        try:
-            plan_json = json.loads(visual_plan_file.read_text(encoding="utf-8"))
-            beats = plan_json.get("beats", [])
-        except Exception as e:
-            logger.warning(f"Could not load news_visual_plan.json: {e}")
-
-    svg_assets = sorted(visuals_dir.glob("*.svg")) if visuals_dir.is_dir() else []
-    vf, aspect_flag = _build_ffmpeg_filter(width, height, burn_captions, project_dir)
-
-    concat_list = renders_dir / "slides_concat.txt"
-    if beats:
-        _write_beats_concat_list(beats, render_dur, visuals_dir, svg_assets, concat_list)
-        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4)
-    elif svg_assets:
-        _write_slides_concat_list(svg_assets, render_dur / len(svg_assets), concat_list)
-        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4)
-    else:
-        _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4)
 
     return output_mp4

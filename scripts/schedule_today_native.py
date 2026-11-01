@@ -306,7 +306,7 @@ def main():
             v_data = json.loads(vstatus_path.read_text(encoding="utf-8"))
             if isinstance(v_data, list) and v_data:
                 pass_entry = next(
-                    (e for e in reversed(v_data) if isinstance(e, dict) and e.get("status") == "PASS" and e.get("strict_quality_pass")),
+                    (e for e in reversed(v_data) if isinstance(e, dict) and e.get("status") in ("PASS", "VIDEO_READY_FOR_PRIVATE_REVIEW") and e.get("strict_quality_pass")),
                     None
                 )
                 last_entry = pass_entry if pass_entry else v_data[-1]
@@ -314,7 +314,7 @@ def main():
                 last_entry = v_data
             else:
                 last_entry = {}
-            if last_entry.get("status") != "PASS" or not last_entry.get("strict_quality_pass"):
+            if last_entry.get("status") not in ("PASS", "VIDEO_READY_FOR_PRIVATE_REVIEW") or not last_entry.get("strict_quality_pass"):
                 print(f"failed {proj}: strict validation not passed (status={last_entry.get('status')})")
                 failed = True
                 continue

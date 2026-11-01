@@ -145,6 +145,7 @@ logs
 !artifacts/us-migration/rehearsals/**/logs/
 !artifacts/us-migration/rehearsals/**/logs/*.log
 .claude/worktrees/
+.worktrees/
 .env.*
 !.env.example
 plan/
