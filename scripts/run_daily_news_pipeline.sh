@@ -1022,6 +1022,7 @@ except Exception:
     for candidate_music in \
       "$project_root/assets/music/music.mp3" \
       "$project_root/assets/music.mp3" \
+      "$ROOT/assets/audio/music-bg.mp3" \
       "$ROOT/music_library"/*.mp3 \
       "$ROOT/tests/qa/output/e2e_assets/music_bg.mp3"; do
       if [ -s "$candidate_music" ]; then
@@ -1066,6 +1067,10 @@ except Exception:
       cp "$narration" "$target/narration.mp3"
     fi
     cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
+    mkdir -p "$target/sfx"
+    if [ -d "$ROOT/assets/audio/sfx" ]; then
+      cp -r "$ROOT/assets/audio/sfx"/* "$target/sfx/" 2>/dev/null || true
+    fi
     if [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ]; then cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf"; else cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-Bold.ttf" ]; then cp "$source_fonts/BeVietnamPro-Bold.ttf" "$target/BeVietnamPro-Bold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-Bold.ttf"; fi
     if [ -s "$source_fonts/BeVietnamPro-ExtraBold.ttf" ]; then cp "$source_fonts/BeVietnamPro-ExtraBold.ttf" "$target/BeVietnamPro-ExtraBold.ttf"; else cp "$fallback_bold" "$target/BeVietnamPro-ExtraBold.ttf"; fi

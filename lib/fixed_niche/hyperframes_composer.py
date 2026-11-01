@@ -172,7 +172,7 @@ def _build_illustration_beat(
     entry_t = _fmt_time(max(0.0, start_s))
     tweens = [
         f'  tl.fromTo("#{sec_id}", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.5, ease: "power2.out" }}, {entry_t});',
-        f'  tl.fromTo("#{sec_id} .hero-illustration", {{ scale: 1.0 }}, {{ scale: 1.05, duration: {beat_dur:.2f}, ease: "none" }}, {entry_t});',
+        f'  tl.fromTo("#{sec_id} .hero-illustration", {{ scale: 1.0 }}, {{ scale: 1.03, duration: {beat_dur:.2f}, ease: "none" }}, {entry_t});',
     ]
     if i < total_beats - 1:
         exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
@@ -272,6 +272,13 @@ def _build_svg_beat(
         f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
         f'{entry_t});'
     )
+    # Continuous Ken Burns camera drift (scale 1.0 to 1.03) so canvas is never static
+    tweens.append(
+        f'  tl.fromTo("#{sec_id} .diagram-viewport", '
+        f'{{ scale: 1.0, y: 0 }}, '
+        f'{{ scale: 1.025, y: -6, duration: {beat_dur:.2f}, ease: "none" }}, '
+        f'{entry_t});'
+    )
 
     progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
     if progressive_reveal and vis_file.lower().endswith(".svg"):
@@ -295,19 +302,22 @@ def _build_svg_beat(
         for s_idx, rel_t in enumerate(step_timings, start=1):
             step_abs_t = _fmt_time(start_s + rel_t)
             tweens.append(
-                f'  tl.to("#{sec_id} #flow-step-{s_idx}", '
-                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.4)" }}, {step_abs_t});'
+                f'  tl.fromTo("#{sec_id} #flow-step-{s_idx}", '
+                f'{{ opacity: 0, y: 20, scale: 0.95 }}, '
+                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.7)" }}, {step_abs_t});'
             )
             if s_idx > 1:
                 arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
                 tweens.append(
-                    f'  tl.to("#{sec_id} #flow-arrow-{s_idx-1}", '
-                    f'{{ opacity: 1, duration: 0.3, ease: "power1.inOut" }}, {arrow_abs_t});'
+                    f'  tl.fromTo("#{sec_id} #flow-arrow-{s_idx-1}", '
+                    f'{{ opacity: 0, scaleY: 0.5 }}, '
+                    f'{{ opacity: 1, scaleY: 1, duration: 0.35, ease: "power2.out" }}, {arrow_abs_t});'
                 )
             if s_idx == num_steps:
                 tweens.append(
-                    f'  tl.to("#{sec_id} #flow-cta-banner", '
-                    f'{{ opacity: 1, y: 0, scale: 1, duration: 0.5, ease: "back.out(1.7)" }}, {step_abs_t});'
+                    f'  tl.fromTo("#{sec_id} #flow-cta-banner", '
+                    f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
+                    f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {step_abs_t});'
                 )
 
     if i < total_beats - 1:
@@ -389,17 +399,46 @@ def compose_hyperframes_html(
             tweens_js.extend(sec_tweens)
 
     sfx_clips: List[str] = []
+    track_counter = 10
+    progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
     for idx, beat in enumerate(beats):
         b_start = float(beat.get("start_s") if beat.get("start_s") is not None else beat.get("start_seconds", 0.0))
         sfx_clips.append(
-            f'    <audio class="clip sfx" data-start="{_fmt_time(b_start)}" data-duration="0.8" data-track-index="{10 + idx}" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>'
+            f'    <audio class="clip sfx" data-start="{_fmt_time(b_start)}" data-duration="0.8" data-track-index="{track_counter}" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>'
         )
+        track_counter += 1
+
+        # Step reveal pop / click sound effects
+        vis_file = _resolve_beat_visual_file(beat, visuals_src, beat.get("asset_id", f"beat_{idx+1}"))
+        if progressive_reveal and vis_file.lower().endswith(EXT_SVG):
+            from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
+            from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
+            b_end = float(beat.get("end_s", duration))
+            beat_dur = max(0.5, b_end - b_start)
+            num_steps = STEP_COUNTS.get(idx + 1, 4)
+            narration = str(beat.get("narration") or "")
+            word_ts = beat.get("word_timestamps")
+            step_timings = compute_step_timings_for_beat(
+                narration=narration,
+                duration=beat_dur,
+                num_steps=num_steps,
+                beat_start_s=b_start,
+                word_timestamps=word_ts,
+            )
+            for s_idx, rel_t in enumerate(step_timings, start=1):
+                if s_idx > 1 and (b_start + rel_t) < duration - 1.0:
+                    sfx_sound = "click.mp3" if s_idx % 2 == 0 else "pop.mp3"
+                    sfx_clips.append(
+                        f'    <audio class="clip sfx" data-start="{_fmt_time(b_start + rel_t)}" data-duration="0.3" data-track-index="{track_counter}" src="assets/sfx/{sfx_sound}" data-volume="0.16"></audio>'
+                    )
+                    track_counter += 1
+
     last_b = beats[-1] if beats else {}
     last_st = float(last_b.get("start_s") if last_b.get("start_s") is not None else 0.0)
     last_end = float(last_b.get("end_s", duration))
     cta_sfx_t = max(last_st + 0.5, last_end - 3.5)
     sfx_clips.append(
-        f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="20" src="assets/sfx/chime.mp3" data-volume="0.28"></audio>'
+        f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="{track_counter}" src="assets/sfx/chime.mp3" data-volume="0.28"></audio>'
     )
     sfx_block = "\n".join(sfx_clips)
 

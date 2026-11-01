@@ -150,25 +150,52 @@ def generate_progressive_svg_style(
     lines: List[str] = [
         "  <style>",
         "    @keyframes flowStepAppear {",
-        "      0% { opacity: 0; transform: translateY(16px); }",
-        "      100% { opacity: 1; transform: translateY(0); }",
+        "      0% { opacity: 0; transform: translateY(22px) scale(0.96); }",
+        "      75% { transform: translateY(-2px) scale(1.01); }",
+        "      100% { opacity: 1; transform: translateY(0) scale(1); }",
         "    }",
         "    @keyframes flowArrowDraw {",
-        "      0% { opacity: 0; transform: scaleY(0.6); }",
+        "      0% { opacity: 0; transform: scaleY(0.4); }",
         "      100% { opacity: 1; transform: scaleY(1); }",
+        "    }",
+        "    @keyframes drawArrowPath {",
+        "      0% { stroke-dashoffset: 120; opacity: 0; }",
+        "      20% { opacity: 1; }",
+        "      100% { stroke-dashoffset: 0; opacity: 1; }",
+        "    }",
+        "    @keyframes popPolygon {",
+        "      0% { transform: scale(0); opacity: 0; }",
+        "      100% { transform: scale(1); opacity: 1; }",
+        "    }",
+        "    @keyframes ctaPulse {",
+        "      0%, 100% { filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.35)); }",
+        "      50% { filter: drop-shadow(0 0 24px rgba(56, 189, 248, 0.75)); }",
         "    }",
         "    .flow-step {",
         "      opacity: 0;",
         "      animation: flowStepAppear 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;",
         "      transform-origin: center center;",
+        "      filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.45));",
         "    }",
         "    .flow-arrow {",
         "      opacity: 0;",
         "      animation: flowArrowDraw 0.35s ease-out forwards;",
         "      transform-origin: top center;",
         "    }",
+        "    .flow-arrow path, .flow-arrow line {",
+        "      stroke-dasharray: 120;",
+        "      stroke-dashoffset: 120;",
+        "      animation: drawArrowPath 0.4s ease-out forwards;",
+        "    }",
+        "    .flow-arrow polygon {",
+        "      transform-origin: center center;",
+        "      animation: popPolygon 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;",
+        "    }",
         "    .flow-header {",
         "      animation-delay: 0.1s;",
+        "    }",
+        "    #flow-cta-banner {",
+        "      animation: flowStepAppear 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards, ctaPulse 3.5s ease-in-out infinite;",
         "    }",
     ]
 
@@ -180,6 +207,8 @@ def generate_progressive_svg_style(
             arrow_id = f"flow-arrow-{idx-1}"
             arrow_t = max(0.1, t - arrow_lead_time)
             lines.append(f"    #{arrow_id} {{ animation-delay: {arrow_t:.2f}s; }}")
+            lines.append(f"    #{arrow_id} path {{ animation-delay: {arrow_t:.2f}s; }}")
+            lines.append(f"    #{arrow_id} polygon {{ animation-delay: {arrow_t + 0.15:.2f}s; }}")
 
     if step_timings:
         lines.append(f"    #flow-cta-banner {{ animation-delay: {step_timings[-1]:.2f}s; }}")

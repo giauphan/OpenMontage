@@ -212,3 +212,100 @@ def test_qa_call_to_action_validator(tmp_path: Path):
     report_good = validator.audit_fixed_niche_deliverable(proj_dir)
     cta_good_findings = [f for f in report_good["findings"] if f["category"] == "CALL_TO_ACTION"]
     assert len(cta_good_findings) == 0
+
+
+def test_progressive_svg_style_animation_keyframes():
+    """Verify SVG style contains dynamic arrow drawing, elastic steps, and CTA pulse."""
+    from lib.fixed_niche.voice_timing_aligner import generate_progressive_svg_style
+
+    css = generate_progressive_svg_style([0.2, 2.5, 5.0, 7.5])
+    assert "drawArrowPath" in css
+    assert "stroke-dashoffset: 120" in css
+    assert "popPolygon" in css
+    assert "ctaPulse" in css
+    assert "flowStepAppear" in css
+    assert "#flow-cta-banner" in css
+
+
+def test_hyperframes_continuous_motion_and_step_springs():
+    """Verify GSAP timeline includes continuous micro-motion and back.out spring easing."""
+    beats = [
+        {
+            "beat_id": "b01",
+            "start_s": 0.0,
+            "end_s": 10.0,
+            "asset_id": "b01_svg.svg",
+            "story_function": "problem_hook",
+            "narration": "A single schema mismatch silently crashes autonomous tool calls.",
+        }
+    ]
+    html = compose_hyperframes_html(
+        title="Micro Motion Test",
+        duration=10.0,
+        beats=beats,
+    )
+    # Continuous micro-motion across beat duration
+    assert 'tl.fromTo("#scene-b01 .diagram-viewport", { scale: 1.0, y: 0 }, { scale: 1.025, y: -6, duration: 10.00, ease: "none" }, 0);' in html
+    # Back.out spring easing on progressive step reveals
+    assert 'back.out(1.7)' in html
+
+
+def test_daily_candidates_have_scroll_stopping_hooks():
+    """Verify all daily candidates contain active scroll-stopping hooks without questions."""
+    cand_path = Path(__file__).resolve().parents[2] / "data" / "daily_candidates.json"
+    assert cand_path.is_file()
+    candidates = json.loads(cand_path.read_text(encoding="utf-8"))
+    assert len(candidates) >= 5
+
+    for cand in candidates:
+        cid = cand.get("candidate_id")
+        hook = cand.get("hook")
+        assert hook, f"Candidate {cid} must have a non-empty 'hook' field"
+        assert len(hook.split()) >= 8, f"Candidate {cid} hook '{hook}' is too short"
+        assert not hook.startswith(("Why do", "Why does", "Why can", "How do", "Have you")), (
+            f"Candidate {cid} hook '{hook}' must be an active claim, not a rhetorical question"
+        )
+        assert hook.endswith((".", "!")), f"Candidate {cid} hook must end with punctuation"
+
+
+def test_repair_hyperframes_quality_injects_bgm_and_sfx(tmp_path: Path):
+    """Verify repair_hyperframes_quality injects BGM and copies assets when missing."""
+    from scripts.repair_hyperframes_quality import repair_hyperframes_composition
+
+    proj_dir = tmp_path / "repair_test_proj"
+    comp_dir = proj_dir / "hyperframes"
+    assets_dir = comp_dir / "assets"
+    assets_dir.mkdir(parents=True)
+
+    # Minimal HTML without BGM tag or SFX
+    raw_html = """<!doctype html>
+<html>
+<head>
+  <style>html, body { overflow: hidden; } #stage { width: 1080px; height: 1920px; }</style>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+</head>
+<body data-composition-id="main">
+  <div id="stage" data-composition-id="main">
+    <audio id="narration" src="assets/narration.mp3" data-start="0" data-track-index="0"></audio>
+    <div id="scene-1" class="scene">Scene 1 content.</div>
+  </div>
+</body>
+</html>"""
+    index_file = comp_dir / "index.html"
+    index_file.write_text(raw_html, encoding="utf-8")
+    (assets_dir / "narration.mp3").write_bytes(b"\x00" * 100)
+    for font_name in ("BeVietnamPro-Regular.ttf", "BeVietnamPro-Bold.ttf", "BeVietnamPro-ExtraBold.ttf"):
+        (assets_dir / font_name).write_bytes(b"\x00" * 100)
+
+    # Run repair
+    repair_hyperframes_composition(index_file)
+
+    repaired_html = index_file.read_text(encoding="utf-8")
+    # Injected BGM tag
+    assert '<audio id="bgm"' in repaired_html
+    assert 'src="assets/music-bg.mp3"' in repaired_html
+    assert 'data-volume="0.12"' in repaired_html
+    # Materialized music and SFX assets
+    assert (assets_dir / "music-bg.mp3").is_file()
+    assert (assets_dir / "sfx" / "whoosh-short.mp3").is_file()
+

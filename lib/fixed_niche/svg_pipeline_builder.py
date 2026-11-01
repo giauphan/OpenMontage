@@ -571,13 +571,13 @@ def _build_vertical_beat(
     <text x="155" y="705" fill="#86efac" font-family="sans-serif" font-size="16" font-weight="bold">Continuous Integration Gate</text>
     <text x="155" y="733" fill="#ffffff" font-family="sans-serif" font-size="13">Re-verifies contract tests across fresh process checkouts.</text>
     <g id="flow-cta-banner">
-      <rect x="50" y="785" width="880" height="185" rx="16" fill="#1e1b4b" stroke="#38bdf8" stroke-width="2.5"/>
-      <rect x="80" y="800" width="280" height="26" rx="6" fill="#0f172a" stroke="#38bdf8" stroke-width="1"/>
-      <text x="220" y="817" fill="#38bdf8" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">CALL TO ACTION // ARCHITECTURAL BLUEPRINT</text>
-      <text x="490" y="855" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">Follow @OpenMontage for Daily Agent Engineering Patterns</text>
-      <rect x="140" y="880" width="700" height="42" rx="8" fill="#0f172a" stroke="#22c55e" stroke-width="1.5"/>
-      <text x="490" y="906" fill="#86efac" font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle">★ Star Repository on GitHub: github.com/openmontage/openmontage</text>
-      <text x="490" y="945" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">Defensive Contracts • Schema Validation • Hermetic Reproduction</text>
+      <rect x="50" y="785" width="880" height="195" rx="16" fill="url(#cta-bg-grad)" stroke="#38bdf8" stroke-width="2.5" filter="url(#glow-cyan)"/>
+      <rect x="80" y="802" width="310" height="28" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="235" y="821" fill="#38bdf8" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">CALL TO ACTION // ARCHITECTURAL BLUEPRINT</text>
+      <text x="490" y="860" fill="#f8fafc" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">Follow @OpenMontage for Daily Agent Engineering Patterns</text>
+      <rect x="110" y="885" width="760" height="46" rx="10" fill="url(#star-btn-grad)" stroke="#fbbf24" stroke-width="2" filter="url(#glow-gold)"/>
+      <text x="490" y="914" fill="#fbbf24" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">★ Star Repository on GitHub: github.com/openmontage/openmontage</text>
+      <text x="490" y="955" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">Defensive Contracts • Schema Validation • Hermetic Reproduction</text>
     </g>
   </g>
 """
@@ -635,6 +635,21 @@ def generate_pipeline_svg(
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}" width="{w}" height="{h}">
   <defs>
+    <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#38bdf8" flood-opacity="0.5"/>
+    </filter>
+    <filter id="glow-gold" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#fbbf24" flood-opacity="0.5"/>
+    </filter>
+    <linearGradient id="cta-bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.98"/>
+    </linearGradient>
+    <linearGradient id="star-btn-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
 {style_block}
   </defs>
   <rect width="{w}" height="{h}" fill="#0b1120"/>

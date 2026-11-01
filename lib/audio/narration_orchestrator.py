@@ -390,8 +390,12 @@ class NarrationOrchestrator:
         # Default provider invocation
         if provider_name.lower() in ("edge",):
             args = ["edge-tts", "--voice", voice, "--text", text, "--write-media", str(output_path)]
-            if settings and settings.get("rate"):
-                args += ["--rate", str(settings["rate"])]
+            rate_val = (settings.get("rate") if settings else None) or os.environ.get("EDGE_TTS_RATE", "+4%")
+            pitch_val = (settings.get("pitch") if settings else None) or os.environ.get("EDGE_TTS_PITCH", "+1Hz")
+            if rate_val:
+                args += ["--rate", str(rate_val)]
+            if pitch_val:
+                args += ["--pitch", str(pitch_val)]
             timeout_s = max(30, int(len(text) / 15))
             try:
                 res = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s)
