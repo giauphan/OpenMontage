@@ -7,7 +7,7 @@ Delegates to DailyNewsGatewayClient with SSRF-safe TOOLCASE_GATEWAY_URL resoluti
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence
 import urllib.request
 
 import tools.news.daily_news_gateway as daily_news_gateway
@@ -54,7 +54,7 @@ def fetch_feed(
 
 def write_feed(
     base_url: Optional[str] = None,
-    output: Union[Path, str] = Path("data/newsnow_feed.json"),
+    output: Path | str = Path("data/newsnow_feed.json"),
     minimum: int = 3,
     sources: Sequence[str] = DEFAULT_SOURCES,
     limit: int = 30,

@@ -26,6 +26,8 @@ from tools.news.daily_news_gateway import (
     DEFAULT_TOOLCASE_GATEWAY_PORT,
     DEFAULT_TOOLCASE_GATEWAY_URL,
     DailyNewsGatewayClient,
+    _resolve_safe_output_path,
+    _sanitize_log_val,
     resolve_gateway_base_url,
 )
 from tools.news import newsnow_feed
@@ -269,3 +271,44 @@ def test_news_pipeline_cli_fetch_defaults_to_gateway(tmp_path, monkeypatch):
     news_pipeline_cli.run_fetch(args)
     assert len(called_url) == 1
     assert called_url[0] is None  # Auto-resolves via TOOLCASE_GATEWAY_URL
+
+
+def test_newsnow_feed_consume_candidates_delegation(monkeypatch):
+    consumed = []
+
+    def mock_consume(self, candidate_ids, base_url=None):
+        consumed.extend(candidate_ids)
+        return {"status": "consumed", "count": len(candidate_ids)}
+
+    monkeypatch.setattr(DailyNewsGatewayClient, "consume_candidates", mock_consume)
+    res = newsnow_feed.consume_candidates(["cand_direct_feed_api"])
+    assert res["status"] == "consumed"
+    assert "cand_direct_feed_api" in consumed
+
+
+def test_sanitize_log_val_removes_newlines_and_control_chars():
+    dirty = "candidate_1\r\ninjected_log_line\x00extra"
+    cleaned = _sanitize_log_val(dirty)
+    assert "\r" not in cleaned
+    assert "\n" not in cleaned
+    assert "\x00" not in cleaned
+    assert "injected_log_line" in cleaned
+
+
+def test_resolve_safe_output_path_rejects_traversal():
+    with pytest.raises(ValueError, match="Path traversal detected or path outside allowed root"):
+        _resolve_safe_output_path("/etc/shadow")
+
+    with pytest.raises(ValueError, match="Path traversal detected or path outside allowed root"):
+        _resolve_safe_output_path("../../etc/passwd")
+
+
+def test_resolve_safe_output_path_accepts_valid_paths(tmp_path):
+    safe_tmp = tmp_path / "feed.json"
+    resolved_tmp = _resolve_safe_output_path(safe_tmp)
+    assert resolved_tmp == safe_tmp.resolve()
+
+    safe_rel = Path("data/newsnow_feed.json")
+    resolved_rel = _resolve_safe_output_path(safe_rel)
+    assert resolved_rel == (Path.cwd() / safe_rel).resolve()
+
