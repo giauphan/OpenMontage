@@ -186,3 +186,80 @@ def test_orchestrator_tech_candidates_include_elevenlabs(tmp_path, monkeypatch):
         assert res["best_fit"] is not None
         providers = [c["provider"] for c in res["evaluations"]]
         assert "elevenlabs" in providers
+
+
+def test_elevenlabs_tts_cli_main(tmp_path, monkeypatch):
+    from tools.audio.elevenlabs_tts import main
+    monkeypatch.delenv("ELEVENLABS_GATEWAY_API_KEY", raising=False)
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("XI_API_KEY", raising=False)
+    out_p = tmp_path / "out_cli.mp3"
+
+    # Test when unavailable without key
+    code = main(["Hello world", "--output", str(out_p)])
+    assert code == 0
+
+    # Test failure when key is passed but execution fails
+    with patch("tools.audio.elevenlabs_tts.ElevenLabsTTS.execute") as mock_exec:
+        mock_exec.return_value = ToolResult(success=False, error="API error")
+        code = main(["Hello world", "--api-key", "dummy", "--output", str(out_p)])
+        assert code == 1
+
+    # Test success when execution succeeds
+    with patch("tools.audio.elevenlabs_tts.ElevenLabsTTS.execute") as mock_exec:
+        mock_exec.return_value = ToolResult(success=True, data={"voice_id": "v1"}, duration_seconds=2.0)
+        code = main(["Hello world", "--api-key", "dummy", "--output", str(out_p)])
+        assert code == 0
+
+
+def test_elevenlabs_official_endpoint_and_fallbacks(tmp_path, monkeypatch):
+    import requests
+    tool = ElevenLabsTTS()
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test_official_key")
+    monkeypatch.delenv("ELEVENLABS_BASE_URL", raising=False)
+    monkeypatch.delenv("TOOLCASE_GATEWAY_URL", raising=False)
+
+    # 1. Test build payload/params for standard elevenlabs endpoint
+    payload, params, fmt = tool._build_payload_and_params(
+        is_speech=False,
+        text="Standard endpoint text",
+        model_id="eleven_multilingual_v2",
+        voice_id="rachel",
+        speed=1.0,
+        voice_settings={"stability": 0.5},
+        output_format="mp3_44100_128",
+    )
+    assert params == {"output_format": "mp3_44100_128"}
+    assert payload["text"] == "Standard endpoint text"
+
+    # 2. Test _try_port_fallback
+    mock_resp_404 = MagicMock(status_code=404)
+    mock_resp_200 = MagicMock(status_code=200)
+    with patch.object(requests, "post", return_value=mock_resp_200):
+        resp, ep = tool._try_port_fallback(
+            requests, "http://127.0.0.1:20129/v1/audio/speech", mock_resp_404, {}, {}, None, 5.0
+        )
+        assert resp.status_code == 200
+        assert ":20128" in ep
+
+    # 3. Test _try_premade_voice_fallback
+    mock_resp_402 = MagicMock(status_code=402, text="Voice library restricted on free tier")
+    with patch.object(requests, "post", return_value=mock_resp_200):
+        resp, ep, vid = tool._try_premade_voice_fallback(
+            requests,
+            "https://api.elevenlabs.io/v1/text-to-speech/custom_voice",
+            mock_resp_402,
+            "custom_voice",
+            {},
+            {"voice": "custom_voice"},
+            None,
+            5.0,
+        )
+        assert vid == "IKne3meq5aSn9XLyUdCD"
+        assert "IKne3meq5aSn9XLyUdCD" in ep
+
+    # 4. Test path traversal check
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        tool._save_audio_file("/etc/shadow", b"data", "mp3")
+
+

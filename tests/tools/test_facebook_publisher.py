@@ -282,3 +282,73 @@ def test_error_response_handling(tmp_path: Path):
 
     assert not res.success
     assert "Missing actor_id" in res.error
+
+
+def test_facebook_helpers_and_readiness(tmp_path: Path):
+    mock_session = MagicMock()
+    tool = FacebookPublisher(http_session=mock_session)
+
+    # 1. check_readiness: 200 OK vs failure
+    resp_ok = MagicMock(status_code=200)
+    resp_ok.json.return_value = {"module": "facebook-suite", "status": "ready", "configured": True}
+    mock_session.get.return_value = resp_ok
+    assert tool.check_readiness()["status"] == "ready"
+
+    mock_session.get.side_effect = Exception("network down")
+    assert tool.check_readiness()["configured"] is False
+
+    # 2. get_scopes: 200 OK vs failure
+    mock_session.get.side_effect = None
+    resp_scopes = MagicMock(status_code=200)
+    resp_scopes.json.return_value = {"scopes": ["pages_show_list"]}
+    mock_session.get.return_value = resp_scopes
+    assert tool.get_scopes() == {"scopes": ["pages_show_list"]}
+
+    mock_session.get.side_effect = Exception("timeout")
+    assert "error" in tool.get_scopes()
+
+    # 3. get_config: 200 OK vs failure
+    mock_session.get.side_effect = None
+    resp_cfg = MagicMock(status_code=200)
+    resp_cfg.json.return_value = {"cookies_loaded": True}
+    mock_session.get.return_value = resp_cfg
+    assert tool.get_config() == {"cookies_loaded": True}
+
+    mock_session.get.side_effect = Exception("failed")
+    assert "error" in tool.get_config()
+
+    # 4. import_har
+    har_file = tmp_path / "session.har"
+    har_file.write_text('{"log": {"entries": []}}', encoding="utf-8")
+    resp_har = MagicMock(status_code=200)
+    resp_har.json.return_value = {"success": True}
+    mock_session.post.return_value = resp_har
+    assert tool.import_har(har_file)["success"] is True
+    assert tool.import_har({"log": {}})["success"] is True
+
+    mock_session.post.side_effect = Exception("post failed")
+    assert "error" in tool.import_har(har_file)
+
+    # 5. check_video_published
+    assert tool.check_video_published("") is None
+    mock_session.get.side_effect = None
+    resp_pub = MagicMock(status_code=200)
+    resp_pub.json.return_value = {"status": "published", "id": "v123"}
+    mock_session.get.return_value = resp_pub
+    pub_info = tool.check_video_published("v123")
+    assert pub_info is not None
+    assert pub_info["video_id"] == "v123"
+
+    # 6. publish_status
+    mock_session.post.side_effect = None
+    resp_status = MagicMock(status_code=200)
+    resp_status.json.return_value = {"post_id": "p456"}
+    mock_session.post.return_value = resp_status
+    assert tool.publish_status("Hello status", target_id="pg1", scheduled_publish_time=1700000000) == {"post_id": "p456"}
+
+    # 7. Gateway URL errors
+    with pytest.raises(ValueError, match="Invalid Facebook Gateway URL scheme"):
+        tool.get_gateway_base_url({"gateway_url": "ftp://bad-scheme"})
+    with pytest.raises(ValueError, match="Missing hostname"):
+        tool.get_gateway_base_url({"gateway_url": "http://"})
+

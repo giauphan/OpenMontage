@@ -494,7 +494,7 @@ def is_elevenlabs_available() -> bool:
     return bool(key)
 
 
-if __name__ == "__main__":
+def main(argv: Optional[list[str]] = None) -> int:
     import argparse
     import sys
 
@@ -505,7 +505,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", "-m", default="eleven_multilingual_v2", help="Model ID")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed (0.7 - 1.2)")
     parser.add_argument("--api-key", default=None, help="Explicit API key override")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     tool = ElevenLabsTTS()
     status = tool.get_status()
@@ -524,10 +524,13 @@ if __name__ == "__main__":
     result = tool.execute(req_inputs)
     if result.success:
         print(f"SUCCESS: Generated {args.output}")
-        print(f"Duration: {result.duration_seconds}s, Voice ID: {result.data.get('voice_id')}")
-        sys.exit(0)
-    else:
-        print(f"FAILED: {result.error}", file=sys.stderr)
-        no_key = status == ToolStatus.UNAVAILABLE and not args.api_key
-        sys.exit(0 if no_key else 1)
+        return 0
+    print(f"FAILED: {result.error}", file=sys.stderr)
+    no_key = status == ToolStatus.UNAVAILABLE and not args.api_key
+    return 0 if no_key else 1
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
 

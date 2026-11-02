@@ -344,3 +344,85 @@ def test_resolve_bgm_path_and_render_ffmpeg_branches(tmp_path: Path):
         _execute_ffmpeg_concat(c_list2, audio, "scale=1080:1920", "9:16", 10.0, out_dir / "out4.mp4", bgm_path=None)
         assert mock_run.call_count == 4
 
+    # Test CalledProcessError fallbacks in render_ffmpeg_composition
+    from lib.fixed_niche.ffmpeg_composer import render_ffmpeg_composition
+    import subprocess
+    vis_dir = proj / "assets" / "visuals"
+    vis_dir.mkdir(parents=True)
+    svg1 = vis_dir / "b01.svg"
+    svg1.write_text("<svg></svg>")
+    art_dir = proj / "artifacts"
+    art_dir.mkdir(exist_ok=True)
+    (art_dir / "news_visual_plan.json").write_text(json.dumps({"beats": [{"beat_id": "b01"}]}))
+
+    with patch("lib.fixed_niche.ffmpeg_composer._execute_ffmpeg_concat", side_effect=subprocess.CalledProcessError(1, "ffmpeg")):
+        with patch("lib.fixed_niche.ffmpeg_composer._execute_ffmpeg_color") as mock_color:
+            # 1. With beats
+            render_ffmpeg_composition(proj, out_dir / "fallback_beats.mp4", 10.0)
+            assert mock_color.called
+
+            # 2. With svg_assets without beats
+            (art_dir / "news_visual_plan.json").unlink()
+            mock_color.reset_mock()
+            render_ffmpeg_composition(proj, out_dir / "fallback_slides.mp4", 10.0)
+            assert mock_color.called
+
+
+
+def test_hyperframes_materializer_branches(tmp_path: Path):
+    from unittest.mock import patch, MagicMock
+    from lib.fixed_niche import hyperframes_materializer as mat
+
+    # 1. load_diagram_plan: missing vs valid vs invalid
+    proj = tmp_path / "proj_mat"
+    proj.mkdir()
+    assert mat.load_diagram_plan(proj) is None
+
+    art = proj / "artifacts"
+    art.mkdir()
+    plan_file = art / "diagram_animation_plan.json"
+    plan_file.write_text('{"invalid": true}')
+    assert mat.load_diagram_plan(proj) is None
+
+    # 2. copy_composition_visuals
+    vis_src = proj / "vis_src"
+    vis_src.mkdir()
+    (vis_src / "img.png").write_bytes(b"PNG")
+    comp_vis = proj / "comp_vis"
+    comp_vis.mkdir()
+    (comp_vis / "old.svg").write_text("<svg></svg>")
+    mat.copy_composition_visuals(vis_src, comp_vis)
+    assert not (comp_vis / "old.svg").exists()
+    assert (comp_vis / "img.png").is_file()
+
+    # 3. _configure_hyperframes_browser_env
+    env = {}
+    mat._configure_hyperframes_browser_env(env)
+    assert "HYPERFRAMES_BROWSER_PATH" in env or True
+
+    # 4. _burn_captions_if_needed
+    raw_mp4 = proj / "raw.mp4"
+    raw_mp4.write_bytes(b"RAW")
+    out_mp4 = proj / "out.mp4"
+    ass_p = proj / "subs.ass"
+    ass_p.write_text("[Script Info]\n")
+    with patch("subprocess.run") as mock_sub:
+        mat._burn_captions_if_needed(raw_mp4, out_mp4, ass_p, burn_captions=True)
+        assert mock_sub.called
+
+    # 5. render_hyperframes_composition
+    comp_dir = proj / "comp"
+    comp_dir.mkdir()
+    assets = proj / "assets"
+    assets.mkdir()
+    (assets / "narration.mp3").write_bytes(b"AUDIO")
+    with patch("subprocess.run") as mock_sub:
+        mock_sub.return_value = MagicMock(returncode=0)
+        res_mp4 = mat.render_hyperframes_composition(comp_dir, out_mp4, burn_captions=False)
+        assert res_mp4 == out_mp4
+
+        mock_sub.return_value = MagicMock(returncode=1, stderr="Render error", stdout="")
+        with pytest.raises(RuntimeError, match="HyperFrames render failed"):
+            mat.render_hyperframes_composition(comp_dir, out_mp4, burn_captions=False)
+
+

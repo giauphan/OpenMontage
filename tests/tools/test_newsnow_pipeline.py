@@ -338,3 +338,42 @@ def test_produce_hydrates_from_hybrid_discovery_when_input_insufficient(tmp_path
             "agent_evaluation", "debugging_reliability"
         }
 
+
+def test_hydrate_from_hybrid_discovery_fallback_trigger(monkeypatch):
+    """Test _run_discovery_fallback when discovery initially yields insufficient candidates."""
+    class FakeResult:
+        def __init__(self, candidates, status="ELIGIBLE"):
+            self.candidates = candidates
+            self.status = status
+
+        @property
+        def is_eligible(self) -> bool:
+            return self.status == "ELIGIBLE" and len(self.candidates) > 0
+
+    call_count = 0
+
+    class MockDiscovery:
+        def __init__(self, require_latest_news=True, max_age_days=7):
+            self.require_latest_news = require_latest_news
+
+        def discover_candidates(self, count=1):
+            nonlocal call_count
+            call_count += 1
+            if self.require_latest_news:
+                # 0 candidates initially
+                return FakeResult(candidates=[], status="INSUFFICIENT")
+            # fallback returns candidates
+            return FakeResult(candidates=[{"candidate_id": "fb_1"}], status="ELIGIBLE")
+
+    monkeypatch.setattr("lib.fixed_niche.hybrid_discovery.HybridCandidateDiscovery", MockDiscovery)
+
+    args = argparse.Namespace(require_latest_news=True, max_age_days=7)
+    pool = []
+    hydrated = news_pipeline_cli._hydrate_from_hybrid_discovery(
+        pool, count=1, min_required=1, used_ids=set(), args=args
+    )
+    assert len(hydrated) == 1
+    assert hydrated[0]["candidate_id"] == "fb_1"
+    assert call_count == 2
+
+
