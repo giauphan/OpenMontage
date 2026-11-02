@@ -28,6 +28,7 @@ def _build_ffmpeg_filter(
     dar_str = "9/16" if (width < height) else "16/9"
     aspect_flag = "9:16" if (width < height) else "16:9"
     vf = (
+        f"fps=1,"
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=#0b1120,"
         f"setsar=1/1,setdar={dar_str},"
@@ -146,14 +147,15 @@ def _execute_ffmpeg_concat(
             "-filter_complex", filter_complex,
             "-map", "[vout]", "-map", "[aout]",
             "-threads", "0",
-            "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-aspect", aspect_flag, "-r", "1", "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur),
             str(output_mp4),
         ]
     else:
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_list),
-            "-i", str(audio_path), "-vf", vf, "-threads", "0", "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-i", str(audio_path), "-vf", vf, "-threads", "0", "-aspect", aspect_flag, "-r", "1",
+            "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
         ]
     subprocess.run(cmd, check=True)
@@ -182,7 +184,7 @@ def _execute_ffmpeg_color(
         )
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
+            "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=1",
             "-i", str(audio_path),
             "-stream_loop", "-1", "-i", str(bgm_path),
             "-filter_complex", filter_complex,
@@ -194,7 +196,7 @@ def _execute_ffmpeg_color(
         ]
     else:
         cmd = [
-            "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
+            "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=1",
             "-i", str(audio_path), "-vf", vf_color, "-threads", "0", "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
         ]
@@ -243,14 +245,16 @@ def render_ffmpeg_composition(
         _write_beats_concat_list(beats, render_dur, visuals_dir, svg_assets, concat_list)
         try:
             _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"FFmpeg beats concat render failed ({e}); falling back to color canvas")
             concat_list.unlink(missing_ok=True)
             _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
     elif svg_assets:
         _write_slides_concat_list(svg_assets, render_dur / len(svg_assets), concat_list)
         try:
             _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"FFmpeg slides concat render failed ({e}); falling back to color canvas")
             concat_list.unlink(missing_ok=True)
             _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
     else:

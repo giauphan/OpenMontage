@@ -472,28 +472,38 @@ class FixedNicheVideoRunner:
         self._reconcile_artifacts(dur, target_dur, out_audio)
         return out_audio
 
+    def _extract_frame_with_fallback(self, output_mp4: Path, sec: float, fpath: Path) -> bool:
+        attempts = [
+            ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)],
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(output_mp4), "-ss", str(sec), "-vframes", "1", str(fpath)],
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(output_mp4), "-ss", str(max(0.0, sec - 2.0)), "-vframes", "1", str(fpath)],
+        ]
+        for cmd in attempts:
+            if subprocess.run(cmd, capture_output=True).returncode == 0 and fpath.is_file() and fpath.stat().st_size > 0:
+                return True
+        return False
+
     def _sample_and_validate_frames(
         self, output_mp4: Path, render_dur: float, frames_dir: Path, probe_dur: Optional[float] = None
     ) -> bool:
         """Sample key frames and validate visual quality/variance."""
         frames_dir.mkdir(parents=True, exist_ok=True)
-        max_limit = max(0.0, (probe_dur - 0.5) if probe_dur is not None and probe_dur > 0 else (render_dur - 0.5))
+        max_limit = max(0.0, (probe_dur - 1.0) if probe_dur is not None and probe_dur > 0 else (render_dur - 1.0))
         sample_points = [
             (min(0.0, max_limit), "frame_00s_hook.png"),
             (min(3.0, max_limit), "frame_03s_impact.png"),
             (min(float(int(render_dur / 2)), max_limit), "frame_mid_mechanism.png"),
-            (min(float(max(0, int(render_dur - 2))), max_limit), "frame_end_payoff.png"),
+            (min(float(max(0, int(render_dur - 3))), max_limit), "frame_end_payoff.png"),
         ]
         min_var = 1.0 if os.environ.get("CI") == "true" else 10.0
         for sec, fname in sample_points:
             fpath = frames_dir / fname
-            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
-            if subprocess.run(cmd, capture_output=True).returncode != 0:
+            if not self._extract_frame_with_fallback(output_mp4, sec, fpath):
+                logger.warning("Frame extraction failed for %s at %.2fs", fname, sec)
                 return False
-            if not fpath.is_file():
-                return False
-            ok, _ = self.storyboard_director.validate_frame_sample(fpath, min_variance=min_var)
+            ok, reason = self.storyboard_director.validate_frame_sample(fpath, min_variance=min_var)
             if not ok:
+                logger.warning("Frame sample validation failed for %s: %s", fname, reason)
                 return False
         return True
 

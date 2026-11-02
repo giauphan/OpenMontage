@@ -207,6 +207,10 @@ class FixedNicheQAValidator:
         frames_dir = project_dir / "renders" / "frame_samples"
         if frames_dir.is_dir():
             min_var = 1.0 if os.environ.get("CI") == "true" else 10.0
+            expected = ("frame_00s_hook.png", "frame_03s_impact.png", "frame_mid_mechanism.png", "frame_end_payoff.png")
+            for req in expected:
+                if not (frames_dir / req).is_file():
+                    findings.append({"category": "FRAME_QUALITY", "severity": "blocker", "message": f"Missing frame sample: {req}"})
             for frame_path in frames_dir.glob("*.png"):
                 ok, reason = self.storyboard_director.validate_frame_sample(frame_path, min_variance=min_var)
                 if not ok:
