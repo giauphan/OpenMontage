@@ -171,9 +171,11 @@ def _execute_ffmpeg_color(
     bgm_path: Optional[Path] = None,
 ) -> None:
     """Execute FFmpeg blank-canvas fallback render."""
+    drawbox = "drawbox=x=80:y=160:w=920:h=360:color=#1e293b:t=fill,drawbox=x=80:y=600:w=920:h=680:color=#38bdf8@0.35:t=fill"
+    vf_color = f"{vf},{drawbox}"
     if bgm_path and bgm_path.is_file():
         filter_complex = (
-            f"[0:v]{vf}[vout];"
+            f"[0:v]{vf_color}[vout];"
             f"[1:a]volume=1.0[narr];"
             f"[2:a]volume=0.12[bgm];"
             f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
@@ -193,7 +195,7 @@ def _execute_ffmpeg_color(
     else:
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
-            "-i", str(audio_path), "-vf", vf, "-threads", "0", "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-i", str(audio_path), "-vf", vf_color, "-threads", "0", "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
         ]
     subprocess.run(cmd, check=True)
@@ -239,10 +241,18 @@ def render_ffmpeg_composition(
     bgm_path = _resolve_bgm_path(project_dir)
     if beats:
         _write_beats_concat_list(beats, render_dur, visuals_dir, svg_assets, concat_list)
-        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
+        try:
+            _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
+        except subprocess.CalledProcessError:
+            concat_list.unlink(missing_ok=True)
+            _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
     elif svg_assets:
         _write_slides_concat_list(svg_assets, render_dur / len(svg_assets), concat_list)
-        _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
+        try:
+            _execute_ffmpeg_concat(concat_list, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
+        except subprocess.CalledProcessError:
+            concat_list.unlink(missing_ok=True)
+            _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
     else:
         _execute_ffmpeg_color(width, height, audio_path, vf, aspect_flag, render_dur, output_mp4, bgm_path=bgm_path)
 

@@ -89,7 +89,7 @@ def main() -> int:
 
     # research auto-proceeds (schema-valid fixture from the contract tests)
     cp("research", "in_progress", {})
-    from tests.contracts.test_phase0_contracts import sample_artifact
+    from tests.contracts.conftest import sample_artifact
     brief = sample_artifact("research_brief")
     brief["topic"] = "The Last Lighthouse"
     cp("research", "completed", {"research_brief": brief})

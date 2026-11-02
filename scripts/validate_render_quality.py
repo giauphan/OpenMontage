@@ -129,7 +129,7 @@ def measure_mean_volume(path: Path, ffmpeg: str) -> float | None:
         return None
     ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-af", "volumedetect",
+        [ffmpeg_bin, "-nostdin", "-threads", "0", "-v", "info", "-i", path_str, "-af", "volumedetect",
          "-f", "null", "-"],
         check=False,
         capture_output=True,
@@ -158,8 +158,8 @@ def measure_black_seconds(path: Path, ffmpeg: str, strict: bool = False) -> floa
     ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     pix_th = "0.02" if not strict else "0.10"
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str,
-         "-vf", f"blackdetect=d=0.5:pic_th=0.99:pix_th={pix_th}", "-an", "-f", "null", "-"],
+        [ffmpeg_bin, "-nostdin", "-threads", "0", "-v", "info", "-i", path_str,
+         "-vf", f"fps=5,scale=180:320,blackdetect=d=0.5:pic_th=0.99:pix_th={pix_th}", "-an", "-f", "null", "-"],
         check=False,
         capture_output=True,
         text=True,
@@ -185,7 +185,7 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
         return None
     ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-vf",
+        [ffmpeg_bin, "-nostdin", "-threads", "0", "-v", "info", "-i", path_str, "-vf",
          "fps=1,scale=270:480,edgedetect=low=0.1:high=0.4,signalstats,metadata=print",
          "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
@@ -210,9 +210,13 @@ def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool 
     ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     noise_threshold = "-50dB" if strict else "-60dB"
     # In strict mode, analyze upper 80% to catch static slides with animated bottom captions
-    vf = f"crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2" if strict else f"freezedetect=n={noise_threshold}:d=2"
+    vf = (
+        f"fps=5,scale=180:320,crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2"
+        if strict
+        else f"fps=5,scale=180:320,freezedetect=n={noise_threshold}:d=2"
+    )
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-v", "info", "-i", path_str, "-vf",
+        [ffmpeg_bin, "-nostdin", "-threads", "0", "-v", "info", "-i", path_str, "-vf",
          vf, "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
     )

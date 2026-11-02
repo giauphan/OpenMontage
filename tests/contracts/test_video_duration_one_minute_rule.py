@@ -39,11 +39,20 @@ pytestmark = pytest.mark.skipif(
 
 def _encode_test_video(path: Path, duration: float, dimensions: str = "1080x1920", color: str = "blue", freq: int = 440) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    base_clip = path.parent / f".base_{dimensions}_{color}.mp4"
+    if not base_clip.is_file():
+        subprocess.run([
+            FFMPEG, "-y", "-threads", "0",
+            "-f", "lavfi", "-i", f"color=c={color}:size={dimensions}:duration=1:rate=30",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", "30",
+            "-an", str(base_clip),
+        ], capture_output=True, check=True)
     cmd = [
-        FFMPEG, "-y",
-        "-f", "lavfi", "-i", f"color=c={color}:size={dimensions}:duration={duration}:rate=30",
+        FFMPEG, "-y", "-threads", "0",
+        "-stream_loop", "-1", "-i", str(base_clip),
         "-f", "lavfi", "-i", f"sine=frequency={freq}:duration={duration}",
-        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", "30",
+        "-t", str(duration),
+        "-c:v", "copy",
         "-c:a", "aac", "-shortest",
         str(path),
     ]
@@ -53,7 +62,7 @@ def _encode_test_video(path: Path, duration: float, dimensions: str = "1080x1920
 def _encode_narration_audio(path: Path, duration: float, freq: int = 440) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        FFMPEG, "-y",
+        FFMPEG, "-y", "-threads", "0",
         "-f", "lavfi", "-i", f"sine=frequency={freq}:duration={duration}",
         "-ar", "44100", "-ac", "2",
         str(path),
