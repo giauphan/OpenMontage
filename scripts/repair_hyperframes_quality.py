@@ -196,6 +196,35 @@ def _calculate_scenes_max_end(html: str) -> float:
     return max_end
 
 
+def _strip_composition_id(text: str) -> str:
+    target = "data-composition-id="
+    if target not in text:
+        return text
+    result = []
+    idx = 0
+    n = len(text)
+    while idx < n:
+        pos = text.find(target, idx)
+        if pos == -1:
+            result.append(text[idx:])
+            break
+        start = pos
+        while start > idx and text[start - 1] in " \t\r\n":
+            start -= 1
+        result.append(text[idx:start])
+        val_start = pos + len(target)
+        if val_start < n and text[val_start] in ('"', "'"):
+            quote = text[val_start]
+            val_end = text.find(quote, val_start + 1)
+            idx = n if val_end == -1 else val_end + 1
+        else:
+            end = val_start
+            while end < n and text[end] not in " \t\r\n>":
+                end += 1
+            idx = end
+    return "".join(result)
+
+
 def _wrap_scenes_with_stage(
     html: str,
     scene_match: re.Match,
@@ -214,14 +243,13 @@ def _wrap_scenes_with_stage(
     else:
         end_pos = len(html)
     initial_dur = max_end if max_end > 0 else narration_duration
-    stage_open = (
+    stage_tag = (
         f'<div id="stage" class="composition" data-composition-id="main" '
-        f'data-start="0" data-duration="{initial_dur:.3f}" data-width="{default_width}" data-height="{default_height}">\n'
+        f'data-start="0" data-duration="{initial_dur:.3f}" data-width="{default_width}" data-height="{default_height}">'
     )
-    inner_scenes = re.sub(r'\s+data-composition-id="[^"]*"', '', html[start_pos:end_pos])
-    inner_scenes = re.sub(r"\s+data-composition-id='[^']*'", '', inner_scenes)
-    html = html[:start_pos] + stage_open + inner_scenes + "\n</div>\n" + html[end_pos:]
-    root_open = re.search(r"<div\b[^>]*?id=[\"']stage[\"'][^>]*?>", html)
+    inner_scenes = _strip_composition_id(html[start_pos:end_pos])
+    html = html[:start_pos] + stage_tag + "\n" + inner_scenes + "\n</div>\n" + html[end_pos:]
+    root_open = re.compile(r"<div\b[^>]*>").match(html, start_pos)
     if "#stage" not in html and TAG_STYLE_OPEN in html:
         stage_css = (
             f"\n        #stage {{ position: relative; width: {default_width}px; height: {default_height}px; "
