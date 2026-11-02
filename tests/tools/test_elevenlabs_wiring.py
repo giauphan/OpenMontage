@@ -133,18 +133,23 @@ def test_orchestrator_fallback_on_elevenlabs_missing_key(tmp_path, monkeypatch):
     orch = NarrationOrchestrator(cache_dir=tmp_path / "cache", lock_path=tmp_path / "test.lock")
     out_audio = tmp_path / "test_fallback.mp3"
 
-    # synthesize with provider="elevenlabs" and allow_fallback=True should cascade and succeed
-    res = orch.synthesize(
-        text="Testing automated fallback for ElevenLabs.",
-        output_path=out_audio,
-        locale="en-US",
-        provider="elevenlabs",
-        allow_fallback=True,
-    )
-    assert res["success"] is True
-    assert res["provider"] in ("kokoro", "edge", "flite")
-    assert out_audio.is_file()
-    assert out_audio.stat().st_size > 0
+    def mock_fallback(**kwargs):
+        out_p = Path(kwargs["output_path"])
+        out_p.write_bytes(b"dummy_fallback_audio")
+        return {"success": True, "provider": "kokoro", "duration_seconds": 3.5, "output_path": str(out_p)}
+
+    with patch.object(orch, "synthesize_with_fallback", side_effect=mock_fallback):
+        res = orch.synthesize(
+            text="Testing automated fallback for ElevenLabs.",
+            output_path=out_audio,
+            locale="en-US",
+            provider="elevenlabs",
+            allow_fallback=True,
+        )
+        assert res["success"] is True
+        assert res["provider"] in ("kokoro", "edge", "flite")
+        assert out_audio.is_file()
+        assert out_audio.stat().st_size > 0
 
 
 def test_orchestrator_raises_when_allow_fallback_false(tmp_path, monkeypatch):

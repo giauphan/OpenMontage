@@ -177,7 +177,7 @@ class NarrationOrchestrator:
             "elevenlabs": "IKne3meq5aSn9XLyUdCD",
             "kokoro": "am_michael",
             "pocket18": "alba",
-            "edge": "en-US-ChristopherNeural",
+            "edge": "en-US-JennyNeural",
             "openai": "alloy",
         },
         "vi-VN": {
@@ -398,12 +398,20 @@ class NarrationOrchestrator:
         # Default provider invocation
         if provider_name.lower() in ("edge",):
             args = ["edge-tts", "--voice", voice, "--text", text, "--write-media", str(output_path)]
-            rate_val = (settings.get("rate") if settings else None) or os.environ.get("EDGE_TTS_RATE", "+4%")
+            rate_val = settings.get("rate") if settings else None
+            if not rate_val and settings and settings.get("speed"):
+                try:
+                    pct = int(round((float(settings["speed"]) - 1.0) * 100))
+                    rate_val = f"+{pct}%" if pct >= 0 else f"{pct}%"
+                except Exception:
+                    pass
+            if not rate_val:
+                rate_val = os.environ.get("EDGE_TTS_RATE", "+4%")
             pitch_val = (settings.get("pitch") if settings else None) or os.environ.get("EDGE_TTS_PITCH", "+1Hz")
             if rate_val:
-                args += ["--rate", str(rate_val)]
+                args.append(f"--rate={rate_val}")
             if pitch_val:
-                args += ["--pitch", str(pitch_val)]
+                args.append(f"--pitch={pitch_val}")
             timeout_s = max(30, int(len(text) / 15))
             try:
                 res = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s)

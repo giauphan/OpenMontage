@@ -64,6 +64,10 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
     if not claims:
         raise StageExecutionError("Stage 1 failed: no claims recorded in claim ledger")
 
+    active_claims = [c for c in claims if c.get("verdict") != "REJECTED"]
+    if not active_claims:
+        raise StageExecutionError("Stage 1 failed: all claims in ledger are REJECTED; at least one active claim required")
+
     snapshot_dir = project_dir / "artifacts" / "source_snapshots"
     verified_sources = 0
 
@@ -162,7 +166,7 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
                     raise StageExecutionError("Stage 1 failed: snapshot provenance indicates unauthentic source")
             verified_sources += 1
 
-    return {"verified_claims": len(claims), "verified_snapshots": verified_sources}
+    return {"verified_claims": len(active_claims), "verified_snapshots": verified_sources}
 
 
 def stage_2_script_generation(project_dir: Path) -> dict:
@@ -242,10 +246,28 @@ def stage_3_editorial_grounding(project_dir: Path) -> dict:
     scenes = script.get("scenes") or script.get("sections", [])
     full_script = " ".join(s.get("text", "") or s.get("narration", "") for s in scenes)
 
-    for claim in ledger.get("claims", []):
+    claims = ledger.get("claims", [])
+    approved_claims = [c for c in claims if c.get("verdict") == "APPROVED"]
+    if not approved_claims:
+        raise StageExecutionError("Stage 3 failed: no approved claims in ledger")
+
+    for claim in claims:
         cid = claim.get("claim_id")
         verdict = claim.get("verdict", "")
         confidence = claim.get("confidence", "")
+
+        is_in_script = any(
+            span and (span in full_script or span.lower() in full_script.lower())
+            for span in claim.get("script_spans", [])
+        )
+        if not is_in_script and claim.get("statement"):
+            is_in_script = claim.get("statement", "").lower() in full_script.lower()
+
+        if verdict == "REJECTED":
+            if is_in_script:
+                raise StageExecutionError(f"Stage 3 failed: claim {cid} has unapproved verdict '{verdict}'")
+            continue
+
         # Require BOTH APPROVED verdict and verified confidence (fail-closed)
         if verdict != "APPROVED":
             raise StageExecutionError(f"Stage 3 failed: claim {cid} has unapproved verdict '{verdict}'")
@@ -266,7 +288,7 @@ def stage_3_editorial_grounding(project_dir: Path) -> dict:
                         f"Stage 3 failed: claim {cid} number '{num}' in script span not substantiated by excerpt"
                     )
 
-    return {"approved_claims": len(ledger.get("claims", []))}
+    return {"approved_claims": len(approved_claims)}
 
 
 def stage_4_scene_graphics(project_dir: Path, format_type: str = "short") -> dict:

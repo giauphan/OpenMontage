@@ -14,7 +14,7 @@ OpenMontage renders 3 video versions per topic to optimize reach on all major so
 
 3. **Version 3: 9:16 Vertical Full (120s, 1080x1920)**:
    - Target Platforms: **Facebook Reels**, **TikTok** (full-length vertical content).
-   - Tools: `meta_publisher` (Facebook Page Reels), `tiktok_publisher` (TikTok Creator Studio)
+   - Tools: `facebook_publisher` (Facebook Page Reels), `tiktok_publisher` (TikTok Creator Studio)
 
 ## When to Use
 
@@ -58,7 +58,7 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
 ## Facebook (Meta Business Suite Adapter)
 
 - `facebook_publisher` integrates with **Meta Business Suite / Facebook Creator Studio Adapter** through **Toolcase Gateway** (`http://127.0.0.1:20129/custom/facebook`).
-- Reference Specification: `/home/ubuntu/toolcase-gateway-rs/.gw_state/modules/facebook-suite/README.md`.
+- Reference Specification: Toolcase Gateway Facebook Suite specification (`docs/publishing/facebook.md` or gateway repository module documentation).
 - Endpoints:
   - `GET /v1/status`: checks readiness and active credentials.
   - `GET /v1/scopes`: lists accessible Facebook Pages and identities.
@@ -69,14 +69,14 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
   - **Multi-language AI dubbing**: 14 languages enabled by default (`translatedAudioMetadata`).
   - **Native post scheduling**: schedule posts from 10 minutes to 75 days in advance using `scheduled_publish_time`.
   - **Port configuration**: Enforces port 20129 when deployed on server (`TOOLCASE_GATEWAY_URL=http://127.0.0.1:20129` or `FACEBOOK_GATEWAY_BASE_URL`).
-  - **Format**: Pass `final_full_vi_9x16.mp4` (or `final_long_en_US_16x9.mp4`) as `publish_type="REEL"` or `"FEED"`.
+  - **Format**: Pass vertical `final_full_vi_9x16.mp4` or `final_short_en_US_9x16.mp4` (or landscape `final_full_vi.mp4`) as `publish_type="REEL"` or `"FEED"`.
 
 ## Meta Graph API (Instagram Reels & Facebook Fallback)
 
 - `meta_publisher` gets Page access token from `TOKEN_FACEBOOK`.
 - Facebook Page video upload uses Graph API `/{page_id}/videos`.
-- **Facebook Format**: Pass `final_full_vi.mp4` (120s Full Video) so Facebook Page receives the full video post/reel, matching YouTube long-form content.
-- **Instagram Reels Format**: Pass `final_full_vi.mp4` or `final_full_vi_reels.mp4` via Cloudflare R2 temporary URL.
+- **Facebook Format**: Pass `final_full_vi_9x16.mp4` or `final_short_en_US_9x16.mp4` (or landscape `final_full_vi.mp4`) for Facebook Page Reels/Posts.
+- **Instagram Reels Format**: Pass `final_full_vi_9x16.mp4` or `final_short_en_US_9x16.mp4` via Cloudflare R2 temporary URL.
 - Instagram Graph API requires a public `video_url`. `meta_publisher` uploads a temporary copy to Cloudflare R2, uses the R2 public URL for Instagram, then deletes the R2 object in `finally` after success or failure.
 - Required env vars:
   - `TOKEN_FACEBOOK`

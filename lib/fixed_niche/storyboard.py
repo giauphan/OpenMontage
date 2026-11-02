@@ -131,20 +131,20 @@ class FixedNicheStoryboardDirector:
             b1 = clean_hook if clean_hook.endswith((".", "!")) else f"{clean_hook}."
         # Priority 2: Family-specific quantifiable claims and pattern interrupts (Grade A / 90+ Hook)
         elif family == "agent_tool_use":
-            b1 = "A single schema mismatch silently crashes over 80% of autonomous tool calls. Here is what breaks inside the Model Context Protocol, and the defensive fix."
+            b1 = "A single schema mismatch can silently crash an autonomous tool call. Here is what breaks inside the Model Context Protocol, and the defensive fix."
         elif family == "debugging_reliability":
-            b1 = "Automated coding agent pull requests pass 100% of unit tests, yet silently break continuous integration builds. Here is the architectural breakdown and the fix."
+            b1 = "Automated coding agent pull requests often pass local unit tests, yet silently break continuous integration builds. Here is the architectural breakdown and the fix."
         elif family == "context_memory":
-            b1 = "Autonomous coding agents lose 100% of working memory the second a process restarts. Here is why prompts reset back to zero, and the repository fix."
+            b1 = "Autonomous coding agents lose critical working memory the second a process restarts. Here is why prompts reset back to zero, and the repository fix."
         elif family == "agent_evaluation":
-            b1 = "Single-run benchmark scores mask over 40% of real agent failures. Here is why deterministic evaluation matrices are mandatory in production."
+            b1 = "Single-run benchmark scores frequently mask real agent failures on production codebases. Here is why deterministic evaluation matrices are mandatory."
         elif family == "agent_architecture":
-            b1 = "Untyped subagent handoffs silently corrupt state across 70% of multi-agent workflows. Here is the immutable message passing fix."
+            b1 = "Untyped subagent handoffs silently corrupt state across parallel agent workflows. Here is the immutable message passing fix."
         elif title:
             clean_title = title.rstrip(".").strip()
             b1 = f"Coding agents encounter recurring catastrophic failures with {clean_title}. Here is why multi-turn loops break, and the production fix."
         else:
-            b1 = "Autonomous coding agents lose 100% of working memory the second a process restarts. Here is why prompts reset back to zero, and the repository fix."
+            b1 = "Autonomous coding agents silently lose critical memory across process restarts. Here is why prompts reset back to zero, and the repository fix."
 
         # Beat 2: Developer Impact / Symptom
         symptom = topic.get("symptom") or (stmt_0 if len(stmt_0.split()) >= 4 else "")

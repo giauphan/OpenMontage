@@ -87,7 +87,7 @@ def generate_pipeline_svg(
     h = 1100 if is_vertical else 540
     vb = f"0 0 {w} {h}"
 
-    num_steps = STEP_COUNTS.get(beat_num, 4)
+    num_steps = 4 if (beat_num == 6 and total_beats == 6) else STEP_COUNTS.get(beat_num, 4)
     is_final_beat = (beat_num == total_beats)
     style_block = _resolve_progressive_style(
         progressive=progressive,

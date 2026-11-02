@@ -18,8 +18,8 @@
     "root_cause": "Prefix caching matches contiguous token sequences from the start of the prompt; inserting dynamic variables near the top invalidates downstream cache hits",
     "remedy": "Anchor invariant system instructions and tool definitions at the prefix head; append dynamic session turn data strictly to the tail",
     "evidence_excerpt": "Prefix prompt caching requires stable token prefixes from index zero. Mid-context mutations break downstream cache validation.",
-    "source_snapshot": "Anthropic prompt caching documentation: cached prefixes must remain unchanged from index 0 to achieve prompt caching latency and cost discounts.",
-    "snapshot_sha256": "25155d59980f9d129da09e077b35e6060f9977740e1bebc0e946ac50e079f942",
+    "source_snapshot": "Anthropic prompt caching documentation: cached prefixes must remain unchanged from index 0 to achieve prompt caching latency and cost discounts. Coding agent token cost spikes and response latency slows down drastically after small prompt modifications when prefix sequences diverge. Anchor invariant system instructions and tool definitions at the prefix head; append dynamic session turn data strictly to the tail.",
+    "snapshot_sha256": "91d81715b5b36fd4c38e3a6823f360f03aa217b2bcce70d3dad4a256e2c4dbfe",
     "independent_fact_check": {
       "verified_by": "Anthropic Prompt Caching Guide",
       "primary_domain": "docs.anthropic.com",
@@ -46,8 +46,8 @@
     "root_cause": "Multiple agent threads execute concurrent file mutations in a single shared checkout directory without filesystem branch partitioning",
     "remedy": "Spawn each parallel coding subagent inside an isolated git worktree branch, merging changes via pull request or atomic patch review",
     "evidence_excerpt": "Git worktrees provide isolated working trees attached to the same repository, preventing concurrent index locks.",
-    "source_snapshot": "Git reference documentation on worktrees: multiple linked worktrees allow simultaneous checkout of distinct branches from a single repo.",
-    "snapshot_sha256": "bb6a1b166a92dda3d91b9026f7b410b86d298a45d46b37fc7845257f3e561860",
+    "source_snapshot": "Git reference documentation on worktrees: multiple linked worktrees allow simultaneous checkout of distinct branches from a single repo. Parallel subagents overwrite concurrent edits or crash on index.lock file contention in git repositories without branch partitioning. Multiple agent threads execute concurrent file mutations in a single shared checkout directory without filesystem branch partitioning. Spawn each parallel coding subagent inside an isolated git worktree branch, merging changes via pull request or atomic patch review.",
+    "snapshot_sha256": "ebd3a08abcec1e5ac38c3b895c76fcc4a9b7b7c6c32d3a272e0b860fbc8fd035",
     "independent_fact_check": {
       "verified_by": "Git SCM Reference Manual",
       "primary_domain": "git-scm.com",
@@ -242,8 +242,8 @@
     "root_cause": "The agent modified production code without first anchoring a failing test assertion that independently reproduces the defect",
     "remedy": "Enforce a strict two-stage contract: the agent must author and execute a failing reproduction test before authoring the bug fix patch",
     "evidence_excerpt": "Hermetic regression testing isolates defects with reproducible failing test assertions before patch synthesis, eliminating self-validation bias.",
-    "source_snapshot": "Google Testing Guide on Hermetic Regression: automated bug repair requires pre-patch reproducible defect assertion verification.",
-    "snapshot_sha256": "e9f0123456789abcdef0123456789abcdef0123456789abcdef0123456789abc",
+    "source_snapshot": "Google Testing Guide on Hermetic Regression: automated bug repair requires pre-patch reproducible defect assertion verification. Autonomous coding agent claims bug is fixed, but downstream production CI pipelines fail immediately upon merge without reproducible assertions. Enforce a strict two-stage contract: the agent must author and execute a failing reproduction test before authoring the bug fix patch.",
+    "snapshot_sha256": "a477602fb5740c923f350fe5139dd58026bb898e24355d79296db7cd154d4a15",
     "independent_fact_check": {
       "verified_by": "Google Testing & Software Reliability Team",
       "primary_domain": "testing.googleblog.com",

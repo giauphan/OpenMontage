@@ -298,17 +298,13 @@ class FixedNicheVideoRunner:
         out_audio.parent.mkdir(parents=True, exist_ok=True)
 
         if provider is None:
-            from tools.audio.elevenlabs_tts import is_elevenlabs_available
-            if is_elevenlabs_available() or os.environ.get("TTS_PROVIDER_EN") == "elevenlabs":
-                provider = "elevenlabs"
-            else:
-                from tools.audio.kokoro_local_tts import is_kokoro_available
-                provider = "kokoro" if is_kokoro_available() else "flite"
-
+            provider = os.environ.get("TTS_PROVIDER_EN", "edge")
         if provider == "kokoro" and speed == 1.0:
             speed = 1.36
         elif provider == "elevenlabs" and speed == 1.0:
             speed = 1.05
+        elif provider == "edge" and speed == 1.0:
+            speed = 1.10
 
         if voice is None:
             voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
@@ -325,10 +321,7 @@ class FixedNicheVideoRunner:
                 provider = "kokoro" if is_kokoro_available() else "flite"
                 voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
                 speed = 1.36 if provider == "kokoro" else 1.0
-                res = self.orchestrator.synthesize(
-                    text=text, output_path=out_audio, locale="en-US",
-                    provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
-                )
+                res = self.orchestrator.synthesize(text=text, output_path=out_audio, locale="en-US", provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True)
             else:
                 raise
 
@@ -340,9 +333,9 @@ class FixedNicheVideoRunner:
         if actual_provider != provider:
             voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=actual_provider)
             speed = 1.0
-        if actual_provider in ("kokoro", "elevenlabs") and not (65.0 <= dur <= 75.0):
+        if actual_provider in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
             target, ratio = 70.0, dur / 70.0
-            speed_min, speed_max = (0.7, 1.2) if actual_provider == "elevenlabs" else (0.8, 1.8)
+            speed_min, speed_max = (0.8, 1.4) if actual_provider in ("elevenlabs", "edge") else (0.8, 1.8)
             adjusted_speed = round(speed * ratio, 2)
             if adjusted_speed != speed and speed_min <= adjusted_speed <= speed_max:
                 logger.info(f"Re-synthesizing narration with calibrated speed {adjusted_speed} (previous duration {dur:.2f}s)")
@@ -383,7 +376,7 @@ class FixedNicheVideoRunner:
             )
 
         # In production synthesis with neural voice, reject narration outside 65-75s contract
-        if actual_provider in ("kokoro", "elevenlabs") and not (65.0 <= dur <= 75.0):
+        if actual_provider in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
             raise ValueError(
                 f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. "
                 "Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
@@ -438,7 +431,7 @@ class FixedNicheVideoRunner:
                         ass_file = self.project_dir / "artifacts" / "captions.ass"
                         beat_map = {b["beat_id"]: b for b in beats}
 
-                        script_bytes_to_write, assets_json_to_write, proof_json_to_write = None, None, None
+                        script_bytes_to_write, assets_json_to_write, proof_json_to_write, ev_json_to_write = None, None, None, None
                         if script_file.is_file():
                             script_json = json.loads(script_file.read_text(encoding="utf-8"))
                             script_json["target_duration_seconds"] = round(align_dur, 3)
@@ -446,12 +439,18 @@ class FixedNicheVideoRunner:
                                 bid = sec.get("beat_id")
                                 if bid in beat_map:
                                     sec["start_s"], sec["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+                                sec["id"], sec["text"] = sec.get("id") or sec.get("section_id"), sec.get("text") or sec.get("narration")
                             script_bytes_to_write = json.dumps(script_json, indent=2).encode("utf-8")
+                            s_sha = hashlib.sha256(script_bytes_to_write).hexdigest()
                             if assets_file.is_file():
                                 a_json = json.loads(assets_file.read_text(encoding="utf-8"))
-                                a_json["script_sha256"] = hashlib.sha256(script_bytes_to_write).hexdigest()
+                                a_json["script_sha256"] = s_sha
                                 assets_json_to_write = json.dumps(a_json, indent=2)
-
+                            ev_file = self.project_dir / "artifacts" / "news_evidence.json"
+                            if ev_file.is_file():
+                                e_json = json.loads(ev_file.read_text(encoding="utf-8"))
+                                e_json["script_sha256"] = s_sha
+                                ev_json_to_write = json.dumps(e_json, indent=2)
                         if proof_map_file.is_file():
                             p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
                             for pb in p_json.get("beats", []):
@@ -459,17 +458,14 @@ class FixedNicheVideoRunner:
                                 if bid in beat_map:
                                     pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
                             proof_json_to_write = json.dumps(p_json, indent=2)
-
                         # Write all verified artifact updates
                         visual_plan_file.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
                         srt_file.write_text(srt_content, encoding="utf-8")
                         ass_file.write_text(ass_content, encoding="utf-8")
-                        if script_bytes_to_write is not None:
-                            script_file.write_bytes(script_bytes_to_write)
-                        if assets_json_to_write is not None:
-                            assets_file.write_text(assets_json_to_write, encoding="utf-8")
-                        if proof_json_to_write is not None:
-                            proof_map_file.write_text(proof_json_to_write, encoding="utf-8")
+                        if script_bytes_to_write is not None: script_file.write_bytes(script_bytes_to_write)
+                        if assets_json_to_write is not None: assets_file.write_text(assets_json_to_write, encoding="utf-8")
+                        if proof_json_to_write is not None: proof_map_file.write_text(proof_json_to_write, encoding="utf-8")
+                        if ev_json_to_write is not None: ev_file.write_text(ev_json_to_write, encoding="utf-8")
 
                         # Re-materialize HyperFrames compositions with the reconciled audio duration
                         from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project

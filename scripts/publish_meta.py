@@ -105,7 +105,18 @@ def main():
                     fb_inputs["scheduled_publish_time"] = sched_sec
 
                 result = fb_pub.execute(fb_inputs)
-                if not result.success and os.environ.get("TOKEN_FACEBOOK"):
+                err_str = str(result.error or "")
+                # Only retry via direct MetaPublisher on confirmed pre-upload failures or gateway unreachable.
+                # Never retry if the upload timed out or outcome is ambiguous to prevent duplicate Page posts.
+                is_pre_upload_failure = (
+                    "connection refused" in err_str.lower()
+                    or "no route to host" in err_str.lower()
+                    or "connection failed" in err_str.lower()
+                    or "gateway_url" in err_str.lower()
+                    or "missing required" in err_str.lower()
+                ) and "timeout" not in err_str.lower()
+
+                if not result.success and is_pre_upload_failure and os.environ.get("TOKEN_FACEBOOK"):
                     result = publisher.execute({
                         "video_path": str(fb_path),
                         "caption": caption[:2000],
@@ -116,10 +127,9 @@ def main():
                     })
                 data = (result.data or {}) if result.success else {}
                 fb_post_id = data.get("facebook_post_id") or data.get("video_id")
-                if result.success and not fb_post_id:
-                    result.success = False
-                    result.error = "Facebook returned no video/post ID"
-                if result.success:
+                fb_ok = bool(result.success and fb_post_id)
+                fb_error = result.error if not result.success else f"Facebook returned no video/post ID: {data!r}"
+                if fb_ok:
                     video_url = data.get("video_url") or f"https://facebook.com/{fb_page_id}/videos/{fb_post_id}"
                     store.mark_scheduled(
                         fb_key,
@@ -129,8 +139,8 @@ def main():
                     )
                     print(f"FB scheduled {pid}: {fb_post_id} -> {slot.isoformat()}")
                 else:
-                    store.mark_failed(fb_key, str(result.error))
-                    print(f"FB FAILED {pid}: {result.error}")
+                    store.mark_failed(fb_key, str(fb_error))
+                    print(f"FB FAILED {pid}: {fb_error}")
 
         # IG: 60s vertical — IMMEDIATE
         ig_path = ROOT / meta["ig_reels"]

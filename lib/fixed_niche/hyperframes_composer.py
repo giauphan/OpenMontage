@@ -305,7 +305,7 @@ def _build_svg_beat(
     if progressive_reveal and vis_file.lower().endswith(".svg"):
         from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat, compute_cta_timing
         from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
-        num_steps = STEP_COUNTS.get(i + 1, 4)
+        num_steps = 4 if (i + 1 == 6 and total_beats == 6) else STEP_COUNTS.get(i + 1, 4)
         narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
         word_ts = beat.get("word_timestamps")
         is_final = (i == total_beats - 1)
@@ -339,17 +339,14 @@ def _build_svg_beat(
                     f'{{ opacity: 1, scaleY: 1, duration: 0.35, ease: "power2.out" }}, {arrow_abs_t});'
                 )
 
-        if i == total_beats - 1 and cta_abs_t:
+        cta_reveal_t = cta_abs_t if (is_final and cta_abs_t) else (
+            _fmt_time(start_s + step_timings[-1]) if step_timings else None
+        )
+        if cta_reveal_t:
             tweens.append(
                 f'  tl.fromTo("#{sec_id} #{pfx}flow-cta-banner", '
                 f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
-                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {cta_abs_t});'
-            )
-        elif s_idx == num_steps:
-            tweens.append(
-                f'  tl.fromTo("#{sec_id} #{pfx}flow-cta-banner", '
-                f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
-                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {step_abs_t});'
+                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {cta_reveal_t});'
             )
 
     if i < total_beats - 1:
@@ -433,6 +430,7 @@ def compose_hyperframes_html(
     sfx_clips: List[str] = []
     track_counter = 10
     progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
+    last_step_timings: List[float] = []
     for idx, beat in enumerate(beats):
         b_start = float(beat.get("start_s") if beat.get("start_s") is not None else beat.get("start_seconds", 0.0))
         sfx_clips.append(
@@ -441,15 +439,17 @@ def compose_hyperframes_html(
         track_counter += 1
 
         # Step reveal pop / click sound effects
-        vis_file = _resolve_beat_visual_file(beat, visuals_src, beat.get("asset_id", f"beat_{idx+1}"))
+        aid = beat.get("asset_id") or f"beat_{idx+1}"
+        vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
         if progressive_reveal and vis_file.lower().endswith(EXT_SVG):
             from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
             from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
             raw_end = float(beat.get("end_s", duration))
             b_end = min(raw_end, duration) if idx == len(beats) - 1 else raw_end
             beat_dur = max(0.5, b_end - b_start)
-            num_steps = STEP_COUNTS.get(idx + 1, 4)
-            narration = str(beat.get("narration") or "")
+            num_steps = 4 if (idx + 1 == 6 and len(beats) == 6) else STEP_COUNTS.get(idx + 1, 4)
+            s_func = str(beat.get("story_function", ""))
+            narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
             word_ts = beat.get("word_timestamps")
             is_final = (idx == len(beats) - 1)
             step_timings = compute_step_timings_for_beat(
@@ -460,6 +460,8 @@ def compose_hyperframes_html(
                 word_timestamps=word_ts,
                 is_final_beat=is_final,
             )
+            if is_final:
+                last_step_timings = step_timings
             for s_idx, rel_t in enumerate(step_timings, start=1):
                 if s_idx > 1 and (b_start + rel_t) < duration - 1.0:
                     if idx in (0, 1) and s_idx == 2:
@@ -476,15 +478,18 @@ def compose_hyperframes_html(
                     )
                     track_counter += 1
 
-    last_b = beats[-1] if beats else {}
-    last_st = float(last_b.get("start_s") if last_b.get("start_s") is not None else 0.0)
-    last_end = min(float(last_b.get("end_s", duration)), duration)
-    last_dur = max(0.5, last_end - last_st)
-    last_steps_win = min(5.5, max(3.0, last_dur * 0.48))
-    cta_sfx_t = last_st + min(last_dur - 1.5, last_steps_win + 1.0)
-    sfx_clips.append(
-        f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="{track_counter}" src="assets/sfx/chime.mp3" data-volume="0.30"></audio>'
-    )
+    cta_sfx_t = max(0.0, duration - 1.5)
+    if beats:
+        from lib.fixed_niche.voice_timing_aligner import compute_cta_timing
+        last_b = beats[-1]
+        last_st = float(last_b.get("start_s") if last_b.get("start_s") is not None else last_b.get("start_seconds", 0.0))
+        last_end = min(float(last_b.get("end_s", duration)), duration)
+        last_dur = max(0.5, last_end - last_st)
+        cta_rel = compute_cta_timing(last_dur, last_step_timings)
+        cta_sfx_t = max(0.0, last_st + cta_rel)
+        sfx_clips.append(
+            f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="{track_counter}" src="assets/sfx/chime.mp3" data-volume="0.30"></audio>'
+        )
     sfx_block = "\n".join(sfx_clips)
 
     clips_block = "\n".join(sections_html)

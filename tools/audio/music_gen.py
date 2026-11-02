@@ -95,19 +95,14 @@ class MusicGen(BaseTool):
 
     def _resolve_api_key(self, inputs: dict[str, Any] | None = None) -> str | None:
         if inputs:
-            k = (
-                inputs.get("api_key")
-                or inputs.get("elevenlabs_gateway_api_key")
-                or inputs.get("elevenlabs_api_key")
-                or inputs.get("xi_api_key")
-            )
-            if k and str(k).strip():
-                return str(k).strip()
-        return (
-            os.environ.get("ELEVENLABS_GATEWAY_API_KEY")
-            or os.environ.get("ELEVENLABS_API_KEY")
-            or os.environ.get("XI_API_KEY")
-        )
+            for k in (inputs.get("api_key"), inputs.get("elevenlabs_api_key"), inputs.get("xi_api_key")):
+                if k and str(k).strip():
+                    return str(k).strip()
+        for env_var in ("ELEVENLABS_API_KEY", "XI_API_KEY"):
+            val = os.environ.get(env_var)
+            if val and val.strip():
+                return val.strip()
+        return None
 
     def get_status(self) -> ToolStatus:
         if self._resolve_api_key():

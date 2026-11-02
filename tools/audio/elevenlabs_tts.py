@@ -220,10 +220,14 @@ class ElevenLabsTTS(BaseTool):
         Returns:
             (base_url, endpoint, is_audio_speech_protocol)
         """
+        has_gateway_key = bool(
+            inputs.get("elevenlabs_gateway_api_key")
+            or os.environ.get("ELEVENLABS_GATEWAY_API_KEY")
+        )
         gateway_url = (
             inputs.get("gateway_url")
-            or os.environ.get("TOOLCASE_GATEWAY_URL")
             or os.environ.get("ELEVENLABS_GATEWAY_URL")
+            or (os.environ.get("TOOLCASE_GATEWAY_URL") if has_gateway_key else None)
         )
         base_url = (
             inputs.get("base_url")
@@ -289,8 +293,7 @@ class ElevenLabsTTS(BaseTool):
         import requests
 
         text = inputs["text"]
-        raw_voice = inputs.get("voice_id", self.DEFAULT_VOICE_ID)
-        voice_id = self.VOICE_ALIASES.get(str(raw_voice).lower(), raw_voice)
+        voice_id = self.resolve_voice_id(inputs.get("voice_id"))
         model_id = inputs.get("model_id", "eleven_multilingual_v2")
         output_format = inputs.get("output_format", "mp3_44100_128")
         raw_speed = float(inputs.get("speed", 1.0))
@@ -313,6 +316,7 @@ class ElevenLabsTTS(BaseTool):
         }
 
         if is_speech:
+            output_format = "mp3_44100_128"
             payload = {
                 "model": model_id,
                 "input": text,
@@ -446,5 +450,6 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         print(f"FAILED: {result.error}", file=sys.stderr)
-        sys.exit(0 if status == ToolStatus.UNAVAILABLE else 1)
+        no_key = status == ToolStatus.UNAVAILABLE and not args.api_key
+        sys.exit(0 if no_key else 1)
 

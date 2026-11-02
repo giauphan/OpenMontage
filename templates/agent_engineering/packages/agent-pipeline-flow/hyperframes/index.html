@@ -84,17 +84,25 @@
 <body>
   <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="70">
     <div class="bg-fill"></div>
-    <audio id="narration" class="clip" data-start="0" data-duration="70" data-track-index="0" src="assets/narration_en_US.mp3"></audio>
+    <audio id="narration" class="clip" data-start="0" data-duration="70" data-track-index="0" src="assets/narration.mp3"></audio>
     <audio id="bgm" class="clip" data-start="0" data-duration="70" data-track-index="1" src="assets/music-bg.mp3" data-volume="0.12" loop></audio>
 
     <main id="scenes-container"></main>
   </div>
 
   <script>
+    window.__timelines = window.__timelines || {};
+    const tl = window.gsap ? gsap.timeline({ paused: true }) : null;
+    if (tl) {
+      window.__timelines["main"] = tl;
+      window.__hyperframes_timeline = tl;
+    }
+
     window.__INIT_HYPERFRAMES_HORIZONTAL__ = function(data) {
       if (!window.gsap) return;
-      const tl = gsap.timeline({ paused: true });
-      window.__hyperframes_timeline = tl;
+      const activeTl = tl || gsap.timeline({ paused: true });
+      window.__timelines["main"] = activeTl;
+      window.__hyperframes_timeline = activeTl;
 
       const totalDur = data.duration || 70.0;
       tl.to("#bgm", { volume: 0, duration: 1.5, ease: "power2.in" }, Math.max(0, totalDur - 1.5));

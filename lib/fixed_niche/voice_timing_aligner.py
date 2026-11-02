@@ -79,7 +79,7 @@ def compute_step_timings_for_beat(
 
 def compute_cta_timing(
     duration: float,
-    step_timings: List[float],
+    step_timings: Optional[List[float]] = None,
     lead_time: float = 1.0,
     min_final_hold: float = 1.5,
 ) -> float:
@@ -161,6 +161,8 @@ def _align_via_sentence_proportions(
     clean_text = narration.strip()
     sentences = [s.strip() for s in re.split(r'[.!?]+|\b(?:and then|however|because|then|where)\b', clean_text) if s.strip()]
 
+    eff_gap = min(min_step_gap, max(0.1, (usable_span - 0.2) / max(1, num_steps - 1)))
+
     # If we have multiple sentences matching or close to step count
     if len(sentences) >= num_steps:
         sentence_lengths = [max(1, len(s.split())) for s in sentences[:num_steps]]
@@ -170,7 +172,7 @@ def _align_via_sentence_proportions(
         for i in range(1, num_steps):
             frac = accum_words / total_words
             t = 0.2 + (frac * (usable_span - 0.2))
-            t_clamped = round(max(timings[-1] + min_step_gap, min(usable_span, t)), 2)
+            t_clamped = round(min(usable_span, max(timings[-1] + eff_gap, t)), 2)
             timings.append(t_clamped)
             accum_words += sentence_lengths[i]
         return timings
@@ -181,7 +183,7 @@ def _align_via_sentence_proportions(
 
     for i in range(1, num_steps):
         t = round(0.2 + i * step_interval, 2)
-        t_clamped = round(max(timings[-1] + min_step_gap, min(usable_span, t)), 2)
+        t_clamped = round(min(usable_span, max(timings[-1] + eff_gap, t)), 2)
         timings.append(t_clamped)
 
     return timings

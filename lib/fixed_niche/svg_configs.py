@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-STEP_COUNTS: Dict[int, int] = {1: 4, 2: 3, 3: 3, 4: 4, 5: 4, 6: 4, 7: 4}
+STEP_COUNTS: Dict[int, int] = {1: 4, 2: 3, 3: 3, 4: 3, 5: 4, 6: 3, 7: 4}
 
 FAMILY_CONFIGS: Dict[str, Dict[str, str]] = {
     "context_memory": {
