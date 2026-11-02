@@ -66,6 +66,8 @@ exit 5
         "TMP_ROOT": str(tmp_path / "tmp_root"),
         "MIN_DISK_MB": "0",
         "MIN_TMP_DISK_MB": "0",
+        "GENERATION_RETRY_DELAY_SECONDS": "0",
+        "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",
         "NEWS_MAX_SOURCE_AGE_HOURS": "24",
     }
     (tmp_path / "tmp_root").mkdir(exist_ok=True)
@@ -209,6 +211,8 @@ exit 1
         "MIN_DISK_MB": "0",
         "MIN_TMP_DISK_MB": "0",
         "DAILY_GENERATION_RETRIES": "2",
+        "GENERATION_RETRY_DELAY_SECONDS": "0",
+        "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",
         "NEWS_MAX_SOURCE_AGE_HOURS": "24",
     }
     (tmp_path / "tmp_root").mkdir(exist_ok=True)

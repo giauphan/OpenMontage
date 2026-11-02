@@ -145,6 +145,7 @@ def _execute_ffmpeg_concat(
             "-stream_loop", "-1", "-i", str(bgm_path),
             "-filter_complex", filter_complex,
             "-map", "[vout]", "-map", "[aout]",
+            "-threads", "0",
             "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur),
             str(output_mp4),
@@ -152,7 +153,7 @@ def _execute_ffmpeg_concat(
     else:
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_list),
-            "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-i", str(audio_path), "-vf", vf, "-threads", "0", "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
         ]
     subprocess.run(cmd, check=True)
@@ -184,6 +185,7 @@ def _execute_ffmpeg_color(
             "-stream_loop", "-1", "-i", str(bgm_path),
             "-filter_complex", filter_complex,
             "-map", "[vout]", "-map", "[aout]",
+            "-threads", "0",
             "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur),
             str(output_mp4),
@@ -191,7 +193,7 @@ def _execute_ffmpeg_color(
     else:
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=#0b1120:s={width}x{height}:d={render_dur}:r=30",
-            "-i", str(audio_path), "-vf", vf, "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
+            "-i", str(audio_path), "-vf", vf, "-threads", "0", "-aspect", aspect_flag, "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-t", str(render_dur), str(output_mp4),
         ]
     subprocess.run(cmd, check=True)

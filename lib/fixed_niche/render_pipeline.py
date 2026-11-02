@@ -94,6 +94,8 @@ def render_project_composition(
             env_renderer = os.environ.get("OPENMONTAGE_RENDERER", "").lower()
             if env_renderer in ("hyperframes", "ffmpeg"):
                 chosen_renderer = env_renderer
+            elif "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("CI") == "true":
+                chosen_renderer = "ffmpeg"
             else:
                 # Prioritize HyperFrames when composition exists
                 has_hf = (

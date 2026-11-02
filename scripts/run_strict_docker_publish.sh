@@ -159,6 +159,7 @@ export CODEX_MODEL
 MAX_RETRIES="${CLAUDE_VALIDATION_RETRIES:-3}"
 GENERATION_RETRIES="${DAILY_GENERATION_RETRIES:-3}"
 GENERATION_RETRY_DELAY_SECONDS="${GENERATION_RETRY_DELAY_SECONDS:-30}"
+PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS="${PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS:-15}"
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 export EXPECTED_SUCCESS_COUNT
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
@@ -749,8 +750,11 @@ if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
       NEXT_PLATFORM_OK=1
       break
     fi
-    log "WARNING: YouTube scheduling attempt $sched_attempt/3 failed; pausing 15s before retry..."
-    sleep 15
+    local_sched_delay="${PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS:-15}"
+    if [ "$local_sched_delay" -gt 0 ]; then
+      log "WARNING: YouTube scheduling attempt $sched_attempt/3 failed; pausing ${local_sched_delay}s before retry..."
+      sleep "$local_sched_delay"
+    fi
   done
   if [ "$NEXT_PLATFORM_OK" -eq 0 ]; then
     write_state "platform-schedule" "failed" "date=$NEXT_DATE"

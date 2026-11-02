@@ -96,7 +96,15 @@ def _run_fixture(tmp_path: Path, projects: list[str], slots: list[str],
     (scripts_dir / "clear_stale_projects.sh").chmod(0o755)
     (scripts_dir / "publish_manual_video.py").write_text("exit 0\n", encoding="utf-8")
 
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "PUBLISH_TZ": tzname, "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1", "NEWS_MAX_SOURCE_AGE_HOURS": "24"}
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "PUBLISH_TZ": tzname,
+        "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+        "GENERATION_RETRY_DELAY_SECONDS": "0",
+        "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",
+        "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+    }
     return subprocess.run(
         ["bash", str(scripts_dir / "run_strict_docker_publish.sh")],
         cwd=tmp_path,
@@ -174,6 +182,8 @@ done
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "PUBLISH_TZ": "UTC",
             "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+            "GENERATION_RETRY_DELAY_SECONDS": "0",
+            "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",
             "NEWS_MAX_SOURCE_AGE_HOURS": "24",
         },
         capture_output=True,

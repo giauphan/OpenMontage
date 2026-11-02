@@ -90,7 +90,7 @@ install-gpu: ensure-venv
 # ---- Testing ----
 
 test: ensure-venv
-	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/ -v \
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline OPENMONTAGE_RENDERER=ffmpeg GENERATION_RETRY_DELAY_SECONDS=0 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS=0 $(RUN_PYTHON) -m pytest tests/ -v \
 		--ignore=tests/contracts/ \
 		--ignore=tests/qa/ \
 		--ignore=tests/test_pr06_pr07_remediation.py \
@@ -98,10 +98,10 @@ test: ensure-venv
 		--ignore=tests/test_daily_cron_reliability_hardening.py
 
 test-contracts: ensure-venv
-	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/contracts/ tests/test_pr06_pr07_remediation.py -v
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline OPENMONTAGE_RENDERER=ffmpeg GENERATION_RETRY_DELAY_SECONDS=0 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS=0 $(RUN_PYTHON) -m pytest tests/contracts/ tests/test_pr06_pr07_remediation.py -v
 
 test-cron: ensure-venv
-	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/test_strict_cron_retry.py tests/test_daily_cron_reliability_hardening.py -v
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline OPENMONTAGE_RENDERER=ffmpeg GENERATION_RETRY_DELAY_SECONDS=0 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS=0 $(RUN_PYTHON) -m pytest tests/test_strict_cron_retry.py tests/test_daily_cron_reliability_hardening.py -v
 
 # ---- Utilities ----
 
