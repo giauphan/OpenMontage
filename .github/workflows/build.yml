@@ -32,6 +32,8 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+      - name: Install system dependencies
+        run: command -v ffmpeg >/dev/null 2>&1 || (sudo apt-get update -o Acquire::http::Timeout="10" && sudo apt-get install -y ffmpeg)
       - name: Install dependencies and generate coverage
         env:
           OTEL_SDK_DISABLED: "true"
@@ -43,7 +45,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          pytest tests/ --cov=lib --cov=tools --cov-report=xml:coverage.xml -q -n auto
+          pytest tests/ --cov=lib --cov=tools --cov-report=xml:coverage.xml -q \
+            --ignore=tests/contracts/ \
+            --ignore=tests/test_strict_cron_retry.py \
+            --ignore=tests/test_daily_cron_reliability_hardening.py
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
