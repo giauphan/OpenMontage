@@ -31,19 +31,22 @@ class FixedNicheQAValidator:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     @staticmethod
-    def _safe_write_json(path: Path, data: dict) -> None:
-        p = Path(path).expanduser().resolve()
-        allowed = (Path.cwd().resolve(), Path.home().resolve(), Path(tempfile.gettempdir()).resolve())
-        if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
+    def _safe_write_json(path: Path | str, data: dict, base_dir: Optional[Path | str] = None) -> None:
+        raw = Path(path)
+        base = Path(base_dir).resolve() if base_dir else raw.parent.resolve()
+        safe_name = os.path.basename(str(raw))
+        target_path = (base / safe_name).resolve()
+        if not target_path.is_relative_to(base):
             raise ValueError(f"Path traversal detected: {path}")
-        p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=2))
 
     def _verify_file_hash(self, app_data: dict, app_path: Path, key: str, path: Path, status: str) -> bool:
         expected = app_data.get(key) or (app_data.get("media_sha256") if key == "video_sha256" else None)
         if not expected or not path.is_file() or self.compute_sha256(path).lower() != str(expected).lower():
             app_data["approved"] = False
             app_data["status"] = status if expected and path.is_file() else "INVALIDATED_MISSING_SIGNATURE"
-            self._safe_write_json(app_path, app_data)
+            self._safe_write_json(app_path, app_data, base_dir=app_path.parent)
             return False
         return True
 
@@ -57,7 +60,7 @@ class FixedNicheQAValidator:
             if not is_valid:
                 app_data["approved"] = False
                 app_data["status"] = "INVALIDATED_BY_SIGNATURE_FORGERY"
-                self._safe_write_json(app_path, app_data)
+                self._safe_write_json(app_path, app_data, base_dir=project_dir)
                 return False
             return True
         except Exception as sig_err:
@@ -403,7 +406,7 @@ class FixedNicheQAValidator:
         try:
             qa_report_path = project_dir / "artifacts" / "production_qa_report.json"
             qa_report_path.parent.mkdir(parents=True, exist_ok=True)
-            cls._safe_write_json(qa_report_path, report)
+            cls._safe_write_json(qa_report_path, report, base_dir=qa_report_path.parent)
         except (OSError, ValueError) as e:
             report["artifact_persisted"] = False
             report["artifact_persistence_warning"] = f"Could not persist production_qa_report.json: {e}"

@@ -347,13 +347,22 @@ class FixedNicheVideoRunner:
         except Exception as e:
             raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
 
+    def _write_artifact_file(self, filename: str | Path, content: str | bytes) -> None:
+        safe_name = os.path.basename(str(filename))
+        artifacts_dir = (self.project_dir / "artifacts").resolve()
+        target_path = (artifacts_dir / safe_name).resolve()
+        if not target_path.is_relative_to(artifacts_dir):
+            raise ValueError(f"Path traversal detected: {filename}")
+        mode, kw = ("wb", {}) if isinstance(content, bytes) else ("w", {"encoding": "utf-8"})
+        with open(target_path, mode, **kw) as f:
+            f.write(content)
+
     def _update_script_file(
         self, script_file: Path, beat_map: dict[str, dict], align_dur: float, assets_file: Path, ev_file: Path
     ) -> None:
         if not script_file.is_file():
             return
-        safe_script = _validate_safe_path(script_file)
-        s_json = json.loads(safe_script.read_text(encoding="utf-8"))
+        s_json = json.loads(script_file.read_text(encoding="utf-8"))
         s_json["target_duration_seconds"] = round(align_dur, 3)
         for sec in s_json.get("sections", []):
             bid = sec.get("beat_id")
@@ -362,28 +371,23 @@ class FixedNicheVideoRunner:
             sec["id"] = sec.get("id") or sec.get("section_id")
             sec["text"] = sec.get("text") or sec.get("narration")
         s_bytes = json.dumps(s_json, indent=2).encode("utf-8")
-        safe_script.write_bytes(s_bytes)
+        self._write_artifact_file(script_file, s_bytes)
         s_sha = hashlib.sha256(s_bytes).hexdigest()
         for f_path in (assets_file, ev_file):
-            if not f_path.is_file():
-                continue
-            f_res = _validate_safe_path(f_path)
-            if not f_res.is_relative_to(self.project_dir.resolve()):
-                continue
-            data = json.loads(f_res.read_text(encoding="utf-8"))
-            data["script_sha256"] = s_sha
-            f_res.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            if f_path.is_file():
+                data = json.loads(f_path.read_text(encoding="utf-8"))
+                data["script_sha256"] = s_sha
+                self._write_artifact_file(f_path, json.dumps(data, indent=2))
 
     def _update_proof_map(self, proof_map_file: Path, beat_map: dict[str, dict]) -> None:
         if not proof_map_file.is_file():
             return
-        safe_proof = _validate_safe_path(proof_map_file)
-        p_json = json.loads(safe_proof.read_text(encoding="utf-8"))
+        p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
         for pb in p_json.get("beats", []):
             bid = pb.get("beat_id")
             if bid in beat_map:
                 pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
-        safe_proof.write_text(json.dumps(p_json, indent=2), encoding="utf-8")
+        self._write_artifact_file(proof_map_file, json.dumps(p_json, indent=2))
 
     def _write_reconciled_artifacts(
         self, beats: list[dict], align_dur: float, out_audio: Path, plan_json: dict, plan_f: Path
@@ -392,8 +396,8 @@ class FixedNicheVideoRunner:
         c_w = 1080 if self.format_kind in ("short", "shorts") else 1920
         c_h = 1920 if self.format_kind in ("short", "shorts") else 1080
         srt_content, ass_content, _ = build_and_align_captions(beats=beats, audio_path=out_audio, width=c_w, height=c_h)
-        (self.project_dir / "artifacts" / "captions.srt").write_text(srt_content, encoding="utf-8")
-        (self.project_dir / "artifacts" / "captions.ass").write_text(ass_content, encoding="utf-8")
+        self._write_artifact_file("captions.srt", srt_content)
+        self._write_artifact_file("captions.ass", ass_content)
 
         beat_map = {b["beat_id"]: b for b in beats}
         script_file = self.project_dir / "artifacts" / SCRIPT_EN_US_JSON
@@ -404,7 +408,7 @@ class FixedNicheVideoRunner:
         self._update_script_file(script_file, beat_map, align_dur, assets_file, ev_file)
         self._update_proof_map(proof_map_file, beat_map)
 
-        plan_f.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
+        self._write_artifact_file(plan_f, json.dumps(plan_json, indent=2))
         self._rematerialize_after_reconciliation(align_dur, plan_json, script_file)
 
     def _rematerialize_after_reconciliation(self, align_dur: float, plan_json: dict, script_file: Path) -> None:
@@ -743,14 +747,11 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Renderer")
     parser.add_argument("--project-dir", help="Custom project output directory")
     parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format")
-    parser.add_argument("--provider", default=None, help="TTS provider")
-    parser.add_argument("--voice", default=None, help="TTS voice override")
+    for flag in ("--title", "--topic-family", "--canonical-url", "--provider", "--voice"):
+        parser.add_argument(flag, default=None)
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
     parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
     parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video")
-    parser.add_argument("--title", default=None)
-    parser.add_argument("--topic-family", default=None)
-    parser.add_argument("--canonical-url", default=None)
     parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg"), choices=["progressive_svg", "animated_agent_diagram_v1", "legacy"])
     parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True)

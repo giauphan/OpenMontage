@@ -49,26 +49,30 @@ from scripts.evidence_binder_helpers import (
 SCRIPT_EN_US_JSON = "script_en_US.json"
 
 
-def _safe_write_bytes(path: Path | str, content: bytes) -> None:
+def _safe_write_bytes(path: Path | str, content: bytes, base_dir: Path | str | None = None) -> None:
     """Validate path against traversal attacks (CWE-22) before writing."""
-    import tempfile
-    p = Path(path).expanduser().resolve()
-    repo_root = Path(__file__).resolve().parents[1]
-    allowed = (repo_root, Path.home().resolve(), Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
-    if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
+    raw_path = Path(path)
+    base = Path(base_dir).resolve() if base_dir else raw_path.parent.resolve()
+    safe_name = os.path.basename(str(raw_path))
+    target_path = (base / safe_name).resolve()
+    if not target_path.is_relative_to(base):
         raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
-    p.write_bytes(content)
+    with open(target_path, "wb") as f:
+        f.write(content)
 
 
-def _safe_write_text(path: Path | str, content: str, encoding: str = "utf-8") -> None:
+def _safe_write_text(
+    path: Path | str, content: str, encoding: str = "utf-8", base_dir: Path | str | None = None
+) -> None:
     """Validate path against traversal attacks (CWE-22) before writing."""
-    import tempfile
-    p = Path(path).expanduser().resolve()
-    repo_root = Path(__file__).resolve().parents[1]
-    allowed = (repo_root, Path.home().resolve(), Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
-    if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
+    raw_path = Path(path)
+    base = Path(base_dir).resolve() if base_dir else raw_path.parent.resolve()
+    safe_name = os.path.basename(str(raw_path))
+    target_path = (base / safe_name).resolve()
+    if not target_path.is_relative_to(base):
         raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
-    p.write_text(content, encoding=encoding)
+    with open(target_path, "w", encoding=encoding) as f:
+        f.write(content)
 
 
 def _resolve_script_path(artifacts_dir: Path) -> Path:
@@ -114,7 +118,7 @@ def _parse_and_validate_script(script_path: Path) -> tuple[dict[str, Any] | None
         return None, None
     if _normalize_script_sections(script_data):
         script_bytes = json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
-        _safe_write_bytes(script_path, script_bytes)
+        _safe_write_bytes(script_path, script_bytes, base_dir=script_path.parent)
     return script_data, script_bytes
 
 
@@ -297,7 +301,7 @@ def _write_evidence_artifacts(
         "contradictions": [],
     }
     evidence_path = artifacts_dir / "news_evidence.json"
-    _safe_write_text(evidence_path, json.dumps(evidence, ensure_ascii=False, indent=2))
+    _safe_write_text(evidence_path, json.dumps(evidence, ensure_ascii=False, indent=2), base_dir=artifacts_dir)
 
     if script_name == SCRIPT_EN_US_JSON and ledger_claims:
         brief_sha = hashlib.sha256(brief_path.read_bytes()).hexdigest() if brief_path.is_file() else ""
@@ -310,7 +314,7 @@ def _write_evidence_artifacts(
             "claims": ledger_claims,
         }
         ledger_path = artifacts_dir / "claim_ledger.json"
-        _safe_write_text(ledger_path, json.dumps(claim_ledger, ensure_ascii=False, indent=2))
+        _safe_write_text(ledger_path, json.dumps(claim_ledger, ensure_ascii=False, indent=2), base_dir=artifacts_dir)
 
 
 def _resolve_primary_title(sources_in_brief: list[dict[str, Any]]) -> str:
