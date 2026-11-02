@@ -217,7 +217,7 @@ def test_dynamic_narration_synthesizes_from_topic_evidence(tmp_path: Path):
         "candidate_id": "cand_dyn",
         "title": "Custom Bug Isolation in Multi-Agent Reasoning",
         "topic_family": "debugging_reliability",
-        "viewer_question": "Why do autonomous coding agents loop indefinitely on cyclical import errors?",
+        "hook": "Autonomous coding agents loop indefinitely on cyclical import errors, halting delivery.",
         "symptom": "agents cycle through repeated edit attempts on mutual module imports",
         "root_cause": "circular dependency analysis blindness during single-file patch generation",
         "remedy": "topological sort analysis before dispatching agent file modifications",
@@ -231,7 +231,7 @@ def test_dynamic_narration_synthesizes_from_topic_evidence(tmp_path: Path):
     res = director.generate_storyboard(topic, claims, tmp_path / "dyn_proj", target_duration=70.0)
     beats = res["visual_plan"]["beats"]
 
-    assert "Why do autonomous coding agents loop indefinitely on cyclical import errors?" in beats[0]["narration"]
+    assert "Autonomous coding agents loop indefinitely on cyclical import errors" in beats[0]["narration"]
     assert "mutual module imports" in beats[1]["narration"]
     assert "circular dependency analysis blindness" in beats[2]["narration"]
     assert "topological sort analysis" in beats[3]["narration"]

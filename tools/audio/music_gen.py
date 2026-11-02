@@ -93,8 +93,19 @@ class MusicGen(BaseTool):
         "Listen to generated music for mood and quality",
     ]
 
+    def _resolve_api_key(self, inputs: dict[str, Any] | None = None) -> str | None:
+        if inputs:
+            for k in (inputs.get("api_key"), inputs.get("elevenlabs_api_key"), inputs.get("xi_api_key")):
+                if k and str(k).strip():
+                    return str(k).strip()
+        for env_var in ("ELEVENLABS_API_KEY", "XI_API_KEY"):
+            val = os.environ.get(env_var)
+            if val and val.strip():
+                return val.strip()
+        return None
+
     def get_status(self) -> ToolStatus:
-        if os.environ.get("ELEVENLABS_API_KEY"):
+        if self._resolve_api_key():
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 
@@ -111,7 +122,7 @@ class MusicGen(BaseTool):
         return round(duration / 30 * 0.05, 4)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        api_key = os.environ.get("ELEVENLABS_API_KEY")
+        api_key = self._resolve_api_key(inputs)
         if not api_key:
             return ToolResult(
                 success=False,

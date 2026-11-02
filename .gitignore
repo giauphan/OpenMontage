@@ -31,12 +31,8 @@ tests/qa/output/
 artifacts/verification/animated_agent_diagram_v1/
 
 # Template package source HTML baselines (shipped for integrity verification)
-!templates/news/packages/news-debate/hyperframes/
-!templates/news/packages/news-debate/hyperframes_reels/
-!templates/news/packages/news-evidence/hyperframes/
-!templates/news/packages/news-evidence/hyperframes_reels/
-!templates/news/packages/news-explainer/hyperframes/
-!templates/news/packages/news-explainer/hyperframes_reels/
+!templates/**/hyperframes/
+!templates/**/hyperframes_reels/
 
 # Production deliverables (curated verification evidence for US migration)
 !artifacts/us-migration/production_deliverables/
@@ -128,7 +124,7 @@ venv/
 !package.json
 !package-lock.json
 !schemas/**/*.json
-!templates/news/**/*.json
+!templates/**/*.json
 !tests/**/*.json
 !artifacts/**/*.json
 !config/publish_platforms.json

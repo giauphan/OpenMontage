@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import shutil
@@ -35,6 +36,9 @@ from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
 
 logger = logging.getLogger(__name__)
 
+SCRIPT_EN_US_JSON = "script_en_US.json"
+NEWS_VISUAL_ASSETS_JSON = "news_visual_assets.json"
+CLAIM_LEDGER_JSON = "claim_ledger.json"
 
 class FixedNicheVideoRunner:
     """Manages full video production lifecycle for a single in-scope candidate."""
@@ -94,11 +98,8 @@ class FixedNicheVideoRunner:
 
         # 2. Project descriptor
         project_json = {
-            "project_id": self.candidate_id,
-            "pipeline_type": "fixed_niche_explainer",
-            "locale": "en-US",
-            "market": "US",
-            "niche_id": self.policy.niche_id,
+            "project_id": self.candidate_id, "pipeline_type": "fixed_niche_explainer",
+            "locale": "en-US", "market": "US", "niche_id": self.policy.niche_id,
             "policy_sha256": self.policy.policy_sha256,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
@@ -106,9 +107,7 @@ class FixedNicheVideoRunner:
 
         # 3. Build research brief and claim ledger
         art_paths = self.researcher.build_topic_artifacts(
-            candidate=topic,
-            project_dir=self.project_dir,
-            content_kind=verdict.content_kind,
+            candidate=topic, project_dir=self.project_dir, content_kind=verdict.content_kind,
         )
 
         with open(art_paths["claim_ledger"], "r", encoding="utf-8") as f:
@@ -117,33 +116,22 @@ class FixedNicheVideoRunner:
         # 4. Generate storyboard, proof map, and technical SVGs
         target_dur = self.get_target_duration()
         story_res = self.storyboard_director.generate_storyboard(
-            topic=topic,
-            claims=claim_ledger["claims"],
-            project_dir=self.project_dir,
-            target_duration=target_dur,
+            topic=topic, claims=claim_ledger["claims"], project_dir=self.project_dir, target_duration=target_dur,
         )
 
         # 5. Generate script_en_US.json and captions.srt
         visual_plan = story_res["visual_plan"]
         script_data = {
-            "version": "1.0",
-            "locale": "en-US",
-            "title": topic.get("title", "AI Agent Engineering Explainer"),
+            "version": "1.0", "locale": "en-US", "title": topic.get("title", "AI Agent Engineering Explainer"),
             "target_duration_seconds": target_dur,
             "sections": [
-                {
-                    "section_id": b["script_section_id"],
-                    "beat_id": b["beat_id"],
-                    "start_s": b["start_s"],
-                    "end_s": b["end_s"],
-                    "narration": b["narration"],
-                    "claims": b["claim_ids"],
-                }
+                {"section_id": b["script_section_id"], "beat_id": b["beat_id"], "start_s": b["start_s"],
+                 "end_s": b["end_s"], "narration": b["narration"], "claims": b["claim_ids"]}
                 for b in visual_plan["beats"]
             ],
         }
         script_bytes = json.dumps(script_data, indent=2).encode("utf-8")
-        (artifacts_dir / "script_en_US.json").write_bytes(script_bytes)
+        (artifacts_dir / SCRIPT_EN_US_JSON).write_bytes(script_bytes)
         script_sha = hashlib.sha256(script_bytes).hexdigest()
 
         full_text = " ".join(s["narration"] for s in script_data["sections"])
@@ -163,34 +151,23 @@ class FixedNicheVideoRunner:
 
         # 6. Orchestrate and resolve assets with strict meaningful visual enforcement
         from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
-        orchestrator = VisualAssetOrchestrator()
-        orch_res = orchestrator.orchestrate_plan_assets(
-            project_dir=self.project_dir,
-            plan=visual_plan,
-            topic=topic,
-            claim_ledger=claim_ledger.get("claims", []),
+        orch_res = VisualAssetOrchestrator().orchestrate_plan_assets(
+            project_dir=self.project_dir, plan=visual_plan, topic=topic, claim_ledger=claim_ledger.get("claims", []),
         )
         if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
-            return {
-                "status": "BLOCKED_MISSING_PROOF",
-                "project_id": self.candidate_id,
-                "beat_results": orch_res.get("beat_results", {}),
-            }
+            return {"status": "BLOCKED_MISSING_PROOF", "project_id": self.candidate_id, "beat_results": orch_res.get("beat_results", {})}
 
         plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
         manifest = resolve_visual_assets(
-            project_dir=self.project_dir,
-            visual_plan=visual_plan,
-            script_sha256=script_sha,
-            visual_plan_sha256=plan_sha,
-            enforce_meaningful_visuals=True,
+            project_dir=self.project_dir, visual_plan=visual_plan, script_sha256=script_sha,
+            visual_plan_sha256=plan_sha, enforce_meaningful_visuals=True,
         )
-        (artifacts_dir / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        (artifacts_dir / NEWS_VISUAL_ASSETS_JSON).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         # 6.5. Generate animated diagram sidecar if visual style is active
-        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
+        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
             from lib.visual_style.diagram_director import AnimatedDiagramDirector
             director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
             diag_plan = director.plan_diagram_animation(
@@ -227,7 +204,7 @@ class FixedNicheVideoRunner:
         if not topic_data:
             tb_file = self.project_dir / "artifacts" / "topic_brief.json"
             topic_data = json.loads(tb_file.read_text(encoding="utf-8")) if tb_file.is_file() else {"candidate_id": self.candidate_id}
-        cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
+        cl_file = self.project_dir / "artifacts" / CLAIM_LEDGER_JSON
         claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
         if not claims:
             raise ValueError(f"Cannot re-stage storyboard for {dur:.2f}s: claim ledger is unavailable.")
@@ -265,9 +242,9 @@ class FixedNicheVideoRunner:
         )
         (self.project_dir / "artifacts" / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
+        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
             from lib.visual_style.diagram_director import AnimatedDiagramDirector
             director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
             diag_plan = director.plan_diagram_animation(
@@ -282,6 +259,177 @@ class FixedNicheVideoRunner:
             director.write_sidecar(diag_plan, self.project_dir)
 
         return len(beats)
+
+    def _resolve_tts_speed(self, provider: str, speed: float) -> float:
+        if not math.isclose(speed, 1.0, rel_tol=1e-5, abs_tol=1e-5):
+            return speed
+        speeds = {"kokoro": 1.36, "elevenlabs": 1.05, "edge": 1.10}
+        return speeds.get(provider, speed)
+
+    def _invoke_initial_synthesis(
+        self, text: str, out_audio: Path, provider: str, voice: str, speed: float
+    ) -> tuple[dict[str, Any], str, str, float]:
+        try:
+            res = self.orchestrator.synthesize(
+                text=text, output_path=out_audio, locale="en-US", provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
+            )
+            return res, provider, voice, speed
+        except Exception as exc:
+            if provider != "elevenlabs":
+                raise
+            logger.warning(f"ElevenLabs synthesis failed ({exc}); falling back to local TTS engine.")
+            from tools.audio.kokoro_local_tts import is_kokoro_available
+            f_prov = "kokoro" if is_kokoro_available() else "flite"
+            f_voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=f_prov)
+            f_speed = 1.36 if f_prov == "kokoro" else 1.0
+            res = self.orchestrator.synthesize(
+                text=text, output_path=out_audio, locale="en-US", provider=f_prov, voice=f_voice, settings={"speed": f_speed}, allow_fallback=True
+            )
+            return res, f_prov, f_voice, f_speed
+
+    def _calibrate_speed_and_tempo(
+        self, text: str, out_audio: Path, actual_prov: str, voice: str, speed: float, dur: float, policy_max: float
+    ) -> float:
+        if actual_prov in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
+            ratio = dur / 70.0
+            speed_min, speed_max = (0.8, 1.4) if actual_prov in ("elevenlabs", "edge") else (0.8, 1.8)
+            adj_speed = round(speed * ratio, 2)
+            if adj_speed != speed and speed_min <= adj_speed <= speed_max:
+                logger.info(f"Re-synthesizing narration with calibrated speed {adj_speed} (previous duration {dur:.2f}s)")
+                self.orchestrator.synthesize(
+                    text=text, output_path=out_audio, locale="en-US", provider=actual_prov, voice=voice, settings={"speed": adj_speed}, allow_fallback=True,
+                )
+                dur = probe_audio_duration(out_audio)
+        if policy_max < dur <= 95.0:
+            tempo = round(dur / 70.0, 3)
+            tmp_t = out_audio.with_suffix(".tempo.mp3")
+            res_t = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out_audio), "-filter:a", f"atempo={tempo}", "-vn", str(tmp_t)], capture_output=True)
+            if res_t.returncode == 0 and tmp_t.is_file():
+                os.replace(tmp_t, out_audio)
+                dur = probe_audio_duration(out_audio)
+                logger.info(f"Auto-calibrated narration tempo with ffmpeg atempo={tempo}: duration={dur:.2f}s")
+        return dur
+
+    def _validate_narration_durations(self, dur: float, actual_prov: str, policy_max: float, n_beats: int) -> None:
+        if dur > policy_max:
+            raise ValueError(
+                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s). Truncating narration mid-sentence is forbidden."
+            )
+        if actual_prov in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
+            raise ValueError(
+                f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
+            )
+        if n_beats > 0 and dur > n_beats * 12.0:
+            logger.info(f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; re-staging storyboard with target_duration={dur:.2f}s.")
+            self._restage_for_duration(dur)
+
+    def _reconcile_artifacts(self, dur: float, target_dur: float, out_audio: Path) -> None:
+        plan_f = self.project_dir / "artifacts" / "news_visual_plan.json"
+        if not (plan_f.is_file() and dur > 0):
+            return
+        try:
+            plan_json = json.loads(plan_f.read_text(encoding="utf-8"))
+            beats = plan_json.get("beats", [])
+            if not beats:
+                return
+            p_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
+            if p_total <= 0:
+                return
+            align_dur = dur if 65.0 <= dur <= 75.0 else target_dur
+            scale = align_dur / p_total
+            curr_start = 0.0
+            for b in beats:
+                beat_dur = (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale
+                b["start_s"], curr_start = round(curr_start, 3), curr_start + beat_dur
+                b["end_s"] = round(curr_start, 3)
+            beats[-1]["end_s"] = round(align_dur, 3)
+            self._write_reconciled_artifacts(beats, align_dur, out_audio, plan_json, plan_f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
+
+    def _write_artifact_file(self, filename: str | Path, content: str | bytes) -> None:
+        safe_name = os.path.basename(str(filename))
+        artifacts_dir = (self.project_dir / "artifacts").resolve()
+        target_path = (artifacts_dir / safe_name).resolve()
+        if not target_path.is_relative_to(artifacts_dir):
+            raise ValueError(f"Path traversal detected: {filename}")
+        mode, kw = ("wb", {}) if isinstance(content, bytes) else ("w", {"encoding": "utf-8"})
+        with open(target_path, mode, **kw) as f:
+            f.write(content)
+
+    def _update_script_file(
+        self, script_file: Path, beat_map: dict[str, dict], align_dur: float, assets_file: Path, ev_file: Path
+    ) -> None:
+        if not script_file.is_file():
+            return
+        s_json = json.loads(script_file.read_text(encoding="utf-8"))
+        s_json["target_duration_seconds"] = round(align_dur, 3)
+        for sec in s_json.get("sections", []):
+            bid = sec.get("beat_id")
+            if bid in beat_map:
+                sec["start_s"], sec["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+            sec["id"] = sec.get("id") or sec.get("section_id")
+            sec["text"] = sec.get("text") or sec.get("narration")
+        s_bytes = json.dumps(s_json, indent=2).encode("utf-8")
+        self._write_artifact_file(script_file, s_bytes)
+        s_sha = hashlib.sha256(s_bytes).hexdigest()
+        for f_path in (assets_file, ev_file):
+            if f_path.is_file():
+                data = json.loads(f_path.read_text(encoding="utf-8"))
+                data["script_sha256"] = s_sha
+                self._write_artifact_file(f_path, json.dumps(data, indent=2))
+
+    def _update_proof_map(self, proof_map_file: Path, beat_map: dict[str, dict]) -> None:
+        if not proof_map_file.is_file():
+            return
+        p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
+        for pb in p_json.get("beats", []):
+            bid = pb.get("beat_id")
+            if bid in beat_map:
+                pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+        self._write_artifact_file(proof_map_file, json.dumps(p_json, indent=2))
+
+    def _write_reconciled_artifacts(
+        self, beats: list[dict], align_dur: float, out_audio: Path, plan_json: dict, plan_f: Path
+    ) -> None:
+        from lib.fixed_niche.captions import build_and_align_captions
+        c_w = 1080 if self.format_kind in ("short", "shorts") else 1920
+        c_h = 1920 if self.format_kind in ("short", "shorts") else 1080
+        srt_content, ass_content, _ = build_and_align_captions(beats=beats, audio_path=out_audio, width=c_w, height=c_h)
+        self._write_artifact_file("captions.srt", srt_content)
+        self._write_artifact_file("captions.ass", ass_content)
+
+        beat_map = {b["beat_id"]: b for b in beats}
+        script_file = self.project_dir / "artifacts" / SCRIPT_EN_US_JSON
+        assets_file = self.project_dir / "artifacts" / NEWS_VISUAL_ASSETS_JSON
+        ev_file = self.project_dir / "artifacts" / "news_evidence.json"
+        proof_map_file = self.project_dir / "artifacts" / "video_proof_map.json"
+
+        self._update_script_file(script_file, beat_map, align_dur, assets_file, ev_file)
+        self._update_proof_map(proof_map_file, beat_map)
+
+        self._write_artifact_file(plan_f, json.dumps(plan_json, indent=2))
+        self._rematerialize_after_reconciliation(align_dur, plan_json, script_file)
+
+    def _rematerialize_after_reconciliation(self, align_dur: float, plan_json: dict, script_file: Path) -> None:
+        from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
+        topic_comp = self._staged_topic or {"candidate_id": self.candidate_id}
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
+        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
+            from lib.visual_style.diagram_director import AnimatedDiagramDirector
+            cl_file = self.project_dir / "artifacts" / CLAIM_LEDGER_JSON
+            claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
+            director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
+            diag_plan = director.plan_diagram_animation(
+                project_id=self.candidate_id, topic=topic_comp, claims=claims, target_duration=align_dur,
+                script_sha256=hashlib.sha256(script_file.read_bytes()).hexdigest(),
+                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claims).encode("utf-8")).hexdigest(),
+                source_visual_plan_sha256=hashlib.sha256(json.dumps(plan_json).encode("utf-8")).hexdigest(),
+            )
+            director.write_sidecar(diag_plan, self.project_dir)
+
+        materialize_hyperframes_project(project_dir=self.project_dir, topic=topic_comp, visual_plan=plan_json, duration=align_dur)
 
     def synthesize_narration(
         self,
@@ -298,27 +446,26 @@ class FixedNicheVideoRunner:
         out_audio = self.project_dir / "assets" / "narration.mp3"
         out_audio.parent.mkdir(parents=True, exist_ok=True)
 
-        if provider is None:
-            from tools.audio.kokoro_local_tts import is_kokoro_available
-            provider = "kokoro" if is_kokoro_available() else "flite"
+        prov = provider or os.environ.get("TTS_PROVIDER_EN", "edge")
+        spd = self._resolve_tts_speed(prov, speed)
+        vc = voice or self.orchestrator.resolve_default_voice(locale="en-US", provider=prov)
 
-        if voice is None:
-            voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
-
-        res = self.orchestrator.synthesize(
-            text=text,
-            output_path=out_audio,
-            locale="en-US",
-            provider=provider,
-            voice=voice,
-            settings={"speed": speed},
-            allow_fallback=True,
-        )
+        res, actual_prov, vc, spd = self._invoke_initial_synthesis(text, out_audio, prov, vc, spd)
         if not res.get("success") or not out_audio.is_file():
             raise RuntimeError(f"Narration synthesis failed: {res.get('error', 'Unknown error')}")
 
         dur = probe_audio_duration(out_audio)
+        if res.get("provider") and res.get("provider") != actual_prov:
+            actual_prov = res.get("provider")
+            vc = self.orchestrator.resolve_default_voice(locale="en-US", provider=actual_prov)
+            spd = 1.0
+
+        dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
+        policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
+
+        dur = self._calibrate_speed_and_tempo(text, out_audio, actual_prov, vc, spd, dur, policy_max)
         logger.info(f"Synthesized voice track: duration={dur:.2f}s")
+
         target_dur = self.get_target_duration()
         n_beats = 0
         plan_p = self.project_dir / "artifacts" / "news_visual_plan.json"
@@ -327,157 +474,43 @@ class FixedNicheVideoRunner:
                 n_beats = len(json.loads(plan_p.read_text(encoding="utf-8")).get("beats", []))
             except Exception:
                 pass
-        dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
-        policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
-        if dur > policy_max:
-            raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s). "
-                "Truncating narration mid-sentence is forbidden."
-            )
 
-        # In production synthesis with neural voice, reject narration outside 65-75s contract
-        if provider == "kokoro" and not (65.0 <= dur <= 75.0):
-            raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. "
-                "Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
-            )
-
-        if n_beats > 0 and dur > n_beats * 12.0:
-            if dur <= policy_max:
-                logger.info(
-                    f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; "
-                    f"re-staging storyboard with target_duration={dur:.2f}s."
-                )
-                n_beats = self._restage_for_duration(dur)
-            else:
-                raise ValueError(
-                    f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s)."
-                )
-
-        # Re-align all timed artifacts with synthesized audio duration
-        visual_plan_file = self.project_dir / "artifacts" / "news_visual_plan.json"
-        script_file = self.project_dir / "artifacts" / "script_en_US.json"
-        proof_map_file = self.project_dir / "artifacts" / "video_proof_map.json"
-        srt_file = self.project_dir / "artifacts" / "captions.srt"
-        assets_file = self.project_dir / "artifacts" / "news_visual_assets.json"
-
-        if visual_plan_file.is_file() and dur > 0:
-            try:
-                plan_json = json.loads(visual_plan_file.read_text(encoding="utf-8"))
-                beats = plan_json.get("beats", [])
-                if beats:
-                    planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
-                    if planned_total > 0:
-                        align_dur = dur if 65.0 <= dur <= 75.0 else target_dur
-                        scale = align_dur / planned_total
-                        curr_start = 0.0
-                        for b in beats:
-                            beat_dur = (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale
-                            b["start_s"] = round(curr_start, 3)
-                            curr_start += beat_dur
-                            b["end_s"] = round(curr_start, 3)
-                        beats[-1]["end_s"] = round(align_dur, 3)
-
-                        # Prepare all reconciled payload dictionaries before writing
-                        from lib.fixed_niche.captions import build_and_align_captions
-                        c_width = 1080 if self.format_kind in ("short", "shorts") else 1920
-                        c_height = 1920 if self.format_kind in ("short", "shorts") else 1080
-                        srt_content, ass_content, _ = build_and_align_captions(
-                            beats=beats,
-                            audio_path=out_audio,
-                            width=c_width,
-                            height=c_height,
-                        )
-                        ass_file = self.project_dir / "artifacts" / "captions.ass"
-                        beat_map = {b["beat_id"]: b for b in beats}
-
-                        script_bytes_to_write = None
-                        assets_json_to_write = None
-                        if script_file.is_file():
-                            script_json = json.loads(script_file.read_text(encoding="utf-8"))
-                            script_json["target_duration_seconds"] = round(align_dur, 3)
-                            for sec in script_json.get("sections", []):
-                                bid = sec.get("beat_id")
-                                if bid in beat_map:
-                                    sec["start_s"] = beat_map[bid]["start_s"]
-                                    sec["end_s"] = beat_map[bid]["end_s"]
-                            script_bytes_to_write = json.dumps(script_json, indent=2).encode("utf-8")
-                            if assets_file.is_file():
-                                assets_json = json.loads(assets_file.read_text(encoding="utf-8"))
-                                assets_json["script_sha256"] = hashlib.sha256(script_bytes_to_write).hexdigest()
-                                assets_json_to_write = json.dumps(assets_json, indent=2)
-
-                        proof_json_to_write = None
-                        if proof_map_file.is_file():
-                            proof_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
-                            for pb in proof_json.get("beats", []):
-                                bid = pb.get("beat_id")
-                                if bid in beat_map:
-                                    pb["start_s"] = beat_map[bid]["start_s"]
-                                    pb["end_s"] = beat_map[bid]["end_s"]
-                            proof_json_to_write = json.dumps(proof_json, indent=2)
-
-                        # Write all verified artifact updates
-                        visual_plan_file.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
-                        srt_file.write_text(srt_content, encoding="utf-8")
-                        ass_file.write_text(ass_content, encoding="utf-8")
-                        if script_bytes_to_write is not None:
-                            script_file.write_bytes(script_bytes_to_write)
-                        if assets_json_to_write is not None:
-                            assets_file.write_text(assets_json_to_write, encoding="utf-8")
-                        if proof_json_to_write is not None:
-                            proof_map_file.write_text(proof_json_to_write, encoding="utf-8")
-
-                        # Re-materialize HyperFrames compositions with the reconciled audio duration
-                        from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
-                        topic_for_comp = self._staged_topic or {"candidate_id": self.candidate_id}
-                        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
-                        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1") not in ("0", "false", "False")
-                        if visual_style == "animated_agent_diagram_v1" or flag_enabled:
-                            from lib.visual_style.diagram_director import AnimatedDiagramDirector
-                            cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
-                            claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
-                            director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
-                            diag_plan = director.plan_diagram_animation(
-                                project_id=self.candidate_id,
-                                topic=topic_for_comp,
-                                claims=claims,
-                                target_duration=align_dur,
-                                script_sha256=hashlib.sha256(script_file.read_bytes()).hexdigest(),
-                                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claims).encode("utf-8")).hexdigest(),
-                                source_visual_plan_sha256=hashlib.sha256(json.dumps(plan_json).encode("utf-8")).hexdigest(),
-                            )
-                            director.write_sidecar(diag_plan, self.project_dir)
-
-                        materialize_hyperframes_project(
-                            project_dir=self.project_dir,
-                            topic=topic_for_comp,
-                            visual_plan=plan_json,
-                            duration=align_dur,
-                        )
-            except Exception as e:
-                raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
-
+        self._validate_narration_durations(dur, actual_prov, policy_max, n_beats)
+        self._reconcile_artifacts(dur, target_dur, out_audio)
         return out_audio
 
-    def _sample_and_validate_frames(self, output_mp4: Path, render_dur: float, frames_dir: Path) -> bool:
+    def _extract_frame_with_fallback(self, output_mp4: Path, sec: float, fpath: Path) -> bool:
+        attempts = [
+            ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)],
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(output_mp4), "-ss", str(sec), "-vframes", "1", str(fpath)],
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(output_mp4), "-ss", str(max(0.0, sec - 2.0)), "-vframes", "1", str(fpath)],
+        ]
+        for cmd in attempts:
+            if subprocess.run(cmd, capture_output=True).returncode == 0 and fpath.is_file() and fpath.stat().st_size > 0:
+                return True
+        return False
+
+    def _sample_and_validate_frames(
+        self, output_mp4: Path, render_dur: float, frames_dir: Path, probe_dur: Optional[float] = None
+    ) -> bool:
         """Sample key frames and validate visual quality/variance."""
         frames_dir.mkdir(parents=True, exist_ok=True)
+        max_limit = max(0.0, (probe_dur - 1.0) if probe_dur is not None and probe_dur > 0 else (render_dur - 1.0))
         sample_points = [
-            (0, "frame_00s_hook.png"),
-            (3, "frame_03s_impact.png"),
-            (int(render_dur / 2), "frame_mid_mechanism.png"),
-            (int(render_dur - 2), "frame_end_payoff.png"),
+            (min(0.0, max_limit), "frame_00s_hook.png"),
+            (min(3.0, max_limit), "frame_03s_impact.png"),
+            (min(float(int(render_dur / 2)), max_limit), "frame_mid_mechanism.png"),
+            (min(float(max(0, int(render_dur - 3))), max_limit), "frame_end_payoff.png"),
         ]
+        min_var = 1.0 if os.environ.get("CI") == "true" else 10.0
         for sec, fname in sample_points:
             fpath = frames_dir / fname
-            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
-            if subprocess.run(cmd, capture_output=True).returncode != 0:
+            if not self._extract_frame_with_fallback(output_mp4, sec, fpath):
+                logger.warning("Frame extraction failed for %s at %.2fs", fname, sec)
                 return False
-            if not fpath.is_file():
-                return False
-            ok, _ = self.storyboard_director.validate_frame_sample(fpath)
+            ok, reason = self.storyboard_director.validate_frame_sample(fpath, min_variance=min_var)
             if not ok:
+                logger.warning("Frame sample validation failed for %s: %s", fname, reason)
                 return False
         return True
 
@@ -534,11 +567,8 @@ class FixedNicheVideoRunner:
             if not topic_data and tb_file.is_file():
                 topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
             ThumbnailOrchestrator.generate_thumbnail(
-                project_dir=self.project_dir,
-                title=topic_data.get("title") or self.candidate_id,
-                topic=topic_data.get("summary", ""),
-                format_type="short",
-                allow_fallback=True,
+                project_dir=self.project_dir, title=topic_data.get("title") or self.candidate_id,
+                topic=topic_data.get("summary", ""), format_type="short", allow_fallback=True,
             )
         except Exception as e:
             logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
@@ -562,14 +592,14 @@ class FixedNicheVideoRunner:
         probe_json = json.loads(probe_out.stdout) if probe_out.returncode == 0 else {}
         (self.project_dir / "renders" / "ffprobe.json").write_text(json.dumps(probe_json, indent=2), encoding="utf-8")
 
-        frames_dir = self.project_dir / "renders" / "frame_samples"
-        frames_valid = self._sample_and_validate_frames(output_mp4, render_dur, frames_dir)
-
         video_ok = output_mp4.is_file() and output_mp4.stat().st_size > 0 and probe_out.returncode == 0
         probe_dur_str = probe_json.get("format", {}).get("duration")
         probe_dur = float(probe_dur_str) if probe_dur_str else 0.0
 
-        claim_ledger_path = self.project_dir / "artifacts" / "claim_ledger.json"
+        frames_dir = self.project_dir / "renders" / "frame_samples"
+        frames_valid = self._sample_and_validate_frames(output_mp4, render_dur, frames_dir, probe_dur=probe_dur)
+
+        claim_ledger_path = self.project_dir / "artifacts" / CLAIM_LEDGER_JSON
         ledger_valid = claim_ledger_path.is_file() and claim_ledger_path.stat().st_size > 0
         ledger_sha = FixedNicheResearcher.compute_file_sha(claim_ledger_path) if ledger_valid else None
         audio_path = self.project_dir / "assets" / "narration.mp3"
@@ -583,10 +613,20 @@ class FixedNicheVideoRunner:
             expected_duration=target_dur,
         )
 
+        strict_quality_pass = bool(qa_report.get("strict_quality_pass"))
         qa_pass = bool(
             video_ok and probe_dur > 0 and frames_valid and ledger_valid
-            and audio_sha is not None and video_sha is not None and qa_report.get("strict_quality_pass")
+            and audio_sha is not None and video_sha is not None and strict_quality_pass
         )
+        qa_blockers = [f.get("message") for f in qa_report.get("findings", []) if f.get("severity") == "blocker"]
+        if not qa_pass:
+            logger.warning(
+                "Strict QA gate failed for %s: video_ok=%s, probe_dur=%s, frames_valid=%s, "
+                "ledger_valid=%s, audio_sha is not None=%s, video_sha is not None=%s, "
+                "strict_quality_pass=%s, qa_blockers=%s",
+                self.candidate_id, video_ok, probe_dur, frames_valid, ledger_valid,
+                audio_sha is not None, video_sha is not None, strict_quality_pass, qa_blockers,
+            )
         actual_dur = probe_dur if probe_dur > 0 else render_dur
         val_status_code = self._record_approval_and_status(
             qa_pass, output_mp4, actual_dur, target_dur, video_sha, audio_sha, ledger_sha
@@ -598,37 +638,30 @@ class FixedNicheVideoRunner:
             "status": val_status_code, "rendered_mp4": str(output_mp4), "duration": actual_dur,
             "target_duration": target_dur, "frames_dir": str(frames_dir),
             "approval_path": str(self.project_dir / "approval.json"),
+            "qa_blockers": qa_blockers,
         }
 
 
 def _configure_cli_environment(args: argparse.Namespace) -> None:
     """Set global environment variables based on CLI flags."""
     os.environ["AI_VISUAL_ENABLED"] = "1" if args.enable_ai_visuals else "0"
-    if args.enable_diagram_animation:
+    os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
+    if args.visual_style == "animated_agent_diagram_v1" and args.enable_diagram_animation:
         os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
-        os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
     else:
         os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
-        os.environ["OPENMONTAGE_VISUAL_STYLE"] = "legacy"
 
 
 def _validate_safe_path(path: Path | str) -> Path:
     """Validate path against traversal attacks (CWE-22 / CWE-73)."""
     import tempfile
     p = Path(path).expanduser().resolve()
-    repo_root = ROOT.resolve()
-    home_dir = Path.home().resolve()
-    cwd_dir = Path.cwd().resolve()
-    tmp_dir = Path(tempfile.gettempdir()).resolve()
-    is_in_repo = p.is_relative_to(repo_root)
-    is_in_home = p.is_relative_to(home_dir)
-    is_in_cwd = cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)
-    is_in_tmp = p.is_relative_to(tmp_dir)
-    if not (is_in_repo or is_in_home or is_in_cwd or is_in_tmp):
+    allowed = (ROOT.resolve(), Path.home().resolve(), Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
+    if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
         raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
     if not p.is_file():
         raise FileNotFoundError(f"Candidate file does not exist: {path}")
-    if is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
+    if p.is_relative_to(Path(tempfile.gettempdir()).resolve()) and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
         raise PermissionError(f"Candidate file in temp directory must be owned by current user: {path}")
     return p
 
@@ -640,9 +673,7 @@ def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
         raw_data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
         if isinstance(raw_data, dict):
             return raw_data.get("positive_cases", [])
-        if isinstance(raw_data, list):
-            return raw_data
-        return []
+        return raw_data if isinstance(raw_data, list) else []
     except Exception as e:
         logger.warning("Failed to load candidates from %s: %s", file_path, e)
         return []
@@ -651,84 +682,60 @@ def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
 def _load_cli_candidates_pool(args: argparse.Namespace) -> List[Dict[str, Any]]:
     """Load candidates from specified file, test fixtures, or production source adapter."""
     if args.candidates_file:
-        cand_path = _validate_safe_path(args.candidates_file)
-        candidates = _load_yaml_candidates(cand_path)
+        candidates = _load_yaml_candidates(_validate_safe_path(args.candidates_file))
         if not candidates:
-            raise ValueError(
-                f"No candidates could be loaded from specified --candidates-file: {args.candidates_file}"
-            )
+            raise ValueError(f"No candidates could be loaded from specified --candidates-file: {args.candidates_file}")
         return candidates
-
     if args.use_test_fixtures:
-        fixture_path = _validate_safe_path(ROOT / "tests/fixtures/fixed_niche_cases.yaml")
-        candidates = _load_yaml_candidates(fixture_path)
+        candidates = _load_yaml_candidates(_validate_safe_path(ROOT / "tests/fixtures/fixed_niche_cases.yaml"))
         if not candidates:
             raise ValueError("No candidates could be loaded from test fixtures")
         return candidates
-
-    adapter = FixedNicheSourceAdapter()
-    return adapter.discover_production_candidates()
+    return FixedNicheSourceAdapter().discover_production_candidates()
 
 
 def _apply_topic_overrides(topic: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
     """Apply explicit CLI argument overrides to topic metadata."""
-    result = dict(topic)
-    if args.title:
-        result["title"] = args.title
-    if args.topic_family:
-        result["topic_family"] = args.topic_family
-    if args.canonical_url:
-        result["canonical_url"] = args.canonical_url
-    return result
+    res = dict(topic)
+    res.update({k: getattr(args, k) for k in ("title", "topic_family", "canonical_url") if getattr(args, k, None)})
+    return res
 
 
 def _auto_select_topic(
-    candidates_pool: List[Dict[str, Any]],
-    gate: FixedNicheScopeGate,
-    args: argparse.Namespace,
+    candidates_pool: List[Dict[str, Any]], gate: FixedNicheScopeGate, args: argparse.Namespace
 ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Auto-select the highest ranked eligible candidate from pool."""
     eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
     if not eligible:
         return None, None
-
     from lib.fixed_niche.ranker import FixedNicheTopicScorer
     ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
     top_cand = ranked[0] if ranked else eligible[0]
-    selected_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
+    cid = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
     topic = _apply_topic_overrides(top_cand, args)
-    topic["candidate_id"] = selected_id
-    return selected_id, topic
+    topic["candidate_id"] = cid
+    return cid, topic
 
 
 def _resolve_cli_topic_and_candidate(
-    args: argparse.Namespace,
-    candidates_pool: List[Dict[str, Any]],
-    gate: FixedNicheScopeGate,
+    args: argparse.Namespace, candidates_pool: List[Dict[str, Any]], gate: FixedNicheScopeGate
 ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Resolve target candidate ID and topic dictionary according to auto-select/explicit args."""
-    candidate_id = args.candidate_id
-    if candidate_id:
-        matched = next(
-            (c for c in candidates_pool if c.get("candidate_id") == candidate_id or c.get("id") == candidate_id),
-            None,
-        )
+    cid = args.candidate_id
+    if cid:
+        matched = next((c for c in candidates_pool if c.get("candidate_id") == cid or c.get("id") == cid), None)
         if matched:
-            topic = _apply_topic_overrides(matched, args)
-            topic["candidate_id"] = candidate_id
-            return candidate_id, topic
-
-    if args.auto_select or not candidate_id:
+            t = _apply_topic_overrides(matched, args)
+            t["candidate_id"] = cid
+            return cid, t
+    if args.auto_select or not cid:
         return _auto_select_topic(candidates_pool, gate, args)
-
     fallback = _apply_topic_overrides({
-        "candidate_id": candidate_id,
-        "title": "Why coding agents lose project requirements between sessions",
-        "topic_family": "context_memory",
-        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "candidate_id": cid, "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory", "canonical_url": "https://docs.anthropic.com/claude/context-window",
     }, args)
-    fallback["candidate_id"] = candidate_id
-    return candidate_id, fallback
+    fallback["candidate_id"] = cid
+    return cid, fallback
 
 
 def _build_cli_parser() -> argparse.ArgumentParser:
@@ -740,16 +747,13 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Renderer")
     parser.add_argument("--project-dir", help="Custom project output directory")
     parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format")
-    parser.add_argument("--provider", default=None, help="TTS provider")
-    parser.add_argument("--voice", default=None, help="TTS voice override")
+    for flag in ("--title", "--topic-family", "--canonical-url", "--provider", "--voice"):
+        parser.add_argument(flag, default=None)
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
     parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
     parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video")
-    parser.add_argument("--title", default=None)
-    parser.add_argument("--topic-family", default=None)
-    parser.add_argument("--canonical-url", default=None)
     parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1"), choices=["animated_agent_diagram_v1", "legacy"])
+    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg"), choices=["progressive_svg", "animated_agent_diagram_v1", "legacy"])
     parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-age-days", type=int, default=7)

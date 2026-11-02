@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/templates/agent_engineering/agent-pipeline-flow",
+  "title": "Agent Pipeline Flow Content Schema",
+  "description": "Standardized schema for progressive AI Agent Engineering pipeline explainer videos with guaranteed 2.0s-4.0s diagram hold times and persistent CTA banners.",
+  "type": "object",
+  "required": [
+    "template",
+    "template_version",
+    "variant",
+    "title",
+    "topic_family",
+    "duration",
+    "scenes"
+  ],
+  "properties": {
+    "template": {
+      "type": "string",
+      "const": "agent-pipeline-flow"
+    },
+    "template_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "variant": {
+      "type": "string",
+      "enum": ["short", "full"],
+      "description": "short = 9:16 vertical (Shorts/Reels/TikTok); full = 16:9 horizontal YouTube."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 5,
+      "description": "Viewer-facing title of the architectural breakdown."
+    },
+    "topic_family": {
+      "type": "string",
+      "enum": [
+        "agent_tool_use",
+        "context_memory",
+        "debugging_reliability",
+        "agent_evaluation",
+        "agent_architecture"
+      ],
+      "description": "AI Agent Engineering topic family classification."
+    },
+    "hook_alert": {
+      "type": "string",
+      "description": "Top-row urgency alert badge text (e.g., '⚡ CRITICAL FAILURE // RECURRING BREAKDOWN')."
+    },
+    "duration": {
+      "type": "number",
+      "minimum": 15.0,
+      "description": "Total video duration in seconds."
+    },
+    "narration_audio": {
+      "type": "string",
+      "description": "Relative path to speech narration audio asset."
+    },
+    "bgm_audio": {
+      "type": "string",
+      "description": "Relative path to background music asset."
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "required": ["id", "start_s", "end_s", "title", "steps"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "start_s": {
+            "type": "number",
+            "minimum": 0.0
+          },
+          "end_s": {
+            "type": "number",
+            "minimum": 0.5
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "accent_color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "required": ["label", "description"],
+              "properties": {
+                "step_number": { "type": "integer", "minimum": 1 },
+                "label": { "type": "string" },
+                "description": { "type": "string" },
+                "icon": {
+                  "type": "string",
+                  "enum": ["agent", "breaker", "server", "database", "shield"]
+                },
+                "status_badge": { "type": "string" },
+                "circuit_switch": {
+                  "type": "object",
+                  "properties": {
+                    "is_open": { "type": "boolean" },
+                    "label": { "type": "string" }
+                  }
+                },
+                "metric_gauge": {
+                  "type": "object",
+                  "properties": {
+                    "label": { "type": "string" },
+                    "value": { "type": "string" },
+                    "percentage": { "type": "number", "minimum": 0, "maximum": 100 },
+                    "color": { "type": "string" }
+                  }
+                },
+                "state_machine": {
+                  "type": "object",
+                  "properties": {
+                    "active_state": { "type": "string", "enum": ["CLOSED", "OPEN", "HALF-OPEN"] }
+                  }
+                }
+              }
+            }
+          },
+          "arrows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from_step": { "type": "integer" },
+                "to_step": { "type": "integer" },
+                "label": { "type": "string" },
+                "color": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cta": {
+      "type": "object",
+      "required": ["heading", "button_text"],
+      "properties": {
+        "kicker": { "type": "string" },
+        "heading": { "type": "string" },
+        "button_text": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "min_hold_seconds": { "type": "number", "minimum": 3.0, "default": 5.0 }
+      }
+    }
+  }
+}

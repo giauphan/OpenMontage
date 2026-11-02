@@ -166,6 +166,9 @@ def test_publish_config_respects_openmontage_env_vars(tmp_path: Path, monkeypatc
         "youtube": {"account": "custom_yt"},
     }), encoding="utf-8")
 
+    monkeypatch.delenv("FB_PAGE_ID", raising=False)
+    monkeypatch.delenv("YOUTUBE_ACCOUNT", raising=False)
+    monkeypatch.delenv("PUBLISH_TZ", raising=False)
     monkeypatch.setenv("OPENMONTAGE_CONFIG", str(custom_cfg))
     # Re-evaluate CONFIG_PATH with env set
     cfg_path = Path(os.environ.get("OPENMONTAGE_CONFIG") or publish_config.ROOT / "config" / "publish_schedule.json")

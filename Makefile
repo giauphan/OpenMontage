@@ -6,7 +6,7 @@ PIP = $(RUN_PYTHON) -m pip
 
 .DEFAULT_GOAL := setup
 
-.PHONY: setup install install-dev install-gpu test test-contracts test-gates lint lint-shell clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
+.PHONY: setup install install-dev install-gpu test test-contracts test-cron test-gates lint lint-shell clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
 
 # ---- Virtual environment ----
 
@@ -90,18 +90,16 @@ install-gpu: ensure-venv
 # ---- Testing ----
 
 test: ensure-venv
-	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/ -v \
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline OPENMONTAGE_RENDERER=ffmpeg GENERATION_RETRY_DELAY_SECONDS=0 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS=0 $(RUN_PYTHON) -m pytest tests/ -v \
 		--ignore=tests/contracts/ \
-		--ignore=tests/qa/ \
-		--ignore=tests/test_pr06_pr07_remediation.py \
 		--ignore=tests/test_strict_cron_retry.py \
 		--ignore=tests/test_daily_cron_reliability_hardening.py
 
 test-contracts: ensure-venv
-	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/contracts/ tests/test_pr06_pr07_remediation.py -v
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline OPENMONTAGE_RENDERER=ffmpeg GENERATION_RETRY_DELAY_SECONDS=0 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS=0 $(RUN_PYTHON) -m pytest tests/contracts/ -v
 
 test-cron: ensure-venv
-	OTEL_SDK_DISABLED=true WANDB_MODE=offline $(RUN_PYTHON) -m pytest tests/test_strict_cron_retry.py tests/test_daily_cron_reliability_hardening.py -v
+	OTEL_SDK_DISABLED=true WANDB_MODE=offline OPENMONTAGE_RENDERER=ffmpeg GENERATION_RETRY_DELAY_SECONDS=0 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS=0 $(RUN_PYTHON) -m pytest tests/test_strict_cron_retry.py tests/test_daily_cron_reliability_hardening.py -v
 
 # ---- Utilities ----
 

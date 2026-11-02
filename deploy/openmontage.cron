@@ -8,7 +8,7 @@
 #
 # All commands use absolute paths and append logs so cron has same runtime as manual runs.
 # Instagram slots: Instagram lacks native scheduling, so cron triggers Instagram publishing
-# at specific Vietnam time slots. YouTube uses platform-native scheduling; Facebook is disabled.
+# at specific Vietnam time slots. YouTube and Facebook use platform-native scheduling.
 
 PATH=/app/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
 PATH_TO_OPENMONTAGE=/app
@@ -59,7 +59,7 @@ NEWS_VISUAL_MODE=1
 
 # Every 30 minutes — Clean project trash (quarantined recovery, errored/abandoned candidate dirs).
 # Fast (<0.1s), strictly protects in-flight generations and scheduled projects.
-10,40 * * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; PYTHONPATH=/app /usr/bin/flock -n /app/logs/trash_cleanup.lock /usr/bin/python3 -m scripts.cleanup_published_projects --clear-trash-only >> logs/cron_cleanup.log 2>&1
+10,40 * * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; PYTHONPATH=/app /usr/bin/flock -n /app/logs/trash_cleanup.lock /usr/bin/python3 scripts/cleanup_published_projects.py --clear-trash-only >> logs/cron_cleanup.log 2>&1
 
 # Hourly at :35 — Reconcile and clean verified published projects across YouTube/Meta.
 # Canonical verified-publication guards remain mandatory; no age-based deletion and no publishing. flock prevents overlap.
@@ -69,4 +69,4 @@ NEWS_VISUAL_MODE=1
 # - projects/ - New generated projects (daily pipeline)
 # - projects/instagram/ - Projects moved here after YouTube/FB scheduling (Instagram cron processing)
 # - Instagram cron jobs look in projects/instagram/ and delete projects after successful Instagram publish
-# - YouTube uses platform-native scheduling and doesn't need cron; Facebook is disabled.
+# - YouTube and Facebook use platform-native scheduling and don't need slot cron; Instagram publishes on slot cron.

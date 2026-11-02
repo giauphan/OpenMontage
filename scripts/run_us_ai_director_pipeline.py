@@ -38,6 +38,11 @@ from lib.qa_signing import sign_approval_record, verify_approval_record
 from scripts.independent_editorial_qa import APPROVED_DOMAINS, audit_project, grant_supervisor_approval
 
 
+SOURCE_SNAPSHOT_FILENAME = "source_snapshot.txt"
+CLAIM_LEDGER_FILENAME = "claim_ledger.json"
+SCRIPT_EN_US_FILENAME = "script_en_US.json"
+
+
 class StageExecutionError(RuntimeError):
     """Raised when a pipeline stage fails."""
 
@@ -49,9 +54,88 @@ def log_stage(stage_num: int, name: str, status: str, details: str = "") -> dict
     return {"stage": stage_num, "name": name, "status": status, "timestamp": ts, "details": details}
 
 
-def stage_1_research_and_sources(project_dir: Path) -> dict:
-    """Stage 1: Research & source snapshot validation."""
-    ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+def _verify_source_hostname(cid: str, source: dict) -> None:
+    url = source.get("canonical_url", "")
+    parsed = urlsplit(url)
+    hostname = (parsed.hostname or "").lower()
+    if not hostname or not any(hostname == d or hostname.endswith("." + d) for d in APPROVED_DOMAINS):
+        raise StageExecutionError(
+            f"Stage 1 failed: claim {cid} source URL hostname '{hostname}' not in approved literature domains"
+        )
+
+
+def _resolve_snapshot_path(project_dir: Path, snapshot_dir: Path, snap_file: Optional[str]) -> Path:
+    if not snap_file:
+        return project_dir / "artifacts" / SOURCE_SNAPSHOT_FILENAME
+    snap_path = Path(snap_file)
+    target = snap_path if snap_path.is_absolute() else (project_dir / snap_path)
+    if not target.is_file():
+        target = project_dir / "artifacts" / snap_path.name
+    if not target.is_file():
+        target = snapshot_dir / snap_path.name
+    return target
+
+
+def _verify_fact_check(cid: str, fact_check: dict, snap_text: str, snap_name: str) -> None:
+    v_status = fact_check.get("verification_status")
+    if v_status != "INDEPENDENT_FACT_CHECK_VERIFIED":
+        raise StageExecutionError(
+            f"Stage 1 failed: claim {cid} fact check status is '{v_status}', expected 'INDEPENDENT_FACT_CHECK_VERIFIED'"
+        )
+    verified_by = fact_check.get("verified_by")
+    if not verified_by or len(str(verified_by).strip()) < 5:
+        raise StageExecutionError(f"Stage 1 failed: claim {cid} independent fact check missing verified_by entity")
+    grounding = fact_check.get("grounding_sentence", "").strip()
+    if not grounding:
+        raise StageExecutionError(f"Stage 1 failed: claim {cid} independent fact check missing grounding_sentence")
+    if grounding not in snap_text:
+        raise StageExecutionError(
+            f"Stage 1 failed: claim {cid} grounding_sentence is not verbatim in snapshot {snap_name}"
+        )
+
+
+def _verify_provenance_record(snap_name: str, actual_sha: str, prov_data: dict) -> None:
+    described_snap = prov_data.get("snapshot_file", SOURCE_SNAPSHOT_FILENAME)
+    if snap_name != described_snap:
+        raise StageExecutionError(
+            f"Stage 1 failed: snapshot provenance describes '{described_snap}', not '{snap_name}'"
+        )
+    recorded_prov_sha = prov_data.get("content_sha256")
+    if recorded_prov_sha != actual_sha:
+        raise StageExecutionError(
+            f"Stage 1 failed: snapshot provenance sha mismatch ({str(recorded_prov_sha)[:16]} != {actual_sha[:16]})"
+        )
+    if not prov_data.get("is_authentic_primary"):
+        raise StageExecutionError("Stage 1 failed: snapshot provenance indicates unauthentic source")
+
+
+def _verify_snapshot_content_and_facts(
+    cid: str, claim: dict, source: dict, target_snap: Path, prov_data: Optional[dict]
+) -> None:
+    if not target_snap.is_file():
+        raise StageExecutionError(f"Stage 1 failed: claim {cid} snapshot file missing on disk: {target_snap}")
+    actual_sha = hashlib.sha256(target_snap.read_bytes()).hexdigest()
+    expected_sha = source.get("snapshot_sha256") or claim.get("snapshot_sha256")
+    if expected_sha and actual_sha != expected_sha:
+        raise StageExecutionError(
+            f"Stage 1 failed: claim {cid} snapshot SHA mismatch ({actual_sha[:16]} != {expected_sha[:16]})"
+        )
+    excerpt = claim.get("evidence_excerpt", "").strip()
+    snap_text = target_snap.read_text(encoding="utf-8")
+    if excerpt and excerpt not in snap_text:
+        raise StageExecutionError(
+            f"Stage 1 failed: claim {cid} evidence excerpt is not verbatim in snapshot {target_snap.name}"
+        )
+    fact_check = source.get("independent_fact_check") or claim.get("independent_fact_check")
+    if fact_check:
+        _verify_fact_check(cid, fact_check, snap_text, target_snap.name)
+    if prov_data is not None:
+        _verify_provenance_record(target_snap.name, actual_sha, prov_data)
+
+
+def _load_claim_ledger(project_dir: Path) -> tuple[list[dict], list[dict]]:
+    """Load and validate claim ledger, returning all claims and active claims."""
+    ledger_path = project_dir / "artifacts" / CLAIM_LEDGER_FILENAME
     if not ledger_path.is_file():
         raise StageExecutionError(f"Stage 1 failed: claim ledger missing ({ledger_path})")
 
@@ -64,112 +148,67 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
     if not claims:
         raise StageExecutionError("Stage 1 failed: no claims recorded in claim ledger")
 
-    snapshot_dir = project_dir / "artifacts" / "source_snapshots"
-    verified_sources = 0
+    active_claims = [c for c in claims if c.get("verdict") != "REJECTED"]
+    if not active_claims:
+        raise StageExecutionError("Stage 1 failed: all claims in ledger are REJECTED; at least one active claim required")
 
-    # Read snapshot provenance sidecar if present
+    return claims, active_claims
+
+
+def _load_snapshot_provenance(project_dir: Path) -> Optional[dict]:
+    """Load and validate snapshot provenance if present."""
     prov_file = project_dir / "artifacts" / "snapshot_provenance.json"
-    prov_data = None
-    if prov_file.is_file():
-        try:
-            prov_data = json.loads(prov_file.read_text(encoding="utf-8"))
-            if not isinstance(prov_data, dict):
-                raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json")
-        except (ValueError, OSError):
+    if not prov_file.is_file():
+        return None
+
+    try:
+        prov_data = json.loads(prov_file.read_text(encoding="utf-8"))
+        if not isinstance(prov_data, dict):
             raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json")
+        return prov_data
+    except (ValueError, OSError) as exc:
+        if isinstance(exc, StageExecutionError):
+            raise
+        raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json") from exc
+
+
+def _verify_all_claims(project_dir: Path, claims: list[dict], prov_data: Optional[dict]) -> int:
+    """Verify source hostnames and snapshots for all active claims."""
+    snapshot_dir = project_dir / "artifacts" / "source_snapshots"
+    default_snapshot = project_dir / "artifacts" / SOURCE_SNAPSHOT_FILENAME
+    verified_sources = 0
 
     for idx, claim in enumerate(claims):
         cid = claim.get("claim_id", f"claim_{idx}")
+        if claim.get("verdict") == "REJECTED":
+            continue
         source = claim.get("source", {})
-        url = source.get("canonical_url", "")
-        
-        # Verify URL hostname
-        parsed = urlsplit(url)
-        hostname = (parsed.hostname or "").lower()
-        if not hostname or not any(hostname == d or hostname.endswith("." + d) for d in APPROVED_DOMAINS):
-            raise StageExecutionError(
-                f"Stage 1 failed: claim {cid} source URL hostname '{hostname}' not in approved literature domains"
-            )
+        _verify_source_hostname(cid, source)
 
-        # Verify source snapshot file and SHA256 if declared
         snap_file = source.get("snapshot_file") or claim.get("snapshot_file") or claim.get("source_snapshot_path")
-        if snap_file or (project_dir / "artifacts" / "source_snapshot.txt").is_file():
-            if snap_file:
-                snap_path = Path(snap_file)
-                target_snap = snap_path if snap_path.is_absolute() else (project_dir / snap_path)
-                if not target_snap.is_file():
-                    target_snap = project_dir / "artifacts" / snap_path.name
-                if not target_snap.is_file():
-                    target_snap = snapshot_dir / snap_path.name
-            else:
-                target_snap = project_dir / "artifacts" / "source_snapshot.txt"
-
-            if not target_snap.is_file():
-                raise StageExecutionError(f"Stage 1 failed: claim {cid} snapshot file {snap_file} missing on disk")
-            actual_sha = hashlib.sha256(target_snap.read_bytes()).hexdigest()
-            expected_sha = source.get("snapshot_sha256") or claim.get("snapshot_sha256")
-            if expected_sha and actual_sha != expected_sha:
-                raise StageExecutionError(
-                    f"Stage 1 failed: claim {cid} snapshot SHA mismatch ({actual_sha[:16]} != {expected_sha[:16]})"
-                )
-            
-            # Verify verbatim evidence excerpt in snapshot
-            excerpt = claim.get("evidence_excerpt", "").strip()
-            snap_text = target_snap.read_text(encoding="utf-8")
-            if excerpt and excerpt not in snap_text:
-                raise StageExecutionError(
-                    f"Stage 1 failed: claim {cid} evidence excerpt is not verbatim in snapshot {target_snap.name}"
-                )
-
-            # Verify independent fact check metadata and attestation
-            fact_check = source.get("independent_fact_check") or claim.get("independent_fact_check")
-            if fact_check:
-                v_status = fact_check.get("verification_status")
-                if v_status != "INDEPENDENT_FACT_CHECK_VERIFIED":
-                    raise StageExecutionError(
-                        f"Stage 1 failed: claim {cid} fact check status is '{v_status}', expected 'INDEPENDENT_FACT_CHECK_VERIFIED'"
-                    )
-                verified_by = fact_check.get("verified_by")
-                if not verified_by or len(str(verified_by).strip()) < 5:
-                    raise StageExecutionError(
-                        f"Stage 1 failed: claim {cid} independent fact check missing verified_by entity"
-                    )
-                grounding_sentence = fact_check.get("grounding_sentence", "").strip()
-                if not grounding_sentence:
-                    raise StageExecutionError(
-                        f"Stage 1 failed: claim {cid} independent fact check missing grounding_sentence"
-                    )
-                if grounding_sentence not in snap_text:
-                    raise StageExecutionError(
-                        f"Stage 1 failed: claim {cid} grounding_sentence is not verbatim in snapshot {target_snap.name}"
-                    )
-
-            # Verify snapshot provenance record for matching snapshot
-            if prov_data is not None:
-                described_snap = prov_data.get("snapshot_file", "source_snapshot.txt")
-                if target_snap.name != described_snap:
-                    raise StageExecutionError(
-                        f"Stage 1 failed: snapshot provenance describes '{described_snap}', not '{target_snap.name}'"
-                    )
-                recorded_prov_sha = prov_data.get("content_sha256")
-                if recorded_prov_sha != actual_sha:
-                    raise StageExecutionError(
-                        f"Stage 1 failed: snapshot provenance sha mismatch ({str(recorded_prov_sha)[:16]} != {actual_sha[:16]})"
-                    )
-                if not prov_data.get("is_authentic_primary"):
-                    raise StageExecutionError("Stage 1 failed: snapshot provenance indicates unauthentic source")
+        if snap_file or default_snapshot.is_file():
+            target_snap = _resolve_snapshot_path(project_dir, snapshot_dir, snap_file)
+            _verify_snapshot_content_and_facts(cid, claim, source, target_snap, prov_data)
             verified_sources += 1
 
-    return {"verified_claims": len(claims), "verified_snapshots": verified_sources}
+    return verified_sources
+
+
+def stage_1_research_and_sources(project_dir: Path) -> dict:
+    """Stage 1: Research & source snapshot validation."""
+    claims, active_claims = _load_claim_ledger(project_dir)
+    prov_data = _load_snapshot_provenance(project_dir)
+    verified_sources = _verify_all_claims(project_dir, claims, prov_data)
+    return {"verified_claims": len(active_claims), "verified_snapshots": verified_sources}
 
 
 def stage_2_script_generation(project_dir: Path) -> dict:
     """Stage 2: AI Director script generation & en-US language validation."""
-    script_path = project_dir / "artifacts" / "script_en_US.json"
+    script_path = project_dir / "artifacts" / SCRIPT_EN_US_FILENAME
     if not script_path.is_file():
         # Dynamically synthesize script if missing from topic brief and claim ledger
         brief_file = project_dir / "artifacts" / "topic_brief.json"
-        claims_file = project_dir / "artifacts" / "claim_ledger.json"
+        claims_file = project_dir / "artifacts" / CLAIM_LEDGER_FILENAME
         if brief_file.is_file() and claims_file.is_file():
             try:
                 topic = json.loads(brief_file.read_text(encoding="utf-8"))
@@ -230,41 +269,65 @@ def stage_2_script_generation(project_dir: Path) -> dict:
     return {"scenes_count": len(scenes), "word_count": len(full_text.split())}
 
 
+def _verify_claim_numeric_grounding(cid: str, span: str, excerpt: str) -> None:
+    numbers = re.findall(r"\b\d+(?:,\d+)*(?:\.\d+)?%?", span)
+    for num in numbers:
+        if num not in excerpt and num.replace(",", "") not in excerpt:
+            raise StageExecutionError(
+                f"Stage 3 failed: claim {cid} number '{num}' in script span not substantiated by excerpt"
+            )
+
+
+def _verify_single_claim_editorial(claim: dict, full_script: str) -> None:
+    cid = claim.get("claim_id")
+    verdict = claim.get("verdict", "")
+    confidence = claim.get("confidence", "")
+
+    is_in_script = any(
+        span and (span in full_script or span.lower() in full_script.lower())
+        for span in claim.get("script_spans", [])
+    )
+    if not is_in_script and claim.get("statement"):
+        is_in_script = claim.get("statement", "").lower() in full_script.lower()
+
+    if verdict == "REJECTED":
+        if is_in_script:
+            raise StageExecutionError(f"Stage 3 failed: claim {cid} has unapproved verdict '{verdict}'")
+        return
+
+    # Require BOTH APPROVED verdict and verified confidence (fail-closed)
+    if verdict != "APPROVED":
+        raise StageExecutionError(f"Stage 3 failed: claim {cid} has unapproved verdict '{verdict}'")
+    if confidence != "verified":
+        raise StageExecutionError(f"Stage 3 failed: claim {cid} has unverified confidence '{confidence}'")
+
+    # Check that script spans are grounded in evidence excerpts
+    excerpt = claim.get("evidence_excerpt", "")
+    for span in claim.get("script_spans", []):
+        if span not in full_script and span.lower() not in full_script.lower():
+            raise StageExecutionError(f"Stage 3 failed: claim {cid} script span '{span}' not in script")
+        _verify_claim_numeric_grounding(cid, span, excerpt)
+
+
 def stage_3_editorial_grounding(project_dir: Path) -> dict:
     """Stage 3: Editorial review & quantitative claim grounding."""
-    ledger_path = project_dir / "artifacts" / "claim_ledger.json"
-    script_path = project_dir / "artifacts" / "script_en_US.json"
+    ledger_path = project_dir / "artifacts" / CLAIM_LEDGER_FILENAME
+    script_path = project_dir / "artifacts" / SCRIPT_EN_US_FILENAME
     
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     script = json.loads(script_path.read_text(encoding="utf-8"))
     scenes = script.get("scenes") or script.get("sections", [])
     full_script = " ".join(s.get("text", "") or s.get("narration", "") for s in scenes)
 
-    for claim in ledger.get("claims", []):
-        cid = claim.get("claim_id")
-        verdict = claim.get("verdict", "")
-        confidence = claim.get("confidence", "")
-        # Require BOTH APPROVED verdict and verified confidence (fail-closed)
-        if verdict != "APPROVED":
-            raise StageExecutionError(f"Stage 3 failed: claim {cid} has unapproved verdict '{verdict}'")
-        if confidence != "verified":
-            raise StageExecutionError(f"Stage 3 failed: claim {cid} has unverified confidence '{confidence}'")
+    claims = ledger.get("claims", [])
+    approved_claims = [c for c in claims if c.get("verdict") == "APPROVED"]
+    if not approved_claims:
+        raise StageExecutionError("Stage 3 failed: no approved claims in ledger")
 
-        # Check that script spans are grounded in evidence excerpts
-        excerpt = claim.get("evidence_excerpt", "")
-        for span in claim.get("script_spans", []):
-            if span not in full_script and span.lower() not in full_script.lower():
-                raise StageExecutionError(f"Stage 3 failed: claim {cid} script span '{span}' not in script")
+    for claim in claims:
+        _verify_single_claim_editorial(claim, full_script)
 
-            # Check quantitative grounding: any number in span must appear in evidence excerpt
-            numbers = re.findall(r"\b\d+(?:,\d+)*(?:\.\d+)?%?", span)
-            for num in numbers:
-                if num not in excerpt and num.replace(",", "") not in excerpt:
-                    raise StageExecutionError(
-                        f"Stage 3 failed: claim {cid} number '{num}' in script span not substantiated by excerpt"
-                    )
-
-    return {"approved_claims": len(ledger.get("claims", []))}
+    return {"approved_claims": len(approved_claims)}
 
 
 def stage_4_scene_graphics(project_dir: Path, format_type: str = "short") -> dict:
@@ -316,7 +379,7 @@ def stage_5_speech_synthesis(project_dir: Path, provider: str = "flite") -> dict
     """Stage 5: Speech synthesis & audio mixing verification."""
     narration_txt = project_dir / "artifacts" / "narration_en_US_text.txt"
     if not narration_txt.is_file():
-        script_path = project_dir / "artifacts" / "script_en_US.json"
+        script_path = project_dir / "artifacts" / SCRIPT_EN_US_FILENAME
         if script_path.is_file():
             s_data = json.loads(script_path.read_text(encoding="utf-8"))
             scenes = s_data.get("scenes") or s_data.get("sections") or []

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from tools.publishers.facebook_publisher import FacebookPublisher, DEFAULT_14_LANGUAGES
+from tools.publishers.facebook_publisher import FacebookPublisher, DEFAULT_14_LANGUAGES, DEFAULT_GATEWAY_PORT
 from tools.tool_registry import ToolRegistry
 
 
@@ -36,6 +36,17 @@ def test_gateway_url_resolution(monkeypatch):
 
     monkeypatch.setenv("FACEBOOK_GATEWAY_BASE_URL", "http://localhost:20129/custom/facebook")
     assert tool.get_gateway_base_url() == "http://localhost:20129/custom/facebook"
+
+
+def test_gateway_port_normalization_from_doc_example(monkeypatch):
+    """Doc README example specifies port 28130, but port 20129 is required on server deployment."""
+    tool = FacebookPublisher()
+    monkeypatch.setenv("FACEBOOK_GATEWAY_BASE_URL", "http://127.0.0.1:28130/custom/facebook")
+    assert tool.get_gateway_base_url() == "http://127.0.0.1:20129/custom/facebook"
+
+    # Input override normalization
+    res = tool.get_gateway_base_url({"gateway_url": "http://10.0.0.5:28130/custom/facebook"})
+    assert res == "http://10.0.0.5:20129/custom/facebook"
 
 
 def test_missing_and_invalid_inputs(tmp_path: Path):
@@ -93,6 +104,80 @@ def test_scheduled_time_validation(tmp_path: Path):
     assert "Invalid scheduled_publish_time" in res3.error
 
 
+def test_check_readiness_and_scopes():
+    mock_session = MagicMock()
+    mock_status_resp = MagicMock()
+    mock_status_resp.status_code = 200
+    mock_status_resp.json.return_value = {
+        "module": "facebook-suite",
+        "status": "enabled",
+        "user_id": "1000888",
+    }
+    mock_scopes_resp = MagicMock()
+    mock_scopes_resp.status_code = 200
+    mock_scopes_resp.json.return_value = {
+        "data": [{"id": "1435449429646177", "name": "AI Daily News"}],
+    }
+
+    def mock_get(url, **kwargs):
+        if "status" in url:
+            return mock_status_resp
+        if "scopes" in url:
+            return mock_scopes_resp
+        return MagicMock(status_code=404)
+
+    mock_session.get.side_effect = mock_get
+    tool = FacebookPublisher(http_session=mock_session)
+
+    status = tool.check_readiness()
+    assert status.get("status") == "enabled"
+    assert status.get("user_id") == "1000888"
+
+    scopes = tool.get_scopes()
+    assert "data" in scopes
+    assert scopes["data"][0]["name"] == "AI Daily News"
+
+
+def test_import_har_and_get_config(tmp_path: Path):
+    mock_session = MagicMock()
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 200
+    mock_post_resp.json.return_value = {
+        "status": "ok",
+        "message": "HAR credentials extracted and saved.",
+    }
+    mock_session.post.return_value = mock_post_resp
+
+    mock_cfg_resp = MagicMock()
+    mock_cfg_resp.status_code = 200
+    mock_cfg_resp.json.return_value = {"status": "ok", "actor_id": "1435449429646177"}
+    mock_session.get.return_value = mock_cfg_resp
+
+    tool = FacebookPublisher(http_session=mock_session)
+
+    har_file = tmp_path / "download-facebook.har"
+    har_file.write_text(json.dumps({"log": {"entries": []}}), encoding="utf-8")
+
+    res = tool.import_har(har_file)
+    assert res.get("status") == "ok"
+
+    cfg = tool.get_config()
+    assert cfg.get("actor_id") == "1435449429646177"
+
+
+def test_publish_status():
+    mock_session = MagicMock()
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 200
+    mock_post_resp.json.return_value = {"status": "success", "post_id": "post_789"}
+    mock_session.post.return_value = mock_post_resp
+
+    tool = FacebookPublisher(http_session=mock_session)
+    res = tool.publish_status("Hello world from automated publishing!", target_id="1435449429646177")
+    assert res.get("status") == "success"
+    assert res.get("post_id") == "post_789"
+
+
 def test_scheduled_publish_happy_path(tmp_path: Path):
     v = tmp_path / "facebook_reel.mp4"
     v.write_bytes(b"sample video bytes")
@@ -117,6 +202,7 @@ def test_scheduled_publish_happy_path(tmp_path: Path):
         "caption": "Chi tiết về mô hình AI mới #tech #news",
         "target_id": "1435449429646177",
         "scheduled_publish_time": sched_time,
+        "publish_type": "REEL",
         "enable_auto_translate": True,
     })
 
@@ -125,6 +211,7 @@ def test_scheduled_publish_happy_path(tmp_path: Path):
     assert result.data["video_id"] == "1089594350750481"
     assert result.data["scheduled_publish_time"] == sched_time
     assert result.data["auto_translate_enabled"] is True
+    assert result.data["publish_type"] == "REEL"
     assert "1089594350750481" in result.data["video_url"]
 
     # Check payload sent to gateway
@@ -135,4 +222,133 @@ def test_scheduled_publish_happy_path(tmp_path: Path):
     assert sent_payload["enable_auto_translate"] is True
     assert sent_payload["translated_languages"] == DEFAULT_14_LANGUAGES
     assert sent_payload["file_name"] == "facebook_reel.mp4"
+    assert sent_payload["publish_type"] == "REEL"
     assert "video_base64" in sent_payload
+
+
+def test_endpoint_fallback_on_404(tmp_path: Path):
+    v = tmp_path / "vid.mp4"
+    v.write_bytes(b"content")
+
+    mock_session = MagicMock()
+
+    resp_404 = MagicMock()
+    resp_404.status_code = 404
+
+    resp_200 = MagicMock()
+    resp_200.status_code = 200
+    resp_200.json.return_value = {
+        "status": "success",
+        "video_id": "video_999",
+        "target_id": "page_123",
+    }
+
+    def mock_post(url, **kwargs):
+        if url.endswith("/upload/video"):
+            return resp_404
+        if url.endswith("/publish"):
+            return resp_200
+        return resp_404
+
+    mock_session.post.side_effect = mock_post
+    tool = FacebookPublisher(http_session=mock_session)
+
+    res = tool.execute({
+        "video_path": str(v),
+        "caption": "Hello world",
+    })
+
+    assert res.success
+    assert res.data["video_id"] == "video_999"
+
+
+def test_error_response_handling(tmp_path: Path):
+    v = tmp_path / "vid.mp4"
+    v.write_bytes(b"content")
+
+    mock_session = MagicMock()
+    resp_err = MagicMock()
+    resp_err.status_code = 200
+    resp_err.json.return_value = {
+        "error": {"code": 400, "message": "Missing actor_id session credential"}
+    }
+    mock_session.post.return_value = resp_err
+
+    tool = FacebookPublisher(http_session=mock_session)
+    res = tool.execute({
+        "video_path": str(v),
+        "caption": "Test error",
+    })
+
+    assert not res.success
+    assert "Missing actor_id" in res.error
+
+
+def test_facebook_helpers_and_readiness(tmp_path: Path):
+    mock_session = MagicMock()
+    tool = FacebookPublisher(http_session=mock_session)
+
+    # 1. check_readiness: 200 OK vs failure
+    resp_ok = MagicMock(status_code=200)
+    resp_ok.json.return_value = {"module": "facebook-suite", "status": "ready", "configured": True}
+    mock_session.get.return_value = resp_ok
+    assert tool.check_readiness()["status"] == "ready"
+
+    mock_session.get.side_effect = Exception("network down")
+    assert tool.check_readiness()["configured"] is False
+
+    # 2. get_scopes: 200 OK vs failure
+    mock_session.get.side_effect = None
+    resp_scopes = MagicMock(status_code=200)
+    resp_scopes.json.return_value = {"scopes": ["pages_show_list"]}
+    mock_session.get.return_value = resp_scopes
+    assert tool.get_scopes() == {"scopes": ["pages_show_list"]}
+
+    mock_session.get.side_effect = Exception("timeout")
+    assert "error" in tool.get_scopes()
+
+    # 3. get_config: 200 OK vs failure
+    mock_session.get.side_effect = None
+    resp_cfg = MagicMock(status_code=200)
+    resp_cfg.json.return_value = {"cookies_loaded": True}
+    mock_session.get.return_value = resp_cfg
+    assert tool.get_config() == {"cookies_loaded": True}
+
+    mock_session.get.side_effect = Exception("failed")
+    assert "error" in tool.get_config()
+
+    # 4. import_har
+    har_file = tmp_path / "session.har"
+    har_file.write_text('{"log": {"entries": []}}', encoding="utf-8")
+    resp_har = MagicMock(status_code=200)
+    resp_har.json.return_value = {"success": True}
+    mock_session.post.return_value = resp_har
+    assert tool.import_har(har_file)["success"] is True
+    assert tool.import_har({"log": {}})["success"] is True
+
+    mock_session.post.side_effect = Exception("post failed")
+    assert "error" in tool.import_har(har_file)
+
+    # 5. check_video_published
+    assert tool.check_video_published("") is None
+    mock_session.get.side_effect = None
+    resp_pub = MagicMock(status_code=200)
+    resp_pub.json.return_value = {"status": "published", "id": "v123"}
+    mock_session.get.return_value = resp_pub
+    pub_info = tool.check_video_published("v123")
+    assert pub_info is not None
+    assert pub_info["video_id"] == "v123"
+
+    # 6. publish_status
+    mock_session.post.side_effect = None
+    resp_status = MagicMock(status_code=200)
+    resp_status.json.return_value = {"post_id": "p456"}
+    mock_session.post.return_value = resp_status
+    assert tool.publish_status("Hello status", target_id="pg1", scheduled_publish_time=1700000000) == {"post_id": "p456"}
+
+    # 7. Gateway URL errors
+    with pytest.raises(ValueError, match="Invalid Facebook Gateway URL scheme"):
+        tool.get_gateway_base_url({"gateway_url": "ftp://bad-scheme"})
+    with pytest.raises(ValueError, match="Missing hostname"):
+        tool.get_gateway_base_url({"gateway_url": "http://"})
+

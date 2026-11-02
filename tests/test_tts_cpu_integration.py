@@ -370,6 +370,19 @@ class TestNewAudioProviders:
             assert result.data["duration_seconds"] == 4.2
             assert mock_synth.called
 
+    def test_kokoro_synthesize_requests_mock(self, tmp_path):
+        from tools.audio.kokoro_local_tts import KokoroLocalTTS
+        tool = KokoroLocalTTS()
+        out_p = tmp_path / "out_synth.mp3"
+        with patch("requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.content = b"x" * 200
+            with patch("lib.audio.narration_orchestrator.probe_audio_duration", return_value=3.5):
+                ok, dur, err = tool._synthesize_kokoro("test text", "am_michael", 1.0, out_p, "http://localhost:8880/v1/audio/speech")
+                assert ok is True
+                assert dur == 3.5
+                assert out_p.exists()
+
     def test_pocket_local_tts_tool_contract(self, tmp_path):
         """PocketLocalTTS operates CPU-only with english_18m_2026-10."""
         from tools.audio.pocket_local_tts import PocketLocalTTS

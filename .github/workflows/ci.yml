@@ -24,6 +24,9 @@ jobs:
       OTEL_SDK_DISABLED: "true"
       WANDB_MODE: "offline"
       OPENMONTAGE_CACHE_DIR: "/tmp/openmontage_cache"
+      OPENMONTAGE_RENDERER: "ffmpeg"
+      GENERATION_RETRY_DELAY_SECONDS: "0"
+      PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS: "0"
 
     steps:
       - name: Checkout repository

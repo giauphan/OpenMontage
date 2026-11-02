@@ -11,397 +11,288 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Facade re-exports for backward compatibility
+from scripts.evidence_binder_helpers import (
+    _build_claim_entry,
+    _check_quantitative_figures,
+    _check_semantic_grounding,
+    _create_ledger_claim,
+    _extract_brief_corpus_lines,
+    _extract_candidate_published_date,
+    _extract_content_tokens,
+    _extract_source_metadata,
+    _find_best_capture,
+    _find_matching_provenance,
+    _format_claim_error,
+    _is_valid_iso,
+    _is_valid_url,
+    _iso_utc,
+    _load_capture_files,
+    _load_provenance_map,
+    _read_capture_file_content,
+    _resolve_authentic_pub_date,
+    _resolve_effective_published_date,
+    _resolve_retrieval_date,
+    _resolve_snapshot_file_and_sha,
+    _tokens_match,
+)
 
-def _iso_utc(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _is_valid_iso(val: Any) -> bool:
-    if not isinstance(val, str) or not val.strip():
-        return False
-    try:
-        dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
-        return dt.tzinfo is not None
-    except Exception:
-        return False
-
-
-def _is_valid_url(url: str) -> bool:
-    try:
-        parsed = urlsplit(url)
-        return parsed.scheme.lower() in {"http", "https"} and bool(parsed.hostname)
-    except Exception:
-        return False
-
-
-def _extract_content_tokens(text: str) -> set[str]:
-    stopwords = {
-        "this", "that", "with", "from", "have", "been", "were", "about", "when",
-        "where", "their", "there", "which", "would", "could", "should", "these",
-        "those", "other", "into", "more", "some", "such", "than", "then", "them",
-        "also", "only", "well", "even", "most", "what", "will", "your", "they",
-        "each", "both", "across", "under", "after", "while", "during", "using",
-        "over", "does", "been", "many", "much", "very", "every", "first", "just",
-        "chúng", "ta", "quý", "vị", "các", "những", "được", "trong", "cho", "với",
-        "của", "là", "và", "có", "đến", "này", "đây", "theo", "một", "nhiều", "như"
-    }
-    tokens = set()
-    for word in re.findall(r"[A-Za-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]{3,}", text.lower()):
-        if word not in stopwords:
-            tokens.add(word)
-    return tokens
+SCRIPT_EN_US_JSON = "script_en_US.json"
 
 
-def _tokens_match(token: str, source_tokens: set[str]) -> bool:
-    if token in source_tokens:
-        return True
-    if len(token) >= 4:
-        for st in source_tokens:
-            if len(st) >= 4 and (token.startswith(st) or st.startswith(token)):
-                return True
-    return False
+def _safe_write_bytes(path: Path | str, content: bytes, base_dir: Path | str | None = None) -> None:
+    """Validate path against traversal attacks (CWE-22) before writing."""
+    raw_path = Path(path)
+    base = Path(base_dir).resolve() if base_dir else raw_path.parent.resolve()
+    safe_name = os.path.basename(str(raw_path))
+    target_path = (base / safe_name).resolve()
+    if not target_path.is_relative_to(base):
+        raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
+    with open(target_path, "wb") as f:
+        f.write(content)
 
 
-def bind_news_evidence(project_dir: Path) -> bool:
-    artifacts_dir = project_dir / "artifacts"
-    if (artifacts_dir / "script_en_US.json").is_file():
-        script_path = artifacts_dir / "script_en_US.json"
-    elif (artifacts_dir / "script_vi.json").is_file():
-        script_path = artifacts_dir / "script_vi.json"
-    elif (artifacts_dir / "script.json").is_file():
-        script_path = artifacts_dir / "script.json"
-    else:
-        script_path = artifacts_dir / "script_vi.json"
-    brief_path = artifacts_dir / "research_brief.json"
+def _safe_write_text(
+    path: Path | str, content: str, encoding: str = "utf-8", base_dir: Path | str | None = None
+) -> None:
+    """Validate path against traversal attacks (CWE-22) before writing."""
+    raw_path = Path(path)
+    base = Path(base_dir).resolve() if base_dir else raw_path.parent.resolve()
+    safe_name = os.path.basename(str(raw_path))
+    target_path = (base / safe_name).resolve()
+    if not target_path.is_relative_to(base):
+        raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
+    with open(target_path, "w", encoding=encoding) as f:
+        f.write(content)
 
-    if not script_path.is_file():
-        print(f"ERROR: {script_path} does not exist", file=sys.stderr)
-        return False
 
-    script_bytes = script_path.read_bytes()
-    try:
-        script_data = json.loads(script_bytes)
-    except Exception as exc:
-        print(f"ERROR: cannot parse {script_path}: {exc}", file=sys.stderr)
-        return False
+def _resolve_script_path(artifacts_dir: Path) -> Path:
+    candidates = (SCRIPT_EN_US_JSON, "script_vi.json", "script.json")
+    for name in candidates:
+        candidate_path = artifacts_dir / name
+        if candidate_path.is_file():
+            return candidate_path
+    return artifacts_dir / "script_vi.json"
 
-    sections = script_data.get("sections")
-    if not isinstance(sections, list) or not sections:
-        print("ERROR: script has no sections", file=sys.stderr)
-        return False
 
-    modified_script = False
-    if not isinstance(script_data.get("version"), str) or script_data.get("version") != "1.0":
+def _normalize_script_sections(script_data: dict[str, Any]) -> bool:
+    modified = False
+    if script_data.get("version") != "1.0":
         script_data["version"] = "1.0"
-        modified_script = True
+        modified = True
+    sections = script_data.get("sections")
+    if not isinstance(sections, list):
+        return modified
     for idx, sec in enumerate(sections):
         if not isinstance(sec, dict):
             continue
         sid = sec.get("id")
         if sid is None or (isinstance(sid, str) and not sid.strip()) or isinstance(sid, bool):
             sec["id"] = f"sec_{idx}"
-            modified_script = True
+            modified = True
+    return modified
 
-    if modified_script:
+
+def _parse_and_validate_script(script_path: Path) -> tuple[dict[str, Any] | None, bytes | None]:
+    if not script_path.is_file():
+        print(f"ERROR: {script_path} does not exist", file=sys.stderr)
+        return None, None
+    try:
+        script_bytes = script_path.read_bytes()
+        script_data = json.loads(script_bytes)
+    except Exception as exc:
+        print(f"ERROR: cannot parse {script_path}: {exc}", file=sys.stderr)
+        return None, None
+    sections = script_data.get("sections")
+    if not isinstance(sections, list) or not sections:
+        print("ERROR: script has no sections", file=sys.stderr)
+        return None, None
+    if _normalize_script_sections(script_data):
         script_bytes = json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
-        script_path.write_bytes(script_bytes)
+        _safe_write_bytes(script_path, script_bytes, base_dir=script_path.parent)
+    return script_data, script_bytes
 
+
+def _load_research_brief(brief_path: Path) -> dict[str, Any] | None:
     if not brief_path.is_file():
         print(f"ERROR: {brief_path} does not exist; refusing fail-open evidence binding", file=sys.stderr)
-        return False
+        return None
     try:
-        brief_data = json.loads(brief_path.read_text(encoding="utf-8"))
+        data = json.loads(brief_path.read_text(encoding="utf-8"))
     except Exception as exc:
         print(f"ERROR: cannot parse {brief_path}: {exc}", file=sys.stderr)
-        return False
-    if not isinstance(brief_data, dict):
+        return None
+    if not isinstance(data, dict):
         print(f"ERROR: {brief_path} must be a JSON object", file=sys.stderr)
-        return False
+        return None
+    return data
 
-    now = datetime.now(timezone.utc)
-    ret_time = now
-    upd_time = now
-    rev_time = now
 
-    sources_in_brief = brief_data.get("sources", [])
-    if not isinstance(sources_in_brief, list) or not sources_in_brief:
-        if script_path.name == "script_en_US.json":
-            print("ERROR: research_brief.json has no sources for en-US claim verification", file=sys.stderr)
-            return False
-        sources_in_brief = [{
-            "url": "https://news.ycombinator.com",
-            "title": brief_data.get("topic") or "Tin tức công nghệ",
-            "used_for": "Nghiên cứu bối cảnh công nghệ",
-        }]
-
-    # Build frozen research corpus strictly from research_brief.json and any captured source files.
-    # NEVER include script_en_US.json or script_vi.json text in the source snapshot.
-    research_lines: list[str] = []
-    topic_val = str(brief_data.get("topic") or brief_data.get("title") or "").strip()
-    if topic_val:
-        research_lines.append(f"Topic: {topic_val}")
-    for dp in brief_data.get("data_points", []) if isinstance(brief_data.get("data_points"), list) else []:
-        if isinstance(dp, dict):
-            claim_str = str(dp.get("claim") or "").strip()
-            src_name = str(dp.get("source_name") or dp.get("source_url") or "").strip()
-            usable = str(dp.get("usable_as") or "").strip()
-            if claim_str:
-                research_lines.append(f"DataPoint ({src_name}): {claim_str} {usable}".strip())
-    landscape = brief_data.get("landscape") if isinstance(brief_data.get("landscape"), dict) else {}
-    for ec in landscape.get("existing_content", []) if isinstance(landscape.get("existing_content"), list) else []:
-        if isinstance(ec, dict):
-            ec_text = " ".join(
-                str(ec.get(k) or "").strip()
-                for k in ("title", "angle", "what_it_covers", "what_it_misses", "engagement_signal")
-                if str(ec.get(k) or "").strip()
-            )
-            if ec_text:
-                research_lines.append(f"ExistingContent: {ec_text}")
-    for gap in landscape.get("underserved_gaps", []) if isinstance(landscape.get("underserved_gaps"), list) else []:
-        if str(gap).strip():
-            research_lines.append(f"Gap: {str(gap).strip()}")
-    aud = brief_data.get("audience_insights") if isinstance(brief_data.get("audience_insights"), dict) else {}
-    for m in aud.get("misconceptions", []) if isinstance(aud.get("misconceptions"), list) else []:
-        if isinstance(m, dict):
-            m_text = f"{m.get('myth', '')} -> {m.get('reality', '')}".strip()
-            if m_text:
-                research_lines.append(f"Misconception: {m_text}")
-    for ang in brief_data.get("angles_discovered", []) if isinstance(brief_data.get("angles_discovered"), list) else []:
-        if isinstance(ang, dict):
-            grounded = " ".join(str(x) for x in (ang.get("grounded_in") or []) if x)
-            ang_text = f"{ang.get('name', '')}: {ang.get('hook', '')} {ang.get('why_now', '')} {grounded}".strip()
-            if ang_text:
-                research_lines.append(f"Angle: {ang_text}")
-
-    capture_dir = artifacts_dir / "news_source_capture"
-    strict_capture_required = (
-        os.environ.get("REQUIRE_AUTHENTIC_CAPTURES", "0") in ("1", "true", "True")
-        or (os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True") and script_path.name == "script_en_US.json")
+def _is_strict_capture_required(script_name: str) -> bool:
+    if os.environ.get("REQUIRE_AUTHENTIC_CAPTURES", "0") in ("1", "true", "True"):
+        return True
+    return (
+        os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True")
+        and script_name == SCRIPT_EN_US_JSON
     )
 
-    capture_corpus_lines: list[str] = []
-    capture_files_map: dict[str, tuple[str, str]] = {}
-    provenance_map: dict[str, dict[str, Any]] = {}
-    if capture_dir.is_dir():
-        for prov_file in sorted(capture_dir.glob("*provenance*.json")):
-            try:
-                p_data = json.loads(prov_file.read_text(encoding="utf-8"))
-                if isinstance(p_data, dict):
-                    provenance_map[prov_file.name] = p_data
-                    if p_data.get("url"):
-                        provenance_map[p_data["url"]] = p_data
-            except Exception:
-                pass
 
-        for cap_file in sorted(list(capture_dir.glob("*.txt")) + list(capture_dir.glob("*extracted*.json"))):
-            try:
-                if cap_file.suffix == ".json":
-                    cap_data = json.loads(cap_file.read_text(encoding="utf-8"))
-                    cap_content = str(cap_data.get("text") or "").strip()
-                else:
-                    cap_content = cap_file.read_text(encoding="utf-8", errors="replace").strip()
-                if cap_content:
-                    capture_corpus_lines.append(cap_content)
-                    cap_sha = hashlib.sha256(cap_content.encode("utf-8")).hexdigest()
-                    capture_files_map[cap_file.name] = (cap_content, cap_sha)
-                    research_lines.append(f"CapturedSource ({cap_file.name}): {cap_content[:4000]}")
-            except OSError:
-                pass
+def _resolve_brief_sources(brief_data: dict[str, Any], script_name: str) -> list[dict[str, Any]] | None:
+    sources = brief_data.get("sources")
+    if isinstance(sources, list) and sources:
+        return sources
+    if script_name == SCRIPT_EN_US_JSON:
+        print("ERROR: research_brief.json has no sources for en-US claim verification", file=sys.stderr)
+        return None
+    topic = brief_data.get("topic") or "Tin tức công nghệ"
+    return [{
+        "url": "https://news.ycombinator.com",
+        "title": topic,
+        "used_for": "Nghiên cứu bối cảnh công nghệ",
+    }]
 
-    if strict_capture_required:
-        has_captures = bool(capture_corpus_lines)
-        if not has_captures:
-            print("ERROR: Strict evidence release requires authentic source capture files in artifacts/news_source_capture", file=sys.stderr)
-            return False
 
-    captured_corpus = " | ".join(capture_corpus_lines).strip()
-    frozen_research_excerpt = " | ".join(research_lines).strip()
-    if len(frozen_research_excerpt) < 25:
-        frozen_research_excerpt = f"Frozen Research Grounding: {topic_val or 'Verified Technology Research Brief'}"
+def _build_single_evidence_source(
+    idx: int,
+    src: dict[str, Any],
+    provenance_map: dict[str, dict[str, Any]],
+    brief_data: dict[str, Any],
+    strict_capture_required: bool,
+    now_iso: str,
+    frozen_research_excerpt: str,
+    artifacts_dir: Path,
+) -> dict[str, Any]:
+    sid = f"s{idx + 1}"
+    url = src.get("url") or "https://news.ycombinator.com"
+    if not _is_valid_url(url):
+        url = "https://news.ycombinator.com"
+    title = src.get("title") or f"Tài liệu tham khảo {idx + 1}"
+    used_for = src.get("used_for") or "Tài liệu kiểm chứng"
 
-    evidence_sources = []
-    source_ids = []
+    matched_prov = _find_matching_provenance(url, provenance_map)
+    candidate_pub = _extract_candidate_published_date(matched_prov, src, brief_data)
+    effective_pub_str = _resolve_effective_published_date(
+        candidate_pub, strict_capture_required, now_iso
+    )
+    ret_date_str = _resolve_retrieval_date(matched_prov, now_iso)
+
+    content_filename = f"source_evidence_{sid}.txt"
+    content_path = artifacts_dir / content_filename
+    excerpt_text = f"Tài liệu nguồn {title}"
+    full_content = (
+        f"{excerpt_text}\n"
+        f"URL: {url}\nMục đích: {used_for}\n"
+        f"Thời điểm thu thập: {ret_date_str}\n"
+        f"Frozen Research Grounding:\n{frozen_research_excerpt}\n"
+    ).encode("utf-8")
+
+    content_path.write_bytes(full_content)
+    content_sha256 = hashlib.sha256(full_content).hexdigest()
+
+    return {
+        "id": sid,
+        "url": url,
+        "status": "available",
+        "published_at": effective_pub_str,
+        "updated_at": effective_pub_str,
+        "retrieved_at": ret_date_str,
+        "content_path": f"artifacts/{content_filename}",
+        "content_sha256": content_sha256,
+        "excerpt": excerpt_text,
+    }
+
+
+def _build_evidence_payload(
+    sources_in_brief: list[dict[str, Any]],
+    provenance_map: dict[str, dict[str, Any]],
+    brief_data: dict[str, Any],
+    strict_capture_required: bool,
+    now_iso: str,
+    frozen_research_excerpt: str,
+    artifacts_dir: Path,
+) -> list[dict[str, Any]]:
+    evidence_sources: list[dict[str, Any]] = []
     for idx, src in enumerate(sources_in_brief):
         if not isinstance(src, dict):
             continue
-        sid = f"s{idx + 1}"
-        url = src.get("url") or "https://news.ycombinator.com"
-        if not _is_valid_url(url):
-            url = "https://news.ycombinator.com"
-        title = src.get("title") or f"Tài liệu tham khảo {idx + 1}"
-        used_for = src.get("used_for") or "Tài liệu kiểm chứng"
-
-        matched_prov = provenance_map.get(url) or (list(provenance_map.values())[0] if provenance_map else None)
-        pub_date_str = (
-            (matched_prov.get("published_at") if matched_prov else None)
-            or src.get("published_at")
-            or brief_data.get("metadata", {}).get("published_at")
-            or brief_data.get("published_at_utc")
-            or (f"{brief_data['research_date']}T00:00:00+00:00" if brief_data.get("research_date") and re.match(r"^\d{4}-\d{2}-\d{2}$", str(brief_data.get("research_date"))) else None)
-            or _iso_utc(now)
+        ev_src = _build_single_evidence_source(
+            idx=idx, src=src, provenance_map=provenance_map, brief_data=brief_data,
+            strict_capture_required=strict_capture_required, now_iso=now_iso,
+            frozen_research_excerpt=frozen_research_excerpt, artifacts_dir=artifacts_dir,
         )
-        ret_date_str = (matched_prov.get("retrieved_at") if matched_prov else None) or _iso_utc(ret_time)
-        effective_pub_str = pub_date_str if (pub_date_str and _is_valid_iso(pub_date_str)) else _iso_utc(now)
+        evidence_sources.append(ev_src)
+    return evidence_sources
 
-        content_filename = f"source_evidence_{sid}.txt"
-        content_path = artifacts_dir / content_filename
-        excerpt_text = f"Tài liệu nguồn {title}"
-        full_content = (
-            f"{excerpt_text}\n"
-            f"URL: {url}\nMục đích: {used_for}\n"
-            f"Thời điểm thu thập: {ret_date_str}\n"
-            f"Frozen Research Grounding:\n{frozen_research_excerpt}\n"
-        ).encode("utf-8")
 
-        content_path.write_bytes(full_content)
-        content_sha256 = hashlib.sha256(full_content).hexdigest()
+def _evaluate_section(
+    section: dict[str, Any], idx: int, script_name: str, brief_data: dict[str, Any],
+    primary_source: dict[str, Any], primary_title: str, target_corpus: str, strict_capture_required: bool,
+) -> tuple[str, str, bool, str | None]:
+    sec_id = str(section.get("id", "sec"))
+    sec_text = (section.get("text_vi") or section.get("text") or "").strip()
+    is_en_us = script_name == SCRIPT_EN_US_JSON
+    should_verify = is_en_us or bool(brief_data.get("data_points"))
 
-        evidence_sources.append({
-            "id": sid,
-            "url": url,
-            "status": "available",
-            "published_at": effective_pub_str,
-            "updated_at": effective_pub_str,
-            "retrieved_at": ret_date_str,
-            "content_path": f"artifacts/{content_filename}",
-            "content_sha256": content_sha256,
-            "excerpt": excerpt_text,
-        })
-        source_ids.append(sid)
+    has_fig_err, missing_figs = _check_quantitative_figures(sec_text, target_corpus, should_verify)
+    has_sem_err, sem_reason = _check_semantic_grounding(
+        sec_text=sec_text, target_corpus=target_corpus, publisher=primary_title,
+        canonical_url=primary_source["url"], strict_capture_required=strict_capture_required, is_en_us=is_en_us,
+    )
+    is_verified = (not has_fig_err) and (not has_sem_err)
+    err = _format_claim_error(
+        sec_id, idx, has_fig_err, missing_figs, has_sem_err, sem_reason, strict_capture_required
+    )
+    return sec_id, sec_text, is_verified, err
 
-    if not source_ids:
-        print("ERROR: failed to build evidence sources", file=sys.stderr)
-        return False
 
-    claims = []
-    ledger_claims = []
+def _match_evidence_to_claims(
+    sections: list[dict[str, Any]], script_name: str, brief_data: dict[str, Any],
+    evidence_sources: list[dict[str, Any]], primary_title: str,
+    provenance_map: dict[str, dict[str, Any]], capture_files_map: dict[str, tuple[str, str]],
+    target_corpus: str, strict_capture_required: bool, now_iso: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    claims: list[dict[str, Any]] = []
+    ledger_claims: list[dict[str, Any]] = []
     unverified_errors: list[str] = []
     primary_source = evidence_sources[0]
-    primary_title = (
-        sources_in_brief[0].get("title")
-        if isinstance(sources_in_brief[0], dict) and sources_in_brief[0].get("title")
-        else "Verified News Source"
-    )
+
     for idx, section in enumerate(sections):
-        sec_id = str(section.get("id", "sec"))
-        sec_text = (section.get("text_vi") or section.get("text") or "").strip()
-        claim_text = sec_text[:180].strip() or "Nội dung tin tức công nghệ đã được xác thực."
-
-        # 1. Quantitative check: every quantitative figure in sec_text must appear in frozen_research_excerpt
-        # Strip structural references like "Section 1", "Scene 1", "Đoạn 1" from factual figures
-        cleaned_text = re.sub(r'\b(?:section|scene|part|đoạn|phần)\s+\d+\b', '', sec_text, flags=re.IGNORECASE)
-        should_verify_figures = (
-            script_path.name == "script_en_US.json"
-            or bool(brief_data.get("data_points"))
+        if not isinstance(section, dict):
+            continue
+        sec_id, sec_text, is_verified, err = _evaluate_section(
+            section, idx, script_name, brief_data, primary_source,
+            primary_title, target_corpus, strict_capture_required,
         )
-        figures = re.findall(r"\b\d+(?:[\.,]\d+)?%?\b", cleaned_text) if should_verify_figures else []
-        target_corpus = captured_corpus if (strict_capture_required and captured_corpus) else frozen_research_excerpt
-        if not target_corpus:
-            target_corpus = frozen_research_excerpt
-
-        missing_figs = [
-            fig for fig in figures
-            if fig not in target_corpus and fig.rstrip("%") not in target_corpus
-        ]
-        has_fig_error = len(missing_figs) > 0
-
-        # 2. Semantic grounding check: for en-US claims, every claim (including non-numeric statements)
-        # must be substantiated by key content terms / entities from the research brief and captured sources
-        from lib.fixed_niche.claim_grounding import verify_independent_claim
-        grounding_result = verify_independent_claim(
-            statement=sec_text,
-            snapshot_text=target_corpus,
-            publisher=str(primary_title),
-            canonical_url=primary_source["url"],
+        if err:
+            unverified_errors.append(err)
+        claims.append(
+            _build_claim_entry(sec_id, sec_text, primary_source["id"], is_verified, now_iso)
         )
-
-        sec_tokens = _extract_content_tokens(sec_text)
-        source_tokens = _extract_content_tokens(target_corpus)
-        common_tokens = {tok for tok in sec_tokens if _tokens_match(tok, source_tokens)}
-        
-        has_semantic_error = False
-        if grounding_result.get("verification_status") != "INDEPENDENT_FACT_CHECK_VERIFIED":
-            if strict_capture_required or script_path.name == "script_en_US.json":
-                has_semantic_error = True
-        elif script_path.name == "script_en_US.json":
-            min_overlap = 2 if len(sec_tokens) >= 4 else (1 if len(sec_tokens) >= 1 else 0)
-            if len(common_tokens) < min_overlap:
-                has_semantic_error = True
-        elif len(sec_tokens) >= 5 and len(common_tokens) == 0:
-            has_semantic_error = True
-
-        is_verified = (not has_fig_error) and (not has_semantic_error)
-        corpus_source_desc = "captured source files" if strict_capture_required else "frozen research_brief.json"
-        if has_fig_error:
-            unverified_errors.append(
-                f"Section '{sec_id}' (C{idx + 1:03d}) asserts unsubstantiated figure(s) {missing_figs} not present in {corpus_source_desc}"
-            )
-        elif has_semantic_error:
-            reason = grounding_result.get("attestation") if grounding_result.get("verification_status") != "INDEPENDENT_FACT_CHECK_VERIFIED" else f"found {len(common_tokens)} matching terms"
-            unverified_errors.append(
-                f"Section '{sec_id}' (C{idx + 1:03d}) lacks substantive semantic/entity grounding in {corpus_source_desc} ({reason})"
-            )
-
-        claims.append({
-            "section_id": sec_id,
-            "claim": claim_text,
-            "classification": "reported_fact",
-            "consequential": False,
-            "source_ids": [source_ids[0]],
-            "reviewer": "Ban biên tập OpenMontage (Tự động hóa)",
-            "reviewed_at": _iso_utc(rev_time),
-            "review_status": "approved" if is_verified else "rejected",
-        })
         if sec_text:
-            best_cap_file = None
-            best_cap_sha = None
-            if capture_files_map:
-                best_overlap = -1
-                for cap_name, (cap_content, cap_sha) in capture_files_map.items():
-                    cap_toks = _extract_content_tokens(cap_content)
-                    overlap = len([t for t in sec_tokens if _tokens_match(t, cap_toks)])
-                    if overlap > best_overlap:
-                        best_overlap = overlap
-                        best_cap_file = f"news_source_capture/{cap_name}"
-                        best_cap_sha = cap_sha
+            ledger_claims.append(
+                _create_ledger_claim(
+                    idx, sec_text, is_verified, primary_source, primary_title,
+                    target_corpus, capture_files_map, provenance_map,
+                    strict_capture_required, now_iso,
+                )
+            )
+    return claims, ledger_claims, unverified_errors
 
-            snap_file = best_cap_file if (strict_capture_required and best_cap_file) else f"source_evidence_{source_ids[0]}.txt"
-            snap_sha = best_cap_sha if (strict_capture_required and best_cap_sha) else primary_source["content_sha256"]
 
-            primary_prov = provenance_map.get(primary_source["url"]) or (list(provenance_map.values())[0] if provenance_map else None)
-            authentic_pub_date = (primary_prov.get("published_at") if primary_prov else None) or effective_pub_str or _iso_utc(now)
-
-            ledger_claims.append({
-                "claim_id": f"C{idx + 1:03d}",
-                "statement": sec_text,
-                "confidence": "verified" if is_verified else "unverified",
-                "scope": {
-                    "market": "US",
-                    "as_of": _iso_utc(now)[:10],
-                },
-                "source": {
-                    "canonical_url": primary_source["url"],
-                    "publisher": str(primary_title),
-                    "published_at": authentic_pub_date,
-                    "retrieved_at": _iso_utc(ret_time),
-                    "snapshot_file": snap_file,
-                    "snapshot_sha256": snap_sha,
-                },
-                "evidence_excerpt": target_corpus[:4000],
-                "script_spans": [sec_text],
-                "verdict": "APPROVED" if is_verified else "REJECTED",
-            })
-
+def _write_evidence_artifacts(
+    artifacts_dir: Path, project_dir: Path, script_bytes: bytes, script_name: str,
+    brief_path: Path, claims: list[dict[str, Any]], ledger_claims: list[dict[str, Any]],
+    evidence_sources: list[dict[str, Any]], now_iso: str,
+) -> None:
     evidence = {
         "version": "2.0",
         "script_sha256": hashlib.sha256(script_bytes).hexdigest(),
@@ -409,28 +300,128 @@ def bind_news_evidence(project_dir: Path) -> bool:
         "sources": evidence_sources,
         "contradictions": [],
     }
-
     evidence_path = artifacts_dir / "news_evidence.json"
-    evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+    _safe_write_text(evidence_path, json.dumps(evidence, ensure_ascii=False, indent=2), base_dir=artifacts_dir)
 
-    if script_path.name == "script_en_US.json" and ledger_claims:
-        ledger_path = artifacts_dir / "claim_ledger.json"
+    if script_name == SCRIPT_EN_US_JSON and ledger_claims:
         brief_sha = hashlib.sha256(brief_path.read_bytes()).hexdigest() if brief_path.is_file() else ""
         claim_ledger = {
             "schema_version": "1.0",
             "project_id": project_dir.name,
             "locale": "en-US",
-            "created_at": _iso_utc(now),
+            "created_at": now_iso,
             "research_brief_sha256": brief_sha,
             "claims": ledger_claims,
         }
-        ledger_path.write_text(json.dumps(claim_ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+        ledger_path = artifacts_dir / "claim_ledger.json"
+        _safe_write_text(ledger_path, json.dumps(claim_ledger, ensure_ascii=False, indent=2), base_dir=artifacts_dir)
 
-    if unverified_errors:
-        for err in unverified_errors:
-            print(f"ERROR: {err}", file=sys.stderr)
+
+def _resolve_primary_title(sources_in_brief: list[dict[str, Any]]) -> str:
+    if sources_in_brief and isinstance(sources_in_brief[0], dict):
+        title = sources_in_brief[0].get("title")
+        if title:
+            return str(title)
+    return "Verified News Source"
+
+
+def _build_frozen_research_excerpt(research_lines: list[str], brief_data: dict[str, Any]) -> str:
+    excerpt = " | ".join(research_lines).strip()
+    if len(excerpt) >= 25:
+        return excerpt
+    topic_val = str(brief_data.get("topic") or brief_data.get("title") or "").strip()
+    return f"Frozen Research Grounding: {topic_val or 'Verified Technology Research Brief'}"
+
+
+def _resolve_target_corpus(captured_corpus: str, frozen_excerpt: str, strict_capture_required: bool) -> str:
+    if strict_capture_required and captured_corpus:
+        return captured_corpus
+    if frozen_excerpt:
+        return frozen_excerpt
+    return "Frozen Research Grounding: Verified Technology Research Brief"
+
+
+def _report_unverified_errors(errors: list[str]) -> bool:
+    if not errors:
+        return True
+    for err in errors:
+        print(f"ERROR: {err}", file=sys.stderr)
+    return False
+
+
+def bind_news_evidence(project_dir: Path) -> bool:
+    artifacts_dir = project_dir / "artifacts"
+    script_path = _resolve_script_path(artifacts_dir)
+    brief_path = artifacts_dir / "research_brief.json"
+
+    script_data, script_bytes = _parse_and_validate_script(script_path)
+    if script_data is None or script_bytes is None:
         return False
-    return True
+
+    brief_data = _load_research_brief(brief_path)
+    if brief_data is None:
+        return False
+
+    sources_in_brief = _resolve_brief_sources(brief_data, script_path.name)
+    if sources_in_brief is None:
+        return False
+
+    strict_capture_required = _is_strict_capture_required(script_path.name)
+    provenance_map, cap_lines, cap_map, cap_src_lines = _extract_source_metadata(
+        artifacts_dir / "news_source_capture"
+    )
+
+    if strict_capture_required and not cap_lines:
+        print("ERROR: Strict evidence release requires authentic source capture files in artifacts/news_source_capture", file=sys.stderr)
+        return False
+
+    now_iso = _iso_utc(datetime.now(timezone.utc))
+    research_lines = _extract_brief_corpus_lines(brief_data) + cap_src_lines
+    frozen_excerpt = _build_frozen_research_excerpt(research_lines, brief_data)
+
+    evidence_sources = _build_evidence_payload(
+        sources_in_brief=sources_in_brief,
+        provenance_map=provenance_map,
+        brief_data=brief_data,
+        strict_capture_required=strict_capture_required,
+        now_iso=now_iso,
+        frozen_research_excerpt=frozen_excerpt,
+        artifacts_dir=artifacts_dir,
+    )
+    if not evidence_sources:
+        print("ERROR: failed to build evidence sources", file=sys.stderr)
+        return False
+
+    captured_corpus = " | ".join(cap_lines).strip()
+    target_corpus = _resolve_target_corpus(captured_corpus, frozen_excerpt, strict_capture_required)
+    primary_title = _resolve_primary_title(sources_in_brief)
+
+    claims, ledger_claims, unverified_errors = _match_evidence_to_claims(
+        sections=script_data.get("sections", []),
+        script_name=script_path.name,
+        brief_data=brief_data,
+        evidence_sources=evidence_sources,
+        primary_title=primary_title,
+        provenance_map=provenance_map,
+        capture_files_map=cap_map,
+        target_corpus=target_corpus,
+        strict_capture_required=strict_capture_required,
+        now_iso=now_iso,
+    )
+
+    _write_evidence_artifacts(
+        artifacts_dir=artifacts_dir,
+        project_dir=project_dir,
+        script_bytes=script_bytes,
+        script_name=script_path.name,
+        brief_path=brief_path,
+        claims=claims,
+        ledger_claims=ledger_claims,
+        evidence_sources=evidence_sources,
+        now_iso=now_iso,
+    )
+
+    return _report_unverified_errors(unverified_errors)
 
 
 def main() -> int:

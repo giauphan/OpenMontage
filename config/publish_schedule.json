@@ -5,6 +5,9 @@
     "page_id": "1350199744835777",
     "ig_account_id": "17841434265610775"
   },
+  "facebook": {
+    "page_id": "1435449429646177"
+  },
   "youtube": {
     "account": "primary"
   },
@@ -101,6 +104,36 @@
     {
       "project_id": "cand_5d5d7a78e2ebe746",
       "publish_date": "2026-11-01",
+      "publish_time": "21:15"
+    },
+    {
+      "project_id": "cand_mcp_circuit_breakers_oct31",
+      "publish_date": "2026-11-02",
+      "publish_time": "09:15"
+    },
+    {
+      "project_id": "cand_615b4837d93d24d8",
+      "publish_date": "2026-11-02",
+      "publish_time": "14:15"
+    },
+    {
+      "project_id": "cand_context_loss_requirements",
+      "publish_date": "2026-11-02",
+      "publish_time": "21:15"
+    },
+    {
+      "project_id": "cand_cb8b8d2e01e7b129",
+      "publish_date": "2026-11-03",
+      "publish_time": "09:15"
+    },
+    {
+      "project_id": "cand_655c58d61811a789",
+      "publish_date": "2026-11-03",
+      "publish_time": "14:15"
+    },
+    {
+      "project_id": "cand_mcp_tool_filtering",
+      "publish_date": "2026-11-03",
       "publish_time": "21:15"
     }
   ]

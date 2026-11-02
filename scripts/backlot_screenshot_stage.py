@@ -41,7 +41,7 @@ from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
 
 from lib.checkpoint import init_project, write_checkpoint  # noqa: E402
 from lib.events import emit_event  # noqa: E402
-from tests.contracts.test_phase0_contracts import sample_artifact  # noqa: E402
+from tests.contracts.conftest import sample_artifact  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

@@ -282,6 +282,7 @@ class FixedNicheResearcher:
             "version": "1.0",
             "topic_id": cid,
             "title": title,
+            "hook": candidate.get("hook"),
             "viewer_question": candidate.get("viewer_question") or f"Why does this agent mechanism fail: {title}?",
             "topic_family": candidate.get("topic_family", "context_memory"),
             "content_kind": content_kind,

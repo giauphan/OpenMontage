@@ -45,31 +45,51 @@ MIN_DURATION = "2"
 TOLERANCE = "1"
 
 
+import tempfile
+
+_MEDIA_CACHE_DIR = Path(tempfile.mkdtemp(prefix="om_content_gate_cache_"))
+_MEDIA_CACHE: dict[tuple[bool, bool], Path] = {}
+_NARRATION_CACHE: Path | None = None
+
+
 def _run(args: list[str]) -> None:
+    if args and args[0] == "ffmpeg" and "-threads" not in args:
+        args = ["ffmpeg", "-threads", "0"] + args[1:]
     subprocess.run(args, capture_output=True, check=True)
 
 
 def _narration(path: Path) -> None:
+    global _NARRATION_CACHE
     path.parent.mkdir(parents=True, exist_ok=True)
-    _run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"sine=frequency=300:duration={DURATION}",
-          "-ar", "44100", "-ac", "2", str(path)])
+    if _NARRATION_CACHE is None or not _NARRATION_CACHE.is_file():
+        cached = _MEDIA_CACHE_DIR / "narration.mp3"
+        _run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"sine=frequency=300:duration={DURATION}",
+              "-ar", "44100", "-ac", "2", str(cached)])
+        _NARRATION_CACHE = cached
+    shutil.copyfile(_NARRATION_CACHE, path)
 
 
 def _render(path: Path, *, blank: bool = False, silent: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    video = (
-        f"color=c=black:size={DIMENSIONS}:duration={DURATION}:rate=30"
-        if blank
-        else f"testsrc=size={DIMENSIONS}:duration={DURATION}:rate=30"
-    )
-    audio = (
-        "anullsrc=r=44100:cl=stereo"
-        if silent
-        else f"sine=frequency=440:duration={DURATION}"
-    )
-    _run(["ffmpeg", "-y", "-f", "lavfi", "-i", video, "-f", "lavfi", "-i", audio,
-          "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", "30",
-          "-c:a", "aac", "-shortest", str(path)])
+    key = (blank, silent)
+    cached = _MEDIA_CACHE.get(key)
+    if cached is None or not cached.is_file():
+        cached = _MEDIA_CACHE_DIR / f"render_{int(blank)}_{int(silent)}.mp4"
+        video = (
+            f"color=c=black:size={DIMENSIONS}:duration={DURATION}:rate=30"
+            if blank
+            else f"testsrc=size={DIMENSIONS}:duration={DURATION}:rate=30"
+        )
+        audio = (
+            "anullsrc=r=44100:cl=stereo"
+            if silent
+            else f"sine=frequency=440:duration={DURATION}"
+        )
+        _run(["ffmpeg", "-y", "-f", "lavfi", "-i", video, "-f", "lavfi", "-i", audio,
+              "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", "30",
+              "-c:a", "aac", "-shortest", str(cached)])
+        _MEDIA_CACHE[key] = cached
+    shutil.copyfile(cached, path)
 
 
 def _project(tmp_path: Path, *, blank: bool = False, silent: bool = False) -> Path:

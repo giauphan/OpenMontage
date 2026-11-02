@@ -209,13 +209,13 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     fi
     if [ ! -s "$project_root/assets/music-bg.mp3" ]; then
       echo "[$(date -u +%FT%TZ)] WARN: background music asset missing for $PROJECT_ID, using fallback" >&2
-      cp "$ROOT/tests/qa/output/e2e_assets/music_bg.mp3" "$project_root/assets/music-bg.mp3"
+      cp "$ROOT/assets/audio/music-bg.mp3" "$project_root/assets/music-bg.mp3"
     fi
     local music_duration
     music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
     if ! awk "BEGIN{exit !($music_duration > 30)}"; then
       echo "[$(date -u +%FT%TZ)] WARN: background music duration ${music_duration}s <=30s for $PROJECT_ID, using fallback" >&2
-      cp "$ROOT/tests/qa/output/e2e_assets/music_bg.mp3" "$project_root/assets/music-bg.mp3"
+      cp "$ROOT/assets/audio/music-bg.mp3" "$project_root/assets/music-bg.mp3"
       music_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$project_root/assets/music-bg.mp3" 2>/dev/null || echo 0)
     fi
     if cmp -s "$narration" "$project_root/assets/music-bg.mp3"; then

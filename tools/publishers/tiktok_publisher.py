@@ -281,7 +281,7 @@ class TiktokPublisher(BaseTool):
                 if any(ch in VIETNAMESE_DIACRITICS for ch in caption):
                     locale = "vi-VN"
                 else:
-                    locale = os.environ.get("OPENMONTAGE_LOCALE", "en-US")
+                    locale = os.environ.get("OPENMONTAGE_LOCALE", "vi-VN")
             validator = get_language_validator(locale)
             caption_errors = validator.validate_prose(caption)
             if caption_errors:

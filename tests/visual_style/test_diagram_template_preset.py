@@ -41,8 +41,10 @@ def test_agent_harness_mods_preset_layout():
     assert "tool_call" in edge_sources
 
 
-def test_build_and_stage_claude_code_mods_template(tmp_path: Path):
+def test_build_and_stage_claude_code_mods_template(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Verify deterministic end-to-end staging of the reference diagram template."""
+    monkeypatch.setenv("OPENMONTAGE_VISUAL_STYLE", "animated_agent_diagram_v1")
+    monkeypatch.setenv("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "1")
     topic_def = BUILTIN_TEMPLATES["claude_code_mods"]
     proj_dir = tmp_path / "test_template_claude_code_mods"
 
