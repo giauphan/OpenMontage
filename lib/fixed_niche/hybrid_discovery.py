@@ -22,10 +22,32 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from lib.fixed_niche.gate import FixedNicheScopeGate
+from lib.fixed_niche.gate import FixedNicheScopeGate, ScopeVerdict
 from lib.fixed_niche.policy import LockedNichePolicy, OutcomeStatus, load_locked_policy
+from lib.fixed_niche.candidate_helpers import (
+    CandidateConsumerPort,
+    get_registered_candidate_consumers,
+    load_candidates_from_file,
+    normalize_candidate_dict,
+    parse_timestamp,
+    register_candidate_consumer,
+    sort_candidates_by_recency,
+)
 
 logger = logging.getLogger(__name__)
+
+# Facade re-exports for backward compatibility and port definitions
+__all__ = [
+    "CandidateConsumerPort",
+    "DiscoveryTier",
+    "HybridCandidateDiscovery",
+    "TieredDiscoveryResult",
+    "load_candidates_from_file",
+    "normalize_candidate_dict",
+    "parse_timestamp",
+    "register_candidate_consumer",
+    "sort_candidates_by_recency",
+]
 
 
 class DiscoveryTier(str, Enum):
@@ -67,18 +89,20 @@ class HybridCandidateDiscovery:
         max_age_days: Optional[int] = None,
         reference_time: Optional[datetime] = None,
         strict_news_only: Optional[bool] = None,
+        consumer: Optional[CandidateConsumerPort] = None,
     ) -> None:
         self.policy = policy or load_locked_policy()
         self.gate = gate or FixedNicheScopeGate(self.policy)
         self.root_dir = Path(root_dir or Path(__file__).resolve().parent.parent.parent).resolve()
+        self.consumer = consumer
 
         # Configurable paths with environment variable overrides
         env_curated = os.environ.get("DAILY_CANDIDATES_FILE") or os.environ.get("OPENMONTAGE_CANDIDATES_FILE")
         self.curated_path = Path(curated_path or env_curated or (self.root_dir / self.DEFAULT_CURATED_FILE)).resolve()
-        
+
         env_feed = os.environ.get("NEWSNOW_FEED_FILE")
         self.feed_path = Path(feed_path or env_feed or (self.root_dir / self.DEFAULT_FEED_FILE)).resolve()
-        
+
         self.tracker_path = self.root_dir / self.CONSUMED_TRACKER_FILE
 
         # Enforce and activate latest news discovery (default: True, active)
@@ -88,7 +112,7 @@ class HybridCandidateDiscovery:
             env_latest = os.environ.get("REQUIRE_LATEST_NEWS", "1").strip().lower()
             self.require_latest_news = env_latest in ("1", "true", "yes", "on")
 
-        # Sliding freshness window: 1 to 7 days (Tiered Hybrid: 0-3d priority, 4-7d buffer, default 7 days / 168 hours)
+        # Sliding freshness window: 1 to 7 days
         if max_age_days is not None:
             self.max_age_days = max(1, int(max_age_days))
         elif os.environ.get("NEWS_MAX_AGE_DAYS"):
@@ -157,7 +181,7 @@ class HybridCandidateDiscovery:
         return self._get_scheduled_project_ids() | self._get_disk_project_ids() | self._get_consumed_project_ids()
 
     def mark_candidate_consumed(self, candidate_id: str) -> None:
-        """Record candidate ID as consumed so it is not re-selected on subsequent runs."""
+        """Record candidate ID as consumed and sync to outbound ports (DIP)."""
         if not candidate_id:
             return
         consumed: List[str] = []
@@ -180,36 +204,23 @@ class HybridCandidateDiscovery:
             safe_id = self._sanitize_log_val(candidate_id)
             logger.info("Marked candidate '%s' as consumed in %s", safe_id, self.tracker_path)
 
-        # Synchronize candidate removal / consumption to Toolcase Gateway Daily News service
-        try:
-            from tools.news.daily_news_gateway import DailyNewsGatewayClient
-            DailyNewsGatewayClient().consume_candidates([candidate_id])
-        except Exception as exc:
-            logger.debug("Gateway candidate consume sync skipped: %s", exc)
+        # Synchronize candidate removal / consumption to outbound consumer ports (DIP)
+        if self.consumer is not None:
+            try:
+                self.consumer.consume_candidates([candidate_id])
+            except Exception as exc:
+                logger.debug("Candidate consume sync failed on primary consumer: %s", exc)
+        else:
+            for c in get_registered_candidate_consumers():
+                try:
+                    c.consume_candidates([candidate_id])
+                except Exception as exc:
+                    logger.debug("Candidate consume sync failed on registered consumer: %s", exc)
 
     @staticmethod
     def _load_candidates_from_file(file_path: Path) -> List[Dict[str, Any]]:
         """Safely load candidates from a JSON or YAML file."""
-        if not file_path.is_file():
-            return []
-        try:
-            content = file_path.read_text(encoding="utf-8")
-            if not content.strip():
-                return []
-            if file_path.suffix in (".yaml", ".yml"):
-                import yaml
-                raw = yaml.safe_load(content)
-            else:
-                raw = json.loads(content)
-
-            if isinstance(raw, list):
-                return raw
-            if isinstance(raw, dict):
-                return raw.get("candidates", []) or raw.get("positive_cases", []) or raw.get("items", [])
-            return []
-        except Exception as e:
-            logger.warning("Failed loading candidates from %s: %s", file_path, e)
-            return []
+        return load_candidates_from_file(file_path)
 
     def load_curated_candidates(self) -> List[Dict[str, Any]]:
         """Load candidate list from Tier 1 curated backlog file and authorized production source feeds."""
@@ -280,38 +291,7 @@ class HybridCandidateDiscovery:
         verdict: ScopeVerdict,
     ) -> Dict[str, Any]:
         """Normalize an eligible candidate into a uniform dictionary representation."""
-        content_kind = verdict.content_kind or cand.get("content_kind", "evergreen_explainer")
-        normalized = dict(cand)
-        normalized["candidate_id"] = cid
-        normalized["id"] = cid
-        normalized["topic_family"] = verdict.topic_family
-        normalized["content_kind"] = content_kind
-        has_pub = bool(cand.get("published_at") or cand.get("published_at_utc"))
-        normalized["has_explicit_date"] = has_pub
-        pub_at = cand.get("published_at") or cand.get("published_at_utc") or datetime.now(timezone.utc).isoformat()
-        normalized["published_at_utc"] = pub_at
-        normalized["published_at"] = pub_at
-        pub_name = str(cand.get("publisher") or "Unknown")
-        normalized["publisher"] = pub_name
-        normalized["normalized_publisher"] = str(cand.get("normalized_publisher") or pub_name).lower()
-        url = cand.get("canonical_url") or cand.get("url") or ""
-        normalized["url"] = url
-        normalized["canonical_url"] = url
-        body = cand.get("body") or cand.get("summary") or cand.get("description") or ""
-        normalized["body"] = body
-        normalized["summary"] = cand.get("summary") or body[:300]
-        content_h = (
-            cand.get("content_hash")
-            or hashlib.sha256(
-                f"{str(cand.get('title', '')).strip().lower()}|{url.strip().lower()}|{body[:500].strip().lower()}".encode("utf-8")
-            ).hexdigest()
-        )
-        normalized["content_hash"] = content_h
-        normalized["raw_provenance"] = cand.get("raw_provenance") or {
-            "source_id": cid,
-            "source_feed": "fixed_niche",
-        }
-        return normalized
+        return normalize_candidate_dict(cand, cid, verdict)
 
     def filter_and_validate_candidates(
         self,
@@ -335,46 +315,11 @@ class HybridCandidateDiscovery:
     @staticmethod
     def parse_timestamp(val: Any) -> float:
         """Parse ISO timestamp or date into float epoch seconds."""
-        if not val:
-            return 0.0
-        try:
-            if isinstance(val, (int, float)):
-                return float(val)
-            s = str(val).strip().replace("Z", "+00:00")
-            if "T" in s:
-                dt = datetime.fromisoformat(s)
-            elif "-" in s:
-                parts = [int(p) for p in s.split("-")]
-                dt = datetime(parts[0], parts[1], parts[2], tzinfo=timezone.utc)
-            elif "/" in s:
-                parts = [int(p) for p in s.split("/")]
-                if parts[0] > 1000:
-                    dt = datetime(parts[0], parts[1], parts[2], tzinfo=timezone.utc)
-                else:
-                    dt = datetime(parts[2], parts[1], parts[0], tzinfo=timezone.utc)
-            else:
-                dt = datetime.fromisoformat(s)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.timestamp()
-        except Exception:
-            return 0.0
+        return parse_timestamp(val)
 
     def sort_by_recency(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Sort candidates so recent/latest published items appear first.
-
-        Breaking news items with real published dates take priority over evergreen explainers.
-        Items without explicit dates preserve their original backlog insertion order.
-        """
-        def recency_key(pair: Tuple[int, Dict[str, Any]]) -> Tuple[int, int, float, int]:
-            idx, item = pair
-            is_news = 1 if (item.get("content_kind") == "news" and not item.get("is_evergreen")) else 0
-            has_date = 1 if item.get("has_explicit_date") else 0
-            ts = self.parse_timestamp(item.get("published_at_utc")) if has_date else 0.0
-            return (is_news, has_date, ts, -idx)
-
-        sorted_indexed = sorted(enumerate(candidates), key=recency_key, reverse=True)
-        return [item for _, item in sorted_indexed]
+        """Sort candidates so recent/latest published items appear first."""
+        return sort_candidates_by_recency(candidates)
 
     def _discover_tier_1_curated(
         self,
@@ -448,44 +393,46 @@ class HybridCandidateDiscovery:
             "tier_2_checked": False,
             "require_latest_news_active": self.require_latest_news,
             "max_age_days": self.max_age_days,
-            "reference_time": self.reference_time.isoformat(),
-            "cutoff_date": cutoff_dt.isoformat(),
+            "cutoff_timestamp_utc": cutoff_dt.isoformat(),
+            "reference_time_utc": self.reference_time.isoformat(),
         }
 
-        # --- TIER 1: Curated Backlog ---
-        selected_t1 = self._discover_tier_1_curated(used_ids, count, diagnostics)
-        if selected_t1:
+        # Step 1: Check Tier 1 Curated Backlog
+        tier_1_candidates = self._discover_tier_1_curated(used_ids, count, diagnostics)
+        if tier_1_candidates:
             logger.info(
-                "[Tier 1: Curated Queue] Selected %d in-scope candidate(s) from %s (require_latest_news=%s)",
-                len(selected_t1), self.curated_path, self.require_latest_news
+                "[Tier 1: Curated Queue] Selected %d candidate(s): %s",
+                len(tier_1_candidates),
+                [self._sanitize_log_val(c.get("candidate_id")) for c in tier_1_candidates],
             )
             return TieredDiscoveryResult(
                 tier=DiscoveryTier.TIER_1_CURATED,
                 status="ELIGIBLE",
-                candidates=selected_t1,
+                candidates=tier_1_candidates,
                 source_file=str(self.curated_path),
                 diagnostics=diagnostics,
             )
 
-        # --- TIER 2: Automated Live Feed Fallback ---
-        selected_t2 = self._discover_tier_2_feed(used_ids, count, diagnostics)
-        if selected_t2:
+        # Step 2: Check Tier 2 Automated Live Feed
+        tier_2_candidates = self._discover_tier_2_feed(used_ids, count, diagnostics)
+        if tier_2_candidates:
             logger.info(
-                "[Tier 2: Automated Feed] Selected %d in-scope candidate(s) from %s (require_latest_news=%s)",
-                len(selected_t2), self.feed_path, self.require_latest_news
+                "[Tier 2: Automated Feed] Selected %d candidate(s): %s",
+                len(tier_2_candidates),
+                [self._sanitize_log_val(c.get("candidate_id")) for c in tier_2_candidates],
             )
             return TieredDiscoveryResult(
                 tier=DiscoveryTier.TIER_2_AUTOMATED,
                 status="ELIGIBLE",
-                candidates=selected_t2,
+                candidates=tier_2_candidates,
                 source_file=str(self.feed_path),
                 diagnostics=diagnostics,
             )
 
-        # --- TIER 3: Clean Fail-Closed ---
+        # Step 3: Fail-Closed
         logger.warning(
-            "STATUS=NO_ELIGIBLE_TOPIC: Neither Tier 1 (Curated Backlog) nor Tier 2 (Automated Feed) "
-            "provided an eligible in-scope topic with verified evidence."
+            "[Tier 3: Fail-Closed] Neither Tier 1 (curated) nor Tier 2 (feed) "
+            "provided eligible in-scope topics. Rejecting run without side-effects."
         )
         return TieredDiscoveryResult(
             tier=DiscoveryTier.NONE,

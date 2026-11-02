@@ -290,3 +290,13 @@ class DailyNewsGatewayClient:
             items.append(_normalize_feed_item(raw, url))
 
         return items
+
+
+# Clean Architecture DIP: Register default gateway adapter with domain candidate consumer port
+try:
+    from lib.fixed_niche.candidate_helpers import register_candidate_consumer
+
+    register_candidate_consumer(DailyNewsGatewayClient())
+except Exception as _reg_exc:
+    logger.debug("Gateway client port registration skipped: %s", _reg_exc)
+
