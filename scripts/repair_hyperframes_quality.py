@@ -218,7 +218,7 @@ def _wrap_scenes_with_stage(
         f'<div id="stage" class="composition" data-composition-id="main" '
         f'data-start="0" data-duration="{initial_dur:.3f}" data-width="{default_width}" data-height="{default_height}">\n'
     )
-    inner_scenes = re.sub(r'\s+data-composition-id=["\'][^"\']*["\']', '', html[start_pos:end_pos])
+    inner_scenes = re.sub(r'\s+data-composition-id=(?:"[^"]*"|\'[^\']*\')', '', html[start_pos:end_pos])
     html = html[:start_pos] + stage_open + inner_scenes + "\n</div>\n" + html[end_pos:]
     root_open = re.search(r"<div\b[^>]*id=[\"']stage[\"'][^>]*>", html)
     if "#stage" not in html and TAG_STYLE_OPEN in html:
@@ -441,7 +441,7 @@ def _ensure_clipping_guard(html: str, path: Path) -> str:
 
 
 def _sanitize_sentence_cutoffs(html: str, path: Path) -> str:
-    html = re.sub(r'([.!?])\s+[^<\s.!?][^<.!?]{2,}(</(?:p|div|span)>)', r'\1\2', html)
+    html = re.sub(r'([.!?])\s+[^<\s.!?]{2,}(</(?:p|div|span)>)', r'\1\2', html)
     html = re.sub(r'(\w+)\s*(</(?:p|div|span)>)', _replace_trailing_stopword, html)
     html = re.sub(r'([^.!?\s>])\s*(</(?:p|div|span)>)', r'\1.\2', html)
     return _ensure_clipping_guard(html, path)

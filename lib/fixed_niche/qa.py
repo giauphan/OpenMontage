@@ -4,9 +4,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import re
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,12 +30,20 @@ class FixedNicheQAValidator:
         """Compute SHA256 checksum of a file."""
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
+    @staticmethod
+    def _safe_write_json(path: Path, data: dict) -> None:
+        p = Path(path).expanduser().resolve()
+        allowed = (Path.cwd().resolve(), Path.home().resolve(), Path(tempfile.gettempdir()).resolve())
+        if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
+            raise ValueError(f"Path traversal detected: {path}")
+        p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
     def _verify_file_hash(self, app_data: dict, app_path: Path, key: str, path: Path, status: str) -> bool:
         expected = app_data.get(key) or (app_data.get("media_sha256") if key == "video_sha256" else None)
         if not expected or not path.is_file() or self.compute_sha256(path).lower() != str(expected).lower():
             app_data["approved"] = False
             app_data["status"] = status if expected and path.is_file() else "INVALIDATED_MISSING_SIGNATURE"
-            app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
+            self._safe_write_json(app_path, app_data)
             return False
         return True
 
@@ -47,7 +57,7 @@ class FixedNicheQAValidator:
             if not is_valid:
                 app_data["approved"] = False
                 app_data["status"] = "INVALIDATED_BY_SIGNATURE_FORGERY"
-                app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
+                self._safe_write_json(app_path, app_data)
                 return False
             return True
         except Exception as sig_err:
@@ -220,7 +230,7 @@ class FixedNicheQAValidator:
     @staticmethod
     def _get_target_duration_bounds(expected_duration: float, tolerance: float) -> Tuple[float, float]:
         """Compute min and max allowable duration bounds."""
-        if expected_duration == 72.0:
+        if math.isclose(expected_duration, 72.0, abs_tol=1e-5):
             return 65.0 - tolerance, 75.0 + tolerance
         return expected_duration - tolerance, expected_duration + tolerance
 
@@ -362,57 +372,39 @@ class FixedNicheQAValidator:
         return findings
 
     def _audit_topic_and_claims(self, project_dir: Path) -> List[Dict[str, str]]:
-        """Audit scope, topic policy conformity, claims ledger, and proof maps."""
-        findings: List[Dict[str, str]] = []
-        findings.extend(self._audit_scope(project_dir))
-        findings.extend(self._audit_claims_and_proofs(project_dir))
-        return findings
+        return self._audit_scope(project_dir) + self._audit_claims_and_proofs(project_dir)
 
     def _audit_spec_and_storyboard(self, project_dir: Path) -> List[Dict[str, str]]:
-        """Audit editorial script CTA and visual plan storyboard assets."""
-        findings: List[Dict[str, str]] = []
-        findings.extend(self._audit_cta(project_dir))
-        findings.extend(self._audit_visual_plan(project_dir))
-        return findings
+        return self._audit_cta(project_dir) + self._audit_visual_plan(project_dir)
 
     def _audit_render_and_duration(
-        self,
-        project_dir: Path,
-        expected_duration: float = 72.0,
-        duration_tolerance: float = 3.0,
+        self, project_dir: Path, expected_duration: float = 72.0, duration_tolerance: float = 3.0
     ) -> List[Dict[str, str]]:
-        """Audit frame samples quality and final video duration."""
-        findings: List[Dict[str, str]] = []
-        findings.extend(self._audit_frame_samples(project_dir))
-        findings.extend(self._audit_duration(project_dir, expected_duration, duration_tolerance))
-        return findings
+        return self._audit_frame_samples(project_dir) + self._audit_duration(project_dir, expected_duration, duration_tolerance)
 
     def _audit_manifests_and_hashes(self, project_dir: Path) -> List[Dict[str, str]]:
-        """Audit deliverable manifests and cryptographic release integrity when present."""
         findings: List[Dict[str, str]] = []
         app_path = project_dir / "approval.json"
-        if not app_path.is_file():
-            return findings
-        try:
-            app_data = json.loads(app_path.read_text(encoding="utf-8"))
-            if app_data.get("approved") and not self.verify_audio_and_release_integrity(project_dir):
-                findings.append({
-                    "category": "RELEASE_INTEGRITY",
-                    "severity": "blocker",
-                    "message": "Approval record signature or media hash integrity check failed",
-                })
-        except Exception:
-            pass
+        if app_path.is_file():
+            try:
+                app_data = json.loads(app_path.read_text(encoding="utf-8"))
+                if app_data.get("approved") and not self.verify_audio_and_release_integrity(project_dir):
+                    findings.append({
+                        "category": "RELEASE_INTEGRITY", "severity": "blocker",
+                        "message": "Approval record signature or media hash integrity check failed",
+                    })
+            except Exception:
+                pass
         return findings
 
-    @staticmethod
-    def _persist_qa_report(project_dir: Path, report: Dict[str, Any]) -> None:
+    @classmethod
+    def _persist_qa_report(cls, project_dir: Path, report: Dict[str, Any]) -> None:
         """Persist production QA report artifact to disk."""
         try:
             qa_report_path = project_dir / "artifacts" / "production_qa_report.json"
             qa_report_path.parent.mkdir(parents=True, exist_ok=True)
-            qa_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        except OSError as e:
+            cls._safe_write_json(qa_report_path, report)
+        except (OSError, ValueError) as e:
             report["artifact_persisted"] = False
             report["artifact_persistence_warning"] = f"Could not persist production_qa_report.json: {e}"
 

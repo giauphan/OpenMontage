@@ -353,7 +353,7 @@ def _beat_6_contract_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tup
     return accent, badge, body
 
 
-def _beat_default_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+def _beat_default_content(p: str, fam_label: str) -> tuple[str, str, str]:
     accent, badge = "#38bdf8", f"{fam_label} // PRODUCTION SUMMARY"
     body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">End-to-End Production Pipeline Flow</text>
@@ -431,7 +431,7 @@ def build_vertical_beat(
         return _beat_5_content(prefix, fam_label, cfg)
     if beat_num == 6 and total_beats == 7:
         return _beat_6_contract_content(prefix, fam_label, cfg)
-    return _beat_default_content(prefix, fam_label, cfg)
+    return _beat_default_content(prefix, fam_label)
 
 
 def generate_horizontal_svg(

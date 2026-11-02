@@ -46,9 +46,33 @@ from scripts.evidence_binder_helpers import (
     _tokens_match,
 )
 
+SCRIPT_EN_US_JSON = "script_en_US.json"
+
+
+def _safe_write_bytes(path: Path | str, content: bytes) -> None:
+    """Validate path against traversal attacks (CWE-22) before writing."""
+    import tempfile
+    p = Path(path).expanduser().resolve()
+    repo_root = Path(__file__).resolve().parents[1]
+    allowed = (repo_root, Path.home().resolve(), Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
+    if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
+        raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
+    p.write_bytes(content)
+
+
+def _safe_write_text(path: Path | str, content: str, encoding: str = "utf-8") -> None:
+    """Validate path against traversal attacks (CWE-22) before writing."""
+    import tempfile
+    p = Path(path).expanduser().resolve()
+    repo_root = Path(__file__).resolve().parents[1]
+    allowed = (repo_root, Path.home().resolve(), Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
+    if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
+        raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
+    p.write_text(content, encoding=encoding)
+
 
 def _resolve_script_path(artifacts_dir: Path) -> Path:
-    candidates = ("script_en_US.json", "script_vi.json", "script.json")
+    candidates = (SCRIPT_EN_US_JSON, "script_vi.json", "script.json")
     for name in candidates:
         candidate_path = artifacts_dir / name
         if candidate_path.is_file():
@@ -90,7 +114,7 @@ def _parse_and_validate_script(script_path: Path) -> tuple[dict[str, Any] | None
         return None, None
     if _normalize_script_sections(script_data):
         script_bytes = json.dumps(script_data, ensure_ascii=False, indent=2).encode("utf-8")
-        script_path.write_bytes(script_bytes)
+        _safe_write_bytes(script_path, script_bytes)
     return script_data, script_bytes
 
 
@@ -114,7 +138,7 @@ def _is_strict_capture_required(script_name: str) -> bool:
         return True
     return (
         os.environ.get("FIXED_NICHE_MODE", "0") in ("1", "true", "True")
-        and script_name == "script_en_US.json"
+        and script_name == SCRIPT_EN_US_JSON
     )
 
 
@@ -122,7 +146,7 @@ def _resolve_brief_sources(brief_data: dict[str, Any], script_name: str) -> list
     sources = brief_data.get("sources")
     if isinstance(sources, list) and sources:
         return sources
-    if script_name == "script_en_US.json":
+    if script_name == SCRIPT_EN_US_JSON:
         print("ERROR: research_brief.json has no sources for en-US claim verification", file=sys.stderr)
         return None
     topic = brief_data.get("topic") or "Tin tức công nghệ"
@@ -211,7 +235,7 @@ def _evaluate_section(
 ) -> tuple[str, str, bool, str | None]:
     sec_id = str(section.get("id", "sec"))
     sec_text = (section.get("text_vi") or section.get("text") or "").strip()
-    is_en_us = script_name == "script_en_US.json"
+    is_en_us = script_name == SCRIPT_EN_US_JSON
     should_verify = is_en_us or bool(brief_data.get("data_points"))
 
     has_fig_err, missing_figs = _check_quantitative_figures(sec_text, target_corpus, should_verify)
@@ -273,9 +297,9 @@ def _write_evidence_artifacts(
         "contradictions": [],
     }
     evidence_path = artifacts_dir / "news_evidence.json"
-    evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+    _safe_write_text(evidence_path, json.dumps(evidence, ensure_ascii=False, indent=2))
 
-    if script_name == "script_en_US.json" and ledger_claims:
+    if script_name == SCRIPT_EN_US_JSON and ledger_claims:
         brief_sha = hashlib.sha256(brief_path.read_bytes()).hexdigest() if brief_path.is_file() else ""
         claim_ledger = {
             "schema_version": "1.0",
@@ -286,7 +310,7 @@ def _write_evidence_artifacts(
             "claims": ledger_claims,
         }
         ledger_path = artifacts_dir / "claim_ledger.json"
-        ledger_path.write_text(json.dumps(claim_ledger, ensure_ascii=False, indent=2), encoding="utf-8")
+        _safe_write_text(ledger_path, json.dumps(claim_ledger, ensure_ascii=False, indent=2))
 
 
 def _resolve_primary_title(sources_in_brief: list[dict[str, Any]]) -> str:

@@ -28,7 +28,7 @@ from tools.base_tool import (
 
 
 def _build_speech_endpoint(base_url: str) -> str:
-    if base_url.endswith("/v1/audio/speech") or base_url.endswith("/audio/speech"):
+    if base_url.endswith(("/v1/audio/speech", "/audio/speech")):
         return base_url
     if base_url.endswith("/v1"):
         return f"{base_url}/audio/speech"

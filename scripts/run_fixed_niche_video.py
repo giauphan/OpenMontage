@@ -352,7 +352,8 @@ class FixedNicheVideoRunner:
     ) -> None:
         if not script_file.is_file():
             return
-        s_json = json.loads(script_file.read_text(encoding="utf-8"))
+        safe_script = _validate_safe_path(script_file)
+        s_json = json.loads(safe_script.read_text(encoding="utf-8"))
         s_json["target_duration_seconds"] = round(align_dur, 3)
         for sec in s_json.get("sections", []):
             bid = sec.get("beat_id")
@@ -361,26 +362,28 @@ class FixedNicheVideoRunner:
             sec["id"] = sec.get("id") or sec.get("section_id")
             sec["text"] = sec.get("text") or sec.get("narration")
         s_bytes = json.dumps(s_json, indent=2).encode("utf-8")
-        script_file.write_bytes(s_bytes)
+        safe_script.write_bytes(s_bytes)
         s_sha = hashlib.sha256(s_bytes).hexdigest()
         for f_path in (assets_file, ev_file):
-            f_res = f_path.resolve()
+            if not f_path.is_file():
+                continue
+            f_res = _validate_safe_path(f_path)
             if not f_res.is_relative_to(self.project_dir.resolve()):
                 continue
-            if f_res.is_file():
-                data = json.loads(f_res.read_text(encoding="utf-8"))
-                data["script_sha256"] = s_sha
-                f_res.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            data = json.loads(f_res.read_text(encoding="utf-8"))
+            data["script_sha256"] = s_sha
+            f_res.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def _update_proof_map(self, proof_map_file: Path, beat_map: dict[str, dict]) -> None:
         if not proof_map_file.is_file():
             return
-        p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
+        safe_proof = _validate_safe_path(proof_map_file)
+        p_json = json.loads(safe_proof.read_text(encoding="utf-8"))
         for pb in p_json.get("beats", []):
             bid = pb.get("beat_id")
             if bid in beat_map:
                 pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
-        proof_map_file.write_text(json.dumps(p_json, indent=2), encoding="utf-8")
+        safe_proof.write_text(json.dumps(p_json, indent=2), encoding="utf-8")
 
     def _write_reconciled_artifacts(
         self, beats: list[dict], align_dur: float, out_audio: Path, plan_json: dict, plan_f: Path
@@ -411,7 +414,7 @@ class FixedNicheVideoRunner:
         flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
         if visual_style == "animated_agent_diagram_v1" and flag_enabled:
             from lib.visual_style.diagram_director import AnimatedDiagramDirector
-            cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
+            cl_file = self.project_dir / "artifacts" / CLAIM_LEDGER_JSON
             claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
             director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
             diag_plan = director.plan_diagram_animation(
@@ -592,7 +595,7 @@ class FixedNicheVideoRunner:
         frames_dir = self.project_dir / "renders" / "frame_samples"
         frames_valid = self._sample_and_validate_frames(output_mp4, render_dur, frames_dir, probe_dur=probe_dur)
 
-        claim_ledger_path = self.project_dir / "artifacts" / "claim_ledger.json"
+        claim_ledger_path = self.project_dir / "artifacts" / CLAIM_LEDGER_JSON
         ledger_valid = claim_ledger_path.is_file() and claim_ledger_path.stat().st_size > 0
         ledger_sha = FixedNicheResearcher.compute_file_sha(claim_ledger_path) if ledger_valid else None
         audio_path = self.project_dir / "assets" / "narration.mp3"

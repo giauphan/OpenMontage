@@ -200,23 +200,28 @@ def measure_edge_density(path: Path, ffmpeg: str) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _calculate_total_freeze(
+    freeze_starts: list[float],
+    durations: list[float],
+    duration: float,
+) -> float:
+    total = sum(durations)
+    if len(freeze_starts) > len(durations) and freeze_starts:
+        last_start = freeze_starts[-1]
+        if duration > last_start:
+            total += (duration - last_start)
+    return total
+
+
 def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool = False) -> float | None:
     path_resolved = Path(path).resolve()
-    if not path_resolved.is_file():
-        return None
-    path_str = str(path_resolved)
-    if path_str.startswith("-"):
+    if not path_resolved.is_file() or str(path_resolved).startswith("-"):
         return None
     ffmpeg_bin = _safe_executable("ffmpeg", ffmpeg)
     noise_threshold = "-50dB" if strict else "-60dB"
-    # In strict mode, analyze upper 80% to catch static slides with animated bottom captions
-    vf = (
-        f"fps=5,scale=180:320,crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2"
-        if strict
-        else f"fps=5,scale=180:320,freezedetect=n={noise_threshold}:d=2"
-    )
+    vf = f"fps=5,scale=180:320,crop=in_w:in_h*0.80:0:0,freezedetect=n={noise_threshold}:d=2" if strict else f"fps=5,scale=180:320,freezedetect=n={noise_threshold}:d=2"
     result = subprocess.run(
-        [ffmpeg_bin, "-nostdin", "-threads", "0", "-v", "info", "-i", path_str, "-vf",
+        [ffmpeg_bin, "-nostdin", "-threads", "0", "-v", "info", "-i", str(path_resolved), "-vf",
          vf, "-an", "-f", "null", "-"],
         check=False, capture_output=True, text=True,
     )
@@ -225,15 +230,10 @@ def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool 
     freeze_starts = [float(value) for value in re.findall(r"freeze_start:\s*(\d+(?:\.\d+)?)", stderr)]
     durations = [float(value) for value in re.findall(r"freeze_duration:\s*(\d+(?:\.\d+)?)", stderr)]
 
-    # Fail only when freezedetect produced no usable measurements.
     if not freeze_starts and not durations:
-        return 0.0 if result.returncode == 0 else (None if result.returncode != 0 else 0.0)
+        return 0.0 if result.returncode == 0 else None
 
-    total_freeze = sum(durations)
-    if len(freeze_starts) > len(durations) and freeze_starts:
-        last_start = freeze_starts[-1]
-        if duration > last_start:
-            total_freeze += (duration - last_start)
+    total_freeze = _calculate_total_freeze(freeze_starts, durations, duration)
     if duration <= 0:
         return 0.0
     return min(total_freeze / duration, 1.0)

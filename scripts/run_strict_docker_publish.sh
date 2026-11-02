@@ -751,18 +751,18 @@ if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
       break
     fi
     local_sched_delay="${PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS:-15}"
-    if [ "$local_sched_delay" -gt 0 ]; then
+    if [[ "$local_sched_delay" -gt 0 ]]; then
       log "WARNING: YouTube scheduling attempt $sched_attempt/3 failed; pausing ${local_sched_delay}s before retry..."
       sleep "$local_sched_delay"
     fi
   done
-  if [ "$NEXT_PLATFORM_OK" -eq 0 ]; then
+  if [[ "$NEXT_PLATFORM_OK" -eq 0 ]]; then
     write_state "platform-schedule" "failed" "date=$NEXT_DATE"
     fail "next-day YouTube scheduling failed after 3 attempts; queued projects retained"
   fi
 fi
 
-if [ "$TODAY_PLATFORM_OK" -eq 0 ]; then
+if [[ "$TODAY_PLATFORM_OK" -eq 0 ]]; then
   log "WARNING: current-day YouTube scheduling encountered errors, but next-day videos were successfully scheduled"
   write_state "platform-schedule" "partial" "today_failed=true next=$(IFS=,; echo "${NEXT_QUEUED_PIDS[*]}")"
 else
