@@ -196,13 +196,21 @@ def _calculate_scenes_max_end(html: str) -> float:
     return max_end
 
 
+def _skip_attribute_value(text: str, val_start: int, n: int) -> int:
+    if val_start < n and text[val_start] in ('"', "'"):
+        val_end = text.find(text[val_start], val_start + 1)
+        return n if val_end == -1 else val_end + 1
+    end = val_start
+    while end < n and text[end] not in " \t\r\n>":
+        end += 1
+    return end
+
+
 def _strip_composition_id(text: str) -> str:
     target = "data-composition-id="
     if target not in text:
         return text
-    result = []
-    idx = 0
-    n = len(text)
+    result, idx, n = [], 0, len(text)
     while idx < n:
         pos = text.find(target, idx)
         if pos == -1:
@@ -212,16 +220,7 @@ def _strip_composition_id(text: str) -> str:
         while start > idx and text[start - 1] in " \t\r\n":
             start -= 1
         result.append(text[idx:start])
-        val_start = pos + len(target)
-        if val_start < n and text[val_start] in ('"', "'"):
-            quote = text[val_start]
-            val_end = text.find(quote, val_start + 1)
-            idx = n if val_end == -1 else val_end + 1
-        else:
-            end = val_start
-            while end < n and text[end] not in " \t\r\n>":
-                end += 1
-            idx = end
+        idx = _skip_attribute_value(text, pos + len(target), n)
     return "".join(result)
 
 

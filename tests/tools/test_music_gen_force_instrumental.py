@@ -86,3 +86,19 @@ def test_schema_defaults_force_instrumental_to_true():
     props = MusicGen().input_schema["properties"]["force_instrumental"]
     assert props["type"] == "boolean"
     assert props["default"] is True
+
+
+def test_music_gen_resolve_api_key_variants(monkeypatch):
+    tool = MusicGen()
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("XI_API_KEY", raising=False)
+    assert tool._resolve_api_key() is None
+    assert tool.get_status().value == "unavailable"
+
+    assert tool._resolve_api_key({"api_key": "k1"}) == "k1"
+    assert tool._resolve_api_key({"elevenlabs_api_key": "k2"}) == "k2"
+    assert tool._resolve_api_key({"xi_api_key": "k3"}) == "k3"
+
+    monkeypatch.setenv("XI_API_KEY", "env_xi")
+    assert tool._resolve_api_key() == "env_xi"
+    assert tool.get_status().value == "available"

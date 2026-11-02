@@ -309,3 +309,38 @@ def test_repair_hyperframes_quality_injects_bgm_and_sfx(tmp_path: Path):
     assert (assets_dir / "music-bg.mp3").is_file()
     assert (assets_dir / "sfx" / "whoosh-short.mp3").is_file()
 
+
+def test_resolve_bgm_path_and_render_ffmpeg_branches(tmp_path: Path):
+    from unittest.mock import patch
+    from lib.fixed_niche.ffmpeg_composer import _resolve_bgm_path, _execute_ffmpeg_color, _execute_ffmpeg_concat
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _ = _resolve_bgm_path(proj)
+
+    (proj / "assets").mkdir()
+    bgm_p = proj / "assets" / "music-bg.mp3"
+    bgm_p.write_bytes(b"BGM")
+    assert _resolve_bgm_path(proj) == bgm_p
+
+    out_dir = proj / "renders"
+    out_dir.mkdir()
+    audio = proj / "assets" / "narration.mp3"
+    audio.write_bytes(b"NARR")
+
+    with patch("subprocess.run") as mock_run:
+        _execute_ffmpeg_color(1080, 1920, audio, "scale=1080:1920", "9:16", 10.0, out_dir / "out.mp4", bgm_path=bgm_p)
+        assert mock_run.called
+        _execute_ffmpeg_color(1080, 1920, audio, "scale=1080:1920", "9:16", 10.0, out_dir / "out2.mp4", bgm_path=None)
+        assert mock_run.call_count == 2
+
+        c_list = out_dir / "concat.txt"
+        c_list.write_text("file dummy\n")
+        _execute_ffmpeg_concat(c_list, audio, "scale=1080:1920", "9:16", 10.0, out_dir / "out3.mp4", bgm_path=bgm_p)
+        assert mock_run.call_count == 3
+
+        c_list2 = out_dir / "concat2.txt"
+        c_list2.write_text("file dummy\n")
+        _execute_ffmpeg_concat(c_list2, audio, "scale=1080:1920", "9:16", 10.0, out_dir / "out4.mp4", bgm_path=None)
+        assert mock_run.call_count == 4
+
