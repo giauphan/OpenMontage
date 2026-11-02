@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+import sys
 from unittest.mock import MagicMock, patch
+
+if "googleapiclient" not in sys.modules:
+    mock_gap = MagicMock()
+    sys.modules["googleapiclient"] = mock_gap
+    sys.modules["googleapiclient.http"] = mock_gap.http
+
 
 import pytest
 

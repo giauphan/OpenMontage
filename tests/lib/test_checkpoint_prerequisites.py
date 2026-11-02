@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from tests.contracts.test_phase0_contracts import sample_artifact
+from tests.contracts.conftest import sample_artifact
 
 from lib.checkpoint import (
     CheckpointValidationError,

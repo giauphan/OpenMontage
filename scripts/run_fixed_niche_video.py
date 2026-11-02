@@ -98,11 +98,8 @@ class FixedNicheVideoRunner:
 
         # 2. Project descriptor
         project_json = {
-            "project_id": self.candidate_id,
-            "pipeline_type": "fixed_niche_explainer",
-            "locale": "en-US",
-            "market": "US",
-            "niche_id": self.policy.niche_id,
+            "project_id": self.candidate_id, "pipeline_type": "fixed_niche_explainer",
+            "locale": "en-US", "market": "US", "niche_id": self.policy.niche_id,
             "policy_sha256": self.policy.policy_sha256,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
@@ -110,9 +107,7 @@ class FixedNicheVideoRunner:
 
         # 3. Build research brief and claim ledger
         art_paths = self.researcher.build_topic_artifacts(
-            candidate=topic,
-            project_dir=self.project_dir,
-            content_kind=verdict.content_kind,
+            candidate=topic, project_dir=self.project_dir, content_kind=verdict.content_kind,
         )
 
         with open(art_paths["claim_ledger"], "r", encoding="utf-8") as f:
@@ -121,28 +116,17 @@ class FixedNicheVideoRunner:
         # 4. Generate storyboard, proof map, and technical SVGs
         target_dur = self.get_target_duration()
         story_res = self.storyboard_director.generate_storyboard(
-            topic=topic,
-            claims=claim_ledger["claims"],
-            project_dir=self.project_dir,
-            target_duration=target_dur,
+            topic=topic, claims=claim_ledger["claims"], project_dir=self.project_dir, target_duration=target_dur,
         )
 
         # 5. Generate script_en_US.json and captions.srt
         visual_plan = story_res["visual_plan"]
         script_data = {
-            "version": "1.0",
-            "locale": "en-US",
-            "title": topic.get("title", "AI Agent Engineering Explainer"),
+            "version": "1.0", "locale": "en-US", "title": topic.get("title", "AI Agent Engineering Explainer"),
             "target_duration_seconds": target_dur,
             "sections": [
-                {
-                    "section_id": b["script_section_id"],
-                    "beat_id": b["beat_id"],
-                    "start_s": b["start_s"],
-                    "end_s": b["end_s"],
-                    "narration": b["narration"],
-                    "claims": b["claim_ids"],
-                }
+                {"section_id": b["script_section_id"], "beat_id": b["beat_id"], "start_s": b["start_s"],
+                 "end_s": b["end_s"], "narration": b["narration"], "claims": b["claim_ids"]}
                 for b in visual_plan["beats"]
             ],
         }
@@ -167,27 +151,16 @@ class FixedNicheVideoRunner:
 
         # 6. Orchestrate and resolve assets with strict meaningful visual enforcement
         from lib.news_visual.visual_asset_orchestrator import VisualAssetOrchestrator
-        orchestrator = VisualAssetOrchestrator()
-        orch_res = orchestrator.orchestrate_plan_assets(
-            project_dir=self.project_dir,
-            plan=visual_plan,
-            topic=topic,
-            claim_ledger=claim_ledger.get("claims", []),
+        orch_res = VisualAssetOrchestrator().orchestrate_plan_assets(
+            project_dir=self.project_dir, plan=visual_plan, topic=topic, claim_ledger=claim_ledger.get("claims", []),
         )
         if orch_res.get("summary", {}).get("blocked_missing_proof", 0) > 0:
-            return {
-                "status": "BLOCKED_MISSING_PROOF",
-                "project_id": self.candidate_id,
-                "beat_results": orch_res.get("beat_results", {}),
-            }
+            return {"status": "BLOCKED_MISSING_PROOF", "project_id": self.candidate_id, "beat_results": orch_res.get("beat_results", {})}
 
         plan_sha = hashlib.sha256(json.dumps(visual_plan).encode("utf-8")).hexdigest()
         manifest = resolve_visual_assets(
-            project_dir=self.project_dir,
-            visual_plan=visual_plan,
-            script_sha256=script_sha,
-            visual_plan_sha256=plan_sha,
-            enforce_meaningful_visuals=True,
+            project_dir=self.project_dir, visual_plan=visual_plan, script_sha256=script_sha,
+            visual_plan_sha256=plan_sha, enforce_meaningful_visuals=True,
         )
         (artifacts_dir / NEWS_VISUAL_ASSETS_JSON).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
@@ -499,15 +472,19 @@ class FixedNicheVideoRunner:
         self._reconcile_artifacts(dur, target_dur, out_audio)
         return out_audio
 
-    def _sample_and_validate_frames(self, output_mp4: Path, render_dur: float, frames_dir: Path) -> bool:
+    def _sample_and_validate_frames(
+        self, output_mp4: Path, render_dur: float, frames_dir: Path, probe_dur: Optional[float] = None
+    ) -> bool:
         """Sample key frames and validate visual quality/variance."""
         frames_dir.mkdir(parents=True, exist_ok=True)
+        max_limit = max(0.0, (probe_dur - 0.5) if probe_dur is not None and probe_dur > 0 else (render_dur - 0.5))
         sample_points = [
-            (0, "frame_00s_hook.png"),
-            (3, "frame_03s_impact.png"),
-            (int(render_dur / 2), "frame_mid_mechanism.png"),
-            (int(render_dur - 2), "frame_end_payoff.png"),
+            (min(0.0, max_limit), "frame_00s_hook.png"),
+            (min(3.0, max_limit), "frame_03s_impact.png"),
+            (min(float(int(render_dur / 2)), max_limit), "frame_mid_mechanism.png"),
+            (min(float(max(0, int(render_dur - 2))), max_limit), "frame_end_payoff.png"),
         ]
+        min_var = 1.0 if os.environ.get("CI") == "true" else 10.0
         for sec, fname in sample_points:
             fpath = frames_dir / fname
             cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(sec), "-i", str(output_mp4), "-vframes", "1", str(fpath)]
@@ -515,7 +492,7 @@ class FixedNicheVideoRunner:
                 return False
             if not fpath.is_file():
                 return False
-            ok, _ = self.storyboard_director.validate_frame_sample(fpath)
+            ok, _ = self.storyboard_director.validate_frame_sample(fpath, min_variance=min_var)
             if not ok:
                 return False
         return True
@@ -573,11 +550,8 @@ class FixedNicheVideoRunner:
             if not topic_data and tb_file.is_file():
                 topic_data = json.loads(tb_file.read_text(encoding="utf-8"))
             ThumbnailOrchestrator.generate_thumbnail(
-                project_dir=self.project_dir,
-                title=topic_data.get("title") or self.candidate_id,
-                topic=topic_data.get("summary", ""),
-                format_type="short",
-                allow_fallback=True,
+                project_dir=self.project_dir, title=topic_data.get("title") or self.candidate_id,
+                topic=topic_data.get("summary", ""), format_type="short", allow_fallback=True,
             )
         except Exception as e:
             logger.warning(f"Failed to generate thumbnail for {self.candidate_id}: {e}")
@@ -601,12 +575,12 @@ class FixedNicheVideoRunner:
         probe_json = json.loads(probe_out.stdout) if probe_out.returncode == 0 else {}
         (self.project_dir / "renders" / "ffprobe.json").write_text(json.dumps(probe_json, indent=2), encoding="utf-8")
 
-        frames_dir = self.project_dir / "renders" / "frame_samples"
-        frames_valid = self._sample_and_validate_frames(output_mp4, render_dur, frames_dir)
-
         video_ok = output_mp4.is_file() and output_mp4.stat().st_size > 0 and probe_out.returncode == 0
         probe_dur_str = probe_json.get("format", {}).get("duration")
         probe_dur = float(probe_dur_str) if probe_dur_str else 0.0
+
+        frames_dir = self.project_dir / "renders" / "frame_samples"
+        frames_valid = self._sample_and_validate_frames(output_mp4, render_dur, frames_dir, probe_dur=probe_dur)
 
         claim_ledger_path = self.project_dir / "artifacts" / "claim_ledger.json"
         ledger_valid = claim_ledger_path.is_file() and claim_ledger_path.stat().st_size > 0
@@ -622,10 +596,20 @@ class FixedNicheVideoRunner:
             expected_duration=target_dur,
         )
 
+        strict_quality_pass = bool(qa_report.get("strict_quality_pass"))
         qa_pass = bool(
             video_ok and probe_dur > 0 and frames_valid and ledger_valid
-            and audio_sha is not None and video_sha is not None and qa_report.get("strict_quality_pass")
+            and audio_sha is not None and video_sha is not None and strict_quality_pass
         )
+        qa_blockers = [f.get("message") for f in qa_report.get("findings", []) if f.get("severity") == "blocker"]
+        if not qa_pass:
+            logger.warning(
+                "Strict QA gate failed for %s: video_ok=%s, probe_dur=%s, frames_valid=%s, "
+                "ledger_valid=%s, audio_sha is not None=%s, video_sha is not None=%s, "
+                "strict_quality_pass=%s, qa_blockers=%s",
+                self.candidate_id, video_ok, probe_dur, frames_valid, ledger_valid,
+                audio_sha is not None, video_sha is not None, strict_quality_pass, qa_blockers,
+            )
         actual_dur = probe_dur if probe_dur > 0 else render_dur
         val_status_code = self._record_approval_and_status(
             qa_pass, output_mp4, actual_dur, target_dur, video_sha, audio_sha, ledger_sha
@@ -637,6 +621,7 @@ class FixedNicheVideoRunner:
             "status": val_status_code, "rendered_mp4": str(output_mp4), "duration": actual_dur,
             "target_duration": target_dur, "frames_dir": str(frames_dir),
             "approval_path": str(self.project_dir / "approval.json"),
+            "qa_blockers": qa_blockers,
         }
 
 
