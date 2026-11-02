@@ -126,7 +126,7 @@ def test_facebook_scheduled_publish_execution(tmp_path: Path):
     assert result.data["scheduled_publish_time"] == sched_time
     assert result.data["publish_type"] == "REEL"
     assert result.data["auto_translate_enabled"] is True
-    assert "https://facebook.com/1435449429646177/videos/fb_vid_555888" == result.data["video_url"]
+    assert result.data["video_url"] == "https://facebook.com/1435449429646177/videos/fb_vid_555888"
 
     # Verify payload delivered to Toolcase Gateway
     call_kwargs = mock_session.post.call_args[1]

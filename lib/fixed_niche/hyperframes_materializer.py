@@ -12,12 +12,14 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 NARRATION_MP3_FILENAME = "narration.mp3"
 DEFAULT_AUDIO_SRC = f"assets/{NARRATION_MP3_FILENAME}"
+MUSIC_BG_MP3_FILENAME = "music-bg.mp3"
 
 EXT_WEBP = ".webp"
 EXT_PNG = ".png"
@@ -88,15 +90,15 @@ def copy_composition_audio(audio_src: Path, comp_dir: Path) -> None:
 
     # Copy background music bed
     for bgm_cand in (
-        parent_assets / "music-bg.mp3",
-        audio_src.parent / "music-bg.mp3",
-        repo_root / "assets" / "audio" / "music-bg.mp3",
+        parent_assets / MUSIC_BG_MP3_FILENAME,
+        audio_src.parent / MUSIC_BG_MP3_FILENAME,
+        repo_root / "assets" / "audio" / MUSIC_BG_MP3_FILENAME,
     ):
         if bgm_cand.is_file():
-            shutil.copy2(bgm_cand, comp_assets / "music-bg.mp3")
-            if not (parent_assets / "music-bg.mp3").is_file():
+            shutil.copy2(bgm_cand, comp_assets / MUSIC_BG_MP3_FILENAME)
+            if not (parent_assets / MUSIC_BG_MP3_FILENAME).is_file():
                 parent_assets.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(bgm_cand, parent_assets / "music-bg.mp3")
+                shutil.copy2(bgm_cand, parent_assets / MUSIC_BG_MP3_FILENAME)
             break
 
     # Copy sound effects library
@@ -217,11 +219,13 @@ def render_hyperframes_composition(
         if playwright_shell.is_file():
             env["HYPERFRAMES_BROWSER_PATH"] = str(playwright_shell)
         elif Path("/opt/brave.com/brave/brave").is_file():
-            brave_sh = Path(__file__).resolve().parents[2] / ".cache" / "brave_headless.sh"
+            cache_dir = Path(__file__).resolve().parents[2] / ".cache"
             try:
-                brave_sh.parent.mkdir(parents=True, exist_ok=True)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                brave_sh = cache_dir / "brave_headless.sh"
             except OSError:
-                brave_sh = Path("/tmp/brave_headless.sh")
+                temp_dir = Path(tempfile.mkdtemp(prefix="om_brave_"))
+                brave_sh = temp_dir / "brave_headless.sh"
             if not brave_sh.is_file():
                 try:
                     brave_sh.write_text(

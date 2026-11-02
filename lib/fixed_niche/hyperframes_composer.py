@@ -133,7 +133,7 @@ def _inline_svg_file(visuals_src: Optional[Path], vis_file: str, prefix: str = "
         # Strip internal style blocks so global document styling and GSAP timelines control reveals
         clean = re.sub(r"<style\b[^>]*>.*?</style>", "", clean, flags=re.DOTALL).strip()
         if prefix:
-            clean = re.sub(r'id="flow-', f'id="{prefix}flow-', clean)
+            clean = clean.replace('id="flow-', f'id="{prefix}flow-')
         if "<svg" in clean and "</svg>" in clean and len(clean) > 100 and ("<g" in clean or "<path" in clean):
             return clean
         return ""
@@ -339,9 +339,12 @@ def _build_svg_beat(
                     f'{{ opacity: 1, scaleY: 1, duration: 0.35, ease: "power2.out" }}, {arrow_abs_t});'
                 )
 
-        cta_reveal_t = cta_abs_t if (is_final and cta_abs_t) else (
-            _fmt_time(start_s + step_timings[-1]) if step_timings else None
-        )
+        if is_final and cta_abs_t:
+            cta_reveal_t = cta_abs_t
+        elif step_timings:
+            cta_reveal_t = _fmt_time(start_s + step_timings[-1])
+        else:
+            cta_reveal_t = None
         if cta_reveal_t:
             tweens.append(
                 f'  tl.fromTo("#{sec_id} #{pfx}flow-cta-banner", '

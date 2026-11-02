@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -306,7 +307,7 @@ class ElevenLabsTTS(BaseTool):
             "use_speaker_boost": inputs.get("use_speaker_boost", True),
         }
 
-        base_url, endpoint, is_speech = self._resolve_base_url_and_endpoint(inputs, voice_id)
+        _, endpoint, is_speech = self._resolve_base_url_and_endpoint(inputs, voice_id)
 
         headers = {
             "xi-api-key": api_key,
@@ -384,7 +385,16 @@ class ElevenLabsTTS(BaseTool):
             raise RuntimeError(f"ElevenLabs returned empty or invalid audio payload ({len(audio_bytes)} bytes)")
 
         ext = "mp3" if "mp3" in output_format else "wav"
-        output_path = Path(inputs.get("output_path", f"tts_output.{ext}"))
+        raw_output = str(inputs.get("output_path") or f"tts_output.{ext}")
+        output_path = Path(raw_output).expanduser().resolve()
+        allowed_roots = (
+            ROOT.resolve(),
+            Path.cwd().resolve(),
+            Path.home().resolve(),
+            Path(tempfile.gettempdir()).resolve(),
+        )
+        if not any(output_path.is_relative_to(r) for r in allowed_roots if r != Path(r.anchor)):
+            raise ValueError(f"Path traversal detected: {raw_output}")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(audio_bytes)
 

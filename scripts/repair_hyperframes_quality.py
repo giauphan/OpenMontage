@@ -24,6 +24,12 @@ NARRATION_TAG = (
     'data-start="0" data-track-index="10" data-volume="1"></audio>'
 )
 
+TAG_HEAD_OPEN = "<head>"
+TAG_HEAD_CLOSE = "</head>"
+TAG_STYLE_OPEN = "<style>"
+TAG_AUDIO_OPEN = "<audio"
+MUSIC_BG_MP3 = "music-bg.mp3"
+
 FONT_CSS = """@font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
     @font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
     @font-face { font-family: 'BeVietnamPro'; src: url('assets/BeVietnamPro-ExtraBold.ttf') format('truetype'); font-weight: 800; font-style: normal; font-display: block; }"""
@@ -197,9 +203,9 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             inner_scenes = re.sub(r'\s+data-composition-id=([\'"])[^\'"]+\1', '', inner_scenes)
             html = html[:start_pos] + stage_open + inner_scenes + stage_close + html[end_pos:]
             root_open = re.search(r"<div\b[^>]*id=[\"']stage[\"'][^>]*>", html)
-            if "#stage" not in html and "<style>" in html:
+            if "#stage" not in html and TAG_STYLE_OPEN in html:
                 stage_css = f"\n        #stage {{ position: relative; width: {default_width}px; height: {default_height}px; overflow: hidden; background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif; }}\n"
-                html = html.replace("<style>", "<style>" + stage_css, 1)
+                html = html.replace(TAG_STYLE_OPEN, TAG_STYLE_OPEN + stage_css, 1)
         else:
             root_open = re.search(r"<div\b[^>]*>", html)
     if root_open:
@@ -228,14 +234,14 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             html = html[:root_open.start()] + new_tag + html[root_open.end():]
 
     if "font-family: 'BeVietnamPro'" not in html:
-        if "<style>" not in html:
-            if "</head>" in html:
-                html = html.replace("</head>", "  <style>\n  </style>\n</head>", 1)
-            elif "<head>" in html:
-                html = html.replace("<head>", "<head>\n  <style>\n  </style>", 1)
+        if TAG_STYLE_OPEN not in html:
+            if TAG_HEAD_CLOSE in html:
+                html = html.replace(TAG_HEAD_CLOSE, f"  {TAG_STYLE_OPEN}\n  </style>\n{TAG_HEAD_CLOSE}", 1)
+            elif TAG_HEAD_OPEN in html:
+                html = html.replace(TAG_HEAD_OPEN, f"{TAG_HEAD_OPEN}\n  {TAG_STYLE_OPEN}\n  </style>", 1)
             else:
-                html = "<style></style>\n" + html
-        html = html.replace("<style>", "<style>\n    " + FONT_CSS, 1)
+                html = f"{TAG_STYLE_OPEN}</style>\n" + html
+        html = html.replace(TAG_STYLE_OPEN, f"{TAG_STYLE_OPEN}\n    " + FONT_CSS, 1)
     html = re.sub(
         r"--font-heading:\s*[^;]+;",
         "--font-heading: 'BeVietnamPro', Arial, sans-serif;",
@@ -467,8 +473,8 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
             rule = root_match.group(0)
             rule = rule[:-1].rstrip() + " overflow: hidden; }"
             html = html[:root_match.start()] + rule + html[root_match.end():]
-        elif "<style>" in html:
-            html = html.replace("<style>", "<style>\n    body, html { overflow: hidden; }\n", 1)
+        elif TAG_STYLE_OPEN in html:
+            html = html.replace(TAG_STYLE_OPEN, f"{TAG_STYLE_OPEN}\n    body, html {{ overflow: hidden; }}\n", 1)
         else:
             raise ValueError(f"{path}: missing viewport CSS rule for clipping guard")
     # For reels composition, bind to reels narration file if present, else fallback to narration.mp3
@@ -486,23 +492,23 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
     html = re.sub(r"<audio\b[^>]*\bid=[\"']narration_\d+[\"'][^>]*>\s*(?:</audio>)?\s*", "", html)
 
     # Handle background audio: if music-bg.mp3 exists, point to it; otherwise remove bg-audio
-    has_bg = (path.parent / "assets" / "music-bg.mp3").is_file()
+    has_bg = (path.parent / "assets" / MUSIC_BG_MP3).is_file()
     if has_bg:
         if re.search(r'<audio\b[^>]*\bid=["\'](?:bg-audio|bgm)["\']', html):
             html = re.sub(
                 r'(<audio\b(?=[^>]*\bid=["\'](?:bg-audio|bgm)["\'])[^>]*\bsrc=)["\'][^"\']*["\']',
-                r'\1"assets/music-bg.mp3"',
+                rf'\1"assets/{MUSIC_BG_MP3}"',
                 html,
             )
             # Ensure track index and data-start
             def fix_bg_tag(match):
                 tag = match.group(0)
                 if "data-track-index" not in tag:
-                    tag = tag.replace("<audio", '<audio data-track-index="1"', 1)
+                    tag = tag.replace(TAG_AUDIO_OPEN, f'{TAG_AUDIO_OPEN} data-track-index="1"', 1)
                 if "data-start" not in tag:
-                    tag = tag.replace("<audio", '<audio data-start="0"', 1)
+                    tag = tag.replace(TAG_AUDIO_OPEN, f'{TAG_AUDIO_OPEN} data-start="0"', 1)
                 if "data-volume" not in tag:
-                    tag = tag.replace("<audio", '<audio data-volume="0.12"', 1)
+                    tag = tag.replace(TAG_AUDIO_OPEN, f'{TAG_AUDIO_OPEN} data-volume="0.12"', 1)
                 return tag
             html = re.sub(r'<audio\b[^>]*\bid=["\'](?:bg-audio|bgm)["\'][^>]*>', fix_bg_tag, html)
     else:
@@ -527,7 +533,7 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
     def add_data_start(match):
         tag = match.group(0)
         if "data-start=" not in tag:
-            tag = tag.replace("<audio", '<audio data-start="0"', 1)
+            tag = tag.replace(TAG_AUDIO_OPEN, f'{TAG_AUDIO_OPEN} data-start="0"', 1)
         return tag
 
     html = re.sub(r"<audio\b[^>]*>", add_data_start, html)
@@ -540,10 +546,10 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
     # Ensure GSAP CDN script is always present in HTML
     if "gsap.min.js" not in html and "gsap" not in html:
         gsap_tag = '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>'
-        if "</head>" in html:
-            html = html.replace("</head>", f"  {gsap_tag}\n</head>", 1)
-        elif "<head>" in html:
-            html = html.replace("<head>", f"<head>\n  {gsap_tag}", 1)
+        if TAG_HEAD_CLOSE in html:
+            html = html.replace(TAG_HEAD_CLOSE, f"  {gsap_tag}\n{TAG_HEAD_CLOSE}", 1)
+        elif TAG_HEAD_OPEN in html:
+            html = html.replace(TAG_HEAD_OPEN, f"{TAG_HEAD_OPEN}\n  {gsap_tag}", 1)
         else:
             html = f"{gsap_tag}\n" + html
 
@@ -560,11 +566,11 @@ def repair_hyperframes_composition(path: Path) -> None:
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Ensure music-bg.mp3 exists
-    bg_asset = assets_dir / "music-bg.mp3"
+    bg_asset = assets_dir / MUSIC_BG_MP3
     if not bg_asset.is_file():
         for candidate_bg in (
-            comp_dir.parent / "assets" / "music-bg.mp3",
-            Path(__file__).resolve().parents[1] / "assets" / "audio" / "music-bg.mp3",
+            comp_dir.parent / "assets" / MUSIC_BG_MP3,
+            Path(__file__).resolve().parents[1] / "assets" / "audio" / MUSIC_BG_MP3,
         ):
             if candidate_bg.is_file():
                 shutil.copy2(candidate_bg, bg_asset)
@@ -587,7 +593,7 @@ def repair_hyperframes_composition(path: Path) -> None:
     if bg_asset.is_file():
         html = path.read_text(encoding="utf-8")
         if not re.search(r'<audio\b[^>]*\bid=["\'](?:bg-audio|bgm)["\']', html):
-            bgm_tag = '<audio id="bgm" src="assets/music-bg.mp3" data-start="0" data-track-index="1" data-volume="0.12" loop></audio>'
+            bgm_tag = f'<audio id="bgm" src="assets/{MUSIC_BG_MP3}" data-start="0" data-track-index="1" data-volume="0.12" loop></audio>'
             if re.search(r'<audio\b[^>]*\bid=["\']narration["\'][^>]*>', html):
                 html = re.sub(
                     r'(<audio\b[^>]*\bid=["\']narration["\'][^>]*>(?:</audio>)?)',

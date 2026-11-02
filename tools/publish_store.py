@@ -327,9 +327,9 @@ class PublishStore:
         for candidate in [key, *unique_keys]:
             existing = self.get(candidate)
             if existing is not None:
-                if existing.get("status") in {"scheduled", "published"}:
+                if existing.get("status") in {"scheduled", "published", "scheduling"}:
                     return key, False, existing
-                if existing.get("status") in {"failed", "scheduling"}:
+                if existing.get("status") == "failed":
                     for doc_key, doc_data in documents.items():
                         try:
                             self.update(doc_key, doc_data)

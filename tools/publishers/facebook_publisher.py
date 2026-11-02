@@ -38,6 +38,7 @@ from tools.base_tool import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_GATEWAY_PORT = 20129
+MIME_APPLICATION_JSON = "application/json"
 DEFAULT_GATEWAY_URL = f"http://127.0.0.1:{DEFAULT_GATEWAY_PORT}/custom/facebook"
 DEFAULT_14_LANGUAGES = [
     "en_US", "vi_VN", "hi_IN", "ar_AR", "pt_BR", "es_LA", "fr_FR",
@@ -151,9 +152,7 @@ class FacebookPublisher(BaseTool):
             or os.environ.get("FACEBOOK_GATEWAY_BASE_URL")
             or os.environ.get("META_GATEWAY_BASE_URL")
         )
-        is_default = False
         if not configured:
-            is_default = True
             toolcase_gw = os.environ.get(
                 "TOOLCASE_GATEWAY_URL", f"http://127.0.0.1:{DEFAULT_GATEWAY_PORT}"
             ).strip().rstrip("/")
@@ -223,7 +222,7 @@ class FacebookPublisher(BaseTool):
                 resp = self._session.post(
                     ep,
                     data=raw_body.encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
+                    headers={"Content-Type": MIME_APPLICATION_JSON},
                     timeout=30,
                 )
                 if resp.status_code == 200:
@@ -328,7 +327,7 @@ class FacebookPublisher(BaseTool):
         except ValueError as err:
             return ToolResult(success=False, error=str(err))
 
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        headers = {"Content-Type": MIME_APPLICATION_JSON, "Accept": MIME_APPLICATION_JSON}
 
         # Prepare payload: send video_path and base64 for universal gateway compatibility
         try:

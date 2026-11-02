@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import shutil
@@ -299,11 +300,12 @@ class FixedNicheVideoRunner:
 
         if provider is None:
             provider = os.environ.get("TTS_PROVIDER_EN", "edge")
-        if provider == "kokoro" and speed == 1.0:
+        is_default_speed = math.isclose(speed, 1.0, rel_tol=1e-5, abs_tol=1e-5)
+        if provider == "kokoro" and is_default_speed:
             speed = 1.36
-        elif provider == "elevenlabs" and speed == 1.0:
+        elif provider == "elevenlabs" and is_default_speed:
             speed = 1.05
-        elif provider == "edge" and speed == 1.0:
+        elif provider == "edge" and is_default_speed:
             speed = 1.10
 
         if voice is None:
@@ -311,8 +313,7 @@ class FixedNicheVideoRunner:
 
         try:
             res = self.orchestrator.synthesize(
-                text=text, output_path=out_audio, locale="en-US",
-                provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
+                text=text, output_path=out_audio, locale="en-US", provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
             )
         except Exception as exc:
             if provider == "elevenlabs":
@@ -334,7 +335,7 @@ class FixedNicheVideoRunner:
             voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=actual_provider)
             speed = 1.0
         if actual_provider in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
-            target, ratio = 70.0, dur / 70.0
+            ratio = dur / 70.0
             speed_min, speed_max = (0.8, 1.4) if actual_provider in ("elevenlabs", "edge") else (0.8, 1.8)
             adjusted_speed = round(speed * ratio, 2)
             if adjusted_speed != speed and speed_min <= adjusted_speed <= speed_max:
@@ -669,7 +670,9 @@ def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
     try:
         import yaml
         raw_data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
-        return raw_data.get("positive_cases", []) if isinstance(raw_data, dict) else (raw_data if isinstance(raw_data, list) else [])
+        if isinstance(raw_data, dict):
+            return raw_data.get("positive_cases", [])
+        return raw_data if isinstance(raw_data, list) else []
     except Exception as e:
         logger.warning("Failed to load candidates from %s: %s", file_path, e)
         return []

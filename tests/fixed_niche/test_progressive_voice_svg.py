@@ -405,7 +405,8 @@ def test_multi_scene_progressive_reveals_and_unique_ids(tmp_path: Path):
     # Check that tween for b02-flow-step-2 has a higher timestamp than b02-flow-step-1
     m1 = re.search(r'tl\.fromTo\("#scene-b02 #b02-flow-step-1"[^;]+,\s*([0-9.]+)\);', html)
     m2 = re.search(r'tl\.fromTo\("#scene-b02 #b02-flow-step-2"[^;]+,\s*([0-9.]+)\);', html)
-    assert m1 and m2, "Scene 2 step tweens not found in GSAP timeline"
+    assert m1 is not None, "Scene 2 step 1 tween not found in GSAP timeline"
+    assert m2 is not None, "Scene 2 step 2 tween not found in GSAP timeline"
     t1, t2 = float(m1.group(1)), float(m2.group(1))
     assert t2 > t1 + 1.0, f"Scene 2 step 2 time ({t2}) must be at least 1s after step 1 ({t1})"
 

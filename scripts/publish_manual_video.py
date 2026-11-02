@@ -176,7 +176,21 @@ def _clear_uniqueness_for_topic(store: PublishStore, topic: str) -> int:
     return deleted
 
 
+def safe_resolve_publish_path(raw: str | Path, base_dir: Path | None = None) -> Path:
+    """Resolve and sanitize path against traversal attacks (CWE-22 / CWE-73)."""
+    import tempfile
+    p = Path(raw).expanduser()
+    if not p.is_absolute():
+        p = ((base_dir or ROOT) / p)
+    resolved = p.resolve()
+    allowed_roots = (ROOT.resolve(), Path.cwd().resolve(), Path.home().resolve(), Path(tempfile.gettempdir()).resolve())
+    if not any(resolved.is_relative_to(r) for r in allowed_roots if r != Path(r.anchor)):
+        raise ValueError(f"Path traversal detected or path outside allowed root: {raw}")
+    return resolved
+
+
 def load_metadata(project_dir: Path) -> dict:
+    project_dir = safe_resolve_publish_path(project_dir, ROOT)
     meta_path = project_dir / "publish_metadata.json"
     if not meta_path.exists():
         raise FileNotFoundError(f"publish_metadata.json not found in {project_dir}")
@@ -185,18 +199,15 @@ def load_metadata(project_dir: Path) -> dict:
 
 
 def resolve_video_path(raw: str, project_dir: Path, root: Path) -> Path:
-    """Resolve a metadata video path.
+    """Resolve a metadata video path safely.
 
-    - Absolute paths are used as-is.
+    - Absolute paths are validated against allowed root directories.
     - Repo-prefixed paths (``projects/...``) resolve against the repo root.
     - Anything else resolves against the project directory.
     """
     p = Path(raw)
-    if p.is_absolute():
-        return p
-    if p.parts and p.parts[0] == "projects":
-        return (root / p).resolve()
-    return (project_dir / p).resolve()
+    base = root if (p.parts and p.parts[0] == "projects") else project_dir
+    return safe_resolve_publish_path(p, base)
 
 
 def enforce_batch_gap(last_publish_time: str | None) -> None:
@@ -213,6 +224,8 @@ def enforce_batch_gap(last_publish_time: str | None) -> None:
 
 
 def validate_publish_asset(video_path: Path, project_dir: Path, platform: str, strict: bool = False) -> None:
+    project_dir = safe_resolve_publish_path(project_dir, ROOT)
+    video_path = safe_resolve_publish_path(video_path, project_dir)
     rehearsal_marker = project_dir / "OFFLINE_REHEARSAL_TEST_ONLY.json"
     if rehearsal_marker.exists() or rehearsal_marker.is_symlink():
         raise ValueError(
@@ -420,6 +433,7 @@ def publish_batch(
     """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
     root = Path(__file__).resolve().parents[1]
+    project_dir = safe_resolve_publish_path(project_dir, root)
 
     # News evidence is an unconditional release gate, independent of quality
     # preflight toggles and force/retry modes. It must precede claims and uploads.
@@ -1471,7 +1485,7 @@ def main():
     )
     args = parser.parse_args()
 
-    project_path = Path(args.project_dir)
+    project_path = safe_resolve_publish_path(args.project_dir, ROOT)
     if not project_path.exists():
         print(f"Error: Project directory not found: {project_path}")
         sys.exit(1)

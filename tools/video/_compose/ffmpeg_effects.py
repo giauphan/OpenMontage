@@ -75,7 +75,8 @@ def mux_external_audio(tool: Any, video_path: Path, audio_path: str | Path) -> T
         return ToolResult(success=False, error=f"Mixed audio not found: {audio}")
 
     try:
-        video_duration = probe_video_stream_duration(video_path)
+        probe_fn = getattr(tool, "_probe_video_stream_duration", probe_video_stream_duration)
+        video_duration = probe_fn(video_path)
     except Exception as exc:
         return ToolResult(success=False, error=str(exc))
 

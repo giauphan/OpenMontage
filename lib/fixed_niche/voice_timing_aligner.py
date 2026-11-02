@@ -253,9 +253,11 @@ def generate_progressive_svg_style(
         if idx > 1:
             arrow_id = f"flow-arrow-{idx-1}"
             arrow_t = max(0.1, t - arrow_lead_time)
-            lines.append(f"    #{arrow_id} {{ animation-delay: {arrow_t:.2f}s; }}")
-            lines.append(f"    #{arrow_id} path {{ animation-delay: {arrow_t:.2f}s; }}")
-            lines.append(f"    #{arrow_id} polygon {{ animation-delay: {arrow_t + 0.15:.2f}s; }}")
+            lines.extend([
+                f"    #{arrow_id} {{ animation-delay: {arrow_t:.2f}s; }}",
+                f"    #{arrow_id} path {{ animation-delay: {arrow_t:.2f}s; }}",
+                f"    #{arrow_id} polygon {{ animation-delay: {arrow_t + 0.15:.2f}s; }}",
+            ])
 
     if step_timings:
         lines.append(f"    #flow-cta-banner {{ animation-delay: {step_timings[-1]:.2f}s; }}")

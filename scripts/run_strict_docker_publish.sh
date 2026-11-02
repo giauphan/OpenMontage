@@ -699,8 +699,8 @@ for PID in "${VALIDATED_PIDS[@]}"; do
   QUEUED_PIDS+=("$PID")
 done
 
-# Deduplicate active_projects by project_id to enforce strict queue idempotency
-jq '.active_projects |= [group_by(if type == "object" then .project_id else . end)[] | .[0]]' "$TMP_QUEUE" > "$TMP_QUEUE.dedup" && mv "$TMP_QUEUE.dedup" "$TMP_QUEUE"
+# Deduplicate active_projects by project_id to enforce strict queue idempotency preserving order
+jq '.active_projects |= reduce .[] as $item ([]; if any(.[]; (if type == "object" then .project_id else . end) == (if ($item | type) == "object" then $item.project_id else $item end)) then . else . + [$item] end)' "$TMP_QUEUE" > "$TMP_QUEUE.dedup" && mv "$TMP_QUEUE.dedup" "$TMP_QUEUE"
 
 jq -e '.active_projects and (.active_projects | type == "array")' "$TMP_QUEUE" >/dev/null 2>&1 \
   || { rm -f "$TMP_QUEUE"; write_state "queue" "failed"; fail "queued schedule invalid"; }

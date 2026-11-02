@@ -190,7 +190,7 @@ raise SystemExit(0 if resolved.is_dir() and resolved.is_relative_to(root) else 1
     fi
   done
 else
-# Step 0: Check Tier 1 curated candidate queue first; fetch live NewsNow feed only if needed.
+# Step 0: Fetch current NewsNow sources
 FEED_STALE=0
 NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
 HAS_CURATED_READY=0
@@ -258,9 +258,9 @@ fi
 # PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
 PRODUCE_INPUT="data/newsnow_feed.json"
-if [[ "$HAS_CURATED_READY" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.json" ]]; then
+if [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.json" ]]; then
   PRODUCE_INPUT="data/daily_candidates.json"
-elif [[ "$HAS_CURATED_READY" -eq 1 ]] && [[ -f "$ROOT/config/sources/production_agent_engineering_feed.json" ]]; then
+elif [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/config/sources/production_agent_engineering_feed.json" ]]; then
   PRODUCE_INPUT="config/sources/production_agent_engineering_feed.json"
 fi
 set +e
@@ -711,13 +711,15 @@ set -e
 # Recovery must pass the current-attempt gates in the bounded retry loop.
 
 if [ "$DIRECTOR_EXIT" -eq 0 ]; then
-  if ! "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"; then
-    echo "[$(date -u +%FT%TZ)] ERROR: bind_news_evidence failed for $PROJECT_ID" >&2
-    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \
-      --error-type "NEWS_EVIDENCE_BIND_FAILED" --message "News evidence binding or quantitative verification failed" || true
-    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
-      "bind_news_evidence failed verification" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
-    continue
+  if [ -z "$REHEARSAL_MANIFEST" ]; then
+    if ! "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"; then
+      echo "[$(date -u +%FT%TZ)] ERROR: bind_news_evidence failed for $PROJECT_ID" >&2
+      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \
+        --error-type "NEWS_EVIDENCE_BIND_FAILED" --message "News evidence binding or quantitative verification failed" || true
+      "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+        "bind_news_evidence failed verification" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+      continue
+    fi
   fi
   if [ "$is_en" -eq 1 ]; then
     echo "Validating en-US cultural localization and display language for $PROJECT_ID..."
@@ -1060,7 +1062,7 @@ except Exception:
   fi
   for composition in hyperframes hyperframes_reels; do
     local target="$project_root/$composition/assets"
-    if [ "$composition" = "hyperframes_reels" ]; then
+    if [[ "$composition" = "hyperframes_reels" ]]; then
       cp "$reels_narration" "$target/narration_reels.mp3"
       cp "$reels_narration" "$target/narration.mp3"
     else
@@ -1068,7 +1070,7 @@ except Exception:
     fi
     cp "$project_root/assets/music-bg.mp3" "$target/music-bg.mp3"
     mkdir -p "$target/sfx"
-    if [ -d "$ROOT/assets/audio/sfx" ]; then
+    if [[ -d "$ROOT/assets/audio/sfx" ]]; then
       cp -r "$ROOT/assets/audio/sfx"/* "$target/sfx/" 2>/dev/null || true
     fi
     if [ -s "$source_fonts/BeVietnamPro-Regular.ttf" ]; then cp "$source_fonts/BeVietnamPro-Regular.ttf" "$target/BeVietnamPro-Regular.ttf"; else cp "$fallback_regular" "$target/BeVietnamPro-Regular.ttf"; fi

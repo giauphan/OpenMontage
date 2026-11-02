@@ -137,7 +137,7 @@ def render_circuit_switch(
 ) -> str:
     """Render a physical circuit breaker relay schematic with animated lever."""
     arm = f'<line x1="20" y1="20" x2="48" y2="4" stroke="{color}" stroke-width="3.5" stroke-linecap="round"/>' if is_open else f'<line x1="20" y1="20" x2="56" y2="20" stroke="{color}" stroke-width="3.5" stroke-linecap="round"/>'
-    spark = f'<path d="M 40 10 L 48 18 L 44 20 L 52 26" stroke="#fbbf24" stroke-width="2" fill="none"/>' if is_open else ""
+    spark = '<path d="M 40 10 L 48 18 L 44 20 L 52 26" stroke="#fbbf24" stroke-width="2" fill="none"/>' if is_open else ""
     return f"""<g transform="translate({x}, {y})">
     <rect x="0" y="0" width="150" height="64" rx="10" fill="#0f172a" stroke="{color}" stroke-width="2"/>
     <circle cx="20" cy="20" r="4.5" fill="#1e293b" stroke="{color}" stroke-width="2"/>

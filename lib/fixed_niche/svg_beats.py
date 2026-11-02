@@ -404,7 +404,12 @@ def generate_horizontal_svg(
 ) -> str:
     """Generate 16:9 horizontal fallback with progressive step structure and vector icons."""
     p = prefix
-    accent = "#ef4444" if beat_num in (1, 2) else "#22c55e" if beat_num in (4, 5) else "#38bdf8"
+    if beat_num in (1, 2):
+        accent = "#ef4444"
+    elif beat_num in (4, 5):
+        accent = "#22c55e"
+    else:
+        accent = "#38bdf8"
     icon = render_agent_icon(80, 110, 48, accent) if beat_num == 1 else render_server_icon(80, 110, 48, accent)
     switch = render_circuit_switch(650, 120, is_open=(beat_num in (1, 2)), color=accent)
     gauge = render_metric_gauge(500, 150, r=32, percentage=95 if beat_num > 2 else 15, label="AVAILABILITY", value_str="HEALTHY" if beat_num > 2 else "DEGRADED", color=accent)
