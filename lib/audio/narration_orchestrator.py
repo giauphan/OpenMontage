@@ -174,7 +174,7 @@ class NarrationOrchestrator:
     DEFAULT_VOICES = {
         "en-US": {
             "omniroute": "rachel",
-            "elevenlabs": "rachel",
+            "elevenlabs": "IKne3meq5aSn9XLyUdCD",
             "kokoro": "am_michael",
             "pocket18": "alba",
             "edge": "en-US-ChristopherNeural",
@@ -182,8 +182,8 @@ class NarrationOrchestrator:
         },
         "vi-VN": {
             "edge": "vi-VN-HoaiMyNeural",
-            "elevenlabs": "eleven_multilingual_v2",
-            "omniroute": "eleven_multilingual_v2",
+            "elevenlabs": "IKne3meq5aSn9XLyUdCD",
+            "omniroute": "rachel",
             "kokoro": "am_michael",
         }
     }
@@ -314,6 +314,14 @@ class NarrationOrchestrator:
             if not exec_result.success:
                 if tmp_synth.exists():
                     tmp_synth.unlink()
+                if allow_fallback and provider_instance is None and provider.lower() in ("elevenlabs", "omniroute"):
+                    chain = [p for p in ["kokoro", "edge", "flite"] if p != provider]
+                    return self.synthesize_with_fallback(
+                        text=clean_text,
+                        output_path=output_path,
+                        locale=locale,
+                        fallback_chain=chain,
+                    )
                 raise RuntimeError(f"Narration provider '{provider}' failed: {exec_result.error}")
 
             if exec_result.data and exec_result.data.get("audio_path"):
@@ -405,6 +413,22 @@ class NarrationOrchestrator:
             except Exception as exc:
                 return ToolResult(success=False, error=f"edge-tts failed: {exc}")
 
+        # Direct ElevenLabs provider invocation
+        if provider_name.lower() in ("elevenlabs", "eleven_labs"):
+            try:
+                from tools.audio.elevenlabs_tts import ElevenLabsTTS
+                tool = ElevenLabsTTS()
+                inputs = {
+                    "text": text,
+                    "output_path": str(output_path),
+                    "voice_id": voice,
+                    "model_id": model or "eleven_multilingual_v2",
+                    **(settings or {})
+                }
+                return tool.execute(inputs)
+            except Exception as exc:
+                return ToolResult(success=False, error=f"elevenlabs failed: {exc}")
+
         # Look up tool from OpenMontage registry or instantiate
         try:
             from tools.audio.tts_selector import TTSSelector
@@ -482,6 +506,15 @@ class NarrationOrchestrator:
             {"provider": "edge", "voice": "en-US-ChristopherNeural", "label": "Edge-TTS (Christopher, Broadcast Tech)"},
             {"provider": "omniroute", "voice": "rachel", "label": "OmniRoute (rachel, Expressive Cloud)"},
         ]
+        if (
+            os.environ.get("ELEVENLABS_GATEWAY_API_KEY")
+            or os.environ.get("ELEVENLABS_API_KEY")
+            or os.environ.get("XI_API_KEY")
+        ):
+            default_candidates.insert(
+                0,
+                {"provider": "elevenlabs", "voice": "21m00Tcm4TlvDq8ikWAM", "label": "ElevenLabs (Rachel, Premium Neural)"}
+            )
         if enable_heavy:
             default_candidates.append(
                 {"provider": "kokoro", "voice": os.environ.get("TTS_KOKORO_VOICE", "am_michael"), "label": "Kokoro-82M (am_michael, CPU)"}

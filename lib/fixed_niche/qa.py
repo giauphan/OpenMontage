@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -103,7 +104,6 @@ class FixedNicheQAValidator:
         visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
         if visual_plan_file.is_file():
             try:
-                import re
                 num = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?'
                 stat_patterns = [
                     rf'[-+]?\b{num}x\b',
@@ -212,13 +212,13 @@ class FixedNicheQAValidator:
                 sections = s_data.get("sections", [])
                 if sections:
                     final_narration = sections[-1].get("narration", "").lower()
-                    has_cta_verb = any(v in final_narration for v in ("follow", "subscribe", "star"))
-                    has_channel = "openmontage" in final_narration or "@" in final_narration
+                    has_cta_verb = bool(re.search(r"\b(follow|subscribe|star)\b", final_narration))
+                    has_channel = bool(re.search(r"(@\w+|\bopenmontage\b|\bfollow me\b|\bsubscribe\b|\bstar the repo\b)", final_narration))
                     if not (has_cta_verb and has_channel):
                         findings.append({
                             "category": "CALL_TO_ACTION",
                             "severity": "blocker",
-                            "message": "Final beat narration lacks explicit Call to Action (@OpenMontage follow / star repo)",
+                            "message": "Final beat narration lacks explicit Call to Action (follow / star repo)",
                         })
             except Exception as e:
                 findings.append({"category": "CALL_TO_ACTION", "severity": "warning", "message": f"CTA audit error: {e}"})

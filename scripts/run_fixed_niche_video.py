@@ -35,7 +35,6 @@ from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
 
 logger = logging.getLogger(__name__)
 
-
 class FixedNicheVideoRunner:
     """Manages full video production lifecycle for a single in-scope candidate."""
 
@@ -299,37 +298,59 @@ class FixedNicheVideoRunner:
         out_audio.parent.mkdir(parents=True, exist_ok=True)
 
         if provider is None:
-            from tools.audio.kokoro_local_tts import is_kokoro_available
-            provider = "kokoro" if is_kokoro_available() else "flite"
+            from tools.audio.elevenlabs_tts import is_elevenlabs_available
+            if is_elevenlabs_available() or os.environ.get("TTS_PROVIDER_EN") == "elevenlabs":
+                provider = "elevenlabs"
+            else:
+                from tools.audio.kokoro_local_tts import is_kokoro_available
+                provider = "kokoro" if is_kokoro_available() else "flite"
 
         if provider == "kokoro" and speed == 1.0:
             speed = 1.36
+        elif provider == "elevenlabs" and speed == 1.0:
+            speed = 1.05
 
         if voice is None:
             voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
 
-        res = self.orchestrator.synthesize(
-            text=text,
-            output_path=out_audio,
-            locale="en-US",
-            provider=provider,
-            voice=voice,
-            settings={"speed": speed},
-            allow_fallback=True,
-        )
+        try:
+            res = self.orchestrator.synthesize(
+                text=text, output_path=out_audio, locale="en-US",
+                provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
+            )
+        except Exception as exc:
+            if provider == "elevenlabs":
+                logger.warning(f"ElevenLabs synthesis failed ({exc}); falling back to local TTS engine.")
+                from tools.audio.kokoro_local_tts import is_kokoro_available
+                provider = "kokoro" if is_kokoro_available() else "flite"
+                voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
+                speed = 1.36 if provider == "kokoro" else 1.0
+                res = self.orchestrator.synthesize(
+                    text=text, output_path=out_audio, locale="en-US",
+                    provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
+                )
+            else:
+                raise
+
         if not res.get("success") or not out_audio.is_file():
             raise RuntimeError(f"Narration synthesis failed: {res.get('error', 'Unknown error')}")
 
         dur = probe_audio_duration(out_audio)
-        if provider == "kokoro" and not (65.0 <= dur <= 75.0):
-            adjusted_speed = round(speed * (dur / 70.0), 2)
-            if adjusted_speed != speed and 0.8 <= adjusted_speed <= 1.8:
+        actual_provider = res.get("provider", provider)
+        if actual_provider != provider:
+            voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=actual_provider)
+            speed = 1.0
+        if actual_provider in ("kokoro", "elevenlabs") and not (65.0 <= dur <= 75.0):
+            target, ratio = 70.0, dur / 70.0
+            speed_min, speed_max = (0.7, 1.2) if actual_provider == "elevenlabs" else (0.8, 1.8)
+            adjusted_speed = round(speed * ratio, 2)
+            if adjusted_speed != speed and speed_min <= adjusted_speed <= speed_max:
                 logger.info(f"Re-synthesizing narration with calibrated speed {adjusted_speed} (previous duration {dur:.2f}s)")
                 res = self.orchestrator.synthesize(
                     text=text,
                     output_path=out_audio,
                     locale="en-US",
-                    provider=provider,
+                    provider=actual_provider,
                     voice=voice,
                     settings={"speed": adjusted_speed},
                     allow_fallback=True,
@@ -347,6 +368,14 @@ class FixedNicheVideoRunner:
                 pass
         dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
         policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
+        if dur > policy_max and dur <= 95.0:
+            tempo = round(dur / 70.0, 3)
+            tmp_t = out_audio.with_suffix(".tempo.mp3")
+            res_t = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out_audio), "-filter:a", f"atempo={tempo}", "-vn", str(tmp_t)], capture_output=True)
+            if res_t.returncode == 0 and tmp_t.is_file():
+                os.replace(tmp_t, out_audio)
+                dur = probe_audio_duration(out_audio)
+                logger.info(f"Auto-calibrated narration tempo with ffmpeg atempo={tempo}: duration={dur:.2f}s")
         if dur > policy_max:
             raise ValueError(
                 f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s). "
@@ -354,7 +383,7 @@ class FixedNicheVideoRunner:
             )
 
         # In production synthesis with neural voice, reject narration outside 65-75s contract
-        if provider == "kokoro" and not (65.0 <= dur <= 75.0):
+        if actual_provider in ("kokoro", "elevenlabs") and not (65.0 <= dur <= 75.0):
             raise ValueError(
                 f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. "
                 "Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
@@ -409,31 +438,27 @@ class FixedNicheVideoRunner:
                         ass_file = self.project_dir / "artifacts" / "captions.ass"
                         beat_map = {b["beat_id"]: b for b in beats}
 
-                        script_bytes_to_write = None
-                        assets_json_to_write = None
+                        script_bytes_to_write, assets_json_to_write, proof_json_to_write = None, None, None
                         if script_file.is_file():
                             script_json = json.loads(script_file.read_text(encoding="utf-8"))
                             script_json["target_duration_seconds"] = round(align_dur, 3)
                             for sec in script_json.get("sections", []):
                                 bid = sec.get("beat_id")
                                 if bid in beat_map:
-                                    sec["start_s"] = beat_map[bid]["start_s"]
-                                    sec["end_s"] = beat_map[bid]["end_s"]
+                                    sec["start_s"], sec["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
                             script_bytes_to_write = json.dumps(script_json, indent=2).encode("utf-8")
                             if assets_file.is_file():
-                                assets_json = json.loads(assets_file.read_text(encoding="utf-8"))
-                                assets_json["script_sha256"] = hashlib.sha256(script_bytes_to_write).hexdigest()
-                                assets_json_to_write = json.dumps(assets_json, indent=2)
+                                a_json = json.loads(assets_file.read_text(encoding="utf-8"))
+                                a_json["script_sha256"] = hashlib.sha256(script_bytes_to_write).hexdigest()
+                                assets_json_to_write = json.dumps(a_json, indent=2)
 
-                        proof_json_to_write = None
                         if proof_map_file.is_file():
-                            proof_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
-                            for pb in proof_json.get("beats", []):
+                            p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
+                            for pb in p_json.get("beats", []):
                                 bid = pb.get("beat_id")
                                 if bid in beat_map:
-                                    pb["start_s"] = beat_map[bid]["start_s"]
-                                    pb["end_s"] = beat_map[bid]["end_s"]
-                            proof_json_to_write = json.dumps(proof_json, indent=2)
+                                    pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+                            proof_json_to_write = json.dumps(p_json, indent=2)
 
                         # Write all verified artifact updates
                         visual_plan_file.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
@@ -657,84 +682,60 @@ def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
 def _load_cli_candidates_pool(args: argparse.Namespace) -> List[Dict[str, Any]]:
     """Load candidates from specified file, test fixtures, or production source adapter."""
     if args.candidates_file:
-        cand_path = _validate_safe_path(args.candidates_file)
-        candidates = _load_yaml_candidates(cand_path)
+        candidates = _load_yaml_candidates(_validate_safe_path(args.candidates_file))
         if not candidates:
-            raise ValueError(
-                f"No candidates could be loaded from specified --candidates-file: {args.candidates_file}"
-            )
+            raise ValueError(f"No candidates could be loaded from specified --candidates-file: {args.candidates_file}")
         return candidates
-
     if args.use_test_fixtures:
-        fixture_path = _validate_safe_path(ROOT / "tests/fixtures/fixed_niche_cases.yaml")
-        candidates = _load_yaml_candidates(fixture_path)
+        candidates = _load_yaml_candidates(_validate_safe_path(ROOT / "tests/fixtures/fixed_niche_cases.yaml"))
         if not candidates:
             raise ValueError("No candidates could be loaded from test fixtures")
         return candidates
-
-    adapter = FixedNicheSourceAdapter()
-    return adapter.discover_production_candidates()
+    return FixedNicheSourceAdapter().discover_production_candidates()
 
 
 def _apply_topic_overrides(topic: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
     """Apply explicit CLI argument overrides to topic metadata."""
-    result = dict(topic)
-    if args.title:
-        result["title"] = args.title
-    if args.topic_family:
-        result["topic_family"] = args.topic_family
-    if args.canonical_url:
-        result["canonical_url"] = args.canonical_url
-    return result
+    res = dict(topic)
+    res.update({k: getattr(args, k) for k in ("title", "topic_family", "canonical_url") if getattr(args, k, None)})
+    return res
 
 
 def _auto_select_topic(
-    candidates_pool: List[Dict[str, Any]],
-    gate: FixedNicheScopeGate,
-    args: argparse.Namespace,
+    candidates_pool: List[Dict[str, Any]], gate: FixedNicheScopeGate, args: argparse.Namespace
 ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Auto-select the highest ranked eligible candidate from pool."""
     eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
     if not eligible:
         return None, None
-
     from lib.fixed_niche.ranker import FixedNicheTopicScorer
     ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
     top_cand = ranked[0] if ranked else eligible[0]
-    selected_id = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
+    cid = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
     topic = _apply_topic_overrides(top_cand, args)
-    topic["candidate_id"] = selected_id
-    return selected_id, topic
+    topic["candidate_id"] = cid
+    return cid, topic
 
 
 def _resolve_cli_topic_and_candidate(
-    args: argparse.Namespace,
-    candidates_pool: List[Dict[str, Any]],
-    gate: FixedNicheScopeGate,
+    args: argparse.Namespace, candidates_pool: List[Dict[str, Any]], gate: FixedNicheScopeGate
 ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Resolve target candidate ID and topic dictionary according to auto-select/explicit args."""
-    candidate_id = args.candidate_id
-    if candidate_id:
-        matched = next(
-            (c for c in candidates_pool if c.get("candidate_id") == candidate_id or c.get("id") == candidate_id),
-            None,
-        )
+    cid = args.candidate_id
+    if cid:
+        matched = next((c for c in candidates_pool if c.get("candidate_id") == cid or c.get("id") == cid), None)
         if matched:
-            topic = _apply_topic_overrides(matched, args)
-            topic["candidate_id"] = candidate_id
-            return candidate_id, topic
-
-    if args.auto_select or not candidate_id:
+            t = _apply_topic_overrides(matched, args)
+            t["candidate_id"] = cid
+            return cid, t
+    if args.auto_select or not cid:
         return _auto_select_topic(candidates_pool, gate, args)
-
     fallback = _apply_topic_overrides({
-        "candidate_id": candidate_id,
-        "title": "Why coding agents lose project requirements between sessions",
-        "topic_family": "context_memory",
-        "canonical_url": "https://docs.anthropic.com/claude/context-window",
+        "candidate_id": cid, "title": "Why coding agents lose project requirements between sessions",
+        "topic_family": "context_memory", "canonical_url": "https://docs.anthropic.com/claude/context-window",
     }, args)
-    fallback["candidate_id"] = candidate_id
-    return candidate_id, fallback
+    fallback["candidate_id"] = cid
+    return cid, fallback
 
 
 def _build_cli_parser() -> argparse.ArgumentParser:

@@ -38,7 +38,7 @@ def test_cta_narration_and_visual_banner():
     # 1. Narration CTA check across families
     narration_dict = director.compose_dynamic_narration(topic, claims)
     b6_text = narration_dict["b6"]
-    assert "Follow @OpenMontage" in b6_text
+    assert "Follow" in b6_text
     assert "star the repo" in b6_text
     assert "defensive blueprint" in b6_text
 
@@ -52,8 +52,8 @@ def test_cta_narration_and_visual_banner():
         is_vertical=True,
     )
     assert 'id="flow-cta-banner"' in svg
-    assert "Follow @OpenMontage" in svg
-    assert "Star Repository on GitHub" in svg
+    assert "Follow" in svg
+    assert "Star" in svg
     assert "CALL TO ACTION // ARCHITECTURAL BLUEPRINT" in svg
 
 

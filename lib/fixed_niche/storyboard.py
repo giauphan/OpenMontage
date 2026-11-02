@@ -195,7 +195,7 @@ class FixedNicheStoryboardDirector:
             b5 = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
 
         # Beat 6: Takeaway & Call to Action (CTA)
-        cta_suffix = "Follow @OpenMontage for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint."
+        cta_suffix = "Follow me for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint."
         takeaway = topic.get("key_takeaway") or topic.get("thesis")
         if takeaway and len(takeaway.split()) >= 4:
             clean_ta = takeaway.rstrip(".")

@@ -537,9 +537,9 @@ def main():
             fb_asset = project_dir / yt_rel if yt_rel else None
 
         fb_target_id = (
-            cfg.get("meta", {}).get("page_id")
+            os.environ.get("FB_PAGE_ID")
             or cfg.get("facebook", {}).get("page_id")
-            or os.environ.get("FB_PAGE_ID")
+            or cfg.get("meta", {}).get("page_id")
             or "1435449429646177"
         )
         if (

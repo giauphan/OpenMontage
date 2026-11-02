@@ -7,6 +7,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -88,23 +89,45 @@ def main():
                 title, fb_path, scheduled_for=slot.isoformat(),
             )
             if fb_key:
-                result = publisher.execute({
+                from tools.publishers.facebook_publisher import FacebookPublisher
+                fb_pub = FacebookPublisher()
+                now_sec = int(now.timestamp())
+                sched_sec = int(slot.timestamp())
+                fb_inputs = {
                     "video_path": str(fb_path),
                     "caption": caption[:2000],
-                    "page_id": fb_page_id,
-                    "post_to_facebook": True,
-                    "post_to_instagram": False,
-                    "scheduled_publish_time": int(slot.timestamp()),
-                })
+                    "title": title,
+                    "target_id": fb_page_id,
+                    "enable_auto_translate": True,
+                    "publish_type": "REEL",
+                }
+                if sched_sec >= now_sec + 600:
+                    fb_inputs["scheduled_publish_time"] = sched_sec
+
+                result = fb_pub.execute(fb_inputs)
+                if not result.success and os.environ.get("TOKEN_FACEBOOK"):
+                    result = publisher.execute({
+                        "video_path": str(fb_path),
+                        "caption": caption[:2000],
+                        "page_id": fb_page_id,
+                        "post_to_facebook": True,
+                        "post_to_instagram": False,
+                        "scheduled_publish_time": int(slot.timestamp()),
+                    })
+                data = (result.data or {}) if result.success else {}
+                fb_post_id = data.get("facebook_post_id") or data.get("video_id")
+                if result.success and not fb_post_id:
+                    result.success = False
+                    result.error = "Facebook returned no video/post ID"
                 if result.success:
-                    data = result.data or {}
+                    video_url = data.get("video_url") or f"https://facebook.com/{fb_page_id}/videos/{fb_post_id}"
                     store.mark_scheduled(
                         fb_key,
-                        video_id=data.get("facebook_post_id"),
-                        video_url=f"https://facebook.com/{fb_page_id}/videos/{data.get('facebook_post_id')}",
+                        video_id=fb_post_id,
+                        video_url=video_url,
                         scheduled_for=slot.isoformat(),
                     )
-                    print(f"FB scheduled {pid}: {data.get('facebook_post_id')} -> {slot.isoformat()}")
+                    print(f"FB scheduled {pid}: {fb_post_id} -> {slot.isoformat()}")
                 else:
                     store.mark_failed(fb_key, str(result.error))
                     print(f"FB FAILED {pid}: {result.error}")

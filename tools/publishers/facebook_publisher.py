@@ -4,7 +4,9 @@ Publishes videos and Reels to Facebook Pages via Toolcase Gateway (/custom/faceb
 with automated multi-language AI dubbing / translation (14 languages enabled by default)
 and native post scheduling (scheduled_publish_time) between 10m and 75d in advance.
 
-Follows SCHEDULING_AND_AUTO_TRANSLATE_GUIDE.md.
+Follows /home/ubuntu/toolcase-gateway-rs/.gw_state/modules/facebook-suite/README.md
+and SCHEDULING_AND_AUTO_TRANSLATE_GUIDE.md.
+Deploys on server SSH using port 20129.
 """
 
 from __future__ import annotations
@@ -35,7 +37,8 @@ from tools.base_tool import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GATEWAY_URL = "http://127.0.0.1:20129/custom/facebook"
+DEFAULT_GATEWAY_PORT = 20129
+DEFAULT_GATEWAY_URL = f"http://127.0.0.1:{DEFAULT_GATEWAY_PORT}/custom/facebook"
 DEFAULT_14_LANGUAGES = [
     "en_US", "vi_VN", "hi_IN", "ar_AR", "pt_BR", "es_LA", "fr_FR",
     "bn_IN", "id_ID", "th_TH", "te_IN", "ta_IN", "mr_IN", "kn_IN",
@@ -44,7 +47,7 @@ DEFAULT_14_LANGUAGES = [
 
 class FacebookPublisher(BaseTool):
     name = "facebook_publisher"
-    version = "1.0.0"
+    version = "1.1.0"
     tier = ToolTier.PUBLISH
     capability = "publish"
     provider = "facebook"
@@ -56,21 +59,22 @@ class FacebookPublisher(BaseTool):
     dependencies = ["python:requests"]
     install_instructions = (
         "1. Ensure Toolcase Gateway is running on port 20129 with facebook-suite enabled.\n"
-        "2. Configure Meta Business Suite cookie in Gateway Dashboard or config.json.\n"
+        "2. Configure Meta Business Suite cookie in Gateway Dashboard or config.json (port 20129).\n"
         "Configured via TOOLCASE_GATEWAY_URL or FACEBOOK_GATEWAY_BASE_URL."
     )
 
     agent_skills = []
-    capabilities = ["facebook_upload", "reels_publish", "auto_translate", "scheduled_publish"]
+    capabilities = ["facebook_upload", "reels_publish", "auto_translate", "scheduled_publish", "chunked_upload"]
     supports = {
         "local_offline": False,
         "free": True,
         "uploads": True,
         "auto_dubbing": True,
         "native_scheduling": True,
+        "chunked_upload": True,
     }
     best_for = [
-        "direct Facebook video upload & Reels publishing via Toolcase Gateway",
+        "direct Facebook video upload & Reels publishing via Toolcase Gateway on port 20129",
         "native Facebook scheduled publishing between 10 minutes and 75 days in advance",
         "automated multi-language AI dubbing across 14 languages without extra tools",
     ]
@@ -86,6 +90,12 @@ class FacebookPublisher(BaseTool):
             "description": {"type": "string", "description": "Alias for caption."},
             "target_id": {"type": "string", "description": "Facebook Page ID or actor ID."},
             "page_id": {"type": "string", "description": "Alias for target_id."},
+            "publish_type": {
+                "type": "string",
+                "enum": ["REEL", "FEED", "STORY"],
+                "default": "REEL",
+                "description": "Content type to publish: REEL, FEED (video post), or STORY.",
+            },
             "scheduled_publish_time": {
                 "type": "integer",
                 "description": "Unix timestamp in seconds for scheduled publishing (10m to 75d).",
@@ -131,18 +141,30 @@ class FacebookPublisher(BaseTool):
             self._session.trust_env = False
 
     def get_gateway_base_url(self, inputs: Optional[dict[str, Any]] = None) -> str:
-        """Resolve and validate the configured Facebook Gateway base URL."""
+        """Resolve and validate the configured Facebook Gateway base URL.
+
+        Ensures port 20129 is enforced when deployed on the server.
+        """
         inputs = inputs or {}
         configured = (
             inputs.get("gateway_url")
             or os.environ.get("FACEBOOK_GATEWAY_BASE_URL")
             or os.environ.get("META_GATEWAY_BASE_URL")
         )
+        is_default = False
         if not configured:
-            toolcase_gw = os.environ.get("TOOLCASE_GATEWAY_URL", "http://127.0.0.1:20129").strip().rstrip("/")
+            is_default = True
+            toolcase_gw = os.environ.get(
+                "TOOLCASE_GATEWAY_URL", f"http://127.0.0.1:{DEFAULT_GATEWAY_PORT}"
+            ).strip().rstrip("/")
             configured = f"{toolcase_gw}/custom/facebook"
 
         base_url = configured.strip().rstrip("/")
+        # Port normalization: change 28130 from doc examples to 20129 on server deployment
+        if ":28130" in base_url:
+            logger.info("Normalizing Facebook Suite gateway port from 28130 to server port 20129")
+            base_url = base_url.replace(":28130", f":{DEFAULT_GATEWAY_PORT}")
+
         parsed = urlparse(base_url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"Invalid Facebook Gateway URL scheme: {parsed.scheme}")
@@ -153,8 +175,7 @@ class FacebookPublisher(BaseTool):
     def check_readiness(self, base_url: Optional[str] = None) -> dict[str, Any]:
         """Check status and readiness of the Facebook Suite adapter."""
         url = base_url or self.get_gateway_base_url()
-        endpoints = [f"{url}/v1/status", f"{url}/status"]
-        for ep in endpoints:
+        for ep in (f"{url}/v1/status", f"{url}/status"):
             try:
                 resp = self._session.get(ep, timeout=10)
                 if resp.status_code == 200:
@@ -162,6 +183,108 @@ class FacebookPublisher(BaseTool):
             except Exception:
                 continue
         return {"module": "facebook-suite", "status": "unknown", "configured": False}
+
+    def get_scopes(self, base_url: Optional[str] = None) -> dict[str, Any]:
+        """List accessible Facebook Pages and identities via /v1/scopes."""
+        url = base_url or self.get_gateway_base_url()
+        for ep in (f"{url}/v1/scopes", f"{url}/scopes"):
+            try:
+                resp = self._session.get(ep, timeout=15)
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception:
+                continue
+        return {"error": {"code": 503, "message": "Failed to fetch Facebook scopes"}}
+
+    def get_config(self, base_url: Optional[str] = None) -> dict[str, Any]:
+        """View active masked module configuration via /v1/config."""
+        url = base_url or self.get_gateway_base_url()
+        for ep in (f"{url}/v1/config", f"{url}/config"):
+            try:
+                resp = self._session.get(ep, timeout=10)
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception:
+                continue
+        return {"error": "Failed to retrieve Facebook configuration"}
+
+    def import_har(self, har_data: str | Path | dict, base_url: Optional[str] = None) -> dict[str, Any]:
+        """Import HAR capture to auto-extract credentials via /v1/config/har."""
+        url = base_url or self.get_gateway_base_url()
+        raw_body = ""
+        if isinstance(har_data, Path) or (isinstance(har_data, str) and Path(har_data).is_file()):
+            raw_body = Path(har_data).read_text(encoding="utf-8")
+        elif isinstance(har_data, dict):
+            raw_body = json.dumps(har_data)
+        else:
+            raw_body = str(har_data)
+        for ep in (f"{url}/v1/config/har", f"{url}/config/har"):
+            try:
+                resp = self._session.post(
+                    ep,
+                    data=raw_body.encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception:
+                continue
+        return {"error": "Failed to import HAR file to Facebook Suite"}
+
+    def check_video_published(self, video_id: str, base_url: Optional[str] = None) -> dict[str, Any] | None:
+        """Check if video/post exists and is published."""
+        if not video_id:
+            return None
+        url = base_url or self.get_gateway_base_url()
+        for ep in (f"{url}/v1/status/{video_id}", f"{url}/status/{video_id}", f"{url}/v1/video/{video_id}"):
+            try:
+                resp = self._session.get(ep, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    status = data.get("status") or ("published" if data.get("published") else None)
+                    if status == "published":
+                        return {
+                            "platform": "facebook",
+                            "video_id": str(video_id),
+                            "status": "published",
+                            "gateway_url": url,
+                            "details": data,
+                        }
+            except Exception:
+                continue
+        return None
+
+    def publish_status(
+        self,
+        message: str,
+        target_id: Optional[str] = None,
+        scheduled_publish_time: Optional[int] = None,
+        base_url: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Publish text or status update to Facebook Page via /v1/publish/status."""
+        url = base_url or self.get_gateway_base_url()
+        payload: dict[str, Any] = {"message": message}
+        if target_id:
+            payload["target_id"] = target_id
+        if scheduled_publish_time:
+            payload["scheduled_publish_time"] = scheduled_publish_time
+        for ep in (f"{url}/v1/publish/status", f"{url}/publish/status", f"{url}/feed/post"):
+            try:
+                resp = self._session.post(ep, json=payload, timeout=30)
+                if resp.status_code == 200:
+                    return resp.json()
+                if resp.status_code in (404, 405):
+                    continue
+                try:
+                    return resp.json()
+                except Exception:
+                    return {"error": f"Status post failed with HTTP {resp.status_code}: {resp.text[:200]}"}
+            except requests.exceptions.ConnectionError:
+                continue
+            except Exception as e:
+                return {"error": f"Status post interrupted or ambiguous: {e}"}
+        return {"error": "Failed to publish Facebook status"}
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         """Upload video to Facebook Page with optional scheduling and auto-dubbing."""
@@ -178,6 +301,7 @@ class FacebookPublisher(BaseTool):
             return ToolResult(success=False, error="Missing caption or title for Facebook post")
 
         target_id = str(inputs.get("target_id") or inputs.get("page_id") or os.environ.get("FB_PAGE_ID") or "").strip()
+        publish_type = str(inputs.get("publish_type") or "REEL").upper()
 
         # Validate scheduled_publish_time (10m to 75d) per SCHEDULING_AND_AUTO_TRANSLATE_GUIDE.md
         raw_sched = inputs.get("scheduled_publish_time") or inputs.get("schedule_time")
@@ -215,11 +339,11 @@ class FacebookPublisher(BaseTool):
             return ToolResult(success=False, error=f"Failed to read video file: {read_err}")
 
         payload: dict[str, Any] = {
-            "video_path": str(video_path.resolve()),
             "video_base64": v_b64,
             "file_name": video_path.name,
             "title": title or caption[:100],
             "description": caption or title,
+            "publish_type": publish_type,
             "enable_auto_translate": bool(enable_auto_translate),
             "translated_languages": translated_languages,
         }
@@ -229,22 +353,56 @@ class FacebookPublisher(BaseTool):
             payload["scheduled_publish_time"] = scheduled_epoch
 
         upload_url = f"{base_url}/v1/upload/video"
+        resp = None
         try:
             resp = self._session.post(upload_url, json=payload, headers=headers, timeout=300)
-        except requests.exceptions.ConnectionError as conn_err:
-            # Fallback to alternative endpoint
-            try:
-                resp = self._session.post(f"{base_url}/upload/video", json=payload, headers=headers, timeout=300)
-            except Exception:
+        except requests.exceptions.ConnectTimeout as conn_err:
+            for alt in (f"{base_url}/v1/publish", f"{base_url}/upload/video", f"{base_url}/publish"):
+                try:
+                    resp = self._session.post(alt, json=payload, headers=headers, timeout=300)
+                    if resp.status_code == 200:
+                        break
+                except Exception:
+                    continue
+            if resp is None:
                 return ToolResult(
                     success=False,
                     error=(
                         f"Failed to connect to Facebook Gateway at {base_url}: {conn_err}\n"
-                        "Please verify toolcase-gateway-rs is running on port 20129 with facebook-suite enabled."
+                        f"Please verify toolcase-gateway-rs is running on port {DEFAULT_GATEWAY_PORT} with facebook-suite enabled."
+                    ),
+                )
+        except requests.exceptions.ConnectionError as conn_err:
+            err_str = str(conn_err)
+            if "Connection refused" in err_str:
+                for alt in (f"{base_url}/v1/publish", f"{base_url}/upload/video", f"{base_url}/publish"):
+                    try:
+                        resp = self._session.post(alt, json=payload, headers=headers, timeout=300)
+                        if resp.status_code == 200:
+                            break
+                    except Exception:
+                        continue
+            if resp is None:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"Connection failed or aborted during upload to Facebook Gateway at {base_url}: {conn_err}\n"
+                        f"Please verify toolcase-gateway-rs is running on port {DEFAULT_GATEWAY_PORT} with facebook-suite enabled."
                     ),
                 )
         except Exception as exc:
             return ToolResult(success=False, error=f"Facebook upload request error: {exc}")
+
+        # If 404 on /v1/upload/video, try /v1/publish or other endpoints
+        if resp.status_code == 404:
+            for alt in (f"{base_url}/v1/publish", f"{base_url}/upload/video", f"{base_url}/publish"):
+                try:
+                    alt_resp = self._session.post(alt, json=payload, headers=headers, timeout=300)
+                    if alt_resp.status_code != 404:
+                        resp = alt_resp
+                        break
+                except Exception:
+                    continue
 
         if resp.status_code != 200:
             return ToolResult(
@@ -258,12 +416,34 @@ class FacebookPublisher(BaseTool):
             return ToolResult(success=False, error=f"Invalid JSON response from Facebook adapter: {json_err}")
 
         if res_json.get("status") == "error":
-            err_msg = res_json.get("details", {}).get("error", {}).get("message") or res_json.get("message") or "Upload error"
+            err_msg = (
+                res_json.get("details", {}).get("error", {}).get("message")
+                or res_json.get("message")
+                or "Upload error"
+            )
             return ToolResult(success=False, error=f"Facebook upload failed: {err_msg}")
 
-        video_id = str(res_json.get("video_id") or res_json.get("publish_result", {}).get("id") or "")
+        if "error" in res_json and res_json["error"]:
+            err = res_json["error"]
+            err_msg = err.get("message") if isinstance(err, dict) else str(err)
+            return ToolResult(success=False, error=f"Facebook upload failed: {err_msg}")
+
+        pub_res = res_json.get("publish_result") or {}
+        video_id = str(
+            res_json.get("video_id")
+            or res_json.get("id")
+            or res_json.get("post_id")
+            or pub_res.get("id")
+            or pub_res.get("video_id")
+            or ""
+        )
         resolved_target = str(res_json.get("target_id") or target_id or "")
-        video_url = f"https://facebook.com/{resolved_target}/videos/{video_id}" if video_id and resolved_target else None
+        video_url = res_json.get("video_url")
+        if not video_url and video_id and resolved_target:
+            video_url = f"https://facebook.com/{resolved_target}/videos/{video_id}"
+        elif not video_url and video_id:
+            video_url = f"https://facebook.com/watch/?v={video_id}"
+
         status = "scheduled" if scheduled_epoch else "published"
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -274,6 +454,7 @@ class FacebookPublisher(BaseTool):
             "video_id": video_id,
             "target_id": resolved_target,
             "video_url": video_url,
+            "publish_type": publish_type,
             "auto_translate_enabled": bool(enable_auto_translate),
             "translated_languages": translated_languages,
             "metadata_used": {"caption": caption, "title": title},
@@ -288,6 +469,7 @@ class FacebookPublisher(BaseTool):
             "video_id": video_id,
             "target_id": resolved_target,
             "video_url": video_url,
+            "publish_type": publish_type,
             "auto_translate_enabled": bool(enable_auto_translate),
         }
         if scheduled_epoch:

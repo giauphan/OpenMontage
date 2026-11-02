@@ -1,0 +1,266 @@
+{
+  "template": "agent-pipeline-flow",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "title": "Evaluating Agent Completion Reliability: Why Single Benchmarks Lie",
+  "topic_family": "agent_evaluation",
+  "hook_alert": "⚡ SYNTHETIC BENCHMARK BIAS // EVALUATION GAP",
+  "duration": 70.0,
+  "narration_audio": "assets/narration_en_US.mp3",
+  "bgm_audio": "assets/music-bg.mp3",
+  "scenes": [
+    {
+      "id": "scene_hook",
+      "start_s": 0.0,
+      "end_s": 11.66,
+      "title": "Coding Agent Evaluation Harness",
+      "subtitle": "Failure Mode: Synthetic Demos Mask Multi-File Production Failure",
+      "accent_color": "#ef4444",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "DEMO BENCHMARK: 90% CLAIM",
+          "description": "Agent excels at isolated single-file function synthesis prompts",
+          "icon": "agent",
+          "status_badge": "✓",
+          "metric_gauge": { "label": "SYNTHETIC SCORE", "value": "90%", "percentage": 90, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "REAL REPO: 50-FILE TASK",
+          "description": "Deployed to enterprise codebase with complex dependencies",
+          "icon": "database",
+          "status_badge": "!",
+          "circuit_switch": { "is_open": false, "label": "REPO MATRIX: COMPLEX" },
+          "metric_gauge": { "label": "COMPLEXITY", "value": "HIGH", "percentage": 95, "color": "#f59e0b" }
+        },
+        {
+          "step_number": 3,
+          "label": "BREAKDOWN: MULTI-FILE DRIFT",
+          "description": "⚡ REASONING COLLAPSE // Unchecked Side Effects",
+          "icon": "breaker",
+          "status_badge": "✕",
+          "circuit_switch": { "is_open": true, "label": "SOLVE RATE: COLLAPSED" },
+          "metric_gauge": { "label": "REAL RESOLUTION", "value": "18%", "percentage": 18, "color": "#ef4444" }
+        },
+        {
+          "step_number": 4,
+          "label": "OUTCOME: BROKEN RELEASES",
+          "description": "Synthetic benchmark claims diverge from real engineering output",
+          "icon": "shield",
+          "status_badge": "✕",
+          "circuit_switch": { "is_open": true, "label": "CI GATE: BROKEN" },
+          "metric_gauge": { "label": "DEFECT LEAK", "value": "HIGH", "percentage": 82, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "ENTERPRISE DEPLOY", "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "label": "CROSS-FILE DRIFT", "color": "#f59e0b" },
+        { "from_step": 3, "to_step": 4, "label": "METRIC DIVERGENCE", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_impact",
+      "start_s": 11.66,
+      "end_s": 23.33,
+      "title": "The Synthetic Evaluation Illusion",
+      "subtitle": "Why single-turn unit tests fail to measure real agent capability",
+      "accent_color": "#f59e0b",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "PHASE 1: CHERRY-PICKED TESTS",
+          "description": "Vendor benchmarks evaluate small snippets with isolated outputs",
+          "icon": "agent",
+          "metric_gauge": { "label": "TEST SCOPE", "value": "ISOLATED", "percentage": 25, "color": "#f59e0b" }
+        },
+        {
+          "step_number": 2,
+          "label": "PHASE 2: EXECUTION FEEDBACK BLINDNESS",
+          "description": "No compiler error iterations, test runner feedback, or linting loops",
+          "icon": "database",
+          "circuit_switch": { "is_open": true, "label": "NO FEEDBACK LOOP" },
+          "metric_gauge": { "label": "ITERATION DEPTH", "value": "NONE", "percentage": 0, "color": "#ef4444" }
+        },
+        {
+          "step_number": 3,
+          "label": "PHASE 3: SILENT ARCHITECTURE DRIFT",
+          "description": "False sense of reliability leads to unmonitored production deployments",
+          "icon": "shield",
+          "state_machine": { "active_state": "OPEN" },
+          "metric_gauge": { "label": "RELIABILITY GAP", "value": "SEVERE", "percentage": 80, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "REALITY GAP", "color": "#f59e0b" },
+        { "from_step": 2, "to_step": 3, "label": "UNCHECKED MERGE", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_mechanism",
+      "start_s": 23.33,
+      "end_s": 34.99,
+      "title": "Synthetic Prompts vs SWE-bench Harness",
+      "subtitle": "Evaluating autonomous issue resolution against ground-truth git matrices",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "REAL REPOSITORY HARNESS",
+          "description": "Real GitHub issues paired with ground-truth test assertions",
+          "icon": "database",
+          "metric_gauge": { "label": "TASK CORPUS", "value": "REAL REPOS", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "HERMETIC REPRO EVALUATOR",
+          "description": "Agent must generate patch that turns red tests green without leaks",
+          "icon": "breaker",
+          "circuit_switch": { "is_open": false, "label": "EVAL BUS: ACTIVE" },
+          "state_machine": { "active_state": "CLOSED" }
+        },
+        {
+          "step_number": 3,
+          "label": "DETERMINISTIC SCORE MATRIX",
+          "description": "Reproducible pass@1 and pass@k measurement across runs",
+          "icon": "server",
+          "metric_gauge": { "label": "ACCURACY", "value": "VERIFIED", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "INGEST REPO ISSUE", "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "label": "EVALUATE REPRO", "color": "#38bdf8" }
+      ]
+    },
+    {
+      "id": "scene_remedy",
+      "start_s": 34.99,
+      "end_s": 46.66,
+      "title": "Hermetic Multi-File Evaluation Protocol",
+      "subtitle": "Rigorous ground-truth assertion harnesses for coding agents",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "STEP 1: ISOLATE REAL REPO SNAPSHOT",
+          "description": "Clone pinned repository commit inside hermetic test container",
+          "icon": "database",
+          "metric_gauge": { "label": "CONTAINER", "value": "HERMETIC", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "STEP 2: RUN AUTONOMOUS REPAIR LOOP",
+          "description": "Agent reads issue, reproduces bug, edits code, runs test suite",
+          "icon": "agent",
+          "circuit_switch": { "is_open": false, "label": "AGENT LOOP: MONITORED" },
+          "metric_gauge": { "label": "FEEDBACK TURNS", "value": "DYNAMIC", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "STEP 3: EXECUTE HIDDEN ACCEPTANCE SUITE",
+          "description": "Verify ground-truth assertions pass without test tampering",
+          "icon": "shield",
+          "state_machine": { "active_state": "CLOSED" },
+          "metric_gauge": { "label": "RESOLVE ACCURACY", "value": "HONEST", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "AUTONOMOUS ATTEMPT", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "GROUND-TRUTH GATE", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_verification",
+      "start_s": 46.66,
+      "end_s": 58.32,
+      "title": "Local Automated Evaluation Gate",
+      "subtitle": "Asserting reproducible evaluation metrics before agent rollouts",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "1. Multi-Repo Benchmark Matrix Configured",
+          "description": "✓ PASS: 20+ diverse real-world tasks anchored in eval config",
+          "icon": "database",
+          "metric_gauge": { "label": "GATE 1", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "2. Hidden Test Suite Rejects Assertion Modifications",
+          "description": "✓ PASS: AST diff confirms zero tampering with eval tests",
+          "icon": "shield",
+          "metric_gauge": { "label": "GATE 2", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "3. Statistical Variance Across 3 Runs Within 2%",
+          "description": "✓ PASS: Hermetic evaluation guarantees reproducible scores",
+          "icon": "server",
+          "metric_gauge": { "label": "GATE 3", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 4,
+          "label": "DELIVERY GATE: EVALUATION RELIABILITY CERTIFIED",
+          "description": "Unbiased agent capabilities validated against production codebases.",
+          "icon": "shield",
+          "circuit_switch": { "is_open": false, "label": "EVAL: CERTIFIED" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "MATRIX LOCKED", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "TAMPER CHECK", "color": "#22c55e" },
+        { "from_step": 3, "to_step": 4, "label": "ALL VERIFIED", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_production",
+      "start_s": 58.32,
+      "end_s": 70.0,
+      "title": "End-to-End Evaluation Pipeline Flow",
+      "subtitle": "Continuous benchmarking architecture for autonomous agent systems",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "Ground-Truth Dataset Ingestion",
+          "description": "Real Production Repos & Issues",
+          "icon": "database",
+          "metric_gauge": { "label": "STAGE 1", "value": "INGESTED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "Containerized Sandbox Execution",
+          "description": "Hermetic Agent Runtime Environment",
+          "icon": "server",
+          "metric_gauge": { "label": "STAGE 2", "value": "ISOLATED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 3,
+          "label": "Automated Ground-Truth Verification",
+          "description": "Hidden Test Assertion Scoring",
+          "icon": "shield",
+          "metric_gauge": { "label": "STAGE 3", "value": "SCORED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 4,
+          "label": "Continuous Release Qualification",
+          "description": "Empirical Zero-Regress Deployment Gate",
+          "icon": "agent",
+          "metric_gauge": { "label": "STAGE 4", "value": "QUALIFIED", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "color": "#38bdf8" },
+        { "from_step": 3, "to_step": 4, "color": "#22c55e" }
+      ]
+    }
+  ],
+  "cta": {
+    "kicker": "CALL TO ACTION // EVALUATION ARCHITECTURE",
+    "heading": "Follow me for Daily Agent Engineering Patterns",
+    "button_text": "★ Star the Repository on GitHub",
+    "subtitle": "SWE-bench Invariants • Ground-Truth Gates • Honest Reliability",
+    "min_hold_seconds": 5.0
+  }
+}

@@ -415,6 +415,7 @@ def publish_batch(
     enforce_preflight: bool | None = None,
     held_platforms: set[str] | list[str] | str | None = None,
     enabled_platforms: set[str] | list[str] | str | None = None,
+    enforce_meta_preflight: bool | None = None,
 ) -> dict:
     """Publish one topic to configured platforms with Firebase guards."""
     results = {"platforms": {}, "errors": [], "batch_started_at": datetime.now(timezone.utc).isoformat()}
@@ -583,6 +584,7 @@ def publish_batch(
 
     # Enforce release preflight (quality gates, checkpoints, human approval).
     # Preflight failure halts before making upload API calls or DB writes.
+    raw_enforce_preflight = enforce_preflight
     if enforce_preflight is None:
         enforce_preflight = bool(
             (project_dir / "project.json").is_file()
@@ -613,15 +615,33 @@ def publish_batch(
     # IMPORTANT: this must never block YouTube. Gate each platform independently and fail
     # the blocked ones as "failed" (visible failure), while YouTube still runs.
     def _meta_preflight_error_for_platform(platform: str) -> str | None:
-        mp = MetaPublisher()
-        fb_token = os.environ.get("TOKEN_FACEBOOK", "")
         if platform == "facebook":
+            # 1. Prefer Toolcase Gateway Facebook Suite adapter on port 20129
             try:
-                _ = mp._get_page_info(fb_token, FB_PAGE_ID)
-            except Exception as e:
-                return f"Meta Facebook Page access unavailable for {FB_PAGE_ID}: {e}"
-            return None
+                from tools.publishers.facebook_publisher import FacebookPublisher
+                fb_pub = FacebookPublisher()
+                readiness = fb_pub.check_readiness()
+                if readiness.get("status") in ("enabled", "ok") or readiness.get("configured") is True:
+                    return None
+            except Exception:
+                pass
+            # 2. Fallback to Meta Graph API token if available
+            mp = MetaPublisher()
+            fb_token = os.environ.get("TOKEN_FACEBOOK", "")
+            if fb_token:
+                try:
+                    _ = mp._get_page_info(fb_token, FB_PAGE_ID)
+                    return None
+                except Exception as e:
+                    return f"Meta Facebook Page access unavailable for {FB_PAGE_ID}: {e}"
+            gw_url = os.environ.get("FACEBOOK_GATEWAY_BASE_URL", "http://127.0.0.1:20129/custom/facebook")
+            return (
+                f"Facebook publishing unavailable: Toolcase Gateway not reachable at {gw_url} "
+                "(port 20129) and TOKEN_FACEBOOK is not configured."
+            )
         if platform == "instagram":
+            mp = MetaPublisher()
+            fb_token = os.environ.get("TOKEN_FACEBOOK", "")
             ig_acct = IG_ACCOUNT_ID
             if not ig_acct:
                 try:
@@ -638,8 +658,11 @@ def publish_batch(
             return None
         return None
 
+    if enforce_meta_preflight is None:
+        enforce_meta_preflight = raw_enforce_preflight if raw_enforce_preflight is not None else True
+
     blocked_meta_reason: dict[str, str] = {}
-    if not dry_run:
+    if not dry_run and enforce_meta_preflight:
         for _p in platforms:
             _plat = _p["platform"]
             if _plat in ("facebook", "instagram") and _plat not in blocked_meta_reason:
@@ -794,16 +817,23 @@ def publish_batch(
                         from tools.publishers.facebook_publisher import FacebookPublisher
                         fb_pub = FacebookPublisher()
                         fb_inputs = {
-                            "video_path": video_path,
+                            "video_path": str(video_path),
                             "title": title,
                             "caption": meta_caption(title, description),
                             "target_id": FB_PAGE_ID,
                             "enable_auto_translate": True,
+                            "publish_type": "REEL",
                         }
                         if cfg.get("scheduled_epoch"):
-                            fb_inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
+                            now_sec = int(time.time())
+                            sched_epoch = int(cfg["scheduled_epoch"])
+                            if sched_epoch >= now_sec + 600:
+                                fb_inputs["scheduled_publish_time"] = sched_epoch
+                            else:
+                                cfg["scheduled_epoch"] = None
                         tool_result = fb_pub.execute(fb_inputs)
                     except Exception as fb_exc:
+                        from tools.base_tool import ToolResult
                         tool_result = ToolResult(success=False, error=str(fb_exc))
                     if not tool_result.success and os.environ.get("TOKEN_FACEBOOK"):
                         publisher = MetaPublisher()
@@ -1532,6 +1562,7 @@ def main():
         enforce_preflight=False,
         held_platforms=cli_held,
         enabled_platforms=cli_enabled,
+        enforce_meta_preflight=not args.force,
     )
 
     # Print summary

@@ -367,16 +367,27 @@ def _hydrate_from_hybrid_discovery(
         max_age_days=getattr(args, "max_age_days", 7),
     )
     disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
-    if not disc_result.is_eligible and getattr(args, "require_latest_news", True):
+    if (not disc_result.is_eligible or len(disc_result.candidates) < min_required) and getattr(args, "require_latest_news", True):
         logger.info(
-            "HybridCandidateDiscovery with require_latest_news=True yielded 0 candidates; "
-            "falling back to authorized backlog without recency gate."
+            "HybridCandidateDiscovery with require_latest_news=True yielded %d candidates (need %d); "
+            "supplementing from authorized backlog without recency gate.",
+            len(disc_result.candidates) if disc_result.is_eligible else 0,
+            min_required,
         )
         fallback_discovery = HybridCandidateDiscovery(
             require_latest_news=False,
             max_age_days=getattr(args, "max_age_days", 7),
         )
-        disc_result = fallback_discovery.discover_candidates(count=max(count, min_required * 2))
+        fallback_res = fallback_discovery.discover_candidates(count=max(count, min_required * 2))
+        if fallback_res.is_eligible:
+            seen_cids = {c.get("candidate_id") for c in disc_result.candidates}
+            for fc in fallback_res.candidates:
+                fc_id = fc.get("candidate_id") or fc.get("id")
+                if fc_id and fc_id not in seen_cids and fc_id not in used_ids:
+                    disc_result.candidates.append(fc)
+                    seen_cids.add(fc_id)
+            if not disc_result.is_eligible and disc_result.candidates:
+                disc_result.status = "ELIGIBLE"
 
     if not disc_result.is_eligible:
         return candidate_pool
@@ -394,7 +405,8 @@ def run_produce(args: argparse.Namespace) -> None:
     """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
     count = max(1, getattr(args, "count", 1))
     used_ids = _collect_used_project_ids()
-    min_required = min(count, int(os.environ.get("MIN_PRODUCE_COUNT", 3)))
+    min_produce = int(os.environ.get("MIN_PRODUCE_COUNT") or os.environ.get("EXPECTED_SUCCESS_COUNT") or os.environ.get("TARGET_SUCCESS_COUNT") or 3)
+    min_required = min(count, min_produce)
 
     candidate_pool: List[Dict[str, Any]] = []
     input_file = Path(args.input)

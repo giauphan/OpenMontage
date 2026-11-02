@@ -1,0 +1,265 @@
+{
+  "template": "agent-pipeline-flow",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "title": "State Loss Across Agent Sessions: Why Context Windows Drop Project Architecture",
+  "topic_family": "context_memory",
+  "hook_alert": "⚡ CONTEXT MEMORY TRUNCATION // ARCHITECTURE LOSS",
+  "duration": 70.0,
+  "narration_audio": "assets/narration_en_US.mp3",
+  "bgm_audio": "assets/music-bg.mp3",
+  "scenes": [
+    {
+      "id": "scene_hook",
+      "start_s": 0.0,
+      "end_s": 11.66,
+      "title": "Autonomous Coding Agent Session Loop",
+      "subtitle": "Failure Mode: Unpersisted Context Windows Reset Architecture Constraints",
+      "accent_color": "#ef4444",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "SESSION 1: ARCHITECTURE PROMPT",
+          "description": "Developer defines Clean Architecture bounds & domain rules",
+          "icon": "agent",
+          "status_badge": "✓",
+          "metric_gauge": { "label": "CONTEXT USAGE", "value": "12k TOKENS", "percentage": 10, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "SESSION 2: CONTEXT DRIFT",
+          "description": "Multi-turn task outputs push initial rules off context edge",
+          "icon": "database",
+          "status_badge": "!",
+          "metric_gauge": { "label": "TOKEN WINDOW", "value": "180k FULL", "percentage": 90, "color": "#f59e0b" }
+        },
+        {
+          "step_number": 3,
+          "label": "PROCESS RESTART: COMPACT",
+          "description": "⚡ TRUNCATION EVENT // Invariants Evicted",
+          "icon": "breaker",
+          "status_badge": "✕",
+          "circuit_switch": { "is_open": true, "label": "MEMORY: TRUNCATED" },
+          "metric_gauge": { "label": "RULE RETENTION", "value": "0%", "percentage": 0, "color": "#ef4444" }
+        },
+        {
+          "step_number": 4,
+          "label": "OUTCOME: REGRESSION LEAK",
+          "description": "Agent rewrites domain layers directly into transport handlers",
+          "icon": "shield",
+          "status_badge": "✕",
+          "circuit_switch": { "is_open": true, "label": "CI GATE: FAILED" },
+          "metric_gauge": { "label": "DEFECT RATE", "value": "CRITICAL", "percentage": 100, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "SESSION TURNS", "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "label": "TOKEN OVERFLOW", "color": "#f59e0b" },
+        { "from_step": 3, "to_step": 4, "label": "RULES LOST", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_impact",
+      "start_s": 11.66,
+      "end_s": 23.33,
+      "title": "The Transient In-Memory Trap",
+      "subtitle": "Why in-memory LLM conversation turns guarantee state amnesia",
+      "accent_color": "#f59e0b",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "PHASE 1: TRANSIENT SESSION",
+          "description": "Agent relies solely on raw conversation history for rules",
+          "icon": "agent",
+          "metric_gauge": { "label": "MEMORY BUS", "value": "TRANSIENT", "percentage": 50, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "PHASE 2: UNANCHORED STATE",
+          "description": "No tracked disk ledger or architectural invariant artifact",
+          "icon": "database",
+          "circuit_switch": { "is_open": true, "label": "NO ARTIFACT FILE" },
+          "metric_gauge": { "label": "FILE BACKING", "value": "NONE", "percentage": 0, "color": "#ef4444" }
+        },
+        {
+          "step_number": 3,
+          "label": "PHASE 3: SILENT ARCHITECTURE DRIFT",
+          "description": "Subsequent subagents violate domain layering guidelines",
+          "icon": "shield",
+          "state_machine": { "active_state": "OPEN" },
+          "metric_gauge": { "label": "COMPLIANCE", "value": "VIOLATED", "percentage": 20, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "TOKEN EVAPORATION", "color": "#f59e0b" },
+        { "from_step": 2, "to_step": 3, "label": "SPEC CORRUPTION", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_mechanism",
+      "start_s": 23.33,
+      "end_s": 34.99,
+      "title": "Ephemeral RAM vs Versioned Disk Artifacts",
+      "subtitle": "Architectural boundary between active attention and durable file state",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "TOPOLOGY NODE: AGENT RUNTIME",
+          "description": "Stateless LLM inference session bounded per API call",
+          "icon": "agent",
+          "metric_gauge": { "label": "RUNTIME TYPE", "value": "STATELESS", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "DURABLE REPO ARTIFACT BUS",
+          "description": "Version-controlled architectural rule contracts on disk",
+          "icon": "database",
+          "circuit_switch": { "is_open": false, "label": "DISK LEDGER: ACTIVE" },
+          "state_machine": { "active_state": "CLOSED" }
+        },
+        {
+          "step_number": 3,
+          "label": "HERMETIC CONSTRAINTS ENGINE",
+          "description": "Invariants loaded into prompt prefix on every session spawn",
+          "icon": "server",
+          "metric_gauge": { "label": "STABILITY", "value": "PERSISTENT", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "READ AGENTS.MD", "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "label": "ENFORCE INVARIANTS", "color": "#38bdf8" }
+      ]
+    },
+    {
+      "id": "scene_remedy",
+      "start_s": 34.99,
+      "end_s": 46.66,
+      "title": "Durable Task Ledger & Invariant Contracts",
+      "subtitle": "Persisting decisions and layer boundaries into tracked repository artifacts",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "STEP 1: SERIALIZE INVARIANTS",
+          "description": "Write system boundaries to AGENTS.md & ARCHITECTURE.md",
+          "icon": "database",
+          "metric_gauge": { "label": "PERSISTENCE", "value": "COMMITTED", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "STEP 2: PROGRESS LEDGER SNAPSHOT",
+          "description": "Record active step state and findings before context compaction",
+          "icon": "shield",
+          "metric_gauge": { "label": "SYNC FREQ", "value": "PER TURN", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "STEP 3: FRESH SESSION BOOTSTRAP",
+          "description": "Agent reads disk contract on spawn; zero context loss",
+          "icon": "server",
+          "circuit_switch": { "is_open": false, "label": "SESSION: RESTORED" },
+          "state_machine": { "active_state": "CLOSED" },
+          "metric_gauge": { "label": "RULE RECALL", "value": "100%", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "COMMIT CONTRACT", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "BOOTSTRAP PROMPT", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_verification",
+      "start_s": 46.66,
+      "end_s": 58.32,
+      "title": "Local Automated State Verification Gate",
+      "subtitle": "Asserting architectural persistence before task completion",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "1. Invariants File Exists and Is Version Controlled",
+          "description": "✓ PASS: AGENTS.md rule set tracked in repo root",
+          "icon": "database",
+          "metric_gauge": { "label": "GATE 1", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "2. Session Ledger Matches Active Repository Tree",
+          "description": "✓ PASS: Completed steps serialized to progress manifest",
+          "icon": "shield",
+          "metric_gauge": { "label": "GATE 2", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "3. Clean Architecture Validator Detects No Layer Leakage",
+          "description": "✓ PASS: Strict boundary audit confirms zero layer violations",
+          "icon": "server",
+          "metric_gauge": { "label": "GATE 3", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 4,
+          "label": "DELIVERY GATE: PERSISTENT STATE VERIFIED",
+          "description": "Task context surviving process boundary cleanly. Ready for merge.",
+          "icon": "shield",
+          "circuit_switch": { "is_open": false, "label": "STATE AUDIT: APPROVED" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "FILE VERIFIED", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "AUDIT CLEAN", "color": "#22c55e" },
+        { "from_step": 3, "to_step": 4, "label": "ALL VERIFIED", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_production",
+      "start_s": 58.32,
+      "end_s": 70.0,
+      "title": "End-to-End Durable Agent Flow",
+      "subtitle": "Production pipeline for zero-memory-loss autonomous agent engineering",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "Repository Specification Contract",
+          "description": "Versioned Rules & Layer Invariants",
+          "icon": "database",
+          "metric_gauge": { "label": "STAGE 1", "value": "PERSISTED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "Turn-Level State Serialization",
+          "description": "Ledger Artifact Updated Per Step",
+          "icon": "agent",
+          "metric_gauge": { "label": "STAGE 2", "value": "SYNCED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 3,
+          "label": "Session Compaction & Recovery",
+          "description": "Hermetic Prompt Head Rehydration",
+          "icon": "server",
+          "metric_gauge": { "label": "STAGE 3", "value": "RECOVERED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 4,
+          "label": "CI Architecture Assertion Gate",
+          "description": "Zero Regression Delivery Contract",
+          "icon": "shield",
+          "metric_gauge": { "label": "STAGE 4", "value": "VERIFIED", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "color": "#38bdf8" },
+        { "from_step": 3, "to_step": 4, "color": "#22c55e" }
+      ]
+    }
+  ],
+  "cta": {
+    "kicker": "CALL TO ACTION // CONTEXT ARCHITECTURE",
+    "heading": "Follow me for Daily Agent Engineering Patterns",
+    "button_text": "★ Star the Repository on GitHub",
+    "subtitle": "State Serialization • Invariant Contracts • Zero Context Loss",
+    "min_hold_seconds": 5.0
+  }
+}

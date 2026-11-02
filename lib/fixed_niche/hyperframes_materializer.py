@@ -214,18 +214,31 @@ def render_hyperframes_composition(
     env = dict(os.environ)
     if "HYPERFRAMES_BROWSER_PATH" not in env:
         playwright_shell = Path("/home/ubuntu/.cache/ms-playwright/chromium_headless_shell-1228/chrome-linux/headless_shell")
-        brave_sh = Path("/tmp/brave_headless.sh")
         if playwright_shell.is_file():
             env["HYPERFRAMES_BROWSER_PATH"] = str(playwright_shell)
-        elif not brave_sh.is_file() and Path("/opt/brave.com/brave/brave").is_file():
-            brave_sh.write_text(
-                "#!/bin/bash\nexec /opt/brave.com/brave/brave --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \"$@\"\n",
-                encoding="utf-8",
-            )
-            brave_sh.chmod(0o755)
-            env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
-        elif brave_sh.is_file():
-            env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
+        elif Path("/opt/brave.com/brave/brave").is_file():
+            brave_sh = Path(__file__).resolve().parents[2] / ".cache" / "brave_headless.sh"
+            try:
+                brave_sh.parent.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                brave_sh = Path("/tmp/brave_headless.sh")
+            if not brave_sh.is_file():
+                try:
+                    brave_sh.write_text(
+                        "#!/bin/bash\nexec /opt/brave.com/brave/brave --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \"$@\"\n",
+                        encoding="utf-8",
+                    )
+                    brave_sh.chmod(0o755)
+                except OSError:
+                    pass
+            if brave_sh.is_file():
+                if not os.access(brave_sh, os.X_OK):
+                    try:
+                        brave_sh.chmod(0o755)
+                    except OSError:
+                        pass
+                if os.access(brave_sh, os.X_OK):
+                    env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
 
     logger.info("Executing HyperFrames render: %s", " ".join(cmd))
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=env)

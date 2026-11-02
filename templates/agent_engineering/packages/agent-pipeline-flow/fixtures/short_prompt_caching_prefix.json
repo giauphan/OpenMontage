@@ -1,0 +1,265 @@
+{
+  "template": "agent-pipeline-flow",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "title": "Prompt Caching in Coding Agents: Why 1-Token Edits Bust Cache Multipliers",
+  "topic_family": "context_memory",
+  "hook_alert": "⚡ KV-CACHE INVALIDATION // 5X LATENCY SPIKE",
+  "duration": 70.0,
+  "narration_audio": "assets/narration_en_US.mp3",
+  "bgm_audio": "assets/music-bg.mp3",
+  "scenes": [
+    {
+      "id": "scene_hook",
+      "start_s": 0.0,
+      "end_s": 11.66,
+      "title": "Prompt Caching Acceleration Engine",
+      "subtitle": "Failure Mode: Dynamic Top-Level Variables Invalidate Contiguous KV Prefixes",
+      "accent_color": "#ef4444",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "SYSTEM PROMPT: 40k TOKENS",
+          "description": "Agent loads developer instructions, tool schemas & rules",
+          "icon": "database",
+          "status_badge": "✓",
+          "metric_gauge": { "label": "CACHE STATE", "value": "WARM (HIT)", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "1-TOKEN MUTATION: TIMESTAMP",
+          "description": "Developer prepends current timestamp to top of system prompt",
+          "icon": "breaker",
+          "status_badge": "!",
+          "circuit_switch": { "is_open": true, "label": "CACHE PREFIX: BUSTED" },
+          "metric_gauge": { "label": "PREFIX MATCH", "value": "0 TOKENS", "percentage": 0, "color": "#ef4444" }
+        },
+        {
+          "step_number": 3,
+          "label": "LATENCY SPIKE: 5X SLOWDOWN",
+          "description": "⚡ FULL RECOMPUTATION // Attention KV Matrix Recalculated",
+          "icon": "server",
+          "status_badge": "✕",
+          "metric_gauge": { "label": "TIME TO FIRST TOKEN", "value": "8.5s", "percentage": 95, "color": "#ef4444" }
+        },
+        {
+          "step_number": 4,
+          "label": "OUTCOME: COST & TOKEN EXPLOSION",
+          "description": "Every multi-turn conversation turn billed at 100% full input cost",
+          "icon": "shield",
+          "status_badge": "✕",
+          "circuit_switch": { "is_open": true, "label": "DISCOUNT: LOST" },
+          "metric_gauge": { "label": "COST MULTIPLIER", "value": "5.0x", "percentage": 100, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "DYNAMIC INSERTION", "color": "#f59e0b" },
+        { "from_step": 2, "to_step": 3, "label": "CACHE MISS", "color": "#ef4444" },
+        { "from_step": 3, "to_step": 4, "label": "LATENCY EXPONENT", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_impact",
+      "start_s": 11.66,
+      "end_s": 23.33,
+      "title": "The Prefix Invalidation Avalanche",
+      "subtitle": "Why KV caches require unbroken byte-exact prefix matching from index zero",
+      "accent_color": "#f59e0b",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "PHASE 1: UNORDERED PROMPT ASSEMBLY",
+          "description": "Dynamic session IDs and clock times placed before static tools",
+          "icon": "agent",
+          "metric_gauge": { "label": "ORDERING", "value": "DIRTY", "percentage": 30, "color": "#ef4444" }
+        },
+        {
+          "step_number": 2,
+          "label": "PHASE 2: DOWNSTREAM CACHE PURGE",
+          "description": "Hardware KV blocks invalidated across all subsequent tokens",
+          "icon": "database",
+          "circuit_switch": { "is_open": true, "label": "DOWNSTREAM KV DROPPED" },
+          "metric_gauge": { "label": "CACHE HIT RATE", "value": "0%", "percentage": 0, "color": "#ef4444" }
+        },
+        {
+          "step_number": 3,
+          "label": "PHASE 3: DEVELOPER LATENCY FATIGUE",
+          "description": "Interactive coding subagents stall waiting for full prompt ingestion",
+          "icon": "shield",
+          "state_machine": { "active_state": "OPEN" },
+          "metric_gauge": { "label": "INTERACTIVE DELAY", "value": "UNUSABLE", "percentage": 90, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "PREFIX CORRUPTION", "color": "#f59e0b" },
+        { "from_step": 2, "to_step": 3, "label": "LATENCY BLOWUP", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_mechanism",
+      "start_s": 23.33,
+      "end_s": 34.99,
+      "title": "Naive Prompt Assembly vs Anchored Prefix Trees",
+      "subtitle": "How transformer KV-cache index alignment works under the hood",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "INVARIANT HEAD PREFIX",
+          "description": "System instructions & static tools pinned at token 0",
+          "icon": "database",
+          "metric_gauge": { "label": "PREFIX HEAD", "value": "INVARIANT", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "CACHED ATTENTION KV TENSOR",
+          "description": "GPU retains key-value matrices in high-speed HBM cache",
+          "icon": "server",
+          "circuit_switch": { "is_open": false, "label": "KV CACHE: LOCKED" },
+          "state_machine": { "active_state": "CLOSED" }
+        },
+        {
+          "step_number": 3,
+          "label": "DYNAMIC TAIL APPEND ONLY",
+          "description": "User queries and turn history strictly appended to prompt end",
+          "icon": "agent",
+          "metric_gauge": { "label": "TAIL RECOMPUTE", "value": "<200 TOKENS", "percentage": 5, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "REUSE KV ATTENTION", "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "label": "APPEND TAIL ONLY", "color": "#38bdf8" }
+      ]
+    },
+    {
+      "id": "scene_remedy",
+      "start_s": 34.99,
+      "end_s": 46.66,
+      "title": "Strict Head-to-Tail Cache Hierarchy Contract",
+      "subtitle": "Architectural prompt partitioning for 90% cache reuse and 80% cost savings",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "STEP 1: ANCHOR SYSTEM INVARIANTS",
+          "description": "Freeze base guidelines and tool schemas into unchanging prefix block",
+          "icon": "shield",
+          "metric_gauge": { "label": "STABILITY", "value": "100%", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "STEP 2: ENFORCE EXPLICIT CACHE BREAKPOINTS",
+          "description": "Declare cache control headers at static boundary points",
+          "icon": "breaker",
+          "circuit_switch": { "is_open": false, "label": "CACHE HEADERS: SET" },
+          "metric_gauge": { "label": "CACHE READ RATIO", "value": "92%", "percentage": 92, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "STEP 3: APPEND DYNAMIC SESSIONS AT TAIL",
+          "description": "Inject timestamps and ephemeral turn buffers strictly at bottom",
+          "icon": "server",
+          "state_machine": { "active_state": "CLOSED" },
+          "metric_gauge": { "label": "FIRST TOKEN", "value": "<500ms", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "FREEZE PREFIX", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "APPEND VOLATILE", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_verification",
+      "start_s": 46.66,
+      "end_s": 58.32,
+      "title": "Local Automated Cache Invariant Verification Gate",
+      "subtitle": "Asserting deterministic prefix caching before dispatching agent turns",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "1. Invariant Head Prefix SHA Matches Cached Checkpoint",
+          "description": "✓ PASS: Prefix hash identical from token index 0",
+          "icon": "shield",
+          "metric_gauge": { "label": "GATE 1", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "2. Zero Dynamic Variables Found in Top 40k Tokens",
+          "description": "✓ PASS: Static prompt linting confirms zero timestamps in head",
+          "icon": "database",
+          "metric_gauge": { "label": "GATE 2", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "3. Telemetry Confirms >= 85% Cache Read Discount",
+          "description": "✓ PASS: Multi-turn trace verified with 5x throughput",
+          "icon": "server",
+          "metric_gauge": { "label": "GATE 3", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 4,
+          "label": "DELIVERY GATE: PROMPT CACHING CERTIFIED",
+          "description": "Sub-second turnaround and optimal cost efficiency verified.",
+          "icon": "shield",
+          "circuit_switch": { "is_open": false, "label": "CACHE: OPTIMAL" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "PREFIX VERIFIED", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "LINT CLEAN", "color": "#22c55e" },
+        { "from_step": 3, "to_step": 4, "label": "ALL VERIFIED", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_production",
+      "start_s": 58.32,
+      "end_s": 70.0,
+      "title": "End-to-End Prompt Caching Pipeline Flow",
+      "subtitle": "High-throughput token caching architecture for autonomous agents",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "System & Tool Invariant Head",
+          "description": "Frozen Contiguous Token Prefix",
+          "icon": "database",
+          "metric_gauge": { "label": "STAGE 1", "value": "FROZEN", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "Hardware KV Cache Layer",
+          "description": "Pre-Computed Attention Matrices",
+          "icon": "server",
+          "metric_gauge": { "label": "STAGE 2", "value": "WARM", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 3,
+          "label": "Ephemeral Session Tail Append",
+          "description": "Dynamic Turns Appended at Tail",
+          "icon": "agent",
+          "metric_gauge": { "label": "STAGE 3", "value": "APPENDED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 4,
+          "label": "5x Throughput Execution Gate",
+          "description": "Deterministic Fast-Path Output",
+          "icon": "shield",
+          "metric_gauge": { "label": "STAGE 4", "value": "5X SPEED", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "color": "#38bdf8" },
+        { "from_step": 3, "to_step": 4, "color": "#22c55e" }
+      ]
+    }
+  ],
+  "cta": {
+    "kicker": "CALL TO ACTION // CACHING ARCHITECTURE",
+    "heading": "Follow me for Daily Agent Engineering Patterns",
+    "button_text": "★ Star the Repository on GitHub",
+    "subtitle": "Prefix Invariants • KV-Cache Multipliers • Sub-Second Latency",
+    "min_hold_seconds": 5.0
+  }
+}

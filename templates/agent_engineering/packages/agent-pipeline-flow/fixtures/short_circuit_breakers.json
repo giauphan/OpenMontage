@@ -1,0 +1,265 @@
+{
+  "template": "agent-pipeline-flow",
+  "template_version": "1.0.0",
+  "variant": "short",
+  "title": "Circuit Breakers in MCP: Preventing Cascade Failures in Multi-Agent Workflows",
+  "topic_family": "agent_tool_use",
+  "hook_alert": "⚡ CRITICAL FAILURE // RECURRING BREAKDOWN",
+  "duration": 70.0,
+  "narration_audio": "assets/narration_en_US.mp3",
+  "bgm_audio": "assets/music-bg.mp3",
+  "scenes": [
+    {
+      "id": "scene_hook",
+      "start_s": 0.0,
+      "end_s": 11.66,
+      "title": "AI Agent Execution Pipeline",
+      "subtitle": "Failure Mode: Unvalidated Tool Schemas Cause Silent Execution Divergence",
+      "accent_color": "#ef4444",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "STEP 1: DEVELOPER TASK",
+          "description": "Invoke tool with dynamic parameters and structured output",
+          "icon": "agent",
+          "status_badge": "✓",
+          "circuit_switch": { "is_open": false, "label": "STATE: CLOSED" }
+        },
+        {
+          "step_number": 2,
+          "label": "STEP 2: FAILURE POINT",
+          "description": "⚡ SCHEMA BREACH // Argument Reject",
+          "icon": "breaker",
+          "status_badge": "✕",
+          "circuit_switch": { "is_open": true, "label": "TRIPPED: OPEN" },
+          "metric_gauge": { "label": "ERROR RATE", "value": "CRITICAL", "percentage": 100, "color": "#ef4444" }
+        },
+        {
+          "step_number": 3,
+          "label": "STEP 3: AGENT REASONING",
+          "description": "Unchecked Dynamic Tool Dispatch",
+          "icon": "server",
+          "status_badge": "!",
+          "metric_gauge": { "label": "LATENCY", "value": "TIMEOUT", "percentage": 95, "color": "#ef4444" }
+        },
+        {
+          "step_number": 4,
+          "label": "OUTCOME: DELIVERY DEADLOCK",
+          "description": "Multi-Turn Execution Halted",
+          "icon": "shield",
+          "status_badge": "✕",
+          "circuit_switch": { "is_open": true, "label": "CI GATE: REJECTED" },
+          "metric_gauge": { "label": "CI PASS", "value": "BLOCKED", "percentage": 0, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "DISPATCH TURN", "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "label": "UNHANDLED ERROR", "color": "#ef4444" },
+        { "from_step": 3, "to_step": 4, "label": "REGRESSION DETECTED", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_impact",
+      "start_s": 11.66,
+      "end_s": 23.33,
+      "title": "Tool Interface Contract Failure",
+      "subtitle": "How unchecked parameter passing causes downstream runtime failures",
+      "accent_color": "#f59e0b",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "PHASE 1: CLIENT DISPATCH",
+          "description": "Invoke tool with dynamic parameters and structured output",
+          "icon": "agent",
+          "metric_gauge": { "label": "REQUEST", "value": "SENT", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "PHASE 2: UNANCHORED STATE",
+          "description": "Unchecked Dynamic Tool Dispatch",
+          "icon": "breaker",
+          "circuit_switch": { "is_open": true, "label": "NO CIRCUIT BREAKER" },
+          "metric_gauge": { "label": "RETRY BURDEN", "value": "CASCADE", "percentage": 100, "color": "#ef4444" }
+        },
+        {
+          "step_number": 3,
+          "label": "PHASE 3: PIPELINE DEADLOCK",
+          "description": "Automated CI Regression Gate Blocks Delivery",
+          "icon": "shield",
+          "state_machine": { "active_state": "OPEN" },
+          "metric_gauge": { "label": "AVAILABILITY", "value": "OFFLINE", "percentage": 0, "color": "#ef4444" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "FAILURE DETECTED", "color": "#f59e0b" },
+        { "from_step": 2, "to_step": 3, "label": "DELIVERY BLOCKED", "color": "#ef4444" }
+      ]
+    },
+    {
+      "id": "scene_mechanism",
+      "start_s": 23.33,
+      "end_s": 34.99,
+      "title": "Dynamic Payloads vs Typed Schema Boundaries",
+      "subtitle": "Why agent tools require strict boundary validation and error isolation",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "TOPOLOGY NODE: CLIENT",
+          "description": "MCP Client Autonomous Dispatcher",
+          "icon": "agent",
+          "metric_gauge": { "label": "CLIENT STATUS", "value": "ACTIVE", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "CIRCUIT BREAKER CORE RELAY",
+          "description": "Automated 3-State Relay Protection",
+          "icon": "breaker",
+          "circuit_switch": { "is_open": false, "label": "MONITORING: CLOSED" },
+          "state_machine": { "active_state": "CLOSED" }
+        },
+        {
+          "step_number": 3,
+          "label": "ISOLATED BACKEND TOOL",
+          "description": "Protected Microservice / MCP Tool",
+          "icon": "server",
+          "metric_gauge": { "label": "AVAILABILITY", "value": "HEALTHY", "percentage": 99, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "FAULT ISOLATION BUS", "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "label": "FAST FAIL BYPASS", "color": "#38bdf8" }
+      ]
+    },
+    {
+      "id": "scene_remedy",
+      "start_s": 34.99,
+      "end_s": 46.66,
+      "title": "Hermetic Tool Contract Enforcement",
+      "subtitle": "Deterministic schema validation and boundary sandboxing for agent tools",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "STEP 1: FAULT DETECTED",
+          "description": "Circuit Trips on Consecutive Errors",
+          "icon": "breaker",
+          "circuit_switch": { "is_open": true, "label": "TRIPPED: OPEN" },
+          "metric_gauge": { "label": "CIRCUIT STATE", "value": "OPEN", "percentage": 100, "color": "#ef4444" }
+        },
+        {
+          "step_number": 2,
+          "label": "STEP 2: INSTANT FALLBACK CACHE",
+          "description": "Cached Response Returned in Sub-Millisecond",
+          "icon": "database",
+          "metric_gauge": { "label": "LATENCY", "value": "FAST", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "STEP 3: AUTOMATIC RECOVERY",
+          "description": "Half-Open Probe Resets Circuit",
+          "icon": "shield",
+          "state_machine": { "active_state": "HALF-OPEN" },
+          "metric_gauge": { "label": "STABILITY", "value": "STABLE", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "FAST FAIL BYPASS", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "RECOVERY TIMER", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_verification",
+      "start_s": 46.66,
+      "end_s": 58.32,
+      "title": "Local Automated Verification Gate",
+      "subtitle": "Asserting contract rule compliance before any git commit",
+      "accent_color": "#22c55e",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "1. Tool Schema Validates Incoming Arguments",
+          "description": "✓ PASS: Boundary verified in session trace",
+          "icon": "shield",
+          "metric_gauge": { "label": "GATE 1", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 2,
+          "label": "2. Sandbox Execution Isolates Side Effects",
+          "description": "✓ PASS: Isolated verification suite passed",
+          "icon": "server",
+          "metric_gauge": { "label": "GATE 2", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 3,
+          "label": "3. Error Handler Recovers from Tool Rejection",
+          "description": "✓ PASS: Schema validation rejects malformed payload cleanly",
+          "icon": "database",
+          "metric_gauge": { "label": "GATE 3", "value": "PASS", "percentage": 100, "color": "#22c55e" }
+        },
+        {
+          "step_number": 4,
+          "label": "DELIVERY GATE: GIT COMMIT APPROVED",
+          "description": "All local architectural verifications passed cleanly. Ready for review.",
+          "icon": "shield",
+          "circuit_switch": { "is_open": false, "label": "CI PASS: VERIFIED" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "label": "TRACE PASS", "color": "#22c55e" },
+        { "from_step": 2, "to_step": 3, "label": "TESTS PASS", "color": "#22c55e" },
+        { "from_step": 3, "to_step": 4, "label": "ALL VERIFIED", "color": "#22c55e" }
+      ]
+    },
+    {
+      "id": "scene_production",
+      "start_s": 58.32,
+      "end_s": 70.0,
+      "title": "End-to-End Production Pipeline Flow",
+      "subtitle": "Complete architectural flow for resilient AI agent pipelines",
+      "accent_color": "#38bdf8",
+      "steps": [
+        {
+          "step_number": 1,
+          "label": "Repository Specification Layer",
+          "description": "Tracked AGENTS.md Contract",
+          "icon": "database",
+          "metric_gauge": { "label": "STAGE 1", "value": "READY", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 2,
+          "label": "Automated Preflight Scope Gate",
+          "description": "Compiles Preflight Invariants",
+          "icon": "shield",
+          "metric_gauge": { "label": "STAGE 2", "value": "GATED", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 3,
+          "label": "Hermetic Execution & Testing",
+          "description": "Autonomous Loop in Sandbox",
+          "icon": "agent",
+          "metric_gauge": { "label": "STAGE 3", "value": "PASS", "percentage": 100, "color": "#38bdf8" }
+        },
+        {
+          "step_number": 4,
+          "label": "Continuous Integration Gate",
+          "description": "Deterministic Zero-Defect Release",
+          "icon": "server",
+          "metric_gauge": { "label": "STAGE 4", "value": "RELEASE", "percentage": 100, "color": "#22c55e" }
+        }
+      ],
+      "arrows": [
+        { "from_step": 1, "to_step": 2, "color": "#38bdf8" },
+        { "from_step": 2, "to_step": 3, "color": "#38bdf8" },
+        { "from_step": 3, "to_step": 4, "color": "#22c55e" }
+      ]
+    }
+  ],
+  "cta": {
+    "kicker": "CALL TO ACTION // ARCHITECTURAL BLUEPRINT",
+    "heading": "Follow me for Daily Agent Engineering Patterns",
+    "button_text": "★ Star the Repository on GitHub",
+    "subtitle": "Defensive Contracts • Schema Validation • Hermetic Reproduction",
+    "min_hold_seconds": 5.0
+  }
+}

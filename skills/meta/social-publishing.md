@@ -31,6 +31,7 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
 | Tool | Platform | Method | Credentials Needed |
 |------|----------|--------|-------------------|
 | `youtube_publisher` | YouTube / Shorts | YouTube Data API v3 | `YOUTUBE_CLIENT_SECRET_FILE` (+ OAuth token auto-saved at `~/.openmontage/youtube_token.json`) |
+| `facebook_publisher` | Facebook Page & Reels | Meta Business Suite Adapter / Gateway API | Toolcase Gateway at `127.0.0.1:20129` (`FACEBOOK_GATEWAY_BASE_URL` or `/custom/facebook`) with auto-translation and scheduling |
 | `meta_publisher` | Facebook Page + Instagram Reels | Meta Graph API v26 | `TOKEN_FACEBOOK` (+ `CLOUDFLARE_R2_*` for Instagram temp hosting) |
 | `tiktok_publisher` | TikTok | TikTok Creator Studio Adapter / Gateway API | Toolcase Gateway at `127.0.0.1:20129` (`TIKTOK_GATEWAY_BASE_URL`) or session cookies |
 | `export_bundle` | Local packaging | Filesystem copy | none |
@@ -41,7 +42,8 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
 2. Always run `export_bundle` first for local handoff.
 3. Then run configured publishers:
    - YouTube: `youtube_publisher`
-   - Facebook + Instagram: `meta_publisher`
+   - Facebook: `facebook_publisher` (Toolcase Gateway at port 20129 with fallback to `meta_publisher`)
+   - Instagram: `meta_publisher`
    - TikTok: `tiktok_publisher`
 4. Combine tool outputs into one `publish_log` with one entry per platform.
 5. If any configured publisher fails, keep successful entries and add failed entry/error for that platform.
@@ -53,7 +55,23 @@ python -c "from tools.tool_registry import registry; import json; registry.disco
 - YouTube auto-classifies vertical videos ≤3 minutes as Shorts. There is no API flag for Shorts.
 - Use horizontal 16:9 if the user explicitly wants regular long-form YouTube placement.
 
-## Meta (Facebook Page + Instagram)
+## Facebook (Meta Business Suite Adapter)
+
+- `facebook_publisher` integrates with **Meta Business Suite / Facebook Creator Studio Adapter** through **Toolcase Gateway** (`http://127.0.0.1:20129/custom/facebook`).
+- Reference Specification: `/home/ubuntu/toolcase-gateway-rs/.gw_state/modules/facebook-suite/README.md`.
+- Endpoints:
+  - `GET /v1/status`: checks readiness and active credentials.
+  - `GET /v1/scopes`: lists accessible Facebook Pages and identities.
+  - `POST /v1/config/har`: 1-click import of browser HAR capture (`download-facebook.har`).
+  - `POST /v1/upload/video` or `POST /v1/publish`: one-shot video upload & publish pipeline with auto-translation and native scheduling.
+  - `POST /v1/publish/status`: post status updates or announcements.
+- Capabilities:
+  - **Multi-language AI dubbing**: 14 languages enabled by default (`translatedAudioMetadata`).
+  - **Native post scheduling**: schedule posts from 10 minutes to 75 days in advance using `scheduled_publish_time`.
+  - **Port configuration**: Enforces port 20129 when deployed on server (`TOOLCASE_GATEWAY_URL=http://127.0.0.1:20129` or `FACEBOOK_GATEWAY_BASE_URL`).
+  - **Format**: Pass `final_full_vi_9x16.mp4` (or `final_long_en_US_16x9.mp4`) as `publish_type="REEL"` or `"FEED"`.
+
+## Meta Graph API (Instagram Reels & Facebook Fallback)
 
 - `meta_publisher` gets Page access token from `TOKEN_FACEBOOK`.
 - Facebook Page video upload uses Graph API `/{page_id}/videos`.

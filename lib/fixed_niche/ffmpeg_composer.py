@@ -136,7 +136,7 @@ def _execute_ffmpeg_concat(
             f"[0:v]{vf}[vout];"
             f"[1:a]volume=1.0[narr];"
             f"[2:a]volume=0.12[bgm];"
-            f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
         )
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error",
@@ -175,7 +175,7 @@ def _execute_ffmpeg_color(
             f"[0:v]{vf}[vout];"
             f"[1:a]volume=1.0[narr];"
             f"[2:a]volume=0.12[bgm];"
-            f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
         )
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error",

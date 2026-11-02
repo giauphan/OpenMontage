@@ -122,7 +122,7 @@ def _resolve_beat_visual_file(beat: Dict[str, Any], visuals_src: Optional[Path],
     return f"{default_aid}{EXT_SVG}"
 
 
-def _inline_svg_file(visuals_src: Optional[Path], vis_file: str) -> str:
+def _inline_svg_file(visuals_src: Optional[Path], vis_file: str, prefix: str = "") -> str:
     """Inline and clean SVG markup from disk if valid SVG."""
     if not (visuals_src and (visuals_src / vis_file).is_file() and vis_file.lower().endswith(".svg")):
         return ""
@@ -130,6 +130,10 @@ def _inline_svg_file(visuals_src: Optional[Path], vis_file: str) -> str:
         import re
         raw_svg = (visuals_src / vis_file).read_text(encoding="utf-8")
         clean = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+        # Strip internal style blocks so global document styling and GSAP timelines control reveals
+        clean = re.sub(r"<style\b[^>]*>.*?</style>", "", clean, flags=re.DOTALL).strip()
+        if prefix:
+            clean = re.sub(r'id="flow-', f'id="{prefix}flow-', clean)
         if "<svg" in clean and "</svg>" in clean and len(clean) > 100 and ("<g" in clean or "<path" in clean):
             return clean
         return ""
@@ -148,14 +152,24 @@ def _build_illustration_beat(
     """Build HTML section and GSAP tweens for an illustration scene."""
     bid = str(beat.get("beat_id", f"B{i+1:02d}")).lower()
     start_s = float(beat.get("start_s", 0.0))
-    end_s = float(beat.get("end_s", duration))
+    raw_end = float(beat.get("end_s", duration))
+    end_s = min(raw_end, duration) if i == total_beats - 1 else raw_end
     beat_dur = max(0.5, end_s - start_s)
     s_func = str(beat.get("story_function", "scene")).replace("_", " ").upper()
     scr_state = html_mod.escape(str(beat.get("expected_screen_state", s_func)), quote=True)
     track_idx = i + 1
     sec_id = f"scene-{bid}"
 
-    date_snippet = f'        <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
+    show_top_header = os.environ.get("OPENMONTAGE_SHOW_TOP_HEADER", "0") in ("1", "true", "True")
+    header_snippet = ""
+    if show_top_header:
+        date_snippet = f'        <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
+        header_snippet = (
+            f'      <div class="stage-header stage-header-overlay">\n'
+            f'{date_snippet}'
+            f'        <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
+            f'      </div>\n'
+        )
     html = (
         f'    <section id="{sec_id}" class="clip scene illustration-scene" '
         f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
@@ -163,10 +177,7 @@ def _build_illustration_beat(
         f'        <img src="assets/visuals/{vis_file}" alt="{scr_state}" class="hero-illustration" />\n'
         f'        <div class="vignette-overlay"></div>\n'
         f'      </div>\n'
-        f'      <div class="stage-header stage-header-overlay">\n'
-        f'{date_snippet}'
-        f'        <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
-        f'      </div>\n'
+        f'{header_snippet}'
         f'    </section>'
     )
     entry_t = _fmt_time(max(0.0, start_s))
@@ -199,7 +210,8 @@ def _build_svg_beat(
     """Build HTML section and GSAP tweens for a technical SVG diagram scene."""
     bid = str(beat.get("beat_id", f"B{i+1:02d}")).lower()
     start_s = float(beat.get("start_s", 0.0))
-    end_s = float(beat.get("end_s", duration))
+    raw_end = float(beat.get("end_s", duration))
+    end_s = min(raw_end, duration) if i == total_beats - 1 else raw_end
     beat_dur = max(0.5, end_s - start_s)
     s_func = str(beat.get("story_function", "scene")).replace("_", " ").upper()
     scr_state = html_mod.escape(str(beat.get("expected_screen_state", s_func)), quote=True)
@@ -216,7 +228,8 @@ def _build_svg_beat(
     )
     card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
 
-    inline_svg = _inline_svg_file(visuals_src, vis_file)
+    pfx = f"b{i+1:02d}-" if i > 0 else ""
+    inline_svg = _inline_svg_file(visuals_src, vis_file, prefix=pfx)
     is_legacy = os.environ.get("OPENMONTAGE_VISUAL_STYLE") == "legacy"
     if not is_legacy and not inline_svg and vis_file.lower().endswith(".svg"):
         from lib.fixed_niche.svg_pipeline_builder import generate_pipeline_svg
@@ -236,20 +249,28 @@ def _build_svg_beat(
             narration=narration,
             beat_start_s=start_s,
             word_timestamps=word_ts,
+            prefix=pfx,
         )
-        inline_svg = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+        clean = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+        inline_svg = re.sub(r"<style\b[^>]*>.*?</style>", "", clean, flags=re.DOTALL).strip()
     viewport_content = inline_svg if (inline_svg and not is_legacy) else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
 
-    date_snippet = f'          <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
+    show_top_header = os.environ.get("OPENMONTAGE_SHOW_TOP_HEADER", "0") in ("1", "true", "True")
+    header_snippet = ""
+    if show_top_header:
+        date_snippet = f'          <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
+        header_snippet = (
+            f'        <div class="stage-header">\n'
+            f'{date_snippet}'
+            f'          <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
+            f'        </div>\n'
+        )
     html = (
         f'    <section id="{sec_id}" class="clip scene" '
         f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
         f'{bg_snippet}'
         f'      <div class="{card_cls}">\n'
-        f'        <div class="stage-header">\n'
-        f'{date_snippet}'
-        f'          <span class="stage-badge">Stage {i+1} of {total_beats} // {html_mod.escape(s_func, quote=True)}</span>\n'
-        f'        </div>\n'
+        f'{header_snippet}'
         f'        <div class="diagram-viewport" data-asset-file="assets/visuals/{vis_file}">\n'
         f'          {viewport_content}\n'
         f'        </div>\n'
@@ -282,43 +303,54 @@ def _build_svg_beat(
 
     progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
     if progressive_reveal and vis_file.lower().endswith(".svg"):
-        from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
+        from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat, compute_cta_timing
         from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
         num_steps = STEP_COUNTS.get(i + 1, 4)
         narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
         word_ts = beat.get("word_timestamps")
+        is_final = (i == total_beats - 1)
         step_timings = compute_step_timings_for_beat(
             narration=narration,
             duration=beat_dur,
             num_steps=num_steps,
             beat_start_s=start_s,
             word_timestamps=word_ts,
+            is_final_beat=is_final,
         )
+        cta_rel = compute_cta_timing(beat_dur, step_timings) if is_final else None
+        cta_abs_t = _fmt_time(start_s + cta_rel) if cta_rel is not None else None
         tweens.extend([
             f'  tl.set("#{sec_id} .flow-step", {{ opacity: 0, y: 16 }}, {entry_t});',
             f'  tl.set("#{sec_id} .flow-arrow", {{ opacity: 0 }}, {entry_t});',
-            f'  tl.to("#{sec_id} #flow-header", {{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, {_fmt_time(start_s + 0.1)});',
+            f'  tl.to("#{sec_id} #{pfx}flow-header", {{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, {_fmt_time(start_s + 0.1)});',
         ])
         for s_idx, rel_t in enumerate(step_timings, start=1):
             step_abs_t = _fmt_time(start_s + rel_t)
             tweens.append(
-                f'  tl.fromTo("#{sec_id} #flow-step-{s_idx}", '
+                f'  tl.fromTo("#{sec_id} #{pfx}flow-step-{s_idx}", '
                 f'{{ opacity: 0, y: 20, scale: 0.95 }}, '
                 f'{{ opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.7)" }}, {step_abs_t});'
             )
             if s_idx > 1:
                 arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
                 tweens.append(
-                    f'  tl.fromTo("#{sec_id} #flow-arrow-{s_idx-1}", '
+                    f'  tl.fromTo("#{sec_id} #{pfx}flow-arrow-{s_idx-1}", '
                     f'{{ opacity: 0, scaleY: 0.5 }}, '
                     f'{{ opacity: 1, scaleY: 1, duration: 0.35, ease: "power2.out" }}, {arrow_abs_t});'
                 )
-            if s_idx == num_steps:
-                tweens.append(
-                    f'  tl.fromTo("#{sec_id} #flow-cta-banner", '
-                    f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
-                    f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {step_abs_t});'
-                )
+
+        if i == total_beats - 1 and cta_abs_t:
+            tweens.append(
+                f'  tl.fromTo("#{sec_id} #{pfx}flow-cta-banner", '
+                f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
+                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {cta_abs_t});'
+            )
+        elif s_idx == num_steps:
+            tweens.append(
+                f'  tl.fromTo("#{sec_id} #{pfx}flow-cta-banner", '
+                f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
+                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {step_abs_t});'
+            )
 
     if i < total_beats - 1:
         exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
@@ -413,32 +445,45 @@ def compose_hyperframes_html(
         if progressive_reveal and vis_file.lower().endswith(EXT_SVG):
             from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
             from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
-            b_end = float(beat.get("end_s", duration))
+            raw_end = float(beat.get("end_s", duration))
+            b_end = min(raw_end, duration) if idx == len(beats) - 1 else raw_end
             beat_dur = max(0.5, b_end - b_start)
             num_steps = STEP_COUNTS.get(idx + 1, 4)
             narration = str(beat.get("narration") or "")
             word_ts = beat.get("word_timestamps")
+            is_final = (idx == len(beats) - 1)
             step_timings = compute_step_timings_for_beat(
                 narration=narration,
                 duration=beat_dur,
                 num_steps=num_steps,
                 beat_start_s=b_start,
                 word_timestamps=word_ts,
+                is_final_beat=is_final,
             )
             for s_idx, rel_t in enumerate(step_timings, start=1):
                 if s_idx > 1 and (b_start + rel_t) < duration - 1.0:
-                    sfx_sound = "click.mp3" if s_idx % 2 == 0 else "pop.mp3"
+                    if idx in (0, 1) and s_idx == 2:
+                        sfx_sound, sfx_vol = "buzz.mp3", "0.22"
+                    elif idx in (3, 4) and s_idx in (2, 3):
+                        sfx_sound, sfx_vol = "pass-ping.mp3", "0.20"
+                    elif idx == len(beats) - 1 and s_idx == num_steps:
+                        sfx_sound, sfx_vol = "pass-ping.mp3", "0.24"
+                    else:
+                        sfx_sound = "click.mp3" if s_idx % 2 == 0 else "pop.mp3"
+                        sfx_vol = "0.16"
                     sfx_clips.append(
-                        f'    <audio class="clip sfx" data-start="{_fmt_time(b_start + rel_t)}" data-duration="0.3" data-track-index="{track_counter}" src="assets/sfx/{sfx_sound}" data-volume="0.16"></audio>'
+                        f'    <audio class="clip sfx" data-start="{_fmt_time(b_start + rel_t)}" data-duration="0.3" data-track-index="{track_counter}" src="assets/sfx/{sfx_sound}" data-volume="{sfx_vol}"></audio>'
                     )
                     track_counter += 1
 
     last_b = beats[-1] if beats else {}
     last_st = float(last_b.get("start_s") if last_b.get("start_s") is not None else 0.0)
-    last_end = float(last_b.get("end_s", duration))
-    cta_sfx_t = max(last_st + 0.5, last_end - 3.5)
+    last_end = min(float(last_b.get("end_s", duration)), duration)
+    last_dur = max(0.5, last_end - last_st)
+    last_steps_win = min(5.5, max(3.0, last_dur * 0.48))
+    cta_sfx_t = last_st + min(last_dur - 1.5, last_steps_win + 1.0)
     sfx_clips.append(
-        f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="{track_counter}" src="assets/sfx/chime.mp3" data-volume="0.28"></audio>'
+        f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="{track_counter}" src="assets/sfx/chime.mp3" data-volume="0.30"></audio>'
     )
     sfx_block = "\n".join(sfx_clips)
 
@@ -446,6 +491,23 @@ def compose_hyperframes_html(
     tweens_block = "\n".join(tweens_js)
     starts_js = ", ".join(_fmt_time(b.get("start_s") if b.get("start_s") is not None else b.get("start_seconds", 0.0)) for b in beats)
     bgm_fadeout_t = _fmt_time(max(0.0, duration - 1.5))
+
+    flow_hidden_css = """
+    .flow-step {
+      opacity: 0;
+      transform-origin: center center;
+      filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.45));
+    }
+    .flow-arrow {
+      opacity: 0;
+      transform-origin: top center;
+    }
+    .flow-header {
+      opacity: 0;
+    }
+    .flow-cta-banner {
+      opacity: 0;
+    }""" if progressive_reveal else ""
 
     return f"""<!doctype html>
 <html lang="en">
@@ -597,6 +659,7 @@ def compose_hyperframes_html(
       z-index: 3;
       margin-bottom: 0;
     }}
+{flow_hidden_css}
   </style>
 </head>
 <body>
@@ -613,6 +676,13 @@ def compose_hyperframes_html(
     window.__timelines = window.__timelines || {{}};
     const tl = gsap.timeline({{ paused: true }});
     tl.fromTo("#bgm", {{ volume: 0 }}, {{ volume: 0.12, duration: 1.5, ease: "power2.out" }}, 0);
+    starts.forEach(st => {{
+      if (st > 1.0 && st < {_fmt_time(max(0.0, duration - 2.5))}) {{
+        tl.to("#bgm", {{ volume: 0.14, duration: 0.4, ease: "power1.in" }}, st - 0.4);
+        tl.to("#bgm", {{ volume: 0.09, duration: 0.6, ease: "power1.out" }}, st + 0.1);
+      }}
+    }});
+    tl.to("#bgm", {{ volume: 0.15, duration: 0.8, ease: "power2.out" }}, {_fmt_time(cta_sfx_t)});
     tl.to("#bgm", {{ volume: 0, duration: 1.5, ease: "power2.in" }}, {bgm_fadeout_t});
 {tweens_block}
     window.__timelines["main"] = tl;

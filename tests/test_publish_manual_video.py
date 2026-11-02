@@ -867,4 +867,137 @@ def test_publish_manual_video_tiktok_route_live(tmp_path: Path):
     assert results["platforms"]["tiktok/video"]["video_id"] == "7702355712046828820"
 
 
+def test_publish_manual_video_facebook_route_live(tmp_path: Path):
+    """Verify Facebook publishing route via FacebookPublisher / Toolcase Gateway on port 20129."""
+    from scripts.publish_manual_video import publish_batch
+    from tools.base_tool import ToolResult
+
+    project_dir = tmp_path / "projects" / "cand_fb_live"
+    project_dir.mkdir(parents=True)
+    renders_dir = project_dir / "renders"
+    renders_dir.mkdir()
+    (renders_dir / "final_full_vi_9x16.mp4").touch()
+
+    metadata = {
+        "id": "cand_fb_live",
+        "title": "Bản tin AI công nghệ mới #tintuc #ai",
+        "description": "Chi tiết cập nhật mô hình #congnghe",
+        "fb_video": "renders/final_full_vi_9x16.mp4",
+        "topic": "topic_fb_live",
+    }
+    (project_dir / "publish_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    class DummyStore:
+        def claim(self, *, platform, **kwargs):
+            return "claim_fb_key_live", True, None
+        def mark_published(self, *args, **kwargs):
+            return {}
+        def mark_scheduled(self, *args, **kwargs):
+            return {}
+        def unclaim(self, *args, **kwargs):
+            pass
+
+    store = DummyStore()
+
+    mock_tool_result = ToolResult(
+        success=True,
+        data={
+            "status": "published",
+            "video_id": "1089594350750481",
+            "facebook_post_id": "1089594350750481",
+            "target_id": "1435449429646177",
+            "video_url": "https://facebook.com/1435449429646177/videos/1089594350750481",
+        },
+    )
+
+    with patch("scripts.publish_manual_video.validate_publish_asset"), \
+         patch("scripts.publish_manual_video.validate_project_quality"), \
+         patch("lib.news_release_gate.require_news_evidence"), \
+         patch("tools.publishers.facebook_publisher.FacebookPublisher.execute", return_value=mock_tool_result) as mock_fb_exec:
+        results = publish_batch(
+            metadata,
+            project_dir,
+            store=store,
+            dry_run=False,
+            only_platform="facebook",
+            enforce_preflight=False,
+        )
+
+    assert mock_fb_exec.call_count == 1
+    call_args = mock_fb_exec.call_args[0][0]
+    assert "video_path" in call_args
+    assert "Bản tin AI" in call_args["title"]
+    assert call_args["enable_auto_translate"] is True
+    assert call_args["publish_type"] == "REEL"
+    assert "facebook/reels" in results["platforms"]
+    assert results["platforms"]["facebook/reels"]["status"] == "published"
+    assert results["platforms"]["facebook/reels"]["video_id"] == "1089594350750481"
+
+
+def test_publish_manual_video_facebook_preflight_gateway_ready(tmp_path: Path):
+    """Verify Facebook preflight passes when Toolcase Gateway (port 20129) is ready without TOKEN_FACEBOOK."""
+    from scripts.publish_manual_video import publish_batch
+    from tools.base_tool import ToolResult
+
+    project_dir = tmp_path / "projects" / "cand_fb_preflight"
+    project_dir.mkdir(parents=True)
+    renders_dir = project_dir / "renders"
+    renders_dir.mkdir()
+    (renders_dir / "final_full_vi_9x16.mp4").touch()
+
+    metadata = {
+        "id": "cand_fb_preflight",
+        "title": "Bản tin AI công nghệ mới #tintuc #ai",
+        "description": "Chi tiết cập nhật mô hình #congnghe",
+        "fb_video": "renders/final_full_vi_9x16.mp4",
+        "topic": "topic_fb_preflight",
+    }
+    (project_dir / "publish_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    class DummyStore:
+        def claim(self, *, platform, **kwargs):
+            return "claim_fb_key_pf", True, None
+        def mark_published(self, *args, **kwargs):
+            return {}
+        def mark_scheduled(self, *args, **kwargs):
+            return {}
+        def mark_failed(self, *args, **kwargs):
+            return {}
+        def unclaim(self, *args, **kwargs):
+            pass
+
+    store = DummyStore()
+
+    mock_tool_result = ToolResult(
+        success=True,
+        data={
+            "status": "published",
+            "video_id": "999888777",
+            "facebook_post_id": "999888777",
+            "target_id": "1435449429646177",
+            "video_url": "https://facebook.com/1435449429646177/videos/999888777",
+        },
+    )
+
+    with patch("scripts.publish_manual_video.validate_publish_asset"), \
+         patch("scripts.publish_manual_video.validate_project_quality"), \
+         patch("lib.news_release_gate.require_news_evidence"), \
+         patch("tools.publishers.facebook_publisher.FacebookPublisher.check_readiness", return_value={"status": "enabled", "configured": True}), \
+         patch("tools.publishers.facebook_publisher.FacebookPublisher.execute", return_value=mock_tool_result) as mock_fb_exec:
+        results = publish_batch(
+            metadata,
+            project_dir,
+            store=store,
+            dry_run=False,
+            only_platform="facebook",
+            enforce_preflight=True,
+        )
+
+    assert mock_fb_exec.call_count == 1
+    assert results["platforms"]["facebook/reels"]["status"] == "published"
+    assert results["platforms"]["facebook/reels"]["video_id"] == "999888777"
+
+
+
+
 

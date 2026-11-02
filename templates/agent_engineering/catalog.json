@@ -1,0 +1,29 @@
+{
+  "$id": "openmontage/agent_engineering/catalog",
+  "title": "OpenMontage Agent Engineering Template Catalog",
+  "catalog_version": "1.0.0",
+  "updated": "2026-11-02",
+  "description": "Registry of production Practical AI Agent Engineering template packages. Each entry declares identity, version, variants, editorial suitability, and review status.",
+  "packages": [
+    {
+      "id": "agent-pipeline-flow",
+      "version": "1.0.0",
+      "package_dir": "packages/agent-pipeline-flow",
+      "content_schema": "packages/agent-pipeline-flow/content.schema.json",
+      "variants": ["short", "full"],
+      "status": "production_ready",
+      "review_status": "approved",
+      "suitable_for": {
+        "topics": [
+          "agent_tool_use",
+          "context_memory",
+          "debugging_reliability",
+          "agent_evaluation",
+          "agent_architecture"
+        ],
+        "description": "Progressive vector pipeline diagrams with voice-timed reveals, guaranteed 2.0s-4.0s absorption hold duration, and persistent call-to-action banner."
+      },
+      "created": "2026-11-02"
+    }
+  ]
+}

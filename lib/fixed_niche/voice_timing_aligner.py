@@ -18,7 +18,10 @@ def compute_step_timings_for_beat(
     num_steps: int = 4,
     word_timestamps: Optional[List[Dict[str, Any]]] = None,
     beat_start_s: float = 0.0,
-    min_step_gap: float = 1.2,
+    min_step_gap: float = 1.0,
+    is_final_beat: bool = False,
+    min_hold_time: float = 2.5,
+    max_hold_time: float = 4.0,
 ) -> List[float]:
     """Compute relative start timestamps (in seconds from beat start) for each step.
 
@@ -29,6 +32,9 @@ def compute_step_timings_for_beat(
         word_timestamps: Optional word-level timestamp entries [{"word": str, "start": float, "end": float}].
         beat_start_s: Absolute start time of the beat within the whole video.
         min_step_gap: Minimum gap between successive step reveals.
+        is_final_beat: If True, reveals steps in early window so CTA and complete diagram persist.
+        min_hold_time: Minimum guaranteed display hold time (seconds) for the completed diagram state.
+        max_hold_time: Maximum display hold time (seconds) for the completed diagram state.
 
     Returns:
         A list of `num_steps` floats representing relative seconds from beat start.
@@ -38,6 +44,16 @@ def compute_step_timings_for_beat(
 
     duration = max(2.0, float(duration))
 
+    # Path 0: Final beat layout (early step completion to allow CTA and end hold)
+    if is_final_beat:
+        steps_window = min(5.5, max(3.0, duration * 0.48))
+        step_interval = (steps_window - 0.2) / max(1, num_steps - 1)
+        return [round(0.2 + s * step_interval, 2) for s in range(num_steps)]
+
+    # Compute hold time for completed state (guaranteed 2.5s - 4.0s before transition)
+    hold_time = min(max_hold_time, max(min_hold_time, duration * 0.28))
+    usable_span = max(1.0, duration - hold_time)
+
     # Path 1: Align via word timestamps if available
     if word_timestamps and len(word_timestamps) > 0:
         timings = _align_via_word_timestamps(
@@ -45,6 +61,8 @@ def compute_step_timings_for_beat(
             beat_start_s=beat_start_s,
             duration=duration,
             num_steps=num_steps,
+            usable_span=usable_span,
+            min_step_gap=min_step_gap,
         )
         if timings and len(timings) == num_steps:
             return timings
@@ -54,8 +72,33 @@ def compute_step_timings_for_beat(
         narration=narration,
         duration=duration,
         num_steps=num_steps,
+        usable_span=usable_span,
         min_step_gap=min_step_gap,
     )
+
+
+def compute_cta_timing(
+    duration: float,
+    step_timings: List[float],
+    lead_time: float = 1.0,
+    min_final_hold: float = 1.5,
+) -> float:
+    """Calculate relative start time for CTA banner reveal in the final scene.
+
+    Parameters:
+        duration: Total duration of the final beat in seconds.
+        step_timings: List of relative step reveal times in the beat.
+        lead_time: Seconds after the final step when CTA appears (default 1.0s).
+        min_final_hold: Minimum seconds CTA banner must display before beat ends (default 1.5s).
+
+    Returns:
+        Relative timestamp in seconds when CTA banner animates in.
+    """
+    if not step_timings:
+        return round(max(0.2, duration - min_final_hold), 2)
+    last_step_t = step_timings[-1]
+    cta_t = min(duration - min_final_hold, last_step_t + lead_time)
+    return round(max(0.2, cta_t), 2)
 
 
 def _align_via_word_timestamps(
@@ -63,8 +106,10 @@ def _align_via_word_timestamps(
     beat_start_s: float,
     duration: float,
     num_steps: int,
+    usable_span: float,
+    min_step_gap: float = 1.0,
 ) -> Optional[List[float]]:
-    """Extract step timings from word timestamps bounded within [beat_start_s, beat_start_s + duration]."""
+    """Extract step timings from word timestamps bounded within [beat_start_s, beat_start_s + usable_span]."""
     beat_end_s = beat_start_s + duration
     # Filter words belonging to this beat window
     words_in_beat = [
@@ -82,18 +127,22 @@ def _align_via_word_timestamps(
     total_w = len(words_in_beat)
     step_indices = [int(round(i * (total_w / num_steps))) for i in range(num_steps)]
 
+    max_last_t = usable_span
     timings: List[float] = []
     prev_t = 0.1
 
     for i, idx in enumerate(step_indices):
         w_entry = words_in_beat[min(idx, total_w - 1)]
         raw_start = float(w_entry["start"]) - beat_start_s
-        # Bound within beat duration
-        rel_t = max(0.2, min(duration - 0.4, raw_start))
-        # Ensure monotonic increase
+        rel_t = max(0.2, min(max_last_t, raw_start))
         if rel_t <= prev_t:
-            rel_t = prev_t + 0.8
-        rel_t = min(rel_t, duration - (num_steps - i) * 0.4)
+            rel_t = prev_t + min_step_gap
+        rem = num_steps - 1 - i
+        if rel_t > max_last_t - rem * min_step_gap:
+            rel_t = max_last_t - rem * min_step_gap
+        if rel_t <= prev_t:
+            step_slot = (max_last_t - prev_t) / max(1, rem + 1)
+            rel_t = prev_t + step_slot
         timings.append(round(rel_t, 2))
         prev_t = rel_t
 
@@ -104,7 +153,8 @@ def _align_via_sentence_proportions(
     narration: str,
     duration: float,
     num_steps: int,
-    min_step_gap: float = 1.2,
+    usable_span: float,
+    min_step_gap: float = 1.0,
 ) -> List[float]:
     """Compute step timings by proportional sentence or clause length."""
     # Split narration by sentence or major clause boundaries (. , ; :)
@@ -117,27 +167,22 @@ def _align_via_sentence_proportions(
         total_words = sum(sentence_lengths)
         timings = [0.2]
         accum_words = sentence_lengths[0]
-        # Allocate between 0.2s and duration - 0.6s
-        usable_dur = max(1.0, duration - 1.0)
         for i in range(1, num_steps):
             frac = accum_words / total_words
-            t = 0.2 + (frac * usable_dur)
-            timings.append(round(max(timings[-1] + min_step_gap, min(duration - 0.4, t)), 2))
+            t = 0.2 + (frac * (usable_span - 0.2))
+            t_clamped = round(max(timings[-1] + min_step_gap, min(usable_span, t)), 2)
+            timings.append(t_clamped)
             accum_words += sentence_lengths[i]
         return timings
 
     # Default uniform / progression curve
-    # Step 1 starts at 0.2s
-    # Remaining steps span across the beat duration with comfortable breathing room
     timings = [0.2]
-    usable_span = max(1.0, duration - 1.2)
-    step_interval = usable_span / (num_steps - 1)
+    step_interval = (usable_span - 0.2) / max(1, num_steps - 1)
 
     for i in range(1, num_steps):
         t = round(0.2 + i * step_interval, 2)
-        # Guarantee minimum step gap
-        t = max(timings[-1] + min_step_gap, min(duration - 0.4, t))
-        timings.append(t)
+        t_clamped = round(max(timings[-1] + min_step_gap, min(usable_span, t)), 2)
+        timings.append(t_clamped)
 
     return timings
 
