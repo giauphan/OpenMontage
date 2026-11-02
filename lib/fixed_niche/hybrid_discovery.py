@@ -180,6 +180,13 @@ class HybridCandidateDiscovery:
             safe_id = self._sanitize_log_val(candidate_id)
             logger.info("Marked candidate '%s' as consumed in %s", safe_id, self.tracker_path)
 
+        # Synchronize candidate removal / consumption to Toolcase Gateway Daily News service
+        try:
+            from tools.news.daily_news_gateway import DailyNewsGatewayClient
+            DailyNewsGatewayClient().consume_candidates([candidate_id])
+        except Exception as exc:
+            logger.debug("Gateway candidate consume sync skipped: %s", exc)
+
     @staticmethod
     def _load_candidates_from_file(file_path: Path) -> List[Dict[str, Any]]:
         """Safely load candidates from a JSON or YAML file."""

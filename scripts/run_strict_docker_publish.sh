@@ -162,7 +162,8 @@ GENERATION_RETRY_DELAY_SECONDS="${GENERATION_RETRY_DELAY_SECONDS:-30}"
 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS="${PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS:-15}"
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 export EXPECTED_SUCCESS_COUNT
-NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
+DAILY_NEWS_GATEWAY_URL="${DAILY_NEWS_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}/custom/daily-news}"
+NEWSNOW_URL="${DAILY_NEWS_GATEWAY_URL}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3)}"
 
 # Temp/cleanup and disk-threshold knobs. TMP_ROOT defaults to the container-local
@@ -263,15 +264,15 @@ cleanup_system_disk_space() {
   fi
 }
 
-# Bounded NewsNow reachability + stale-feed-age preflight (warning-only; the
+# Bounded Daily News Gateway reachability + stale-feed-age preflight (warning-only; the
 # generator enforces MAX_STALE_FEED_AGE_HOURS when it falls back to an old feed).
 newsnow_preflight() {
-  if curl -sf -m 5 -o /dev/null "$NEWSNOW_URL" 2>/dev/null; then
-    log "NewsNow reachable: $NEWSNOW_URL"
+  if curl -sf -m 5 -o /dev/null "${DAILY_NEWS_GATEWAY_URL}/health" 2>/dev/null || curl -sf -m 5 -o /dev/null "$NEWSNOW_URL" 2>/dev/null; then
+    log "Daily News Gateway reachable: $DAILY_NEWS_GATEWAY_URL"
   else
-    log "WARN: NewsNow ($NEWSNOW_URL) unreachable at preflight; generator may fall back to prior feed"
+    log "WARN: Daily News Gateway ($DAILY_NEWS_GATEWAY_URL) unreachable at preflight; generator may fall back to prior feed"
     "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "preflight" \
-      --error-type "NEWSNOW_UNREACHABLE" --message "NewsNow endpoint unreachable at preflight" || true
+      --error-type "NEWSNOW_UNREACHABLE" --message "Daily News Gateway endpoint unreachable at preflight" || true
   fi
   local feed="$ROOT/data/newsnow_feed.json"
   local max_age_h="${MAX_STALE_FEED_AGE_HOURS:-48}"

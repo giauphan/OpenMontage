@@ -190,9 +190,10 @@ raise SystemExit(0 if resolved.is_dir() and resolved.is_relative_to(root) else 1
     fi
   done
 else
-# Step 0: Fetch current NewsNow sources
+# Step 0: Fetch current latest news via Daily News Gateway
 FEED_STALE=0
-NEWSNOW_URL="${NEWSNOW_API_URL:-http://127.0.0.1:4444}"
+DAILY_NEWS_GATEWAY_URL="${DAILY_NEWS_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}/custom/daily-news}"
+NEWSNOW_URL="${DAILY_NEWS_GATEWAY_URL}"
 HAS_CURATED_READY=0
 if "$PY" -c "
 import sys

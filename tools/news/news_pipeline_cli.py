@@ -143,8 +143,9 @@ def _validate_safe_input_path(path: Path | str) -> Path:
 
 
 def run_fetch(args: argparse.Namespace) -> None:
-    """Fetch NewsNow source feeds and write a raw feed file."""
-    count = write_feed(args.url, Path(args.output), minimum=args.min_items)
+    """Fetch latest news feeds via Toolcase Gateway Daily News service and write raw feed file."""
+    gw_url = getattr(args, "url", None)
+    count = write_feed(gw_url, Path(args.output), minimum=args.min_items)
     logger.info(f"Wrote {count} raw items to {args.output}")
 
 
@@ -480,6 +481,12 @@ def run_produce(args: argparse.Namespace) -> None:
 
     for pid in project_ids:
         print(f"PROJECT_ID={pid}")
+    if project_ids:
+        try:
+            from tools.news.daily_news_gateway import DailyNewsGatewayClient
+            DailyNewsGatewayClient().consume_candidates(project_ids)
+        except Exception as e:
+            logger.debug("Candidate consume sync to gateway skipped: %s", e)
     logger.info(f"Initialized {len(project_ids)} project(s). Research stage completed.")
 
 
@@ -566,8 +573,8 @@ def main(argv: List[str] | None = None) -> int:
         help="Sliding freshness window in days (default: 7 days, meaning [run_date - 7 days, run_date]).",
     )
 
-    fetch_parser = subparsers.add_parser("fetch", help="Fetch NewsNow source feeds into a raw feed file")
-    fetch_parser.add_argument("--url", required=True, help="NewsNow base URL, e.g. http://127.0.0.1:4444")
+    fetch_parser = subparsers.add_parser("fetch", help="Fetch latest news feeds via Toolcase Gateway Daily News service")
+    fetch_parser.add_argument("--url", default=None, help="Daily News Gateway base URL (defaults to TOOLCASE_GATEWAY_URL/custom/daily-news)")
     fetch_parser.add_argument("--output", required=True, help="Path to write the raw feed JSON")
     fetch_parser.add_argument("--min-items", type=int, default=3, help="Minimum valid items required")
 
