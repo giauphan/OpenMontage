@@ -36,6 +36,10 @@ from tools.news.fixed_niche_sources import FixedNicheSourceAdapter
 
 logger = logging.getLogger(__name__)
 
+SCRIPT_EN_US_JSON = "script_en_US.json"
+NEWS_VISUAL_ASSETS_JSON = "news_visual_assets.json"
+CLAIM_LEDGER_JSON = "claim_ledger.json"
+
 class FixedNicheVideoRunner:
     """Manages full video production lifecycle for a single in-scope candidate."""
 
@@ -143,7 +147,7 @@ class FixedNicheVideoRunner:
             ],
         }
         script_bytes = json.dumps(script_data, indent=2).encode("utf-8")
-        (artifacts_dir / "script_en_US.json").write_bytes(script_bytes)
+        (artifacts_dir / SCRIPT_EN_US_JSON).write_bytes(script_bytes)
         script_sha = hashlib.sha256(script_bytes).hexdigest()
 
         full_text = " ".join(s["narration"] for s in script_data["sections"])
@@ -185,7 +189,7 @@ class FixedNicheVideoRunner:
             visual_plan_sha256=plan_sha,
             enforce_meaningful_visuals=True,
         )
-        (artifacts_dir / "news_visual_assets.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        (artifacts_dir / NEWS_VISUAL_ASSETS_JSON).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         # 6.5. Generate animated diagram sidecar if visual style is active
         visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
@@ -227,7 +231,7 @@ class FixedNicheVideoRunner:
         if not topic_data:
             tb_file = self.project_dir / "artifacts" / "topic_brief.json"
             topic_data = json.loads(tb_file.read_text(encoding="utf-8")) if tb_file.is_file() else {"candidate_id": self.candidate_id}
-        cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
+        cl_file = self.project_dir / "artifacts" / CLAIM_LEDGER_JSON
         claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
         if not claims:
             raise ValueError(f"Cannot re-stage storyboard for {dur:.2f}s: claim ledger is unavailable.")
@@ -343,11 +347,8 @@ class FixedNicheVideoRunner:
                 f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
             )
         if n_beats > 0 and dur > n_beats * 12.0:
-            if dur <= policy_max:
-                logger.info(f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; re-staging storyboard with target_duration={dur:.2f}s.")
-                self._restage_for_duration(dur)
-            else:
-                raise ValueError(f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s).")
+            logger.info(f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; re-staging storyboard with target_duration={dur:.2f}s.")
+            self._restage_for_duration(dur)
 
     def _reconcile_artifacts(self, dur: float, target_dur: float, out_audio: Path) -> None:
         plan_f = self.project_dir / "artifacts" / "news_visual_plan.json"
@@ -373,6 +374,41 @@ class FixedNicheVideoRunner:
         except Exception as e:
             raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
 
+    def _update_script_file(
+        self, script_file: Path, beat_map: dict[str, dict], align_dur: float, assets_file: Path, ev_file: Path
+    ) -> None:
+        if not script_file.is_file():
+            return
+        s_json = json.loads(script_file.read_text(encoding="utf-8"))
+        s_json["target_duration_seconds"] = round(align_dur, 3)
+        for sec in s_json.get("sections", []):
+            bid = sec.get("beat_id")
+            if bid in beat_map:
+                sec["start_s"], sec["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+            sec["id"] = sec.get("id") or sec.get("section_id")
+            sec["text"] = sec.get("text") or sec.get("narration")
+        s_bytes = json.dumps(s_json, indent=2).encode("utf-8")
+        script_file.write_bytes(s_bytes)
+        s_sha = hashlib.sha256(s_bytes).hexdigest()
+        for f_path in (assets_file, ev_file):
+            f_res = f_path.resolve()
+            if not f_res.is_relative_to(self.project_dir.resolve()):
+                continue
+            if f_res.is_file():
+                data = json.loads(f_res.read_text(encoding="utf-8"))
+                data["script_sha256"] = s_sha
+                f_res.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _update_proof_map(self, proof_map_file: Path, beat_map: dict[str, dict]) -> None:
+        if not proof_map_file.is_file():
+            return
+        p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
+        for pb in p_json.get("beats", []):
+            bid = pb.get("beat_id")
+            if bid in beat_map:
+                pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+        proof_map_file.write_text(json.dumps(p_json, indent=2), encoding="utf-8")
+
     def _write_reconciled_artifacts(
         self, beats: list[dict], align_dur: float, out_audio: Path, plan_json: dict, plan_f: Path
     ) -> None:
@@ -384,35 +420,13 @@ class FixedNicheVideoRunner:
         (self.project_dir / "artifacts" / "captions.ass").write_text(ass_content, encoding="utf-8")
 
         beat_map = {b["beat_id"]: b for b in beats}
-        script_file = self.project_dir / "artifacts" / "script_en_US.json"
-        assets_file = self.project_dir / "artifacts" / "news_visual_assets.json"
+        script_file = self.project_dir / "artifacts" / SCRIPT_EN_US_JSON
+        assets_file = self.project_dir / "artifacts" / NEWS_VISUAL_ASSETS_JSON
         ev_file = self.project_dir / "artifacts" / "news_evidence.json"
         proof_map_file = self.project_dir / "artifacts" / "video_proof_map.json"
 
-        if script_file.is_file():
-            s_json = json.loads(script_file.read_text(encoding="utf-8"))
-            s_json["target_duration_seconds"] = round(align_dur, 3)
-            for sec in s_json.get("sections", []):
-                bid = sec.get("beat_id")
-                if bid in beat_map:
-                    sec["start_s"], sec["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
-                sec["id"], sec["text"] = sec.get("id") or sec.get("section_id"), sec.get("text") or sec.get("narration")
-            s_bytes = json.dumps(s_json, indent=2).encode("utf-8")
-            script_file.write_bytes(s_bytes)
-            s_sha = hashlib.sha256(s_bytes).hexdigest()
-            for f_path in (assets_file, ev_file):
-                if f_path.is_file():
-                    data = json.loads(f_path.read_text(encoding="utf-8"))
-                    data["script_sha256"] = s_sha
-                    f_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-        if proof_map_file.is_file():
-            p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
-            for pb in p_json.get("beats", []):
-                bid = pb.get("beat_id")
-                if bid in beat_map:
-                    pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
-            proof_map_file.write_text(json.dumps(p_json, indent=2), encoding="utf-8")
+        self._update_script_file(script_file, beat_map, align_dur, assets_file, ev_file)
+        self._update_proof_map(proof_map_file, beat_map)
 
         plan_f.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
         self._rematerialize_after_reconciliation(align_dur, plan_json, script_file)

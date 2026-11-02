@@ -406,30 +406,28 @@ class FacebookPublisher(BaseTool):
 
         return None, video_id, resolved_target, video_url
 
-    def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        """Upload video to Facebook Page with optional scheduling and auto-dubbing."""
-        err_res, video_path, caption, title, target_id, publish_type, scheduled_epoch = self._validate_execution_params(inputs)
-        if err_res is not None or video_path is None:
-            return err_res or ToolResult(success=False, error="Invalid parameters")
-
-        enable_auto_translate = inputs.get("enable_auto_translate", True)
-        translated_languages = inputs.get("translated_languages") or DEFAULT_14_LANGUAGES
-
-        try:
-            base_url = self.get_gateway_base_url(inputs)
-        except ValueError as err:
-            return ToolResult(success=False, error=str(err))
-
-        headers = {"Content-Type": MIME_APPLICATION_JSON, "Accept": MIME_APPLICATION_JSON}
-
-        # Prepare payload: send video_path and base64 for universal gateway compatibility
+    def _read_video_base64(self, video_path: Path) -> tuple[Optional[str], Optional[str]]:
+        """Read video bytes and encode to base64 for universal gateway compatibility."""
         try:
             with open(video_path, "rb") as vf:
                 v_bytes = vf.read()
-            v_b64 = base64.b64encode(v_bytes).decode("ascii")
+            return base64.b64encode(v_bytes).decode("ascii"), None
         except Exception as read_err:
-            return ToolResult(success=False, error=f"Failed to read video file: {read_err}")
+            return None, f"Failed to read video file: {read_err}"
 
+    def _build_upload_payload(
+        self,
+        v_b64: str,
+        video_path: Path,
+        caption: str,
+        title: str,
+        publish_type: str,
+        enable_auto_translate: bool,
+        translated_languages: list[str],
+        target_id: str,
+        scheduled_epoch: Optional[int],
+    ) -> dict[str, Any]:
+        """Construct the upload payload dictionary for the Gateway adapter."""
         payload: dict[str, Any] = {
             "video_base64": v_b64,
             "file_name": video_path.name,
@@ -443,26 +441,22 @@ class FacebookPublisher(BaseTool):
             payload["target_id"] = target_id
         if scheduled_epoch is not None:
             payload["scheduled_publish_time"] = scheduled_epoch
+        return payload
 
-        resp, err_msg = self._post_video_upload(base_url, payload, headers)
-        if err_msg or resp is None:
-            return ToolResult(success=False, error=err_msg or "Failed to upload to Facebook")
-
-        if resp.status_code != 200:
-            return ToolResult(
-                success=False,
-                error=f"Facebook Suite API returned HTTP {resp.status_code}: {resp.text[:300]}",
-            )
-
-        try:
-            res_json = resp.json()
-        except Exception as json_err:
-            return ToolResult(success=False, error=f"Invalid JSON response from Facebook adapter: {json_err}")
-
-        extract_err, video_id, resolved_target, video_url = self._extract_upload_result(res_json, target_id)
-        if extract_err:
-            return ToolResult(success=False, error=f"Facebook upload failed: {extract_err}")
-
+    def _build_publish_result(
+        self,
+        video_path: Path,
+        video_id: str,
+        resolved_target: str,
+        video_url: Optional[str],
+        publish_type: str,
+        enable_auto_translate: bool,
+        translated_languages: list[str],
+        caption: str,
+        title: str,
+        scheduled_epoch: Optional[int],
+    ) -> ToolResult:
+        """Construct the final ToolResult after successful upload and registration."""
         status = "scheduled" if scheduled_epoch else "published"
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -495,3 +489,66 @@ class FacebookPublisher(BaseTool):
             result_data["scheduled_publish_time"] = scheduled_epoch
 
         return ToolResult(success=True, data=result_data, artifacts=[str(video_path)])
+
+    def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        """Upload video to Facebook Page with optional scheduling and auto-dubbing."""
+        err_res, video_path, caption, title, target_id, publish_type, scheduled_epoch = self._validate_execution_params(inputs)
+        if err_res is not None or video_path is None:
+            return err_res or ToolResult(success=False, error="Invalid parameters")
+
+        enable_auto_translate = inputs.get("enable_auto_translate", True)
+        translated_languages = inputs.get("translated_languages") or DEFAULT_14_LANGUAGES
+
+        try:
+            base_url = self.get_gateway_base_url(inputs)
+        except ValueError as err:
+            return ToolResult(success=False, error=str(err))
+
+        v_b64, read_err = self._read_video_base64(video_path)
+        if read_err or v_b64 is None:
+            return ToolResult(success=False, error=read_err or "Failed to read video file")
+
+        headers = {"Content-Type": MIME_APPLICATION_JSON, "Accept": MIME_APPLICATION_JSON}
+        payload = self._build_upload_payload(
+            v_b64=v_b64,
+            video_path=video_path,
+            caption=caption,
+            title=title,
+            publish_type=publish_type,
+            enable_auto_translate=bool(enable_auto_translate),
+            translated_languages=translated_languages,
+            target_id=target_id,
+            scheduled_epoch=scheduled_epoch,
+        )
+
+        resp, err_msg = self._post_video_upload(base_url, payload, headers)
+        if err_msg or resp is None:
+            return ToolResult(success=False, error=err_msg or "Failed to upload to Facebook")
+
+        if resp.status_code != 200:
+            return ToolResult(
+                success=False,
+                error=f"Facebook Suite API returned HTTP {resp.status_code}: {resp.text[:300]}",
+            )
+
+        try:
+            res_json = resp.json()
+        except Exception as json_err:
+            return ToolResult(success=False, error=f"Invalid JSON response from Facebook adapter: {json_err}")
+
+        extract_err, video_id, resolved_target, video_url = self._extract_upload_result(res_json, target_id)
+        if extract_err:
+            return ToolResult(success=False, error=f"Facebook upload failed: {extract_err}")
+
+        return self._build_publish_result(
+            video_path=video_path,
+            video_id=video_id,
+            resolved_target=resolved_target,
+            video_url=video_url,
+            publish_type=publish_type,
+            enable_auto_translate=bool(enable_auto_translate),
+            translated_languages=translated_languages,
+            caption=caption,
+            title=title,
+            scheduled_epoch=scheduled_epoch,
+        )

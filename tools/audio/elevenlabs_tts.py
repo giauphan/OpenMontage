@@ -27,6 +27,20 @@ from tools.base_tool import (
 )
 
 
+def _build_speech_endpoint(base_url: str) -> str:
+    if base_url.endswith("/v1/audio/speech") or base_url.endswith("/audio/speech"):
+        return base_url
+    if base_url.endswith("/v1"):
+        return f"{base_url}/audio/speech"
+    return f"{base_url}/v1/audio/speech"
+
+
+def _build_tts_endpoint(base_url: str, voice_id: str) -> str:
+    if "/v1" in base_url:
+        return f"{base_url}/text-to-speech/{voice_id}"
+    return f"{base_url}/v1/text-to-speech/{voice_id}"
+
+
 class ElevenLabsTTS(BaseTool):
     name = "elevenlabs_tts"
     version = "0.1.0"
@@ -251,21 +265,8 @@ class ElevenLabsTTS(BaseTool):
         )
 
         if is_speech_ep:
-            if base_url.endswith("/v1/audio/speech"):
-                endpoint = base_url
-            elif base_url.endswith("/audio/speech"):
-                endpoint = base_url
-            elif base_url.endswith("/v1"):
-                endpoint = f"{base_url}/audio/speech"
-            else:
-                endpoint = f"{base_url}/v1/audio/speech"
-            return base_url, endpoint, True
-
-        if "/v1" in base_url:
-            endpoint = f"{base_url}/text-to-speech/{voice_id}"
-        else:
-            endpoint = f"{base_url}/v1/text-to-speech/{voice_id}"
-        return base_url, endpoint, False
+            return base_url, _build_speech_endpoint(base_url), True
+        return base_url, _build_tts_endpoint(base_url, voice_id), False
 
     def get_status(self) -> ToolStatus:
         if self._resolve_api_key():
@@ -323,6 +324,59 @@ class ElevenLabsTTS(BaseTool):
             params = {"output_format": resolved_format}
         return payload, params, resolved_format
 
+    def _try_port_fallback(
+        self,
+        requests_mod: Any,
+        endpoint: str,
+        response: Any,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        params: dict[str, str] | None,
+        timeout: float,
+    ) -> tuple[Any, str]:
+        """Automatic gateway port resolution (20129 -> 20128) if 20129 has no audio/speech route."""
+        if response.status_code in (400, 404) and ":20129" in endpoint:
+            alt_ep = endpoint.replace(":20129", ":20128")
+            try:
+                alt_resp = requests_mod.post(alt_ep, headers=headers, json=payload, params=params, timeout=timeout)
+                if alt_resp.status_code in (200, 402):
+                    return alt_resp, alt_ep
+            except Exception:
+                pass
+        return response, endpoint
+
+    def _try_premade_voice_fallback(
+        self,
+        requests_mod: Any,
+        endpoint: str,
+        response: Any,
+        voice_id: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        params: dict[str, str] | None,
+        timeout: float,
+    ) -> tuple[Any, str, str]:
+        """Automatic premade voice fallback for free-tier library voice restrictions."""
+        if response.status_code != 402 or "library" not in response.text.lower():
+            return response, endpoint, voice_id
+
+        premade_voice = "IKne3meq5aSn9XLyUdCD"  # Charlie (premade, universal)
+        if voice_id == premade_voice:
+            return response, endpoint, voice_id
+
+        if "voice" in payload:
+            payload["voice"] = premade_voice
+        if "voice_id" in payload:
+            payload["voice_id"] = premade_voice
+        voice_id = premade_voice
+        if "/text-to-speech/" in endpoint:
+            endpoint = endpoint.rsplit("/", 1)[0] + f"/{premade_voice}"
+        try:
+            response = requests_mod.post(endpoint, headers=headers, json=payload, params=params, timeout=timeout)
+        except Exception:
+            pass
+        return response, endpoint, voice_id
+
     def _post_with_fallbacks(
         self,
         requests_mod: Any,
@@ -344,33 +398,12 @@ class ElevenLabsTTS(BaseTool):
         except requests_mod.exceptions.RequestException as req_err:
             raise RuntimeError(f"ElevenLabs connection error to {endpoint}: {req_err}") from req_err
 
-        # Automatic gateway port resolution (20129 -> 20128) if 20129 has no audio/speech route
-        if response.status_code in (400, 404) and ":20129" in endpoint:
-            alt_ep = endpoint.replace(":20129", ":20128")
-            try:
-                alt_resp = requests_mod.post(alt_ep, headers=headers, json=payload, params=params, timeout=timeout)
-                if alt_resp.status_code in (200, 402):
-                    response = alt_resp
-                    endpoint = alt_ep
-            except Exception:
-                pass
-
-        # Automatic premade voice fallback for free-tier library voice restrictions
-        if response.status_code == 402 and "library" in response.text.lower():
-            premade_voice = "IKne3meq5aSn9XLyUdCD"  # Charlie (premade, universal)
-            if voice_id != premade_voice:
-                if "voice" in payload:
-                    payload["voice"] = premade_voice
-                if "voice_id" in payload:
-                    payload["voice_id"] = premade_voice
-                voice_id = premade_voice
-                if "/text-to-speech/" in endpoint:
-                    endpoint = endpoint.rsplit("/", 1)[0] + f"/{premade_voice}"
-                try:
-                    response = requests_mod.post(endpoint, headers=headers, json=payload, params=params, timeout=timeout)
-                except Exception:
-                    pass
-
+        response, endpoint = self._try_port_fallback(
+            requests_mod, endpoint, response, headers, payload, params, timeout
+        )
+        response, endpoint, voice_id = self._try_premade_voice_fallback(
+            requests_mod, endpoint, response, voice_id, headers, payload, params, timeout
+        )
         return response, endpoint, voice_id
 
     def _save_audio_file(self, raw_output: str, audio_bytes: bytes, output_format: str) -> Path:

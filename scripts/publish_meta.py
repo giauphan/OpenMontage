@@ -53,6 +53,103 @@ def claim_or_skip(store, date, pid, meta, platform, account, kind, title, asset,
     return key
 
 
+def _is_pre_upload_failure(err_str: str) -> bool:
+    """Check if the error is a pre-upload connectivity or configuration issue."""
+    err_lower = err_str.lower()
+    if "timeout" in err_lower:
+        return False
+    pre_upload_indicators = (
+        "connection refused",
+        "no route to host",
+        "connection failed",
+        "gateway_url",
+        "missing required",
+    )
+    return any(ind in err_lower for ind in pre_upload_indicators)
+
+
+def _build_fb_inputs(
+    fb_path: Path,
+    caption: str,
+    title: str,
+    fb_page_id: str,
+    slot: datetime,
+    now: datetime,
+) -> dict[str, Any]:
+    """Construct FacebookPublisher execution inputs."""
+    fb_inputs: dict[str, Any] = {
+        "video_path": str(fb_path),
+        "caption": caption[:2000],
+        "title": title,
+        "target_id": fb_page_id,
+        "enable_auto_translate": True,
+        "publish_type": "REEL",
+    }
+    now_sec = int(now.timestamp())
+    sched_sec = int(slot.timestamp())
+    if sched_sec >= now_sec + 600:
+        fb_inputs["scheduled_publish_time"] = sched_sec
+    return fb_inputs
+
+
+def _execute_fb_with_fallback(
+    publisher: MetaPublisher,
+    fb_inputs: dict[str, Any],
+    fb_path: Path,
+    caption: str,
+    fb_page_id: str,
+    slot: datetime,
+) -> Any:
+    """Execute FB publishing via FacebookPublisher with optional MetaPublisher fallback."""
+    from tools.publishers.facebook_publisher import FacebookPublisher
+
+    fb_pub = FacebookPublisher()
+    result = fb_pub.execute(fb_inputs)
+    err_str = str(result.error or "")
+
+    should_fallback = (
+        not result.success
+        and _is_pre_upload_failure(err_str)
+        and bool(os.environ.get("TOKEN_FACEBOOK"))
+    )
+    if should_fallback:
+        result = publisher.execute({
+            "video_path": str(fb_path),
+            "caption": caption[:2000],
+            "page_id": fb_page_id,
+            "post_to_facebook": True,
+            "post_to_instagram": False,
+            "scheduled_publish_time": int(slot.timestamp()),
+        })
+    return result
+
+
+def _record_fb_publish_result(
+    store: PublishStore,
+    fb_key: str,
+    pid: str,
+    fb_page_id: str,
+    slot: datetime,
+    result: Any,
+) -> None:
+    """Record scheduled video or mark failure in publish store."""
+    data = (result.data or {}) if result.success else {}
+    fb_post_id = data.get("facebook_post_id") or data.get("video_id")
+    if result.success and fb_post_id:
+        video_url = data.get("video_url") or f"https://facebook.com/{fb_page_id}/videos/{fb_post_id}"
+        store.mark_scheduled(
+            fb_key,
+            video_id=fb_post_id,
+            video_url=video_url,
+            scheduled_for=slot.isoformat(),
+        )
+        print(f"FB scheduled {pid}: {fb_post_id} -> {slot.isoformat()}")
+    else:
+        fb_error = result.error if not result.success else f"Facebook returned no video/post ID: {data!r}"
+        store.mark_failed(fb_key, str(fb_error))
+        print(f"FB FAILED {pid}: {fb_error}")
+
+
 def _publish_fb(
     store: PublishStore,
     publisher: MetaPublisher,
@@ -77,56 +174,9 @@ def _publish_fb(
     if not fb_key:
         return
 
-    from tools.publishers.facebook_publisher import FacebookPublisher
-    fb_pub = FacebookPublisher()
-    now_sec = int(now.timestamp())
-    sched_sec = int(slot.timestamp())
-    fb_inputs: dict[str, Any] = {
-        "video_path": str(fb_path),
-        "caption": caption[:2000],
-        "title": title,
-        "target_id": fb_page_id,
-        "enable_auto_translate": True,
-        "publish_type": "REEL",
-    }
-    if sched_sec >= now_sec + 600:
-        fb_inputs["scheduled_publish_time"] = sched_sec
-
-    result = fb_pub.execute(fb_inputs)
-    err_str = str(result.error or "")
-    is_pre_upload_failure = (
-        "connection refused" in err_str.lower()
-        or "no route to host" in err_str.lower()
-        or "connection failed" in err_str.lower()
-        or "gateway_url" in err_str.lower()
-        or "missing required" in err_str.lower()
-    ) and "timeout" not in err_str.lower()
-
-    if not result.success and is_pre_upload_failure and os.environ.get("TOKEN_FACEBOOK"):
-        result = publisher.execute({
-            "video_path": str(fb_path),
-            "caption": caption[:2000],
-            "page_id": fb_page_id,
-            "post_to_facebook": True,
-            "post_to_instagram": False,
-            "scheduled_publish_time": int(slot.timestamp()),
-        })
-    data = (result.data or {}) if result.success else {}
-    fb_post_id = data.get("facebook_post_id") or data.get("video_id")
-    fb_ok = bool(result.success and fb_post_id)
-    fb_error = result.error if not result.success else f"Facebook returned no video/post ID: {data!r}"
-    if fb_ok:
-        video_url = data.get("video_url") or f"https://facebook.com/{fb_page_id}/videos/{fb_post_id}"
-        store.mark_scheduled(
-            fb_key,
-            video_id=fb_post_id,
-            video_url=video_url,
-            scheduled_for=slot.isoformat(),
-        )
-        print(f"FB scheduled {pid}: {fb_post_id} -> {slot.isoformat()}")
-    else:
-        store.mark_failed(fb_key, str(fb_error))
-        print(f"FB FAILED {pid}: {fb_error}")
+    fb_inputs = _build_fb_inputs(fb_path, caption, title, fb_page_id, slot, now)
+    result = _execute_fb_with_fallback(publisher, fb_inputs, fb_path, caption, fb_page_id, slot)
+    _record_fb_publish_result(store, fb_key, pid, fb_page_id, slot, result)
 
 
 def _publish_ig(

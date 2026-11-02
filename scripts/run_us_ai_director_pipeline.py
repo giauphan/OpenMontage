@@ -38,6 +38,11 @@ from lib.qa_signing import sign_approval_record, verify_approval_record
 from scripts.independent_editorial_qa import APPROVED_DOMAINS, audit_project, grant_supervisor_approval
 
 
+SOURCE_SNAPSHOT_FILENAME = "source_snapshot.txt"
+CLAIM_LEDGER_FILENAME = "claim_ledger.json"
+SCRIPT_EN_US_FILENAME = "script_en_US.json"
+
+
 class StageExecutionError(RuntimeError):
     """Raised when a pipeline stage fails."""
 
@@ -61,7 +66,7 @@ def _verify_source_hostname(cid: str, source: dict) -> None:
 
 def _resolve_snapshot_path(project_dir: Path, snapshot_dir: Path, snap_file: Optional[str]) -> Path:
     if not snap_file:
-        return project_dir / "artifacts" / "source_snapshot.txt"
+        return project_dir / "artifacts" / SOURCE_SNAPSHOT_FILENAME
     snap_path = Path(snap_file)
     target = snap_path if snap_path.is_absolute() else (project_dir / snap_path)
     if not target.is_file():
@@ -90,7 +95,7 @@ def _verify_fact_check(cid: str, fact_check: dict, snap_text: str, snap_name: st
 
 
 def _verify_provenance_record(snap_name: str, actual_sha: str, prov_data: dict) -> None:
-    described_snap = prov_data.get("snapshot_file", "source_snapshot.txt")
+    described_snap = prov_data.get("snapshot_file", SOURCE_SNAPSHOT_FILENAME)
     if snap_name != described_snap:
         raise StageExecutionError(
             f"Stage 1 failed: snapshot provenance describes '{described_snap}', not '{snap_name}'"
@@ -128,9 +133,9 @@ def _verify_snapshot_content_and_facts(
         _verify_provenance_record(target_snap.name, actual_sha, prov_data)
 
 
-def stage_1_research_and_sources(project_dir: Path) -> dict:
-    """Stage 1: Research & source snapshot validation."""
-    ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+def _load_claim_ledger(project_dir: Path) -> tuple[list[dict], list[dict]]:
+    """Load and validate claim ledger, returning all claims and active claims."""
+    ledger_path = project_dir / "artifacts" / CLAIM_LEDGER_FILENAME
     if not ledger_path.is_file():
         raise StageExecutionError(f"Stage 1 failed: claim ledger missing ({ledger_path})")
 
@@ -147,18 +152,31 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
     if not active_claims:
         raise StageExecutionError("Stage 1 failed: all claims in ledger are REJECTED; at least one active claim required")
 
-    snapshot_dir = project_dir / "artifacts" / "source_snapshots"
-    verified_sources = 0
+    return claims, active_claims
 
+
+def _load_snapshot_provenance(project_dir: Path) -> Optional[dict]:
+    """Load and validate snapshot provenance if present."""
     prov_file = project_dir / "artifacts" / "snapshot_provenance.json"
-    prov_data = None
-    if prov_file.is_file():
-        try:
-            prov_data = json.loads(prov_file.read_text(encoding="utf-8"))
-            if not isinstance(prov_data, dict):
-                raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json")
-        except (ValueError, OSError):
+    if not prov_file.is_file():
+        return None
+
+    try:
+        prov_data = json.loads(prov_file.read_text(encoding="utf-8"))
+        if not isinstance(prov_data, dict):
             raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json")
+        return prov_data
+    except (ValueError, OSError) as exc:
+        if isinstance(exc, StageExecutionError):
+            raise
+        raise StageExecutionError("Stage 1 failed: malformed snapshot_provenance.json") from exc
+
+
+def _verify_all_claims(project_dir: Path, claims: list[dict], prov_data: Optional[dict]) -> int:
+    """Verify source hostnames and snapshots for all active claims."""
+    snapshot_dir = project_dir / "artifacts" / "source_snapshots"
+    default_snapshot = project_dir / "artifacts" / SOURCE_SNAPSHOT_FILENAME
+    verified_sources = 0
 
     for idx, claim in enumerate(claims):
         cid = claim.get("claim_id", f"claim_{idx}")
@@ -168,21 +186,29 @@ def stage_1_research_and_sources(project_dir: Path) -> dict:
         _verify_source_hostname(cid, source)
 
         snap_file = source.get("snapshot_file") or claim.get("snapshot_file") or claim.get("source_snapshot_path")
-        if snap_file or (project_dir / "artifacts" / "source_snapshot.txt").is_file():
+        if snap_file or default_snapshot.is_file():
             target_snap = _resolve_snapshot_path(project_dir, snapshot_dir, snap_file)
             _verify_snapshot_content_and_facts(cid, claim, source, target_snap, prov_data)
             verified_sources += 1
 
+    return verified_sources
+
+
+def stage_1_research_and_sources(project_dir: Path) -> dict:
+    """Stage 1: Research & source snapshot validation."""
+    claims, active_claims = _load_claim_ledger(project_dir)
+    prov_data = _load_snapshot_provenance(project_dir)
+    verified_sources = _verify_all_claims(project_dir, claims, prov_data)
     return {"verified_claims": len(active_claims), "verified_snapshots": verified_sources}
 
 
 def stage_2_script_generation(project_dir: Path) -> dict:
     """Stage 2: AI Director script generation & en-US language validation."""
-    script_path = project_dir / "artifacts" / "script_en_US.json"
+    script_path = project_dir / "artifacts" / SCRIPT_EN_US_FILENAME
     if not script_path.is_file():
         # Dynamically synthesize script if missing from topic brief and claim ledger
         brief_file = project_dir / "artifacts" / "topic_brief.json"
-        claims_file = project_dir / "artifacts" / "claim_ledger.json"
+        claims_file = project_dir / "artifacts" / CLAIM_LEDGER_FILENAME
         if brief_file.is_file() and claims_file.is_file():
             try:
                 topic = json.loads(brief_file.read_text(encoding="utf-8"))
@@ -285,8 +311,8 @@ def _verify_single_claim_editorial(claim: dict, full_script: str) -> None:
 
 def stage_3_editorial_grounding(project_dir: Path) -> dict:
     """Stage 3: Editorial review & quantitative claim grounding."""
-    ledger_path = project_dir / "artifacts" / "claim_ledger.json"
-    script_path = project_dir / "artifacts" / "script_en_US.json"
+    ledger_path = project_dir / "artifacts" / CLAIM_LEDGER_FILENAME
+    script_path = project_dir / "artifacts" / SCRIPT_EN_US_FILENAME
     
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     script = json.loads(script_path.read_text(encoding="utf-8"))
@@ -353,7 +379,7 @@ def stage_5_speech_synthesis(project_dir: Path, provider: str = "flite") -> dict
     """Stage 5: Speech synthesis & audio mixing verification."""
     narration_txt = project_dir / "artifacts" / "narration_en_US_text.txt"
     if not narration_txt.is_file():
-        script_path = project_dir / "artifacts" / "script_en_US.json"
+        script_path = project_dir / "artifacts" / SCRIPT_EN_US_FILENAME
         if script_path.is_file():
             s_data = json.loads(script_path.read_text(encoding="utf-8"))
             scenes = s_data.get("scenes") or s_data.get("sections") or []

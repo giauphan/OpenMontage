@@ -46,38 +46,43 @@ def _fmt_time(t: float) -> str:
     return f"{val:.3f}".rstrip("0").rstrip(".")
 
 
+def _read_json_artifact(file_path: Path) -> dict:
+    if file_path.is_file():
+        try:
+            return json.loads(file_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _date_from_project_dir(project_dir: Optional[Path]) -> str:
+    if not project_dir:
+        return ""
+    rb_data = _read_json_artifact(project_dir / "artifacts" / "research_brief.json")
+    meta = rb_data.get("metadata") if isinstance(rb_data.get("metadata"), dict) else {}
+    date_str = rb_data.get("research_date") or meta.get("published_at")
+    if date_str:
+        return str(date_str)
+    tb_data = _read_json_artifact(project_dir / "artifacts" / "topic_brief.json")
+    return str(tb_data.get("created_at") or tb_data.get("date") or "")
+
+
+def _date_from_topic(topic: Optional[Dict[str, Any]]) -> str:
+    if not topic:
+        return ""
+    for k in ("research_date", "published_at", "created_at", "date"):
+        val = topic.get(k)
+        if val:
+            return str(val)
+    return ""
+
+
 def _extract_formatted_date(
     topic: Optional[Dict[str, Any]] = None,
     project_dir: Optional[Path] = None,
 ) -> str:
     """Extract and format publication/coverage date (e.g. 'Nov 1, 2026') from topic or artifacts."""
-    date_str = ""
-    if topic:
-        date_str = (
-            topic.get("research_date")
-            or topic.get("published_at")
-            or topic.get("created_at")
-            or topic.get("date")
-            or ""
-        )
-    if not date_str and project_dir:
-        rb_file = project_dir / "artifacts" / "research_brief.json"
-        if rb_file.is_file():
-            try:
-                rb_data = json.loads(rb_file.read_text(encoding="utf-8"))
-                meta = rb_data.get("metadata") if isinstance(rb_data.get("metadata"), dict) else {}
-                date_str = rb_data.get("research_date") or meta.get("published_at") or ""
-            except Exception:
-                pass
-    if not date_str and project_dir:
-        tb_file = project_dir / "artifacts" / "topic_brief.json"
-        if tb_file.is_file():
-            try:
-                tb_data = json.loads(tb_file.read_text(encoding="utf-8"))
-                date_str = tb_data.get("created_at") or tb_data.get("date") or ""
-            except Exception:
-                pass
-
+    date_str = _date_from_topic(topic) or _date_from_project_dir(project_dir)
     if not date_str:
         import datetime
         return datetime.datetime.now(datetime.timezone.utc).strftime("%b %d, %Y")
@@ -414,6 +419,56 @@ def _select_step_sfx(idx: int, s_idx: int, num_steps: int, total_beats: int) -> 
     return sound, "0.16"
 
 
+def _build_single_beat_sfx(
+    idx: int,
+    beat: Dict[str, Any],
+    visuals_src: Optional[Path],
+    progressive_reveal: bool,
+    duration: float,
+    total_beats: int,
+    track_counter: int,
+) -> tuple[List[str], int, List[float]]:
+    b_start = float(beat.get("start_s") if beat.get("start_s") is not None else beat.get("start_seconds", 0.0))
+    clips = [
+        f'    <audio class="clip sfx" data-start="{_fmt_time(b_start)}" data-duration="0.8" data-track-index="{track_counter}" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>'
+    ]
+    track_counter += 1
+    last_timings: List[float] = []
+
+    aid = beat.get("asset_id") or f"beat_{idx+1}"
+    vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
+    if not (progressive_reveal and vis_file.lower().endswith(EXT_SVG)):
+        return clips, track_counter, last_timings
+
+    from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
+    from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
+    raw_end = float(beat.get("end_s", duration))
+    b_end = min(raw_end, duration) if idx == total_beats - 1 else raw_end
+    beat_dur = max(0.5, b_end - b_start)
+    num_steps = 4 if (idx + 1 == 6 and total_beats == 6) else STEP_COUNTS.get(idx + 1, 4)
+    s_func = str(beat.get("story_function", ""))
+    narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+    is_final = (idx == total_beats - 1)
+    step_timings = compute_step_timings_for_beat(
+        narration=narration,
+        duration=beat_dur,
+        num_steps=num_steps,
+        beat_start_s=b_start,
+        word_timestamps=beat.get("word_timestamps"),
+        is_final_beat=is_final,
+    )
+    if is_final:
+        last_timings = step_timings
+    for s_idx, rel_t in enumerate(step_timings, start=1):
+        if s_idx > 1 and (b_start + rel_t) < duration - 1.0:
+            sfx_sound, sfx_vol = _select_step_sfx(idx, s_idx, num_steps, total_beats)
+            clips.append(
+                f'    <audio class="clip sfx" data-start="{_fmt_time(b_start + rel_t)}" data-duration="0.3" data-track-index="{track_counter}" src="assets/sfx/{sfx_sound}" data-volume="{sfx_vol}"></audio>'
+            )
+            track_counter += 1
+    return clips, track_counter, last_timings
+
+
 def _build_sfx_clips(
     beats: List[Dict[str, Any]],
     duration: float,
@@ -425,41 +480,12 @@ def _build_sfx_clips(
     last_step_timings: List[float] = []
 
     for idx, beat in enumerate(beats):
-        b_start = float(beat.get("start_s") if beat.get("start_s") is not None else beat.get("start_seconds", 0.0))
-        sfx_clips.append(
-            f'    <audio class="clip sfx" data-start="{_fmt_time(b_start)}" data-duration="0.8" data-track-index="{track_counter}" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>'
+        b_clips, track_counter, b_timings = _build_single_beat_sfx(
+            idx, beat, visuals_src, progressive_reveal, duration, len(beats), track_counter
         )
-        track_counter += 1
-
-        aid = beat.get("asset_id") or f"beat_{idx+1}"
-        vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
-        if progressive_reveal and vis_file.lower().endswith(EXT_SVG):
-            from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
-            from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
-            raw_end = float(beat.get("end_s", duration))
-            b_end = min(raw_end, duration) if idx == len(beats) - 1 else raw_end
-            beat_dur = max(0.5, b_end - b_start)
-            num_steps = 4 if (idx + 1 == 6 and len(beats) == 6) else STEP_COUNTS.get(idx + 1, 4)
-            s_func = str(beat.get("story_function", ""))
-            narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
-            is_final = (idx == len(beats) - 1)
-            step_timings = compute_step_timings_for_beat(
-                narration=narration,
-                duration=beat_dur,
-                num_steps=num_steps,
-                beat_start_s=b_start,
-                word_timestamps=beat.get("word_timestamps"),
-                is_final_beat=is_final,
-            )
-            if is_final:
-                last_step_timings = step_timings
-            for s_idx, rel_t in enumerate(step_timings, start=1):
-                if s_idx > 1 and (b_start + rel_t) < duration - 1.0:
-                    sfx_sound, sfx_vol = _select_step_sfx(idx, s_idx, num_steps, len(beats))
-                    sfx_clips.append(
-                        f'    <audio class="clip sfx" data-start="{_fmt_time(b_start + rel_t)}" data-duration="0.3" data-track-index="{track_counter}" src="assets/sfx/{sfx_sound}" data-volume="{sfx_vol}"></audio>'
-                    )
-                    track_counter += 1
+        sfx_clips.extend(b_clips)
+        if b_timings:
+            last_step_timings = b_timings
 
     cta_sfx_t = max(0.0, duration - 1.5)
     if beats:
@@ -504,6 +530,17 @@ def _build_sections_and_tweens(
     return sections_html, tweens_js
 
 
+def _has_beat_visuals(beats: List[Dict[str, Any]], visuals_src: Optional[Path]) -> bool:
+    if not (visuals_src and visuals_src.is_dir()):
+        return False
+    for b in beats:
+        aid = b.get("asset_id") or ""
+        vis_f = _resolve_beat_visual_file(b, visuals_src, aid)
+        if (visuals_src / vis_f).is_file():
+            return True
+    return False
+
+
 def compose_hyperframes_html(
     title: str,
     duration: float,
@@ -519,15 +556,7 @@ def compose_hyperframes_html(
     """Compose production HyperFrames HTML composition matching hyperframes-core contract."""
     import os
     formatted_date = _extract_formatted_date(topic, project_dir)
-
-    has_beat_visuals = False
-    if visuals_src and visuals_src.is_dir():
-        for b in beats:
-            aid = b.get("asset_id") or ""
-            vis_f = _resolve_beat_visual_file(b, visuals_src, aid)
-            if (visuals_src / vis_f).is_file():
-                has_beat_visuals = True
-                break
+    has_beat_visuals = _has_beat_visuals(beats, visuals_src)
 
     visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
     flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")

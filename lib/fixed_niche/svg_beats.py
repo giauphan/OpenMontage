@@ -25,6 +25,22 @@ from lib.fixed_niche.svg_icons import (
 )
 
 
+def _wrap_words_to_lines(words: list[str], max_chars: int) -> list[str]:
+    """Greedy word wrapping helper."""
+    lines: list[str] = []
+    cur = ""
+    for w in words:
+        cand = f"{cur} {w}".strip() if cur else w
+        if cur and len(cand) > max_chars:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = cand
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def _split_into_lines(text: str, max_chars: int) -> list[str]:
     """Split text into lines respecting '//' delimiters and max_chars limit."""
     clean = text.strip()
@@ -33,19 +49,7 @@ def _split_into_lines(text: str, max_chars: int) -> list[str]:
         return [parts[0], parts[1]]
     if len(clean) <= max_chars:
         return [clean]
-    words = clean.split()
-    lines = []
-    cur = ""
-    for w in words:
-        cand = f"{cur} {w}".strip() if cur else w
-        if len(cand) <= max_chars or not cur:
-            cur = cand
-        else:
-            lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    return lines
+    return _wrap_words_to_lines(clean.split(), max_chars)
 
 
 def render_wrapped_text(
@@ -74,19 +78,10 @@ def render_wrapped_text(
     return f'<text x="{x}" y="{y_offset}" fill="{fill}" font-family="{font_family}" font-size="{font_size}" font-weight="{font_weight}">{tspans}</text>'
 
 
-def build_vertical_beat(
-    beat_num: int,
-    total_beats: int,
-    fam_label: str,
-    cfg: Dict[str, str],
-    prefix: str = "",
-) -> tuple[str, str, str]:
-    """Build the accent color, header badge, and SVG body elements for a vertical pipeline beat."""
-    p = prefix
-    if beat_num == 1:
-        accent, badge = "#ef4444", f"{fam_label} // AI AGENT PIPELINE HOOK"
-        hook_alert = cfg.get("hook_alert", "⚡ CRITICAL FAILURE // RECURRING BREAKDOWN")
-        body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
+def _beat_1_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+    accent, badge = "#ef4444", f"{fam_label} // AI AGENT PIPELINE HOOK"
+    hook_alert = cfg.get("hook_alert", "⚡ CRITICAL FAILURE // RECURRING BREAKDOWN")
+    body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <rect x="470" y="41" width="460" height="28" rx="6" fill="#7f1d1d" stroke="#ef4444" stroke-width="1.5"/>
     <text x="700" y="60" fill="#fca5a5" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">{hook_alert}</text>
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">AI Agent Execution Pipeline</text>
@@ -146,9 +141,12 @@ def build_vertical_beat(
     <text x="880" y="829" fill="#ffffff" font-family="sans-serif" font-size="15" font-weight="bold" text-anchor="middle">✕</text>
   </g>
 """
-    elif beat_num == 2:
-        accent, badge = "#f59e0b", f"{fam_label} // DEVELOPER IMPACT"
-        body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
+    return accent, badge, body
+
+
+def _beat_2_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+    accent, badge = "#f59e0b", f"{fam_label} // DEVELOPER IMPACT"
+    body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">{cfg['impact_title']}</text>
     <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">{cfg['impact_sub']}</text>
   </g>
@@ -186,9 +184,12 @@ def build_vertical_beat(
     {render_metric_gauge(750, 655, r=32, percentage=0, label="AVAILABILITY", value_str="OFFLINE", color="#ef4444")}
   </g>
 """
-    elif beat_num == 3:
-        accent, badge = "#38bdf8", f"{fam_label} // ARCHITECTURAL MECHANISM"
-        body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
+    return accent, badge, body
+
+
+def _beat_3_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+    accent, badge = "#38bdf8", f"{fam_label} // ARCHITECTURAL MECHANISM"
+    body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">{cfg['mech_title']}</text>
     <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">{cfg['mech_sub']}</text>
   </g>
@@ -221,9 +222,12 @@ def build_vertical_beat(
     {render_metric_gauge(750, 700, r=32, percentage=99, label="AVAILABILITY", value_str="HEALTHY", color="#22c55e")}
   </g>
 """
-    elif beat_num == 4:
-        accent, badge = "#22c55e", f"{fam_label} // VERIFIED REMEDY"
-        body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
+    return accent, badge, body
+
+
+def _beat_4_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+    accent, badge = "#22c55e", f"{fam_label} // VERIFIED REMEDY"
+    body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">{cfg['remedy_title']}</text>
     <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">{cfg['remedy_sub']}</text>
   </g>
@@ -261,9 +265,12 @@ def build_vertical_beat(
     {render_metric_gauge(750, 655, r=32, percentage=100, label="STABILITY", value_str="STABLE", color="#22c55e")}
   </g>
 """
-    elif beat_num == 5:
-        accent, badge = "#22c55e", f"{fam_label} // VERIFICATION CHECKLIST"
-        body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
+    return accent, badge, body
+
+
+def _beat_5_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+    accent, badge = "#22c55e", f"{fam_label} // VERIFICATION CHECKLIST"
+    body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">Local Automated Verification Gate</text>
     <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">Asserting contract rule compliance before any git commit</text>
   </g>
@@ -305,9 +312,12 @@ def build_vertical_beat(
     {render_circuit_switch(415, 830, is_open=False, color="#22c55e", label="CI PASS: VERIFIED")}
   </g>
 """
-    elif beat_num == 6 and total_beats == 7:
-        accent, badge = "#8b5cf6", f"{fam_label} // CONTRACT ASSERTION"
-        body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
+    return accent, badge, body
+
+
+def _beat_6_contract_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+    accent, badge = "#8b5cf6", f"{fam_label} // CONTRACT ASSERTION"
+    body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">{cfg['contract_name']}</text>
     <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">{cfg['contract_desc']}</text>
   </g>
@@ -340,9 +350,12 @@ def build_vertical_beat(
     {render_metric_gauge(750, 710, r=30, percentage=100, label="ASSERTION", value_str="PASS", color="#8b5cf6")}
   </g>
 """
-    else:
-        accent, badge = "#38bdf8", f"{fam_label} // PRODUCTION SUMMARY"
-        body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
+    return accent, badge, body
+
+
+def _beat_default_content(p: str, fam_label: str, cfg: Dict[str, str]) -> tuple[str, str, str]:
+    accent, badge = "#38bdf8", f"{fam_label} // PRODUCTION SUMMARY"
+    body = f"""  <g id="{p}flow-header" class="flow-step flow-header" data-step-order="0">
     <text x="50" y="115" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">End-to-End Production Pipeline Flow</text>
     <text x="50" y="145" fill="#94a3b8" font-family="sans-serif" font-size="15">Complete architectural flow for resilient AI agent pipelines</text>
   </g>
@@ -396,6 +409,29 @@ def build_vertical_beat(
   </g>
 """
     return accent, badge, body
+
+
+def build_vertical_beat(
+    beat_num: int,
+    total_beats: int,
+    fam_label: str,
+    cfg: Dict[str, str],
+    prefix: str = "",
+) -> tuple[str, str, str]:
+    """Build the accent color, header badge, and SVG body elements for a vertical pipeline beat."""
+    if beat_num == 1:
+        return _beat_1_content(prefix, fam_label, cfg)
+    if beat_num == 2:
+        return _beat_2_content(prefix, fam_label, cfg)
+    if beat_num == 3:
+        return _beat_3_content(prefix, fam_label, cfg)
+    if beat_num == 4:
+        return _beat_4_content(prefix, fam_label, cfg)
+    if beat_num == 5:
+        return _beat_5_content(prefix, fam_label, cfg)
+    if beat_num == 6 and total_beats == 7:
+        return _beat_6_contract_content(prefix, fam_label, cfg)
+    return _beat_default_content(prefix, fam_label, cfg)
 
 
 def generate_horizontal_svg(

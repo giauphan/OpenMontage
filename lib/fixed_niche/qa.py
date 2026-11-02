@@ -27,6 +27,32 @@ class FixedNicheQAValidator:
         """Compute SHA256 checksum of a file."""
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
+    def _verify_file_hash(self, app_data: dict, app_path: Path, key: str, path: Path, status: str) -> bool:
+        expected = app_data.get(key) or (app_data.get("media_sha256") if key == "video_sha256" else None)
+        if not expected or not path.is_file() or self.compute_sha256(path).lower() != str(expected).lower():
+            app_data["approved"] = False
+            app_data["status"] = status if expected and path.is_file() else "INVALIDATED_MISSING_SIGNATURE"
+            app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
+            return False
+        return True
+
+    def _verify_signature(self, app_data: dict, app_path: Path, project_dir: Path) -> bool:
+        if "signature" not in app_data:
+            return True
+        try:
+            from lib.qa_signing import verify_approval_record
+            pid = str(app_data.get("project_id") or project_dir.name)
+            is_valid, _ = verify_approval_record(app_data, project_id=pid)
+            if not is_valid:
+                app_data["approved"] = False
+                app_data["status"] = "INVALIDATED_BY_SIGNATURE_FORGERY"
+                app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
+                return False
+            return True
+        except Exception as sig_err:
+            logger.warning(f"Signature verification error: {sig_err}")
+            return False
+
     def verify_audio_and_release_integrity(self, project_dir: Path) -> bool:
         """Verify that audio and video files on disk match the signed approval records.
 
@@ -48,48 +74,29 @@ class FixedNicheQAValidator:
         audio_path = project_dir / "assets" / "narration.mp3"
         video_path = project_dir / "renders" / "final_short_en_US_9x16.mp4"
 
-        for key, path, status in (
-            ("audio_sha256", audio_path, "INVALIDATED_BY_AUDIO_MUTATION"),
-            ("video_sha256", video_path, "INVALIDATED_BY_VIDEO_TAMPERING"),
-        ):
-            expected = app_data.get(key) or (app_data.get("media_sha256") if key == "video_sha256" else None)
-            if not expected or not path.is_file() or self.compute_sha256(path).lower() != str(expected).lower():
-                app_data["approved"] = False
-                app_data["status"] = status if expected and path.is_file() else "INVALIDATED_MISSING_SIGNATURE"
-                app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
-                return False
+        if not self._verify_file_hash(app_data, app_path, "audio_sha256", audio_path, "INVALIDATED_BY_AUDIO_MUTATION"):
+            return False
+        if not self._verify_file_hash(app_data, app_path, "video_sha256", video_path, "INVALIDATED_BY_VIDEO_TAMPERING"):
+            return False
 
-        if "signature" in app_data:
-            try:
-                from lib.qa_signing import verify_approval_record
-                pid = str(app_data.get("project_id") or project_dir.name)
-                is_valid, reason = verify_approval_record(app_data, project_id=pid)
-                if not is_valid:
-                    app_data["approved"] = False
-                    app_data["status"] = "INVALIDATED_BY_SIGNATURE_FORGERY"
-                    app_path.write_text(json.dumps(app_data, indent=2), encoding="utf-8")
-                    return False
-            except Exception as sig_err:
-                logger.warning(f"Signature verification error: {sig_err}")
-                return False
+        return self._verify_signature(app_data, app_path, project_dir)
 
         return True
 
     def _audit_scope(self, project_dir: Path) -> List[Dict[str, str]]:
-        findings = []
         scope_file = project_dir / "artifacts" / "fixed_niche_scope.json"
         if not scope_file.is_file():
-            findings.append({"category": "SCOPE", "severity": "blocker", "message": "Missing fixed_niche_scope.json"})
-        else:
-            try:
-                scope_data = json.loads(scope_file.read_text(encoding="utf-8"))
-                trace = scope_data.get("scope_trace", {})
-                if trace.get("niche_id") != self.policy.niche_id:
-                    findings.append({"category": "SCOPE", "severity": "blocker", "message": f"Niche ID mismatch: {trace.get('niche_id')}"})
-                if trace.get("policy_sha256") != self.policy.policy_sha256:
-                    findings.append({"category": "POLICY_TAMPERING", "severity": "blocker", "message": "Policy SHA256 mismatch"})
-            except Exception as e:
-                findings.append({"category": "SCOPE", "severity": "blocker", "message": f"Malformed scope artifact: {e}"})
+            return [{"category": "SCOPE", "severity": "blocker", "message": "Missing fixed_niche_scope.json"}]
+        findings = []
+        try:
+            scope_data = json.loads(scope_file.read_text(encoding="utf-8"))
+            trace = scope_data.get("scope_trace", {})
+            if trace.get("niche_id") != self.policy.niche_id:
+                findings.append({"category": "SCOPE", "severity": "blocker", "message": f"Niche ID mismatch: {trace.get('niche_id')}"})
+            if trace.get("policy_sha256") != self.policy.policy_sha256:
+                findings.append({"category": "POLICY_TAMPERING", "severity": "blocker", "message": "Policy SHA256 mismatch"})
+        except Exception as e:
+            findings.append({"category": "SCOPE", "severity": "blocker", "message": f"Malformed scope artifact: {e}"})
         return findings
 
     @staticmethod
@@ -205,23 +212,38 @@ class FixedNicheQAValidator:
         return findings
 
     @staticmethod
-    def _audit_duration(project_dir: Path, duration_tolerance: float) -> List[Dict[str, str]]:
+    def _get_target_duration_bounds(expected_duration: float, tolerance: float) -> Tuple[float, float]:
+        """Compute min and max allowable duration bounds."""
+        if expected_duration == 72.0:
+            return 65.0 - tolerance, 75.0 + tolerance
+        return expected_duration - tolerance, expected_duration + tolerance
+
+    @classmethod
+    def _audit_duration(
+        cls,
+        project_dir: Path,
+        expected_duration: float = 72.0,
+        duration_tolerance: float = 3.0,
+    ) -> List[Dict[str, str]]:
         findings = []
         ffprobe_file = project_dir / "renders" / "ffprobe.json"
-        if ffprobe_file.is_file():
-            try:
-                probe_data = json.loads(ffprobe_file.read_text(encoding="utf-8"))
-                dur_str = probe_data.get("format", {}).get("duration")
-                if dur_str:
-                    dur = float(dur_str)
-                    if not (65.0 - duration_tolerance <= dur <= 75.0 + duration_tolerance):
-                        findings.append({
-                            "category": "DURATION",
-                            "severity": "blocker",
-                            "message": f"Video duration {dur:.2f}s outside target [65.0, 75.0]s range",
-                        })
-            except Exception as e:
-                findings.append({"category": "DURATION", "severity": "warning", "message": f"Could not parse ffprobe duration: {e}"})
+        if not ffprobe_file.is_file():
+            return findings
+        try:
+            probe_data = json.loads(ffprobe_file.read_text(encoding="utf-8"))
+            dur_str = probe_data.get("format", {}).get("duration")
+            if not dur_str:
+                return findings
+            dur = float(dur_str)
+            min_dur, max_dur = cls._get_target_duration_bounds(expected_duration, duration_tolerance)
+            if not (min_dur <= dur <= max_dur):
+                findings.append({
+                    "category": "DURATION",
+                    "severity": "blocker",
+                    "message": f"Video duration {dur:.2f}s outside target [{min_dur:.1f}, {max_dur:.1f}]s range",
+                })
+        except Exception as e:
+            findings.append({"category": "DURATION", "severity": "warning", "message": f"Could not parse ffprobe duration: {e}"})
         return findings
 
     @staticmethod
@@ -247,66 +269,146 @@ class FixedNicheQAValidator:
         return findings
 
     @staticmethod
-    def _audit_claims_and_proofs(project_dir: Path) -> List[Dict[str, str]]:
-        findings = []
-        claim_ledger_file = project_dir / "artifacts" / "claim_ledger.json"
-        snapshot_file = project_dir / "artifacts" / "source_snapshot.txt"
-        proof_map_file = project_dir / "artifacts" / "video_proof_map.json"
+    def _audit_claim_snapshot_match(claim: Dict[str, Any], actual_sha: Optional[str]) -> Optional[Dict[str, str]]:
+        """Validate an individual verified claim against source snapshot hash."""
+        cid = claim.get("claim_id")
+        if actual_sha is None:
+            return {"category": "SNAPSHOT_PROVENANCE", "severity": "blocker", "message": f"Claim {cid} marked verified but source_snapshot.txt missing on disk"}
+        expected_sha = claim.get("snapshot_sha256")
+        if expected_sha and actual_sha.lower() != str(expected_sha).lower():
+            return {
+                "category": "SNAPSHOT_PROVENANCE",
+                "severity": "blocker",
+                "message": f"Claim {cid} snapshot SHA256 mismatch: expected {expected_sha}, got {actual_sha}",
+            }
+        return None
 
+    @classmethod
+    def _audit_verified_claims_snapshot(cls, claims: List[Dict[str, Any]], snapshot_file: Path) -> List[Dict[str, str]]:
+        """Audit source snapshot provenance for all verified claims in the ledger."""
+        actual_sha = hashlib.sha256(snapshot_file.read_bytes()).hexdigest() if snapshot_file.is_file() else None
+        findings: List[Dict[str, str]] = []
+        for claim in claims:
+            if claim.get("confidence") != "verified":
+                continue
+            match_finding = cls._audit_claim_snapshot_match(claim, actual_sha)
+            if match_finding:
+                findings.append(match_finding)
+        return findings
+
+    @staticmethod
+    def _validate_proof_beat_claim(
+        beat_id: Any, is_proof_bearing: bool, ref_cid: Any, claim_by_id: Dict[str, Any]
+    ) -> Optional[Dict[str, str]]:
+        """Validate that a proof-bearing beat only references verified claims."""
+        if not is_proof_bearing:
+            return None
+        ref_claim = claim_by_id.get(ref_cid)
+        if not ref_claim or ref_claim.get("confidence") != "verified":
+            return {
+                "category": "UNVERIFIED_CLAIM_IN_PROOF_BEAT",
+                "severity": "blocker",
+                "message": f"Proof-bearing beat '{beat_id}' references unverified claim '{ref_cid}' without snapshot provenance",
+            }
+        return None
+
+    @classmethod
+    def _audit_proof_map_claims(cls, proof_map_file: Path, claim_by_id: Dict[str, Any]) -> List[Dict[str, str]]:
+        """Audit video proof map beats against verified claims in ledger."""
+        if not proof_map_file.is_file():
+            return [{"category": "PROOF_MAP", "severity": "blocker", "message": "Missing video_proof_map.json artifact: technical claims must map to beat proofs"}]
+        try:
+            proof_data = json.loads(proof_map_file.read_text(encoding="utf-8"))
+        except Exception as pe:
+            return [{"category": "EVIDENCE", "severity": "warning", "message": f"Proof map audit error: {pe}"}]
+
+        findings: List[Dict[str, str]] = []
+        for pb in proof_data.get("beats", []):
+            bid = pb.get("beat_id")
+            is_proof_bearing = bool(pb.get("is_proof_bearing") or pb.get("requires_real_demo"))
+            cids = pb.get("claim_ids") or ([pb.get("claim_id")] if pb.get("claim_id") else [])
+            for ref_cid in cids:
+                finding = cls._validate_proof_beat_claim(bid, is_proof_bearing, ref_cid, claim_by_id)
+                if finding:
+                    findings.append(finding)
+        return findings
+
+    @classmethod
+    def _audit_claims_and_proofs(cls, project_dir: Path) -> List[Dict[str, str]]:
+        """Audit claims ledger, source snapshot hashes, and proof-bearing beats."""
+        claim_ledger_file = project_dir / "artifacts" / "claim_ledger.json"
         if not claim_ledger_file.is_file():
-            findings.append({"category": "EVIDENCE", "severity": "blocker", "message": "Missing claim_ledger.json"})
-            return findings
+            return [{"category": "EVIDENCE", "severity": "blocker", "message": "Missing claim_ledger.json"}]
 
         try:
             ledger_data = json.loads(claim_ledger_file.read_text(encoding="utf-8"))
             claims = ledger_data.get("claims", [])
-            claim_by_id = {c.get("claim_id"): c for c in claims}
-
-            for c in claims:
-                cid = c.get("claim_id")
-                if c.get("confidence") == "verified":
-                    if not snapshot_file.is_file():
-                        findings.append({
-                            "category": "SNAPSHOT_PROVENANCE",
-                            "severity": "blocker",
-                            "message": f"Claim {cid} marked verified but source_snapshot.txt missing on disk",
-                        })
-                    else:
-                        actual_sha = hashlib.sha256(snapshot_file.read_bytes()).hexdigest()
-                        expected_sha = c.get("snapshot_sha256")
-                        if expected_sha and actual_sha.lower() != str(expected_sha).lower():
-                            findings.append({
-                                "category": "SNAPSHOT_PROVENANCE",
-                                "severity": "blocker",
-                                "message": f"Claim {cid} snapshot SHA256 mismatch: expected {expected_sha}, got {actual_sha}",
-                            })
-
-            if not proof_map_file.is_file():
-                findings.append({
-                    "category": "PROOF_MAP",
-                    "severity": "blocker",
-                    "message": "Missing video_proof_map.json artifact: technical claims must map to beat proofs",
-                })
-            else:
-                try:
-                    proof_data = json.loads(proof_map_file.read_text(encoding="utf-8"))
-                    for pb in proof_data.get("beats", []):
-                        bid = pb.get("beat_id")
-                        is_proof_bearing = pb.get("is_proof_bearing", False) or pb.get("requires_real_demo", False)
-                        cids = pb.get("claim_ids") or ([pb.get("claim_id")] if pb.get("claim_id") else [])
-                        for ref_cid in cids:
-                            ref_claim = claim_by_id.get(ref_cid)
-                            if is_proof_bearing and (not ref_claim or ref_claim.get("confidence") != "verified"):
-                                findings.append({
-                                    "category": "UNVERIFIED_CLAIM_IN_PROOF_BEAT",
-                                    "severity": "blocker",
-                                    "message": f"Proof-bearing beat '{bid}' references unverified claim '{ref_cid}' without snapshot provenance",
-                                })
-                except Exception as pe:
-                    findings.append({"category": "EVIDENCE", "severity": "warning", "message": f"Proof map audit error: {pe}"})
         except Exception as e:
-            findings.append({"category": "EVIDENCE", "severity": "blocker", "message": f"Malformed claim ledger: {e}"})
+            return [{"category": "EVIDENCE", "severity": "blocker", "message": f"Malformed claim ledger: {e}"}]
+
+        snapshot_file = project_dir / "artifacts" / "source_snapshot.txt"
+        proof_map_file = project_dir / "artifacts" / "video_proof_map.json"
+        claim_by_id = {c.get("claim_id"): c for c in claims}
+
+        findings: List[Dict[str, str]] = []
+        findings.extend(cls._audit_verified_claims_snapshot(claims, snapshot_file))
+        findings.extend(cls._audit_proof_map_claims(proof_map_file, claim_by_id))
         return findings
+
+    def _audit_topic_and_claims(self, project_dir: Path) -> List[Dict[str, str]]:
+        """Audit scope, topic policy conformity, claims ledger, and proof maps."""
+        findings: List[Dict[str, str]] = []
+        findings.extend(self._audit_scope(project_dir))
+        findings.extend(self._audit_claims_and_proofs(project_dir))
+        return findings
+
+    def _audit_spec_and_storyboard(self, project_dir: Path) -> List[Dict[str, str]]:
+        """Audit editorial script CTA and visual plan storyboard assets."""
+        findings: List[Dict[str, str]] = []
+        findings.extend(self._audit_cta(project_dir))
+        findings.extend(self._audit_visual_plan(project_dir))
+        return findings
+
+    def _audit_render_and_duration(
+        self,
+        project_dir: Path,
+        expected_duration: float = 72.0,
+        duration_tolerance: float = 3.0,
+    ) -> List[Dict[str, str]]:
+        """Audit frame samples quality and final video duration."""
+        findings: List[Dict[str, str]] = []
+        findings.extend(self._audit_frame_samples(project_dir))
+        findings.extend(self._audit_duration(project_dir, expected_duration, duration_tolerance))
+        return findings
+
+    def _audit_manifests_and_hashes(self, project_dir: Path) -> List[Dict[str, str]]:
+        """Audit deliverable manifests and cryptographic release integrity when present."""
+        findings: List[Dict[str, str]] = []
+        app_path = project_dir / "approval.json"
+        if not app_path.is_file():
+            return findings
+        try:
+            app_data = json.loads(app_path.read_text(encoding="utf-8"))
+            if app_data.get("approved") and not self.verify_audio_and_release_integrity(project_dir):
+                findings.append({
+                    "category": "RELEASE_INTEGRITY",
+                    "severity": "blocker",
+                    "message": "Approval record signature or media hash integrity check failed",
+                })
+        except Exception:
+            pass
+        return findings
+
+    @staticmethod
+    def _persist_qa_report(project_dir: Path, report: Dict[str, Any]) -> None:
+        """Persist production QA report artifact to disk."""
+        try:
+            qa_report_path = project_dir / "artifacts" / "production_qa_report.json"
+            qa_report_path.parent.mkdir(parents=True, exist_ok=True)
+            qa_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        except OSError as e:
+            report["artifact_persisted"] = False
+            report["artifact_persistence_warning"] = f"Could not persist production_qa_report.json: {e}"
 
     def audit_fixed_niche_deliverable(
         self,
@@ -318,12 +420,10 @@ class FixedNicheQAValidator:
         project_dir = Path(project_dir)
         findings: List[Dict[str, str]] = []
 
-        findings.extend(self._audit_scope(project_dir))
-        findings.extend(self._audit_visual_plan(project_dir))
-        findings.extend(self._audit_frame_samples(project_dir))
-        findings.extend(self._audit_duration(project_dir, duration_tolerance))
-        findings.extend(self._audit_cta(project_dir))
-        findings.extend(self._audit_claims_and_proofs(project_dir))
+        findings.extend(self._audit_topic_and_claims(project_dir))
+        findings.extend(self._audit_spec_and_storyboard(project_dir))
+        findings.extend(self._audit_render_and_duration(project_dir, expected_duration, duration_tolerance))
+        findings.extend(self._audit_manifests_and_hashes(project_dir))
 
         blockers = [f for f in findings if f.get("severity") == "blocker"]
         strict_pass = len(blockers) == 0
@@ -337,13 +437,5 @@ class FixedNicheQAValidator:
             "artifact_persisted": True,
         }
 
-        # Write production_qa_report.json
-        try:
-            qa_report_path = project_dir / "artifacts" / "production_qa_report.json"
-            qa_report_path.parent.mkdir(parents=True, exist_ok=True)
-            qa_report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        except OSError as e:
-            report["artifact_persisted"] = False
-            report["artifact_persistence_warning"] = f"Could not persist production_qa_report.json: {e}"
-
+        self._persist_qa_report(project_dir, report)
         return report
