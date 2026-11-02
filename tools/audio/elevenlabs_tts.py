@@ -290,13 +290,111 @@ class ElevenLabsTTS(BaseTool):
         result.cost_usd = self.estimate_cost(inputs)
         return result
 
+    def _build_payload_and_params(
+        self,
+        is_speech: bool,
+        text: str,
+        model_id: str,
+        voice_id: str,
+        speed: float,
+        voice_settings: dict[str, Any],
+        output_format: str,
+    ) -> tuple[dict[str, Any], dict[str, str] | None, str]:
+        if is_speech:
+            resolved_format = "mp3_44100_128"
+            payload = {
+                "model": model_id,
+                "input": text,
+                "text": text,
+                "voice": voice_id,
+                "voice_id": voice_id,
+                "speed": speed,
+                "response_format": "mp3",
+                "voice_settings": voice_settings,
+            }
+            params = None
+        else:
+            resolved_format = output_format
+            payload = {
+                "text": text,
+                "model_id": model_id,
+                "voice_settings": voice_settings,
+            }
+            params = {"output_format": resolved_format}
+        return payload, params, resolved_format
+
+    def _post_with_fallbacks(
+        self,
+        requests_mod: Any,
+        endpoint: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        params: dict[str, str] | None,
+        timeout: float,
+        voice_id: str,
+    ) -> tuple[Any, str, str]:
+        try:
+            response = requests_mod.post(
+                endpoint,
+                headers=headers,
+                json=payload,
+                params=params,
+                timeout=timeout,
+            )
+        except requests_mod.exceptions.RequestException as req_err:
+            raise RuntimeError(f"ElevenLabs connection error to {endpoint}: {req_err}") from req_err
+
+        # Automatic gateway port resolution (20129 -> 20128) if 20129 has no audio/speech route
+        if response.status_code in (400, 404) and ":20129" in endpoint:
+            alt_ep = endpoint.replace(":20129", ":20128")
+            try:
+                alt_resp = requests_mod.post(alt_ep, headers=headers, json=payload, params=params, timeout=timeout)
+                if alt_resp.status_code in (200, 402):
+                    response = alt_resp
+                    endpoint = alt_ep
+            except Exception:
+                pass
+
+        # Automatic premade voice fallback for free-tier library voice restrictions
+        if response.status_code == 402 and "library" in response.text.lower():
+            premade_voice = "IKne3meq5aSn9XLyUdCD"  # Charlie (premade, universal)
+            if voice_id != premade_voice:
+                if "voice" in payload:
+                    payload["voice"] = premade_voice
+                if "voice_id" in payload:
+                    payload["voice_id"] = premade_voice
+                voice_id = premade_voice
+                if "/text-to-speech/" in endpoint:
+                    endpoint = endpoint.rsplit("/", 1)[0] + f"/{premade_voice}"
+                try:
+                    response = requests_mod.post(endpoint, headers=headers, json=payload, params=params, timeout=timeout)
+                except Exception:
+                    pass
+
+        return response, endpoint, voice_id
+
+    def _save_audio_file(self, raw_output: str, audio_bytes: bytes, output_format: str) -> Path:
+        ext = "mp3" if "mp3" in output_format else "wav"
+        output_str = raw_output or f"tts_output.{ext}"
+        output_path = Path(output_str).expanduser().resolve()
+        allowed_roots = (
+            ROOT.resolve(),
+            Path.cwd().resolve(),
+            Path.home().resolve(),
+            Path(tempfile.gettempdir()).resolve(),
+        )
+        if not any(output_path.is_relative_to(r) for r in allowed_roots if r != Path(r.anchor)):
+            raise ValueError(f"Path traversal detected: {output_str}")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(audio_bytes)
+        return output_path
+
     def _generate(self, inputs: dict[str, Any], api_key: str) -> ToolResult:
         import requests
 
         text = inputs["text"]
         voice_id = self.resolve_voice_id(inputs.get("voice_id"))
         model_id = inputs.get("model_id", "eleven_multilingual_v2")
-        output_format = inputs.get("output_format", "mp3_44100_128")
         raw_speed = float(inputs.get("speed", 1.0))
         speed = max(0.7, min(1.2, raw_speed))
         voice_settings = {
@@ -316,65 +414,14 @@ class ElevenLabsTTS(BaseTool):
             "Accept": "audio/mpeg",
         }
 
-        if is_speech:
-            output_format = "mp3_44100_128"
-            payload = {
-                "model": model_id,
-                "input": text,
-                "text": text,
-                "voice": voice_id,
-                "voice_id": voice_id,
-                "speed": speed,
-                "response_format": "mp3",
-                "voice_settings": voice_settings,
-            }
-            params = None
-        else:
-            payload = {
-                "text": text,
-                "model_id": model_id,
-                "voice_settings": voice_settings,
-            }
-            params = {"output_format": output_format}
+        payload, params, output_format = self._build_payload_and_params(
+            is_speech, text, model_id, voice_id, speed, voice_settings, inputs.get("output_format", "mp3_44100_128")
+        )
 
         timeout = float(inputs.get("timeout", 120))
-        try:
-            response = requests.post(
-                endpoint,
-                headers=headers,
-                json=payload,
-                params=params,
-                timeout=timeout,
-            )
-        except requests.exceptions.RequestException as req_err:
-            raise RuntimeError(f"ElevenLabs connection error to {endpoint}: {req_err}") from req_err
-
-        # Automatic gateway port resolution (20129 -> 20128) if 20129 has no audio/speech route
-        if response.status_code in (400, 404) and ":20129" in endpoint:
-            alt_ep = endpoint.replace(":20129", ":20128")
-            try:
-                alt_resp = requests.post(alt_ep, headers=headers, json=payload, params=params, timeout=timeout)
-                if alt_resp.status_code in (200, 402):
-                    response = alt_resp
-                    endpoint = alt_ep
-            except Exception:
-                pass
-
-        # Automatic premade voice fallback for free-tier library voice restrictions
-        if response.status_code == 402 and "library" in response.text.lower():
-            premade_voice = "IKne3meq5aSn9XLyUdCD"  # Charlie (premade, universal)
-            if voice_id != premade_voice:
-                if "voice" in payload:
-                    payload["voice"] = premade_voice
-                if "voice_id" in payload:
-                    payload["voice_id"] = premade_voice
-                voice_id = premade_voice
-                if "/text-to-speech/" in endpoint:
-                    endpoint = endpoint.rsplit("/", 1)[0] + f"/{premade_voice}"
-                try:
-                    response = requests.post(endpoint, headers=headers, json=payload, params=params, timeout=timeout)
-                except Exception:
-                    pass
+        response, endpoint, voice_id = self._post_with_fallbacks(
+            requests, endpoint, headers, payload, params, timeout, voice_id
+        )
 
         if response.status_code != 200:
             err_msg = response.text[:300] if response.text else f"status {response.status_code}"
@@ -384,19 +431,7 @@ class ElevenLabsTTS(BaseTool):
         if not audio_bytes or len(audio_bytes) < 10:
             raise RuntimeError(f"ElevenLabs returned empty or invalid audio payload ({len(audio_bytes)} bytes)")
 
-        ext = "mp3" if "mp3" in output_format else "wav"
-        raw_output = str(inputs.get("output_path") or f"tts_output.{ext}")
-        output_path = Path(raw_output).expanduser().resolve()
-        allowed_roots = (
-            ROOT.resolve(),
-            Path.cwd().resolve(),
-            Path.home().resolve(),
-            Path(tempfile.gettempdir()).resolve(),
-        )
-        if not any(output_path.is_relative_to(r) for r in allowed_roots if r != Path(r.anchor)):
-            raise ValueError(f"Path traversal detected: {raw_output}")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(audio_bytes)
+        output_path = self._save_audio_file(str(inputs.get("output_path") or ""), audio_bytes, output_format)
 
         return ToolResult(
             success=True,

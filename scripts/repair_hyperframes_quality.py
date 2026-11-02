@@ -124,65 +124,62 @@ def probe_duration(path: Path) -> float:
         return 0.0
 
 
-def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False) -> None:
-    html = path.read_text(encoding="utf-8")
-    locale = "vi-VN"
-    try:
-        from lib.artifact_paths import resolve_project_locale
-        locale = resolve_project_locale(path.parent.parent)
-    except Exception:
-        pass
-    is_landscape = locale == "en-US" and path.parent.name == "hyperframes"
-    default_width, default_height = (1920, 1080) if is_landscape else (PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+def _patch_locale_viewport(
+    html: str, path: Path, locale: str, is_landscape: bool, default_width: int, default_height: int
+) -> str:
+    if locale != "en-US" or path.parent.name not in ("hyperframes", "hyperframes_reels"):
+        return html
+    wrong_w, wrong_h = (1080, 1920) if is_landscape else (1920, 1080)
 
-    if locale == "en-US" and path.parent.name in ("hyperframes", "hyperframes_reels"):
-        wrong_w, wrong_h = (1080, 1920) if is_landscape else (1920, 1080)
+    def _fix_viewport(m: re.Match) -> str:
+        tag = m.group(0)
+        tag = re.sub(rf"\bwidth\s*=\s*{wrong_w}\b", f"width={default_width}", tag)
+        tag = re.sub(rf"\bheight\s*=\s*{wrong_h}\b", f"height={default_height}", tag)
+        return tag
 
-        def _fix_viewport(m: re.Match) -> str:
-            tag = m.group(0)
-            tag = re.sub(rf"\bwidth\s*=\s*{wrong_w}\b", f"width={default_width}", tag)
-            tag = re.sub(rf"\bheight\s*=\s*{wrong_h}\b", f"height={default_height}", tag)
-            return tag
+    html = re.sub(r"<meta\b[^>]*\bname=[\"']viewport[\"'][^>]*>", _fix_viewport, html, flags=re.I)
 
-        html = re.sub(r"<meta\b[^>]*\bname=[\"']viewport[\"'][^>]*>", _fix_viewport, html, flags=re.I)
+    def _fix_css_rule(m: re.Match) -> str:
+        full = m.group(0)
+        body = m.group(1)
+        if re.search(rf"(?<![-\w])width\s*:\s*{wrong_w}px", body) and re.search(rf"(?<![-\w])height\s*:\s*{wrong_h}px", body):
+            new_body = re.sub(rf"(?<![-\w])width\s*:\s*{wrong_w}px", f"width: {default_width}px", body)
+            new_body = re.sub(rf"(?<![-\w])height\s*:\s*{wrong_h}px", f"height: {default_height}px", new_body)
+            return full[: m.start(1) - m.start(0)] + new_body + "}"
+        return full
 
-        def _fix_css_rule(m: re.Match) -> str:
-            full = m.group(0)
-            body = m.group(1)
-            if re.search(rf"(?<![-\w])width\s*:\s*{wrong_w}px", body) and re.search(rf"(?<![-\w])height\s*:\s*{wrong_h}px", body):
-                new_body = re.sub(rf"(?<![-\w])width\s*:\s*{wrong_w}px", f"width: {default_width}px", body)
-                new_body = re.sub(rf"(?<![-\w])height\s*:\s*{wrong_h}px", f"height: {default_height}px", new_body)
-                return full[: m.start(1) - m.start(0)] + new_body + "}"
-            return full
+    return re.sub(r"(?:#root|#stage|body|html)\b[^{}]*\{([^{}]*)\}", _fix_css_rule, html)
 
-        html = re.sub(r"(?:#root|#stage|body|html)\b[^{}]*\{([^{}]*)\}", _fix_css_rule, html)
 
-    # Calculate original duration of scenes to avoid incorrectly skipping timeline alignment
-    # when data-duration is missing or stale on the root element
+def _calculate_scenes_max_end(html: str) -> float:
     max_end = 0.0
     for match in re.finditer(r'<[a-zA-Z]+\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\'][^>]*>', html):
         tag = match.group(0)
-        s_match = re.search(r'\bdata-start=["\']([0-9.]+)[\"\']', tag)
-        d_match = re.search(r'\bdata-duration=["\']([0-9.]+)[\"\']', tag)
-        e_match = re.search(r'\bdata-end=["\']([0-9.]+)[\"\']', tag)
-        if s_match and d_match:
-            max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
-        elif e_match:
-            max_end = max(max_end, float(e_match.group(1)))
+        s_m = re.search(r'\bdata-start=["\']([0-9.]+)["\']', tag)
+        d_m = re.search(r'\bdata-duration=["\']([0-9.]+)["\']', tag)
+        e_m = re.search(r'\bdata-end=["\']([0-9.]+)["\']', tag)
+        if s_m and d_m:
+            max_end = max(max_end, float(s_m.group(1)) + float(d_m.group(1)))
+        elif e_m:
+            max_end = max(max_end, float(e_m.group(1)))
     if max_end == 0.0:
         for match in re.finditer(r'<[a-zA-Z]+\b(?!data-composition-id)[^>]*>', html):
             tag = match.group(0)
             if "data-composition-id" in tag:
                 continue
-            s_match = re.search(r'\bdata-start=["\']([0-9.]+)[\"\']', tag)
-            d_match = re.search(r'\bdata-duration=["\']([0-9.]+)[\"\']', tag)
-            e_match = re.search(r'\bdata-end=["\']([0-9.]+)[\"\']', tag)
-            if s_match and d_match:
-                max_end = max(max_end, float(s_match.group(1)) + float(d_match.group(1)))
-            elif e_match:
-                max_end = max(max_end, float(e_match.group(1)))
+            s_m = re.search(r'\bdata-start=["\']([0-9.]+)["\']', tag)
+            d_m = re.search(r'\bdata-duration=["\']([0-9.]+)["\']', tag)
+            e_m = re.search(r'\bdata-end=["\']([0-9.]+)["\']', tag)
+            if s_m and d_m:
+                max_end = max(max_end, float(s_m.group(1)) + float(d_m.group(1)))
+            elif e_m:
+                max_end = max(max_end, float(e_m.group(1)))
+    return max_end
 
-    # Ensure composition root has required attributes.
+
+def _normalize_root_element(
+    html: str, path: Path, max_end: float, narration_duration: float, default_width: int, default_height: int, locale: str, is_landscape: bool
+) -> str:
     root_open = re.search(r"<(?!body\b)[a-zA-Z0-9]+\b(?![^>]*\bclass=[\"'][^\"']*\bscene\b)(?=[^>]*(?:\bdata-composition-id=|id=[\"'](?:main|stage|composition|root)[\"']|class=[\"'][^\"']*\b(?:composition|frame|stage)\b[^\"']*[\"']))[^>]*>", html)
     if not root_open:
         root_open = re.search(r"<main\b[^>]*>", html)
@@ -198,16 +195,15 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
                 f'<div id="stage" class="composition" data-composition-id="main" '
                 f'data-start="0" data-duration="{initial_dur:.3f}" data-width="{default_width}" data-height="{default_height}">\n'
             )
-            stage_close = "\n</div>\n"
-            inner_scenes = html[start_pos:end_pos]
-            inner_scenes = re.sub(r'\s+data-composition-id=([\'"])[^\'"]+\1', '', inner_scenes)
-            html = html[:start_pos] + stage_open + inner_scenes + stage_close + html[end_pos:]
+            inner_scenes = re.sub(r'\s+data-composition-id=([\'"])[^\'"]+\1', '', html[start_pos:end_pos])
+            html = html[:start_pos] + stage_open + inner_scenes + "\n</div>\n" + html[end_pos:]
             root_open = re.search(r"<div\b[^>]*id=[\"']stage[\"'][^>]*>", html)
             if "#stage" not in html and TAG_STYLE_OPEN in html:
                 stage_css = f"\n        #stage {{ position: relative; width: {default_width}px; height: {default_height}px; overflow: hidden; background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif; }}\n"
                 html = html.replace(TAG_STYLE_OPEN, TAG_STYLE_OPEN + stage_css, 1)
         else:
             root_open = re.search(r"<div\b[^>]*>", html)
+
     if root_open:
         tag = root_open.group(0)
         tag_match = re.match(r"<([a-zA-Z0-9]+)", tag)
@@ -232,7 +228,32 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             new_tag = new_tag.replace(tag_prefix, f'{tag_prefix} data-start="0"', 1)
         if new_tag != tag:
             html = html[:root_open.start()] + new_tag + html[root_open.end():]
+    return html
 
+
+def _patch_badges_and_attributions(html: str) -> str:
+    # Remove any header bars, logo badges, or top ticker banners
+    for pat in (
+        r"<div\b[^>]*\bclass=[\"'][^>]*\bheader-bar\b[^>]*[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bclass=[\"'][^>]*\bbrand-logo\b[^>]*[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bclass=[\"'][^>]*\blive-badge\b[^>]*[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bclass=[\"'][^>]*\btag-badge\b[^>]*[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bclass=[\"'][^>]*\bbadge-label\b[^>]*[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bid=[\"']source-badge[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bclass=[\"'][^>]*\bsource-badge\b[^>]*[\"'][^>]*>.*?</div>",
+    ):
+        html = re.sub(pat, "", html, flags=re.IGNORECASE | re.DOTALL)
+
+    html = html.replace("#source-badge, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")
+    html = html.replace("#source-badge, .source, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")
+    html = re.sub(r"\.source\s*,\s*", "", html)
+    html = re.sub(r",\s*\.source(?=\s*\{)", "", html)
+    if ".source {" in html and "display: none" in html:
+        html = html.replace(".source { display: none", ".source-legacy-removed { display: none")
+    return html
+
+
+def _patch_typography_and_css(html: str, path: Path) -> str:
     if "font-family: 'BeVietnamPro'" not in html:
         if TAG_STYLE_OPEN not in html:
             if TAG_HEAD_CLOSE in html:
@@ -242,265 +263,87 @@ def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False
             else:
                 html = f"{TAG_STYLE_OPEN}</style>\n" + html
         html = html.replace(TAG_STYLE_OPEN, f"{TAG_STYLE_OPEN}\n    " + FONT_CSS, 1)
-    html = re.sub(
-        r"--font-heading:\s*[^;]+;",
-        "--font-heading: 'BeVietnamPro', Arial, sans-serif;",
-        html,
-    )
-    html = re.sub(
-        r"--font-body:\s*[^;]+;",
-        "--font-body: 'BeVietnamPro', Arial, sans-serif;",
-        html,
-    )
+
+    html = re.sub(r"--font-heading:\s*[^;]+;", "--font-heading: 'BeVietnamPro', Arial, sans-serif;", html)
+    html = re.sub(r"--font-body:\s*[^;]+;", "--font-body: 'BeVietnamPro', Arial, sans-serif;", html)
     if "--font-heading:" not in html or "--font-body:" not in html:
         root_match = re.search(r":root\s*\{([^{}]*)\}", html)
         if root_match:
-            declarations = root_match.group(1)
-            if "--font-heading:" not in declarations:
-                declarations += " --font-heading: 'BeVietnamPro', Arial, sans-serif;"
-            if "--font-body:" not in declarations:
-                declarations += " --font-body: 'BeVietnamPro', Arial, sans-serif;"
-            html = html[:root_match.start(1)] + declarations + html[root_match.end(1):]
+            decl = root_match.group(1)
+            if "--font-heading:" not in decl:
+                decl += " --font-heading: 'BeVietnamPro', Arial, sans-serif;"
+            if "--font-body:" not in decl:
+                decl += " --font-body: 'BeVietnamPro', Arial, sans-serif;"
+            html = html[:root_match.start(1)] + decl + html[root_match.end(1):]
         elif "</style>" in html:
-            html = html.replace(
-                "</style>",
-                ":root { --font-heading: 'BeVietnamPro', Arial, sans-serif; --font-body: 'BeVietnamPro', Arial, sans-serif; }\n</style>",
-                1,
-            )
+            html = html.replace("</style>", ":root { --font-heading: 'BeVietnamPro', Arial, sans-serif; --font-body: 'BeVietnamPro', Arial, sans-serif; }\n</style>", 1)
         else:
             raise ValueError(f"{path}: missing style element for font bindings")
-    # Remove any header bars, logo badges, or top ticker banners
-    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bheader-bar\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bbrand-logo\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\blive-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\btag-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bbadge-label\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
 
-    # Strict transparency: NEVER inject display:none for news source attribution.
-    # Remove any badge nodes that remain from director artifacts, but do NOT
-    # inject a hide rule. The retired "hide all sources" behavior was the
-    # Content Appropriateness blocker (cand_adf 58/100).
-    html = re.sub(r"<div\b[^>]*\bid=[\"']source-badge[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    html = re.sub(r"<div\b[^>]*\bclass=[\"'][^>]*\bsource-badge\b[^>]*[\"'][^>]*>.*?</div>", "", html, flags=re.IGNORECASE | re.DOTALL)
-    # Strip any hide rule that was previously injected by older repair versions.
-    html = html.replace("#source-badge, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")
-    html = html.replace("#source-badge, .source, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")
-    html = re.sub(r"\.source\s*,\s*", "", html)
-    html = re.sub(r",\s*\.source(?=\s*\{)", "", html)
-    if ".source {" in html and "display: none" in html:
-        html = html.replace(".source { display: none", ".source-legacy-removed { display: none")
-
-
-    # Enforce text wrapping and container bounds to fix misaligned yellow boxes
     if "overflow-wrap: break-word" not in html:
-        wrap_css_rule = """
+        html = html.replace("</style>", "\n/* Enforce text wrapping */\nh1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [class*='caption'], [class*='text'] { overflow-wrap: break-word !important; word-wrap: break-word !important; word-break: break-word !important; max-width: 100%; box-sizing: border-box; }\n</style>", 1)
 
-/* Enforce text wrapping and dynamic bounds for text containers */
-h1, h2, h3, h4, h5, h6, p, span, .caption, .title, .text, .highlight, .accent, [class*='caption'], [class*='text'] { overflow-wrap: break-word !important; word-wrap: break-word !important; word-break: break-word !important; max-width: 100%; box-sizing: border-box; }
-</style>"""
-        html = html.replace("</style>", wrap_css_rule, 1)
-
-    legacy_visual_scene_block = """.scene {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 80px 48px 300px 48px;
-    box-sizing: border-box;
-}"""
-    if legacy_visual_scene_block in html and len(re.findall(r"(?<![-\w])\.scene\s*\{", html)) > 1:
-        html = html.replace(legacy_visual_scene_block, ".scene {\n    box-sizing: border-box;\n}")
+    legacy_scene = ".scene {\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n    align-items: center;\n    padding: 80px 48px 300px 48px;\n    box-sizing: border-box;\n}"
+    if legacy_scene in html and len(re.findall(r"(?<![-\w])\.scene\s*\{", html)) > 1:
+        html = html.replace(legacy_scene, ".scene {\n    box-sizing: border-box;\n}")
 
     if "/* Visual Quality Enhancement" not in html and "</style>" in html:
         visual_mode = os.environ.get("NEWS_VISUAL_MODE", "0") in ("1", "true", "True")
         if visual_mode:
             has_authored_scene_rule = bool(re.search(r"(?<![-\w])\.scene\s*\{", html))
-            scene_css = (
-                ".scene {\n    box-sizing: border-box;\n}"
-                if has_authored_scene_rule
-                else """.scene {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 80px 48px 300px 48px;
-    box-sizing: border-box;
-}"""
-            )
-            enhancement_css = """
+            scene_css = ".scene {\n    box-sizing: border-box;\n}" if has_authored_scene_rule else legacy_scene
+            enhancement_css = f"""
 /* Visual Quality Enhancement (Context-Aware Visual Mode) */
-#stage {
-    font-family: 'BeVietnamPro', sans-serif;
-}
-__SCENE_CSS__
-/* Ensure visual media elements are properly layered and never clipped */
-.scene img, .scene video, .scene .svg-container svg, .scene .diagram svg, .scene-media {
-    max-width: 100%;
-    max-height: 480px;
-    height: auto;
-    object-fit: contain;
-    z-index: 1;
-}
-.card-title svg, .badge svg, .icon svg, svg[width="26"], svg[width="28"] {
-    width: 28px !important;
-    height: 28px !important;
-    min-width: 28px !important;
-    min-height: 28px !important;
-    max-width: 28px !important;
-    max-height: 28px !important;
-    flex-shrink: 0 !important;
-    display: inline-block !important;
-}
-/* Scoped default card styling without overriding specific scene elements or diagrams */
-.card-default {
-    background: rgba(30, 41, 59, 0.82);
-    border: 1px solid rgba(56, 189, 248, 0.4);
-    border-radius: 28px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18);
-    backdrop-filter: blur(14px);
-    box-sizing: border-box;
-    width: 960px;
-    max-width: 90vw;
-    margin: 16px auto;
-    padding: 32px 40px;
-}
-/* High-contrast typography */
-h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {
-    color: #ffffff;
-    font-weight: 800;
-    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9);
-}
-p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class*="highlight"]) {
-    color: #f8fafc;
-    font-weight: 500;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
-}
-.brand-name, .badge, .category, .tag, [class*="badge"], [class*="tag"] {
-    color: #38bdf8;
-    background: rgba(15, 23, 42, 0.85);
-    border: 1px solid rgba(56, 189, 248, 0.5);
-    border-radius: 9999px;
-    padding: 8px 24px;
-    box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
-}
-.highlight-text, .accent, [class*="highlight"], [class*="accent"], [class*="metric"], [class*="stat"] {
-    color: #38bdf8;
-    font-weight: 700;
-    text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
-}
-</style>""".replace("__SCENE_CSS__", scene_css)
+#stage {{ font-family: 'BeVietnamPro', sans-serif; }}
+{scene_css}
+.scene img, .scene video, .scene .svg-container svg, .scene .diagram svg, .scene-media {{ max-width: 100%; max-height: 480px; height: auto; object-fit: contain; z-index: 1; }}
+.card-title svg, .badge svg, .icon svg, svg[width="26"], svg[width="28"] {{ width: 28px !important; height: 28px !important; min-width: 28px !important; min-height: 28px !important; max-width: 28px !important; max-height: 28px !important; flex-shrink: 0 !important; display: inline-block !important; }}
+.card-default {{ background: rgba(30, 41, 59, 0.82); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 28px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18); backdrop-filter: blur(14px); box-sizing: border-box; width: 960px; max-width: 90vw; margin: 16px auto; padding: 32px 40px; }}
+h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {{ color: #ffffff; font-weight: 800; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9); }}
+p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class*="highlight"]) {{ color: #f8fafc; font-weight: 500; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8); }}
+.brand-name, .badge, .category, .tag, [class*="badge"], [class*="tag"] {{ color: #38bdf8; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.5); border-radius: 9999px; padding: 8px 24px; box-shadow: 0 0 15px rgba(56, 189, 248, 0.25); }}
+.highlight-text, .accent, [class*="highlight"], [class*="accent"], [class*="metric"], [class*="stat"] {{ color: #38bdf8; font-weight: 700; text-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }}
+</style>"""
         else:
             enhancement_css = """
 /* Visual Quality Enhancement */
-#stage {
-    background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%);
-    font-family: 'BeVietnamPro', sans-serif !important;
-}
-.scene:not([class*="scene-"]):not([style*="background"]) {
-    background: transparent;
-}
-.scene {
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-    align-items: center !important;
-    padding: 80px 48px 300px 48px !important;
-    box-sizing: border-box !important;
-}
-.scene > div:not(.om-asr-caption):not([class*="diagram"]):not([class*="visual"]), .card, .container, [class*="card"], [class*="container"], [class*="box"], [class*="plate"] {
-    background: rgba(30, 41, 59, 0.82) !important;
-    border: 1px solid rgba(56, 189, 248, 0.4) !important;
-    border-radius: 28px !important;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18) !important;
-    backdrop-filter: blur(14px) !important;
-    box-sizing: border-box !important;
-    width: 960px !important;
-    max-width: 90vw !important;
-    margin: 16px auto !important;
-    padding: 32px 40px !important;
-}
-/* High-contrast typography */
-h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {
-    color: #ffffff !important;
-    font-weight: 800 !important;
-    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9) !important;
-}
-p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class*="highlight"]) {
-    color: #f8fafc !important;
-    font-weight: 500 !important;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important;
-}
-.brand-name, .badge, .category, .tag, [class*="badge"], [class*="tag"] {
-    color: #38bdf8 !important;
-    background: rgba(15, 23, 42, 0.85) !important;
-    border: 1px solid rgba(56, 189, 248, 0.5) !important;
-    border-radius: 9999px !important;
-    padding: 8px 24px !important;
-    box-shadow: 0 0 15px rgba(56, 189, 248, 0.25) !important;
-}
-.highlight-text, .accent, [class*="highlight"], [class*="accent"], [class*="metric"], [class*="stat"] {
-    color: #38bdf8 !important;
-    font-weight: 700 !important;
-    text-shadow: 0 0 20px rgba(56, 189, 248, 0.4) !important;
-}
+#stage { background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif !important; }
+.scene:not([class*="scene-"]):not([style*="background"]) { background: transparent; }
+.scene { display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important; padding: 80px 48px 300px 48px !important; box-sizing: border-box !important; }
+.scene > div:not(.om-asr-caption):not([class*="diagram"]):not([class*="visual"]), .card, .container, [class*="card"], [class*="container"], [class*="box"], [class*="plate"] { background: rgba(30, 41, 59, 0.82) !important; border: 1px solid rgba(56, 189, 248, 0.4) !important; border-radius: 28px !important; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18) !important; backdrop-filter: blur(14px) !important; box-sizing: border-box !important; width: 960px !important; max-width: 90vw !important; margin: 16px auto !important; padding: 32px 40px !important; }
+h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] { color: #ffffff !important; font-weight: 800 !important; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9) !important; }
+p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class*="highlight"]) { color: #f8fafc !important; font-weight: 500 !important; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important; }
+.brand-name, .badge, .category, .tag, [class*="badge"], [class*="tag"] { color: #38bdf8 !important; background: rgba(15, 23, 42, 0.85) !important; border: 1px solid rgba(56, 189, 248, 0.5) !important; border-radius: 9999px !important; padding: 8px 24px !important; box-shadow: 0 0 15px rgba(56, 189, 248, 0.25) !important; }
+.highlight-text, .accent, [class*="highlight"], [class*="accent"], [class*="metric"], [class*="stat"] { color: #38bdf8 !important; font-weight: 700 !important; text-shadow: 0 0 20px rgba(56, 189, 248, 0.4) !important; }
 </style>"""
         html = html.replace("</style>", enhancement_css, 1)
+    return html
 
-    # Sanitize abrupt sentence cutoffs in text elements
-    # 1. Strip dangling unpunctuated clauses if a complete sentence ending with [.!?] preceded it
-    html = re.sub(
-        r'([.!?])\s+[^<.!?]{3,}\s*(</(?:p|div|span)>)',
-        r'\1\2',
-        html,
-    )
-    # 2. Safety net for specific dangling connector words
-    html = re.sub(
-        r'\b(xuống|lên|vào|ra|của|và|là|khi|được|cho|với|tại|từ|về|đến|trong|ngoài|bởi|như|do)\s*(</(?:p|div|span)>)',
-        r'.\2',
-        html,
-        flags=re.IGNORECASE,
-    )
-    # 3. Ensure prose elements end with terminal punctuation
-    html = re.sub(
-        r'([^.!?\s>])\s*(</(?:p|div|span)>)',
-        r'\1.\2',
-        html,
-    )
 
+def _sanitize_sentence_cutoffs(html: str, path: Path) -> str:
+    html = re.sub(r'([.!?])\s+[^<.!?]{3,}\s*(</(?:p|div|span)>)', r'\1\2', html)
+    html = re.sub(r'\b(xuống|lên|vào|ra|của|và|là|khi|được|cho|với|tại|từ|về|đến|trong|ngoài|bởi|như|do)\s*(</(?:p|div|span)>)', r'.\2', html, flags=re.IGNORECASE)
+    html = re.sub(r'([^.!?\s>])\s*(</(?:p|div|span)>)', r'\1.\2', html)
     if "overflow: hidden" not in html:
         root_match = re.search(r"(#stage|#root|body|html)\s*\{[^{}]*\}", html)
         if root_match:
-            rule = root_match.group(0)
-            rule = rule[:-1].rstrip() + " overflow: hidden; }"
+            rule = root_match.group(0)[:-1].rstrip() + " overflow: hidden; }"
             html = html[:root_match.start()] + rule + html[root_match.end():]
         elif TAG_STYLE_OPEN in html:
             html = html.replace(TAG_STYLE_OPEN, f"{TAG_STYLE_OPEN}\n    body, html {{ overflow: hidden; }}\n", 1)
         else:
             raise ValueError(f"{path}: missing viewport CSS rule for clipping guard")
-    # For reels composition, bind to reels narration file if present, else fallback to narration.mp3
-    narration_src = (
-        "assets/narration_reels.mp3"
-        if "hyperframes_reels" in str(path) and (path.parent / "assets" / "narration_reels.mp3").is_file()
-        else "assets/narration.mp3"
-    )
-    html = re.sub(
-        r"(<audio\b(?=[^>]*\bid=[\"']narration[\"'])[^>]*\bsrc=)[\"'][^\"']*[\"']",
-        rf'\1"{narration_src}"',
-        html,
-    )
-    # Remove individual narration tags that lack materialized assets
+    return html
+
+
+def _patch_audio_bindings(html: str, path: Path, narration_src: str) -> str:
+    html = re.sub(r"(<audio\b(?=[^>]*\bid=[\"']narration[\"'])[^>]*\bsrc=)[\"'][^\"']*[\"']", rf'\1"{narration_src}"', html)
     html = re.sub(r"<audio\b[^>]*\bid=[\"']narration_\d+[\"'][^>]*>\s*(?:</audio>)?\s*", "", html)
 
-    # Handle background audio: if music-bg.mp3 exists, point to it; otherwise remove bg-audio
     has_bg = (path.parent / "assets" / MUSIC_BG_MP3).is_file()
     if has_bg:
         if re.search(r'<audio\b[^>]*\bid=["\'](?:bg-audio|bgm)["\']', html):
-            html = re.sub(
-                r'(<audio\b(?=[^>]*\bid=["\'](?:bg-audio|bgm)["\'])[^>]*\bsrc=)["\'][^"\']*["\']',
-                rf'\1"assets/{MUSIC_BG_MP3}"',
-                html,
-            )
-            # Ensure track index and data-start
+            html = re.sub(r'(<audio\b(?=[^>]*\bid=["\'](?:bg-audio|bgm)["\'])[^>]*\bsrc=)["\'][^"\']*["\']', rf'\1"assets/{MUSIC_BG_MP3}"', html)
             def fix_bg_tag(match):
                 tag = match.group(0)
                 if "data-track-index" not in tag:
@@ -520,30 +363,20 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
             body_root = re.search(r"<body\b[^>]*>", html, flags=re.IGNORECASE)
             if body_root:
                 root_open = body_root
-                html = html[:root_open.start()] + html[root_open.start():root_open.end()].replace(
-                    ">", ' data-composition-id="main">', 1
-                ) + html[root_open.end():]
+                html = html[:root_open.start()] + html[root_open.start():root_open.end()].replace(">", ' data-composition-id="main">', 1) + html[root_open.end():]
             else:
                 raise ValueError(f"{path}: missing composition root for narration audio binding")
-        # Use reels narration for reels composition
         narration_tag = NARRATION_TAG.replace('assets/narration.mp3', narration_src)
         html = html[:root_open.end()] + "\n    " + narration_tag + html[root_open.end():]
 
-    # Ensure all remaining audio tags have data-start="0" if missing
     def add_data_start(match):
         tag = match.group(0)
-        if "data-start=" not in tag:
-            tag = tag.replace(TAG_AUDIO_OPEN, f'{TAG_AUDIO_OPEN} data-start="0"', 1)
-        return tag
+        return tag.replace(TAG_AUDIO_OPEN, f'{TAG_AUDIO_OPEN} data-start="0"', 1) if "data-start=" not in tag else tag
 
-    html = re.sub(r"<audio\b[^>]*>", add_data_start, html)
+    return re.sub(r"<audio\b[^>]*>", add_data_start, html)
 
-    _validate_seek_safety(path, html)
-    if (path.parent / "assets").is_dir():
-        html = html.replace("../assets/", "assets/")
-    html = repair_missing_composition_assets(path, html)
 
-    # Ensure GSAP CDN script is always present in HTML
+def _ensure_gsap_script(html: str) -> str:
     if "gsap.min.js" not in html and "gsap" not in html:
         gsap_tag = '<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>'
         if TAG_HEAD_CLOSE in html:
@@ -552,20 +385,44 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
             html = html.replace(TAG_HEAD_OPEN, f"{TAG_HEAD_OPEN}\n  {gsap_tag}", 1)
         else:
             html = f"{gsap_tag}\n" + html
+    return html
 
-    # Authored visibility, scene styling and JavaScript are never rewritten.
+
+def patch_html(path: Path, narration_duration: float = 0.0, strict: bool = False) -> None:
+    html = path.read_text(encoding="utf-8")
+    locale = "vi-VN"
+    try:
+        from lib.artifact_paths import resolve_project_locale
+        locale = resolve_project_locale(path.parent.parent)
+    except Exception:
+        pass
+    is_landscape = locale == "en-US" and path.parent.name == "hyperframes"
+    default_width, default_height = (1920, 1080) if is_landscape else (PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+
+    html = _patch_locale_viewport(html, path, locale, is_landscape, default_width, default_height)
+    max_end = _calculate_scenes_max_end(html)
+    html = _normalize_root_element(html, path, max_end, narration_duration, default_width, default_height, locale, is_landscape)
+    html = _patch_typography_and_css(html, path)
+    html = _patch_badges_and_attributions(html)
+    html = _sanitize_sentence_cutoffs(html, path)
+
+    narration_src = (
+        "assets/narration_reels.mp3"
+        if "hyperframes_reels" in str(path) and (path.parent / "assets" / "narration_reels.mp3").is_file()
+        else "assets/narration.mp3"
+    )
+    html = _patch_audio_bindings(html, path, narration_src)
+
+    _validate_seek_safety(path, html)
+    if (path.parent / "assets").is_dir():
+        html = html.replace("../assets/", "assets/")
+    html = repair_missing_composition_assets(path, html)
+    html = _ensure_gsap_script(html)
 
     path.write_text(html, encoding="utf-8")
 
 
-def repair_hyperframes_composition(path: Path) -> None:
-    """Repair HyperFrames composition assets, inject background music and SFX if missing."""
-    path = Path(path)
-    comp_dir = path.parent
-    assets_dir = comp_dir / "assets"
-    assets_dir.mkdir(parents=True, exist_ok=True)
-
-    # 1. Ensure music-bg.mp3 exists
+def _ensure_bgm_asset(comp_dir: Path, assets_dir: Path) -> Path:
     bg_asset = assets_dir / MUSIC_BG_MP3
     if not bg_asset.is_file():
         for candidate_bg in (
@@ -575,8 +432,10 @@ def repair_hyperframes_composition(path: Path) -> None:
             if candidate_bg.is_file():
                 shutil.copy2(candidate_bg, bg_asset)
                 break
+    return bg_asset
 
-    # 2. Ensure SFX library exists
+
+def _ensure_sfx_library(comp_dir: Path, assets_dir: Path) -> None:
     sfx_dir = assets_dir / "sfx"
     if not sfx_dir.is_dir() or not any(sfx_dir.glob("*.mp3")):
         for candidate_sfx in (
@@ -589,29 +448,42 @@ def repair_hyperframes_composition(path: Path) -> None:
                     shutil.copy2(sfx_file, sfx_dir / sfx_file.name)
                 break
 
-    # 3. Ensure BGM audio tag is in HTML if music-bg.mp3 exists
-    if bg_asset.is_file():
-        html = path.read_text(encoding="utf-8")
-        if not re.search(r'<audio\b[^>]*\bid=["\'](?:bg-audio|bgm)["\']', html):
-            bgm_tag = f'<audio id="bgm" src="assets/{MUSIC_BG_MP3}" data-start="0" data-track-index="1" data-volume="0.12" loop></audio>'
-            if re.search(r'<audio\b[^>]*\bid=["\']narration["\'][^>]*>', html):
-                html = re.sub(
-                    r'(<audio\b[^>]*\bid=["\']narration["\'][^>]*>(?:</audio>)?)',
-                    rf'\1\n    {bgm_tag}',
-                    html,
-                    count=1,
-                )
-                path.write_text(html, encoding="utf-8")
-            elif '<div id="stage"' in html or '<div id="root"' in html:
-                html = re.sub(
-                    r'(<div\b[^>]*\bid=["\'](?:stage|root)["\'][^>]*>)',
-                    rf'\1\n    {bgm_tag}',
-                    html,
-                    count=1,
-                )
-                path.write_text(html, encoding="utf-8")
 
-    # 4. Patch HTML
+def _inject_bgm_tag(path: Path, bg_asset: Path) -> None:
+    if not bg_asset.is_file():
+        return
+    html = path.read_text(encoding="utf-8")
+    if re.search(r'<audio\b[^>]*\bid=["\'](?:bg-audio|bgm)["\']', html):
+        return
+    bgm_tag = f'<audio id="bgm" src="assets/{MUSIC_BG_MP3}" data-start="0" data-track-index="1" data-volume="0.12" loop></audio>'
+    if re.search(r'<audio\b[^>]*\bid=["\']narration["\'][^>]*>', html):
+        html = re.sub(
+            r'(<audio\b[^>]*\bid=["\']narration["\'][^>]*>(?:</audio>)?)',
+            rf'\1\n    {bgm_tag}',
+            html,
+            count=1,
+        )
+        path.write_text(html, encoding="utf-8")
+    elif '<div id="stage"' in html or '<div id="root"' in html:
+        html = re.sub(
+            r'(<div\b[^>]*\bid=["\'](?:stage|root)["\'][^>]*>)',
+            rf'\1\n    {bgm_tag}',
+            html,
+            count=1,
+        )
+        path.write_text(html, encoding="utf-8")
+
+
+def repair_hyperframes_composition(path: Path) -> None:
+    """Repair HyperFrames composition assets, inject background music and SFX if missing."""
+    path = Path(path)
+    comp_dir = path.parent
+    assets_dir = comp_dir / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    bg_asset = _ensure_bgm_asset(comp_dir, assets_dir)
+    _ensure_sfx_library(comp_dir, assets_dir)
+    _inject_bgm_tag(path, bg_asset)
     patch_html(path)
 
 

@@ -710,20 +710,18 @@ set -e
 # A failed process/result remains failed even if old artifacts validate.
 # Recovery must pass the current-attempt gates in the bounded retry loop.
 
-if [ "$DIRECTOR_EXIT" -eq 0 ]; then
-  if [ -z "$REHEARSAL_MANIFEST" ]; then
-    if ! "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"; then
-      echo "[$(date -u +%FT%TZ)] ERROR: bind_news_evidence failed for $PROJECT_ID" >&2
-      "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \
-        --error-type "NEWS_EVIDENCE_BIND_FAILED" --message "News evidence binding or quantitative verification failed" || true
-      "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
-        "bind_news_evidence failed verification" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
-      continue
-    fi
+if [[ "$DIRECTOR_EXIT" -eq 0 ]]; then
+  if [[ -z "$REHEARSAL_MANIFEST" ]] && ! "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR"; then
+    echo "[$(date -u +%FT%TZ)] ERROR: bind_news_evidence failed for $PROJECT_ID" >&2
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_evidence" --project-id "$PROJECT_ID" \
+      --error-type "NEWS_EVIDENCE_BIND_FAILED" --message "News evidence binding or quantitative verification failed" || true
+    "$PY" "$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID" \
+      "bind_news_evidence failed verification" || echo "[$(date -u +%FT%TZ)] ERROR: failed to quarantine project $PROJECT_ID; source remains in place" >&2
+    continue
   fi
-  if [ "$is_en" -eq 1 ]; then
+  if [[ "$is_en" -eq 1 ]]; then
     echo "Validating en-US cultural localization and display language for $PROJECT_ID..."
-    if [ -f "$PROJECT_DIR/artifacts/script_en_US.json" ]; then
+    if [[ -f "$PROJECT_DIR/artifacts/script_en_US.json" ]]; then
       if ! "$PY" "$ROOT/scripts/validate_display_language.py" --locale en-US "$PROJECT_DIR/artifacts/script_en_US.json"; then
         echo "ERROR: en-US script failed cultural/language validation for $PROJECT_ID" >&2
         "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "cultural_localization" --project-id "$PROJECT_ID" \

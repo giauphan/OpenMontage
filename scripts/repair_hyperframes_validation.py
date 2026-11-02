@@ -79,29 +79,39 @@ def declared_dimensions(html: str) -> dict[str, tuple[int, int]]:
     return found
 
 
+def _find_string_literal_end(source: str, index: int, quote: str) -> int:
+    end = index + 1
+    src_len = len(source)
+    while end < src_len:
+        if source[end] == "\\":
+            end += 2
+        elif source[end] == quote:
+            return end + 1
+        else:
+            end += 1
+    return end
+
+
+def _find_noncode_range(source: str, index: int) -> int:
+    if source.startswith("//", index):
+        end = source.find("\n", index)
+        return len(source) if end < 0 else end
+    if source.startswith("/*", index):
+        close = source.find("*/", index + 2)
+        return len(source) if close < 0 else close + 2
+    if source[index] in "'\"`":
+        return _find_string_literal_end(source, index, source[index])
+    return -1
+
+
 def _mask_javascript_noncode(source: str) -> str:
     """Blank comments and quoted literals while retaining source offsets."""
     chars = list(source)
     index = 0
-    while index < len(source):
-        if source.startswith("//", index):
-            end = source.find("\n", index)
-            end = len(source) if end < 0 else end
-        elif source.startswith("/*", index):
-            close = source.find("*/", index + 2)
-            end = len(source) if close < 0 else close + 2
-        elif source[index] in "'\"`":
-            quote = source[index]
-            end = index + 1
-            while end < len(source):
-                if source[end] == "\\":
-                    end += 2
-                elif source[end] == quote:
-                    end += 1
-                    break
-                else:
-                    end += 1
-        else:
+    src_len = len(source)
+    while index < src_len:
+        end = _find_noncode_range(source, index)
+        if end == -1:
             index += 1
             continue
         for pos in range(index, min(end, len(chars))):

@@ -345,6 +345,39 @@ def _select_and_initialize_projects(
     return project_ids, attempts
 
 
+def _merge_unique_candidates(
+    target_pool: List[Dict[str, Any]],
+    new_candidates: List[Dict[str, Any]],
+    used_ids: Set[str],
+) -> None:
+    seen_ids = {c.get("candidate_id") or c.get("id") for c in target_pool}
+    for c in new_candidates:
+        cid = c.get("candidate_id") or c.get("id")
+        if cid and cid not in seen_ids and cid not in used_ids:
+            target_pool.append(c)
+            seen_ids.add(cid)
+
+
+def _run_discovery_fallback(
+    disc_result: Any,
+    count: int,
+    min_required: int,
+    max_age_days: int,
+    used_ids: Set[str],
+) -> None:
+    from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+    fallback_discovery = HybridCandidateDiscovery(
+        require_latest_news=False,
+        max_age_days=max_age_days,
+    )
+    fallback_res = fallback_discovery.discover_candidates(count=max(count, min_required * 2))
+    if not fallback_res.is_eligible:
+        return
+    _merge_unique_candidates(disc_result.candidates, fallback_res.candidates, used_ids)
+    if not disc_result.is_eligible and disc_result.candidates:
+        disc_result.status = "ELIGIBLE"
+
+
 def _hydrate_from_hybrid_discovery(
     candidate_pool: List[Dict[str, Any]],
     count: int,
@@ -362,42 +395,25 @@ def _hydrate_from_hybrid_discovery(
         min_required,
     )
     from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+    require_latest = getattr(args, "require_latest_news", True)
+    max_age_days = getattr(args, "max_age_days", 7)
     discovery = HybridCandidateDiscovery(
-        require_latest_news=getattr(args, "require_latest_news", True),
-        max_age_days=getattr(args, "max_age_days", 7),
+        require_latest_news=require_latest,
+        max_age_days=max_age_days,
     )
     disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
-    if (not disc_result.is_eligible or len(disc_result.candidates) < min_required) and getattr(args, "require_latest_news", True):
+    need_fallback = (not disc_result.is_eligible or len(disc_result.candidates) < min_required) and require_latest
+    if need_fallback:
         logger.info(
             "HybridCandidateDiscovery with require_latest_news=True yielded %d candidates (need %d); "
             "supplementing from authorized backlog without recency gate.",
             len(disc_result.candidates) if disc_result.is_eligible else 0,
             min_required,
         )
-        fallback_discovery = HybridCandidateDiscovery(
-            require_latest_news=False,
-            max_age_days=getattr(args, "max_age_days", 7),
-        )
-        fallback_res = fallback_discovery.discover_candidates(count=max(count, min_required * 2))
-        if fallback_res.is_eligible:
-            seen_cids = {c.get("candidate_id") for c in disc_result.candidates}
-            for fc in fallback_res.candidates:
-                fc_id = fc.get("candidate_id") or fc.get("id")
-                if fc_id and fc_id not in seen_cids and fc_id not in used_ids:
-                    disc_result.candidates.append(fc)
-                    seen_cids.add(fc_id)
-            if not disc_result.is_eligible and disc_result.candidates:
-                disc_result.status = "ELIGIBLE"
+        _run_discovery_fallback(disc_result, count, min_required, max_age_days, used_ids)
 
-    if not disc_result.is_eligible:
-        return candidate_pool
-
-    seen_ids = {c.get("candidate_id") for c in candidate_pool}
-    for c in disc_result.candidates:
-        cid = c.get("candidate_id") or c.get("id")
-        if cid and cid not in seen_ids and cid not in used_ids:
-            candidate_pool.append(c)
-            seen_ids.add(cid)
+    if disc_result.is_eligible:
+        _merge_unique_candidates(candidate_pool, disc_result.candidates, used_ids)
     return candidate_pool
 
 

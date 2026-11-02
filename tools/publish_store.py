@@ -255,6 +255,60 @@ class PublishStore:
         self._raise_for_error(response)
         return _decode_document(response.json())
 
+    def _build_claim_documents(
+        self,
+        key: str,
+        data: dict[str, Any],
+        identities: dict[str, str],
+        platform: str,
+        account: str,
+        kind: str,
+    ) -> tuple[dict[str, Any], list[str]]:
+        documents = {key: data}
+        unique_keys = []
+        for identity_type, value in identities.items():
+            unique_key = uniqueness_key(platform, account, kind, identity_type, value)
+            unique_keys.append(unique_key)
+            documents[unique_key] = {
+                "record_type": "uniqueness",
+                "identity_type": identity_type,
+                "identity_value": normalize_identity(value) if identity_type != "source" else value,
+                "publish_key": key,
+                **data,
+            }
+        return documents, unique_keys
+
+    def _recover_failed_claim(self, documents: dict[str, Any]) -> None:
+        for doc_key, doc_data in documents.items():
+            try:
+                self.update(doc_key, doc_data)
+            except Exception:
+                self.session.patch(
+                    self._url(doc_key),
+                    json={"fields": _fields(doc_data)},
+                    timeout=30,
+                )
+
+    def _resolve_conflicting_claim(
+        self,
+        key: str,
+        data: dict[str, Any],
+        documents: dict[str, Any],
+        candidates: list[str],
+    ) -> tuple[str, bool, dict[str, Any]]:
+        for candidate in candidates:
+            existing = self.get(candidate)
+            if existing is None:
+                continue
+            status = existing.get("status")
+            if status in {"scheduled", "published", "scheduling"}:
+                return key, False, existing
+            if status == "failed":
+                self._recover_failed_claim(documents)
+                return key, True, data
+            return key, False, existing
+        raise RuntimeError("Firestore uniqueness claim failed without a conflicting record")
+
     def claim(
         self,
         *,
@@ -276,11 +330,11 @@ class PublishStore:
             raise ValueError("title and asset_path are required for duplicate protection")
         source_sha256 = file_sha256(asset_path)
         visual_sha256 = media_fingerprint(asset_path)
-        source_topic = source_topic or topic
+        resolved_source_topic = source_topic or topic
         identities = {
             "topic": topic,
             "title": title,
-            "source_topic": source_topic,
+            "source_topic": resolved_source_topic,
             "source_path": str(Path(asset_path).resolve()),
             "source_visual": visual_sha256,
             "source": source_sha256,
@@ -290,7 +344,7 @@ class PublishStore:
         data = {
             "date": date,
             "topic": topic,
-            "source_topic": source_topic,
+            "source_topic": resolved_source_topic,
             "platform": platform,
             "account": account,
             "kind": kind,
@@ -309,39 +363,13 @@ class PublishStore:
             "updated_at": now,
         }
 
-        documents = {key: data}
-        unique_keys = []
-        for identity_type, value in identities.items():
-            unique_key = uniqueness_key(platform, account, kind, identity_type, value)
-            unique_keys.append(unique_key)
-            documents[unique_key] = {
-                "record_type": "uniqueness",
-                "identity_type": identity_type,
-                "identity_value": normalize_identity(value) if identity_type != "source" else value,
-                "publish_key": key,
-                **data,
-            }
+        documents, unique_keys = self._build_claim_documents(
+            key, data, identities, platform, account, kind
+        )
 
         if self.create_many_once(documents):
             return key, True, data
-        for candidate in [key, *unique_keys]:
-            existing = self.get(candidate)
-            if existing is not None:
-                if existing.get("status") in {"scheduled", "published", "scheduling"}:
-                    return key, False, existing
-                if existing.get("status") == "failed":
-                    for doc_key, doc_data in documents.items():
-                        try:
-                            self.update(doc_key, doc_data)
-                        except Exception:
-                            self.session.patch(
-                                self._url(doc_key),
-                                json={"fields": _fields(doc_data)},
-                                timeout=30,
-                            )
-                    return key, True, data
-                return key, False, existing
-        raise RuntimeError("Firestore uniqueness claim failed without a conflicting record")
+        return self._resolve_conflicting_claim(key, data, documents, [key, *unique_keys])
 
     def mark_scheduled(
         self,

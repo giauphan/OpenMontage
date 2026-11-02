@@ -195,6 +195,112 @@ def _build_illustration_beat(
     return html, tweens
 
 
+def _generate_viewport_svg(
+    beat: Dict[str, Any],
+    i: int,
+    total_beats: int,
+    vis_file: str,
+    visuals_src: Optional[Path],
+    is_vertical: bool,
+    beat_dur: float,
+    start_s: float,
+    pfx: str,
+    title: str,
+    s_func: str,
+    scr_state: str,
+) -> str:
+    """Generate inline SVG viewport content or fallback img tag."""
+    inline_svg = _inline_svg_file(visuals_src, vis_file, prefix=pfx)
+    is_legacy = os.environ.get("OPENMONTAGE_VISUAL_STYLE") == "legacy"
+    if not is_legacy and not inline_svg and vis_file.lower().endswith(".svg"):
+        from lib.fixed_niche.svg_pipeline_builder import generate_pipeline_svg
+        import re
+        topic_family = str(beat.get("topic_family") or "context_memory")
+        narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+        raw_svg = generate_pipeline_svg(
+            asset_id=str(beat.get("asset_id") or f"beat_{i+1}"),
+            topic_family=topic_family,
+            title=title,
+            beat_num=i + 1,
+            total_beats=total_beats,
+            is_vertical=is_vertical,
+            progressive=True,
+            duration=beat_dur,
+            narration=narration,
+            beat_start_s=start_s,
+            word_timestamps=beat.get("word_timestamps"),
+            prefix=pfx,
+        )
+        clean = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
+        inline_svg = re.sub(r"<style\b[^>]*>.*?</style>", "", clean, flags=re.DOTALL).strip()
+    if inline_svg and not is_legacy:
+        return inline_svg
+    return f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
+
+
+def _build_progressive_step_tweens(
+    sec_id: str,
+    pfx: str,
+    beat: Dict[str, Any],
+    i: int,
+    total_beats: int,
+    beat_dur: float,
+    start_s: float,
+    entry_t: str,
+    s_func: str,
+) -> List[str]:
+    """Build GSAP progressive reveal tweens for steps, arrows, and CTA banner."""
+    from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat, compute_cta_timing
+    from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
+    num_steps = 4 if (i + 1 == 6 and total_beats == 6) else STEP_COUNTS.get(i + 1, 4)
+    narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+    is_final = (i == total_beats - 1)
+    step_timings = compute_step_timings_for_beat(
+        narration=narration,
+        duration=beat_dur,
+        num_steps=num_steps,
+        beat_start_s=start_s,
+        word_timestamps=beat.get("word_timestamps"),
+        is_final_beat=is_final,
+    )
+    cta_rel = compute_cta_timing(beat_dur, step_timings) if is_final else None
+    cta_abs_t = _fmt_time(start_s + cta_rel) if cta_rel is not None else None
+
+    tweens = [
+        f'  tl.set("#{sec_id} .flow-step", {{ opacity: 0, y: 16 }}, {entry_t});',
+        f'  tl.set("#{sec_id} .flow-arrow", {{ opacity: 0 }}, {entry_t});',
+        f'  tl.to("#{sec_id} #{pfx}flow-header", {{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, {_fmt_time(start_s + 0.1)});',
+    ]
+    for s_idx, rel_t in enumerate(step_timings, start=1):
+        step_abs_t = _fmt_time(start_s + rel_t)
+        tweens.append(
+            f'  tl.fromTo("#{sec_id} #{pfx}flow-step-{s_idx}", '
+            f'{{ opacity: 0, y: 20, scale: 0.95 }}, '
+            f'{{ opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.7)" }}, {step_abs_t});'
+        )
+        if s_idx > 1:
+            arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
+            tweens.append(
+                f'  tl.fromTo("#{sec_id} #{pfx}flow-arrow-{s_idx-1}", '
+                f'{{ opacity: 0, scaleY: 0.5 }}, '
+                f'{{ opacity: 1, scaleY: 1, duration: 0.35, ease: "power2.out" }}, {arrow_abs_t});'
+            )
+
+    if is_final and cta_abs_t:
+        cta_reveal_t = cta_abs_t
+    elif step_timings:
+        cta_reveal_t = _fmt_time(start_s + step_timings[-1])
+    else:
+        cta_reveal_t = None
+    if cta_reveal_t:
+        tweens.append(
+            f'  tl.fromTo("#{sec_id} #{pfx}flow-cta-banner", '
+            f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
+            f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {cta_reveal_t});'
+        )
+    return tweens
+
+
 def _build_svg_beat(
     i: int,
     beat: Dict[str, Any],
@@ -227,33 +333,12 @@ def _build_svg_beat(
         if bg_art else ""
     )
     card_cls = "stage-card hybrid-card" if bg_art else "stage-card"
-
     pfx = f"b{i+1:02d}-" if i > 0 else ""
-    inline_svg = _inline_svg_file(visuals_src, vis_file, prefix=pfx)
-    is_legacy = os.environ.get("OPENMONTAGE_VISUAL_STYLE") == "legacy"
-    if not is_legacy and not inline_svg and vis_file.lower().endswith(".svg"):
-        from lib.fixed_niche.svg_pipeline_builder import generate_pipeline_svg
-        import re
-        topic_family = str(beat.get("topic_family") or "context_memory")
-        narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
-        word_ts = beat.get("word_timestamps")
-        raw_svg = generate_pipeline_svg(
-            asset_id=str(beat.get("asset_id") or f"beat_{i+1}"),
-            topic_family=topic_family,
-            title=title,
-            beat_num=i + 1,
-            total_beats=total_beats,
-            is_vertical=is_vertical,
-            progressive=True,
-            duration=beat_dur,
-            narration=narration,
-            beat_start_s=start_s,
-            word_timestamps=word_ts,
-            prefix=pfx,
-        )
-        clean = re.sub(r"<\?xml.*?\?>", "", raw_svg, flags=re.DOTALL).strip()
-        inline_svg = re.sub(r"<style\b[^>]*>.*?</style>", "", clean, flags=re.DOTALL).strip()
-    viewport_content = inline_svg if (inline_svg and not is_legacy) else f'<img src="assets/visuals/{vis_file}" alt="{scr_state}" class="technical-svg" />'
+
+    viewport_content = _generate_viewport_svg(
+        beat, i, total_beats, vis_file, visuals_src, is_vertical,
+        beat_dur, start_s, pfx, title, s_func, scr_state,
+    )
 
     show_top_header = os.environ.get("OPENMONTAGE_SHOW_TOP_HEADER", "0") in ("1", "true", "True")
     header_snippet = ""
@@ -293,7 +378,6 @@ def _build_svg_beat(
         f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
         f'{entry_t});'
     )
-    # Continuous Ken Burns camera drift (scale 1.0 to 1.03) so canvas is never static
     tweens.append(
         f'  tl.fromTo("#{sec_id} .diagram-viewport", '
         f'{{ scale: 1.0, y: 0 }}, '
@@ -303,54 +387,10 @@ def _build_svg_beat(
 
     progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
     if progressive_reveal and vis_file.lower().endswith(".svg"):
-        from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat, compute_cta_timing
-        from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
-        num_steps = 4 if (i + 1 == 6 and total_beats == 6) else STEP_COUNTS.get(i + 1, 4)
-        narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
-        word_ts = beat.get("word_timestamps")
-        is_final = (i == total_beats - 1)
-        step_timings = compute_step_timings_for_beat(
-            narration=narration,
-            duration=beat_dur,
-            num_steps=num_steps,
-            beat_start_s=start_s,
-            word_timestamps=word_ts,
-            is_final_beat=is_final,
+        step_tweens = _build_progressive_step_tweens(
+            sec_id, pfx, beat, i, total_beats, beat_dur, start_s, entry_t, s_func,
         )
-        cta_rel = compute_cta_timing(beat_dur, step_timings) if is_final else None
-        cta_abs_t = _fmt_time(start_s + cta_rel) if cta_rel is not None else None
-        tweens.extend([
-            f'  tl.set("#{sec_id} .flow-step", {{ opacity: 0, y: 16 }}, {entry_t});',
-            f'  tl.set("#{sec_id} .flow-arrow", {{ opacity: 0 }}, {entry_t});',
-            f'  tl.to("#{sec_id} #{pfx}flow-header", {{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, {_fmt_time(start_s + 0.1)});',
-        ])
-        for s_idx, rel_t in enumerate(step_timings, start=1):
-            step_abs_t = _fmt_time(start_s + rel_t)
-            tweens.append(
-                f'  tl.fromTo("#{sec_id} #{pfx}flow-step-{s_idx}", '
-                f'{{ opacity: 0, y: 20, scale: 0.95 }}, '
-                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "back.out(1.7)" }}, {step_abs_t});'
-            )
-            if s_idx > 1:
-                arrow_abs_t = _fmt_time(max(start_s + 0.1, start_s + rel_t - 0.3))
-                tweens.append(
-                    f'  tl.fromTo("#{sec_id} #{pfx}flow-arrow-{s_idx-1}", '
-                    f'{{ opacity: 0, scaleY: 0.5 }}, '
-                    f'{{ opacity: 1, scaleY: 1, duration: 0.35, ease: "power2.out" }}, {arrow_abs_t});'
-                )
-
-        if is_final and cta_abs_t:
-            cta_reveal_t = cta_abs_t
-        elif step_timings:
-            cta_reveal_t = _fmt_time(start_s + step_timings[-1])
-        else:
-            cta_reveal_t = None
-        if cta_reveal_t:
-            tweens.append(
-                f'  tl.fromTo("#{sec_id} #{pfx}flow-cta-banner", '
-                f'{{ opacity: 0, y: 25, scale: 0.92 }}, '
-                f'{{ opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" }}, {cta_reveal_t});'
-            )
+        tweens.extend(step_tweens)
 
     if i < total_beats - 1:
         exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
@@ -361,6 +401,107 @@ def _build_svg_beat(
         ])
 
     return html, tweens
+
+
+def _select_step_sfx(idx: int, s_idx: int, num_steps: int, total_beats: int) -> tuple[str, str]:
+    if idx in (0, 1) and s_idx == 2:
+        return "buzz.mp3", "0.22"
+    if idx in (3, 4) and s_idx in (2, 3):
+        return "pass-ping.mp3", "0.20"
+    if idx == total_beats - 1 and s_idx == num_steps:
+        return "pass-ping.mp3", "0.24"
+    sound = "click.mp3" if s_idx % 2 == 0 else "pop.mp3"
+    return sound, "0.16"
+
+
+def _build_sfx_clips(
+    beats: List[Dict[str, Any]],
+    duration: float,
+    visuals_src: Optional[Path],
+    progressive_reveal: bool,
+) -> tuple[str, float]:
+    sfx_clips: List[str] = []
+    track_counter = 10
+    last_step_timings: List[float] = []
+
+    for idx, beat in enumerate(beats):
+        b_start = float(beat.get("start_s") if beat.get("start_s") is not None else beat.get("start_seconds", 0.0))
+        sfx_clips.append(
+            f'    <audio class="clip sfx" data-start="{_fmt_time(b_start)}" data-duration="0.8" data-track-index="{track_counter}" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>'
+        )
+        track_counter += 1
+
+        aid = beat.get("asset_id") or f"beat_{idx+1}"
+        vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
+        if progressive_reveal and vis_file.lower().endswith(EXT_SVG):
+            from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
+            from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
+            raw_end = float(beat.get("end_s", duration))
+            b_end = min(raw_end, duration) if idx == len(beats) - 1 else raw_end
+            beat_dur = max(0.5, b_end - b_start)
+            num_steps = 4 if (idx + 1 == 6 and len(beats) == 6) else STEP_COUNTS.get(idx + 1, 4)
+            s_func = str(beat.get("story_function", ""))
+            narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
+            is_final = (idx == len(beats) - 1)
+            step_timings = compute_step_timings_for_beat(
+                narration=narration,
+                duration=beat_dur,
+                num_steps=num_steps,
+                beat_start_s=b_start,
+                word_timestamps=beat.get("word_timestamps"),
+                is_final_beat=is_final,
+            )
+            if is_final:
+                last_step_timings = step_timings
+            for s_idx, rel_t in enumerate(step_timings, start=1):
+                if s_idx > 1 and (b_start + rel_t) < duration - 1.0:
+                    sfx_sound, sfx_vol = _select_step_sfx(idx, s_idx, num_steps, len(beats))
+                    sfx_clips.append(
+                        f'    <audio class="clip sfx" data-start="{_fmt_time(b_start + rel_t)}" data-duration="0.3" data-track-index="{track_counter}" src="assets/sfx/{sfx_sound}" data-volume="{sfx_vol}"></audio>'
+                    )
+                    track_counter += 1
+
+    cta_sfx_t = max(0.0, duration - 1.5)
+    if beats:
+        from lib.fixed_niche.voice_timing_aligner import compute_cta_timing
+        last_b = beats[-1]
+        last_st = float(last_b.get("start_s") if last_b.get("start_s") is not None else last_b.get("start_seconds", 0.0))
+        last_end = min(float(last_b.get("end_s", duration)), duration)
+        last_dur = max(0.5, last_end - last_st)
+        cta_rel = compute_cta_timing(last_dur, last_step_timings)
+        cta_sfx_t = max(0.0, last_st + cta_rel)
+        sfx_clips.append(
+            f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="{track_counter}" src="assets/sfx/chime.mp3" data-volume="0.30"></audio>'
+        )
+    return "\n".join(sfx_clips), cta_sfx_t
+
+
+def _build_sections_and_tweens(
+    beats: List[Dict[str, Any]],
+    visuals_src: Optional[Path],
+    duration: float,
+    title: str,
+    is_vertical: bool,
+    formatted_date: str,
+) -> tuple[List[str], List[str]]:
+    sections_html: List[str] = []
+    tweens_js: List[str] = []
+    total = len(beats)
+    for i, beat in enumerate(beats):
+        aid = beat.get("asset_id") or f"beat_{i+1}"
+        vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
+        if vis_file.lower().endswith(RASTER_EXTENSIONS):
+            sec_html, sec_tweens = _build_illustration_beat(
+                i, beat, vis_file, total, duration, formatted_date=formatted_date
+            )
+        else:
+            sec_html, sec_tweens = _build_svg_beat(
+                i, beat, vis_file, visuals_src, total, duration,
+                title=title, is_vertical=is_vertical, formatted_date=formatted_date,
+            )
+        sections_html.append(sec_html)
+        tweens_js.extend(sec_tweens)
+    return sections_html, tweens_js
 
 
 def compose_hyperframes_html(
@@ -410,90 +551,12 @@ def compose_hyperframes_html(
     dia_h = 1100 if is_vertical else 540
     escaped_title = html_mod.escape(title, quote=True)
 
-    sections_html: List[str] = []
-    tweens_js: List[str] = []
+    sections_html, tweens_js = _build_sections_and_tweens(
+        beats, visuals_src, duration, title, is_vertical, formatted_date
+    )
 
-    for i, beat in enumerate(beats):
-        aid = beat.get("asset_id") or f"beat_{i+1}"
-        vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
-        is_illustration = vis_file.lower().endswith(RASTER_EXTENSIONS)
-
-        if is_illustration:
-            sec_html, sec_tweens = _build_illustration_beat(i, beat, vis_file, len(beats), duration, formatted_date=formatted_date)
-            sections_html.append(sec_html)
-            tweens_js.extend(sec_tweens)
-        else:
-            sec_html, sec_tweens = _build_svg_beat(
-                i, beat, vis_file, visuals_src, len(beats), duration,
-                title=title, is_vertical=is_vertical, formatted_date=formatted_date,
-            )
-            sections_html.append(sec_html)
-            tweens_js.extend(sec_tweens)
-
-    sfx_clips: List[str] = []
-    track_counter = 10
     progressive_reveal = os.environ.get("OPENMONTAGE_PROGRESSIVE_SVG", "1") not in ("0", "false", "False")
-    last_step_timings: List[float] = []
-    for idx, beat in enumerate(beats):
-        b_start = float(beat.get("start_s") if beat.get("start_s") is not None else beat.get("start_seconds", 0.0))
-        sfx_clips.append(
-            f'    <audio class="clip sfx" data-start="{_fmt_time(b_start)}" data-duration="0.8" data-track-index="{track_counter}" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>'
-        )
-        track_counter += 1
-
-        # Step reveal pop / click sound effects
-        aid = beat.get("asset_id") or f"beat_{idx+1}"
-        vis_file = _resolve_beat_visual_file(beat, visuals_src, aid)
-        if progressive_reveal and vis_file.lower().endswith(EXT_SVG):
-            from lib.fixed_niche.voice_timing_aligner import compute_step_timings_for_beat
-            from lib.fixed_niche.svg_pipeline_builder import STEP_COUNTS
-            raw_end = float(beat.get("end_s", duration))
-            b_end = min(raw_end, duration) if idx == len(beats) - 1 else raw_end
-            beat_dur = max(0.5, b_end - b_start)
-            num_steps = 4 if (idx + 1 == 6 and len(beats) == 6) else STEP_COUNTS.get(idx + 1, 4)
-            s_func = str(beat.get("story_function", ""))
-            narration = str(beat.get("narration") or beat.get("visual_intent") or s_func)
-            word_ts = beat.get("word_timestamps")
-            is_final = (idx == len(beats) - 1)
-            step_timings = compute_step_timings_for_beat(
-                narration=narration,
-                duration=beat_dur,
-                num_steps=num_steps,
-                beat_start_s=b_start,
-                word_timestamps=word_ts,
-                is_final_beat=is_final,
-            )
-            if is_final:
-                last_step_timings = step_timings
-            for s_idx, rel_t in enumerate(step_timings, start=1):
-                if s_idx > 1 and (b_start + rel_t) < duration - 1.0:
-                    if idx in (0, 1) and s_idx == 2:
-                        sfx_sound, sfx_vol = "buzz.mp3", "0.22"
-                    elif idx in (3, 4) and s_idx in (2, 3):
-                        sfx_sound, sfx_vol = "pass-ping.mp3", "0.20"
-                    elif idx == len(beats) - 1 and s_idx == num_steps:
-                        sfx_sound, sfx_vol = "pass-ping.mp3", "0.24"
-                    else:
-                        sfx_sound = "click.mp3" if s_idx % 2 == 0 else "pop.mp3"
-                        sfx_vol = "0.16"
-                    sfx_clips.append(
-                        f'    <audio class="clip sfx" data-start="{_fmt_time(b_start + rel_t)}" data-duration="0.3" data-track-index="{track_counter}" src="assets/sfx/{sfx_sound}" data-volume="{sfx_vol}"></audio>'
-                    )
-                    track_counter += 1
-
-    cta_sfx_t = max(0.0, duration - 1.5)
-    if beats:
-        from lib.fixed_niche.voice_timing_aligner import compute_cta_timing
-        last_b = beats[-1]
-        last_st = float(last_b.get("start_s") if last_b.get("start_s") is not None else last_b.get("start_seconds", 0.0))
-        last_end = min(float(last_b.get("end_s", duration)), duration)
-        last_dur = max(0.5, last_end - last_st)
-        cta_rel = compute_cta_timing(last_dur, last_step_timings)
-        cta_sfx_t = max(0.0, last_st + cta_rel)
-        sfx_clips.append(
-            f'    <audio class="clip sfx" data-start="{_fmt_time(cta_sfx_t)}" data-duration="1.2" data-track-index="{track_counter}" src="assets/sfx/chime.mp3" data-volume="0.30"></audio>'
-        )
-    sfx_block = "\n".join(sfx_clips)
+    sfx_block, cta_sfx_t = _build_sfx_clips(beats, duration, visuals_src, progressive_reveal)
 
     clips_block = "\n".join(sections_html)
     tweens_block = "\n".join(tweens_js)
@@ -501,21 +564,9 @@ def compose_hyperframes_html(
     bgm_fadeout_t = _fmt_time(max(0.0, duration - 1.5))
 
     flow_hidden_css = """
-    .flow-step {
-      opacity: 0;
-      transform-origin: center center;
-      filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.45));
-    }
-    .flow-arrow {
-      opacity: 0;
-      transform-origin: top center;
-    }
-    .flow-header {
-      opacity: 0;
-    }
-    .flow-cta-banner {
-      opacity: 0;
-    }""" if progressive_reveal else ""
+    .flow-step { opacity: 0; transform-origin: center center; filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.45)); }
+    .flow-arrow { opacity: 0; transform-origin: top center; }
+    .flow-header, .flow-cta-banner { opacity: 0; }""" if progressive_reveal else ""
 
     return f"""<!doctype html>
 <html lang="en">
@@ -526,147 +577,23 @@ def compose_hyperframes_html(
   <script src="{GSAP_CDN_URL}"></script>
   <style>
     * {{ box-sizing: border-box; }}
-    html, body {{
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background: #0b1120;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }}
-    #root {{
-      position: relative;
-      width: {width}px;
-      height: {height}px;
-      overflow: hidden;
-      margin: 0 auto;
-    }}
-    .bg-fill {{
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at 50% 25%, #1e293b 0%, #0b1120 85%);
-      z-index: 0;
-    }}
-    .clip {{
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 40px;
-      z-index: 1;
-    }}
-    .stage-card {{
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      max-width: 980px;
-      opacity: 1;
-    }}
-    .stage-header {{
-      margin-bottom: 24px;
-      text-align: center;
-    }}
-    .date-badge {{
-      display: inline-block;
-      padding: 8px 18px;
-      margin-right: 12px;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1.5px solid rgba(56, 189, 248, 0.5);
-      border-radius: 9999px;
-      color: #38bdf8;
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
-    }}
-    .stage-badge {{
-      display: inline-block;
-      padding: 8px 20px;
-      background: rgba(30, 41, 59, 0.85);
-      border: 1.5px solid #38bdf8;
-      border-radius: 9999px;
-      color: #38bdf8;
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2);
-    }}
-    .diagram-viewport {{
-      width: {dia_w}px;
-      height: {dia_h}px;
-      border-radius: 20px;
-      overflow: hidden;
-      border: 1.5px solid #334155;
-      background: #0b1120;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }}
-    .hybrid-card {{
-      position: relative;
-      z-index: 3;
-    }}
-    .hybrid-card .diagram-viewport {{
-      background: rgba(11, 17, 32, 0.88);
-      backdrop-filter: blur(16px);
-      border: 1.5px solid rgba(56, 189, 248, 0.4);
-      box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.9), 0 0 40px rgba(56, 189, 248, 0.15);
-    }}
-    .technical-svg {{
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }}
-    .clip.illustration-scene {{
-      padding: 0;
-    }}
-    .illustration-viewport {{
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }}
-    .hero-illustration {{
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      transform-origin: center center;
-    }}
-    .vignette-overlay {{
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(
-        to bottom,
-        rgba(11, 17, 32, 0.78) 0%,
-        rgba(11, 17, 32, 0.15) 18%,
-        rgba(11, 17, 32, 0.1) 65%,
-        rgba(11, 17, 32, 0.88) 100%
-      );
-      pointer-events: none;
-      z-index: 2;
-    }}
-    .stage-header-overlay {{
-      position: absolute;
-      top: 100px;
-      left: 0;
-      right: 0;
-      z-index: 3;
-      margin-bottom: 0;
-    }}
+    html, body {{ margin: 0; padding: 0; width: 100%; height: 100%; background: #0b1120; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+    #root {{ position: relative; width: {width}px; height: {height}px; overflow: hidden; margin: 0 auto; }}
+    .bg-fill {{ position: absolute; inset: 0; background: radial-gradient(circle at 50% 25%, #1e293b 0%, #0b1120 85%); z-index: 0; }}
+    .clip {{ position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; z-index: 1; }}
+    .stage-card {{ display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 980px; opacity: 1; }}
+    .stage-header {{ margin-bottom: 24px; text-align: center; }}
+    .date-badge {{ display: inline-block; padding: 8px 18px; margin-right: 12px; background: rgba(15, 23, 42, 0.9); border: 1.5px solid rgba(56, 189, 248, 0.5); border-radius: 9999px; color: #38bdf8; font-size: 15px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2); }}
+    .stage-badge {{ display: inline-block; padding: 8px 20px; background: rgba(30, 41, 59, 0.85); border: 1.5px solid #38bdf8; border-radius: 9999px; color: #38bdf8; font-size: 16px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; box-shadow: 0 4px 14px rgba(56, 189, 248, 0.2); }}
+    .diagram-viewport {{ width: {dia_w}px; height: {dia_h}px; border-radius: 20px; overflow: hidden; border: 1.5px solid #334155; background: #0b1120; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75); display: flex; align-items: center; justify-content: center; }}
+    .hybrid-card {{ position: relative; z-index: 3; }}
+    .hybrid-card .diagram-viewport {{ background: rgba(11, 17, 32, 0.88); backdrop-filter: blur(16px); border: 1.5px solid rgba(56, 189, 248, 0.4); box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.9), 0 0 40px rgba(56, 189, 248, 0.15); }}
+    .technical-svg {{ width: 100%; height: 100%; object-fit: contain; display: block; }}
+    .clip.illustration-scene {{ padding: 0; }}
+    .illustration-viewport {{ position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; }}
+    .hero-illustration {{ width: 100%; height: 100%; object-fit: cover; display: block; transform-origin: center center; }}
+    .vignette-overlay {{ position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(11, 17, 32, 0.78) 0%, rgba(11, 17, 32, 0.15) 18%, rgba(11, 17, 32, 0.1) 65%, rgba(11, 17, 32, 0.88) 100%); pointer-events: none; z-index: 2; }}
+    .stage-header-overlay {{ position: absolute; top: 100px; left: 0; right: 0; z-index: 3; margin-bottom: 0; }}
 {flow_hidden_css}
   </style>
 </head>

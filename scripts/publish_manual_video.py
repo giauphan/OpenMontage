@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from scripts.publish_config import (
     load_config,
@@ -415,6 +416,359 @@ def _resolve_scheduled_publish(
     return datetime.fromisoformat(publish_at_iso.replace("Z", "+00:00")).replace(tzinfo=timezone.utc), scheduled_epoch
 
 
+def _meta_preflight_error_for_platform(platform: str) -> str | None:
+    if platform == "facebook":
+        try:
+            from tools.publishers.facebook_publisher import FacebookPublisher
+            fb_pub = FacebookPublisher()
+            readiness = fb_pub.check_readiness()
+            if readiness.get("status") in ("enabled", "ok") or readiness.get("configured") is True:
+                return None
+        except Exception:
+            pass
+        mp = MetaPublisher()
+        fb_token = os.environ.get("TOKEN_FACEBOOK", "")
+        if fb_token:
+            try:
+                _ = mp._get_page_info(fb_token, FB_PAGE_ID)
+                return None
+            except Exception as e:
+                return f"Meta Facebook Page access unavailable for {FB_PAGE_ID}: {e}"
+        gw_url = os.environ.get("FACEBOOK_GATEWAY_BASE_URL", "http://127.0.0.1:20129/custom/facebook")
+        return (
+            f"Facebook publishing unavailable: Toolcase Gateway not reachable at {gw_url} "
+            "(port 20129) and TOKEN_FACEBOOK is not configured."
+        )
+    if platform == "instagram":
+        mp = MetaPublisher()
+        fb_token = os.environ.get("TOKEN_FACEBOOK", "")
+        ig_acct = IG_ACCOUNT_ID
+        if not ig_acct:
+            try:
+                info = mp._get_page_info(fb_token, FB_PAGE_ID)
+                ig_acct = (info.get("instagram_business_account") or {}).get("id")
+            except Exception:
+                ig_acct = None
+        if not ig_acct:
+            return "Instagram Business Account unavailable: IG_ACCOUNT_ID not configured and Page lookup failed."
+        try:
+            _ = mp._get_instagram_info(fb_token, ig_acct)
+        except Exception as e:
+            return f"Meta Instagram access unavailable for ig_account_id {ig_acct}: {e}"
+        return None
+    return None
+
+
+def _resolve_platform_contract(
+    only_platform: str | None,
+    instagram_mode: bool,
+    cfg_enabled: set[str] | None,
+    multi_platform: bool,
+    yt_kind: str,
+    yt_field: str,
+    enabled_platforms: Any,
+    held_platforms: Any,
+    results: dict,
+) -> list[tuple[str, str, str, str]] | None:
+    if only_platform:
+        canon = canonical_platform_name(only_platform)
+        effective = set(enabled_platforms) if enabled_platforms else set()
+        effective.add(canon)
+        if not is_platform_enabled(canon, extra_enabled=effective, extra_held=held_platforms):
+            reason = "held" if is_platform_held(canon, extra_held=held_platforms) else "disabled"
+            print(f"⏸️ {reason.upper()}: Platform {canon} is {reason} by pipeline flag/env/config. Skipping publish.")
+            kind = PLATFORM_ROUTES.get(canon, ("short", ""))[0]
+            results["platforms"][f"{canon}/{kind}"] = {"status": "held", "reason": f"{canon} {reason} by pipeline flag/env/config"}
+            return None
+        accounts = {"instagram": IG_ACCOUNT_ID, "facebook": FB_PAGE_ID, "youtube": YT_ACCOUNT}
+        acct = accounts.get(canon, "")
+        k = yt_kind if canon == "youtube" else PLATFORM_ROUTES.get(canon, ("", ""))[0]
+        f = yt_field if canon == "youtube" else PLATFORM_ROUTES.get(canon, ("", ""))[1]
+        if not k:
+            raise ValueError(f"No platform configured for {canon}")
+        return [(canon, acct, k, f)]
+
+    if instagram_mode:
+        print("📸 INSTAGRAM MODE: Instagram only (Instagram cron job)")
+        contract = [("instagram", IG_ACCOUNT_ID, PLATFORM_ROUTES["instagram"][0], PLATFORM_ROUTES["instagram"][1])]
+    elif cfg_enabled is not None:
+        contract_candidates = []
+        if "youtube" in cfg_enabled:
+            contract_candidates.append(("youtube", YT_ACCOUNT, yt_kind, yt_field))
+        if "instagram" in cfg_enabled:
+            contract_candidates.append(("instagram", IG_ACCOUNT_ID, PLATFORM_ROUTES["instagram"][0], PLATFORM_ROUTES["instagram"][1]))
+        if "facebook" in cfg_enabled:
+            contract_candidates.append(("facebook", FB_PAGE_ID, PLATFORM_ROUTES["facebook"][0], PLATFORM_ROUTES["facebook"][1]))
+        if "tiktok" in cfg_enabled:
+            contract_candidates.append(("tiktok", "tiktok", PLATFORM_ROUTES["tiktok"][0], PLATFORM_ROUTES["tiktok"][1]))
+        for p in cfg_enabled:
+            if p not in ("youtube", "instagram", "facebook", "tiktok") and p in PLATFORM_ROUTES:
+                contract_candidates.append((p, "", PLATFORM_ROUTES[p][0], PLATFORM_ROUTES[p][1]))
+        print("📋 CONFIG-ENABLED PLATFORMS MODE: " + " + ".join(p for p, _, _, _ in contract_candidates))
+        contract = contract_candidates
+    elif multi_platform:
+        fb_on = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
+        tt_on = os.environ.get("TIKTOK_PUBLISH_ENABLED", "0") in ("1", "true", "True")
+        platforms = [("youtube", YT_ACCOUNT), ("instagram", IG_ACCOUNT_ID)]
+        if fb_on:
+            platforms.append(("facebook", FB_PAGE_ID))
+        if tt_on:
+            platforms.append(("tiktok", "tiktok"))
+        print("🌐 MULTI-PLATFORM MODE: " + " + ".join(p for p, _ in platforms))
+        contract = [(p, acct, PLATFORM_ROUTES[p][0], PLATFORM_ROUTES[p][1]) for p, acct in platforms]
+    else:
+        print("🎯 SINGLE-PLATFORM MODE: YouTube only (set MULTI_PLATFORM=1 for multi-platform)")
+        contract = [("youtube", YT_ACCOUNT, yt_kind, yt_field)]
+
+    active = []
+    for platform, account, kind, field in contract:
+        if not is_platform_enabled(platform, extra_enabled=enabled_platforms, extra_held=held_platforms):
+            reason = "held" if is_platform_held(platform, extra_held=held_platforms) else "disabled"
+            print(f"⏸️ {reason.upper()}: Skipping {platform} (platform is {reason} by pipeline flag/env/config)")
+            results["platforms"][f"{platform}/{kind}"] = {"status": "held", "reason": f"{platform} {reason} by pipeline flag/env/config"}
+        else:
+            active.append((platform, account, kind, field))
+    return active
+
+
+def _normalize_metadata_formats(metadata: dict, is_longform: bool) -> dict:
+    meta = dict(metadata)
+    if "fb_video" not in meta and "fb_reels" in meta:
+        meta["fb_video"] = meta["fb_reels"]
+    if is_longform:
+        if "yt_longform" not in meta and "yt_shorts" in meta:
+            meta["yt_longform"] = meta["yt_shorts"]
+    else:
+        if "yt_shorts" not in meta and "yt_longform" in meta:
+            meta["yt_shorts"] = meta["yt_longform"]
+    if "tiktok" not in meta:
+        for cand in ("yt_shorts", "ig_reels"):
+            if cand in meta:
+                meta["tiktok"] = meta[cand]
+                break
+    elif "16x9" in str(meta["tiktok"]) or "long" in str(meta["tiktok"]):
+        for cand in ("yt_shorts", "ig_reels"):
+            if cand in meta and any(k in str(meta[cand]) for k in ("9x16", "short", "reels")):
+                meta["tiktok"] = meta[cand]
+                break
+    return meta
+
+
+def _upload_youtube(metadata: dict, video_path: Path, publish_at: str | None, kind: str, dry_run: bool) -> tuple[dict, Any]:
+    publisher = YoutubePublisher()
+    try:
+        inputs = build_youtube_payload(metadata, video_path=str(video_path), publish_at=publish_at)
+    except ValueError as exc:
+        return {"success": False, "error": f"metadata invalid: {exc}"}, publisher
+
+    if dry_run:
+        print(f"[DRY RUN] Would upload YouTube {kind}: {video_path}")
+        return {"success": True, "video_id": "DRY_RUN_ID", "video_url": "https://example.com/dry-run"}, publisher
+
+    tool_res = publisher.execute(inputs)
+    data = tool_res.data or {}
+    res = {
+        "success": tool_res.success,
+        "video_id": data.get("video_id") if tool_res.success else None,
+        "video_url": data.get("video_url") if tool_res.success else None,
+        "thumbnail_status": data.get("thumbnail_status") if tool_res.success else None,
+        "thumbnail_path": data.get("thumbnail_path") if tool_res.success else None,
+        "error": tool_res.error if not tool_res.success else None,
+    }
+    return res, publisher
+
+
+def _upload_meta(
+    platform: str, account: str, kind: str, title: str, description: str, video_path: Path, cfg: dict, dry_run: bool, blocked_meta_reason: dict[str, str]
+) -> tuple[dict, Any]:
+    publisher = MetaPublisher()
+    if platform in blocked_meta_reason and not dry_run:
+        return {"success": False, "error": blocked_meta_reason[platform]}, publisher
+    if dry_run:
+        print(f"[DRY RUN] Would upload {platform} {kind}: {video_path}")
+        return {
+            "success": True,
+            "platform_id": f"DRY_RUN_{platform.upper()}_ID",
+            "video_url": f"https://facebook.com/{account}/videos/dry-run",
+        }, publisher
+
+    inputs = {
+        "video_path": video_path,
+        "title": title,
+        "caption": meta_caption(title, description),
+        "page_id": FB_PAGE_ID,
+        "instagram_account_id": IG_ACCOUNT_ID,
+        "post_to_facebook": platform == "facebook",
+        "post_to_instagram": platform == "instagram",
+    }
+    if cfg.get("scheduled_epoch") and platform == "facebook":
+        inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
+
+    if platform == "facebook":
+        tool_result = _execute_facebook_upload(video_path, title, description, cfg, inputs, publisher)
+    else:
+        tool_result = publisher.execute(inputs)
+
+    data = tool_result.data or {}
+    platform_id = data.get("facebook_post_id") or data.get("video_id") if platform == "facebook" else data.get("instagram_media_id")
+    res = {
+        "success": tool_result.success and bool(platform_id),
+        "platform_id": platform_id,
+        "video_url": data.get("video_url") or (f"https://facebook.com/{account}/videos/{platform_id}" if platform_id else None) if platform == "facebook" else None,
+        "error": None if (tool_result.success and platform_id) else (tool_result.error or f"Meta returned no {platform} media ID"),
+    }
+    return res, publisher
+
+
+def _execute_facebook_upload(video_path: Path, title: str, description: str, cfg: dict, inputs: dict, publisher: MetaPublisher) -> Any:
+    try:
+        from tools.publishers.facebook_publisher import FacebookPublisher
+        fb_pub = FacebookPublisher()
+        fb_inputs = {
+            "video_path": str(video_path),
+            "title": title,
+            "caption": meta_caption(title, description),
+            "target_id": FB_PAGE_ID,
+            "enable_auto_translate": True,
+            "publish_type": "REEL",
+        }
+        if cfg.get("scheduled_epoch"):
+            sched_epoch = int(cfg["scheduled_epoch"])
+            if sched_epoch >= int(time.time()) + 600:
+                fb_inputs["scheduled_publish_time"] = sched_epoch
+            else:
+                cfg["scheduled_epoch"] = None
+        tool_res = fb_pub.execute(fb_inputs)
+    except Exception as fb_exc:
+        from tools.base_tool import ToolResult
+        tool_res = ToolResult(success=False, error=str(fb_exc))
+
+    if not tool_res.success and os.environ.get("TOKEN_FACEBOOK"):
+        tool_res = publisher.execute(inputs)
+    return tool_res
+
+
+def _upload_tiktok(platform: str, kind: str, title: str, description: str, video_path: Path, cfg: dict, dry_run: bool) -> tuple[dict, Any]:
+    publisher = TiktokPublisher()
+    if dry_run:
+        print(f"[DRY RUN] Would upload {platform} {kind}: {video_path}")
+        return {
+            "success": True,
+            "platform_id": "DRY_RUN_TIKTOK_PROJECT_ID",
+            "video_id": "DRY_RUN_TIKTOK_VIDEO_ID",
+            "video_url": "https://www.tiktok.com/@creator/video/dry-run",
+        }, publisher
+
+    caption = f"{title}\n\n{description}".strip() if description else title
+    inputs = {
+        "video_path": str(video_path),
+        "caption": caption,
+        "title": title,
+        "visibility": os.environ.get("TIKTOK_DEFAULT_VISIBILITY", "only-me"),
+    }
+    if cfg.get("scheduled_epoch"):
+        inputs["schedule_time"] = int(cfg["scheduled_epoch"])
+    tool_result = publisher.execute(inputs)
+    data = tool_result.data or {}
+    project_id = data.get("project_id") or data.get("item_id")
+    res = {
+        "success": tool_result.success and bool(project_id or data.get("status") in ("published", "scheduled")),
+        "platform_id": project_id,
+        "video_id": data.get("item_id") or project_id,
+        "video_url": data.get("video_url") or (f"https://www.tiktok.com/video/{project_id}" if project_id else None),
+        "error": None if tool_result.success else (tool_result.error or "TikTok publish failed"),
+    }
+    return res, publisher
+
+
+def _check_remote_published_status(publisher: Any, platform: str, vid_id: str | None) -> dict | None:
+    if not vid_id:
+        return None
+    try:
+        if platform == "youtube" and hasattr(publisher, "check_video_published"):
+            v_info = publisher.check_video_published(vid_id)
+            if v_info and v_info.get("privacy_status") and v_info.get("upload_status"):
+                return {"privacy_status": v_info["privacy_status"], "upload_status": v_info["upload_status"]}
+        elif platform in ("instagram", "facebook") and hasattr(publisher, "check_media_published"):
+            m_info = publisher.check_media_published(vid_id, platform=platform)
+            if m_info and m_info.get("status"):
+                return m_info
+        elif platform == "tiktok" and hasattr(publisher, "check_video_published"):
+            t_info = publisher.check_video_published(vid_id)
+            if t_info and t_info.get("status"):
+                return t_info
+    except Exception:
+        pass
+    return None
+
+
+def _update_store_success(
+    store: PublishStore, key: str, platform: str, vid_id: str | None, vid_url: str | None, is_scheduled: bool, publish_at: str | None, cfg: dict, video_path: Path, publisher: Any
+) -> None:
+    try:
+        if is_scheduled:
+            sched_target = publish_at or (
+                datetime.fromtimestamp(cfg["scheduled_epoch"], tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                if cfg.get("scheduled_epoch")
+                else datetime.now(timezone.utc).isoformat()
+            )
+            store.mark_scheduled(key, video_id=vid_id, video_url=vid_url, scheduled_for=sched_target)
+            print(f"✅ Firebase record updated: {key} -> scheduled")
+        else:
+            now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            remote_st = _check_remote_published_status(publisher, platform, vid_id)
+            verified_at = now_iso if (remote_st and (remote_st.get("upload_status") == "processed" or remote_st.get("status") == "published")) else None
+            store.mark_published(
+                key, video_id=vid_id, video_url=vid_url, published_at=now_iso, verified_at=verified_at,
+                remote_status=remote_st, media_sha256=file_sha256(video_path) if video_path and Path(video_path).is_file() else None,
+            )
+            print(f"✅ Firebase record updated: {key} -> published")
+    except Exception as fb_error:
+        print(f"❌ Firebase update failed for {key}: {fb_error}")
+
+
+def _record_platform_publish_result(
+    store: PublishStore | None,
+    key: str,
+    platform: str,
+    kind: str,
+    result: dict,
+    cfg: dict,
+    publish_at: str | None,
+    video_path: Path,
+    publisher: Any,
+    results: dict,
+) -> None:
+    if not (result and result.get("success")):
+        error_msg = result.get("error", "Unknown upload error") if result else "No result returned"
+        if store:
+            try:
+                store.mark_failed(key, error_msg)
+            except Exception as fb_err:
+                print(f"❌ Firebase mark_failed failed for {key}: {fb_err}")
+        results["platforms"][f"{platform}/{kind}"] = {"status": "failed", "error": error_msg}
+        results["errors"].append(f"{platform}/{kind} upload failed: {error_msg}")
+        return
+
+    vid_id = result.get("video_id") or result.get("platform_id")
+    vid_url = result.get("video_url")
+    is_scheduled = (
+        False if platform == "instagram"
+        else True if platform in ("facebook", "tiktok") and cfg.get("scheduled_epoch")
+        else True if platform == "youtube" and publish_at
+        else False
+    )
+    record_status = "scheduled" if is_scheduled else "published"
+    if store:
+        _update_store_success(store, key, platform, vid_id, vid_url, is_scheduled, publish_at, cfg, video_path, publisher)
+
+    results["platforms"][f"{platform}/{kind}"] = {
+        "status": record_status,
+        "video_id": vid_id,
+        "video_url": vid_url,
+    }
+
+
 def publish_batch(
     metadata: dict,
     project_dir: Path,
@@ -435,15 +789,9 @@ def publish_batch(
     root = Path(__file__).resolve().parents[1]
     project_dir = safe_resolve_publish_path(project_dir, root)
 
-    # News evidence is an unconditional release gate, independent of quality
-    # preflight toggles and force/retry modes. It must precede claims and uploads.
     from lib.news_release_gate import require_news_evidence
     require_news_evidence(project_dir, metadata=metadata)
 
-    # Metadata contract: the shared route table owns platform -> field/kind mapping.
-    # DEFAULT BEHAVIOR: Single-platform publishing to prevent duplicates
-    # Multi-platform mode can be enabled via MULTI_PLATFORM=1 environment variable
-    # Instagram mode (INSTAGRAM_MODE=1): Instagram only (for Instagram cron jobs)
     multi_platform = os.environ.get("MULTI_PLATFORM", "0") == "1"
     instagram_mode = os.environ.get("INSTAGRAM_MODE", "0") == "1"
     
@@ -454,118 +802,20 @@ def publish_batch(
     
     cfg_enabled = get_enabled_platforms(extra_enabled=enabled_platforms)
 
-    if only_platform:
-        only_platform = canonical_platform_name(only_platform)
-        effective_enabled = set(enabled_platforms) if enabled_platforms else set()
-        effective_enabled.add(only_platform)
-        if not is_platform_enabled(only_platform, extra_enabled=effective_enabled, extra_held=held_platforms):
-            reason = "held" if is_platform_held(only_platform, extra_held=held_platforms) else "disabled"
-            print(f"⏸️ {reason.upper()}: Platform {only_platform} is {reason} by pipeline flag/env/config. Skipping publish.")
-            kind = PLATFORM_ROUTES.get(only_platform, ("short", ""))[0]
-            results["platforms"][f"{only_platform}/{kind}"] = {
-                "status": "held",
-                "reason": f"{only_platform} {reason} by pipeline flag/env/config",
-            }
-            return results
-
-        if only_platform == "instagram":
-            platform_contract = [("instagram", IG_ACCOUNT_ID, PLATFORM_ROUTES["instagram"][0], PLATFORM_ROUTES["instagram"][1])]
-        elif only_platform == "facebook":
-            platform_contract = [("facebook", FB_PAGE_ID, PLATFORM_ROUTES["facebook"][0], PLATFORM_ROUTES["facebook"][1])]
-        elif only_platform == "youtube":
-            platform_contract = [("youtube", YT_ACCOUNT, yt_kind, yt_field)]
-        elif only_platform in PLATFORM_ROUTES:
-            platform_contract = [(only_platform, "", PLATFORM_ROUTES[only_platform][0], PLATFORM_ROUTES[only_platform][1])]
-        else:
-            raise ValueError(f"No platform configured for {only_platform}")
-    elif instagram_mode:
-        print("📸 INSTAGRAM MODE: Instagram only (Instagram cron job)")
-        platform_contract = [
-            (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
-            for platform, account in (("instagram", IG_ACCOUNT_ID),)
-        ]
-    elif cfg_enabled is not None:
-        contract_candidates = []
-        if "youtube" in cfg_enabled:
-            contract_candidates.append(("youtube", YT_ACCOUNT, yt_kind, yt_field))
-        if "instagram" in cfg_enabled:
-            contract_candidates.append(("instagram", IG_ACCOUNT_ID, PLATFORM_ROUTES["instagram"][0], PLATFORM_ROUTES["instagram"][1]))
-        if "facebook" in cfg_enabled:
-            contract_candidates.append(("facebook", FB_PAGE_ID, PLATFORM_ROUTES["facebook"][0], PLATFORM_ROUTES["facebook"][1]))
-        if "tiktok" in cfg_enabled:
-            contract_candidates.append(("tiktok", "tiktok", PLATFORM_ROUTES["tiktok"][0], PLATFORM_ROUTES["tiktok"][1]))
-        for p in cfg_enabled:
-            if p not in ("youtube", "instagram", "facebook", "tiktok") and p in PLATFORM_ROUTES:
-                contract_candidates.append((p, "", PLATFORM_ROUTES[p][0], PLATFORM_ROUTES[p][1]))
-        print("📋 CONFIG-ENABLED PLATFORMS MODE: " + " + ".join(p for p, _, _, _ in contract_candidates))
-        platform_contract = contract_candidates
-    elif multi_platform:
-        facebook_enabled = os.environ.get("FACEBOOK_PUBLISH_ENABLED", "1") == "1"
-        tiktok_enabled = os.environ.get("TIKTOK_PUBLISH_ENABLED", "0") in ("1", "true", "True")
-        platforms = [("youtube", YT_ACCOUNT), ("instagram", IG_ACCOUNT_ID)]
-        if facebook_enabled:
-            platforms.append(("facebook", FB_PAGE_ID))
-        if tiktok_enabled:
-            platforms.append(("tiktok", "tiktok"))
-        print("🌐 MULTI-PLATFORM MODE: " + " + ".join(platform for platform, _ in platforms))
-        platform_contract = [
-            (platform, account, PLATFORM_ROUTES[platform][0], PLATFORM_ROUTES[platform][1])
-            for platform, account in platforms
-        ]
-    else:
-        print("🎯 SINGLE-PLATFORM MODE: YouTube only (set MULTI_PLATFORM=1 for multi-platform)")
-        platform_contract = [
-            ("youtube", YT_ACCOUNT, yt_kind, yt_field)
-        ]
-
-    # Filter out held and non-enabled platforms from platform contract
-    active_contract = []
-    for platform, account, kind, field in platform_contract:
-        if not is_platform_enabled(platform, extra_enabled=enabled_platforms, extra_held=held_platforms):
-            reason = "held" if is_platform_held(platform, extra_held=held_platforms) else "disabled"
-            print(f"⏸️ {reason.upper()}: Skipping {platform} (platform is {reason} by pipeline flag/env/config)")
-            results["platforms"][f"{platform}/{kind}"] = {
-                "status": "held",
-                "reason": f"{platform} {reason} by pipeline flag/env/config",
-            }
-        else:
-            active_contract.append((platform, account, kind, field))
-
-    platform_contract = active_contract
+    platform_contract = _resolve_platform_contract(
+        only_platform, instagram_mode, cfg_enabled, multi_platform, yt_kind, yt_field, enabled_platforms, held_platforms, results
+    )
     if not platform_contract:
-        print("⏸️ All candidate platforms for this batch are currently held or disabled. Exiting batch cleanly.")
         return results
-    
-    if "fb_video" not in metadata and "fb_reels" in metadata:
-        metadata = {**metadata, "fb_video": metadata["fb_reels"]}
-    if is_longform:
-        if "yt_longform" not in metadata and "yt_shorts" in metadata:
-            metadata = {**metadata, "yt_longform": metadata["yt_shorts"]}
-    else:
-        if "yt_shorts" not in metadata and "yt_longform" in metadata:
-            metadata = {**metadata, "yt_shorts": metadata["yt_longform"]}
-    if "tiktok" not in metadata:
-        for cand_short in ("yt_shorts", "ig_reels"):
-            if cand_short in metadata:
-                metadata = {**metadata, "tiktok": metadata[cand_short]}
-                break
-    elif "16x9" in str(metadata["tiktok"]) or "long" in str(metadata["tiktok"]):
-        for cand_short in ("yt_shorts", "ig_reels"):
-            if cand_short in metadata and ("9x16" in str(metadata[cand_short]) or "short" in str(metadata[cand_short]) or "reels" in str(metadata[cand_short])):
-                metadata = {**metadata, "tiktok": metadata[cand_short]}
-                break
+
+    metadata = _normalize_metadata_formats(metadata, is_longform)
     missing = [field for _, _, _, field in platform_contract if field not in metadata]
     if missing:
         raise KeyError(f"publish_metadata.json missing platform video fields: {', '.join(missing)}")
-    # Publish-time IS the source of truth for queued items: derive from config/publish_schedule.json
-    # via publish_date. The metadata file is NOT the schedule — use the explicit `date` arg (which
-    # publish_active_projects forwards from the queue entry) and only fall back to metadata for
-    # legacy/manual single-project runs.
+
     publish_date_for_schedule = date if date else metadata.get("publish_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     publish_at_iso: str | None = None
     scheduled_epoch: int | None = None
-    # Derive a scheduled time only when the queue actually placed this project (publish_time present).
-    # Otherwise this is a manual/immediate run → publish_at stays None → YouTube unlisted, Facebook immediate.
     if metadata.get("publish_time"):
         try:
             _, scheduled_epoch = _resolve_scheduled_publish(metadata, publish_date_for_schedule, load_config())
@@ -592,12 +842,8 @@ def publish_batch(
         for platform, account, kind, field in platform_contract
     ]
     if only_platform:
-        platforms = [cfg for cfg in platforms if cfg["platform"] == only_platform]
-    if not platforms:
-        raise ValueError(f"No platform configured for {only_platform}")
+        platforms = [c for c in platforms if c["platform"] == only_platform]
 
-    # Enforce release preflight (quality gates, checkpoints, human approval).
-    # Preflight failure halts before making upload API calls or DB writes.
     raw_enforce_preflight = enforce_preflight
     if enforce_preflight is None:
         enforce_preflight = bool(
@@ -610,68 +856,13 @@ def publish_batch(
         )
 
     if enforce_preflight:
-        enforce_release_preflight(
-            project_dir,
-            metadata,
-            platforms=platforms,
-            strict=strict,
-            force=force,
-        )
+        enforce_release_preflight(project_dir, metadata, platforms=platforms, strict=strict, force=force)
 
-    # Validate exact selected assets before any Firebase claim or mutation.
     for cfg in platforms:
         video_path = resolve_video_path(cfg["video_path"], project_dir, root)
         validate_publish_asset(video_path, project_dir, cfg["platform"], strict=True)
 
     today = date if date else datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    # Fail-closed Meta preflight: never attempt IG/FB with a transparently-doomed token.
-    # IMPORTANT: this must never block YouTube. Gate each platform independently and fail
-    # the blocked ones as "failed" (visible failure), while YouTube still runs.
-    def _meta_preflight_error_for_platform(platform: str) -> str | None:
-        if platform == "facebook":
-            # 1. Prefer Toolcase Gateway Facebook Suite adapter on port 20129
-            try:
-                from tools.publishers.facebook_publisher import FacebookPublisher
-                fb_pub = FacebookPublisher()
-                readiness = fb_pub.check_readiness()
-                if readiness.get("status") in ("enabled", "ok") or readiness.get("configured") is True:
-                    return None
-            except Exception:
-                pass
-            # 2. Fallback to Meta Graph API token if available
-            mp = MetaPublisher()
-            fb_token = os.environ.get("TOKEN_FACEBOOK", "")
-            if fb_token:
-                try:
-                    _ = mp._get_page_info(fb_token, FB_PAGE_ID)
-                    return None
-                except Exception as e:
-                    return f"Meta Facebook Page access unavailable for {FB_PAGE_ID}: {e}"
-            gw_url = os.environ.get("FACEBOOK_GATEWAY_BASE_URL", "http://127.0.0.1:20129/custom/facebook")
-            return (
-                f"Facebook publishing unavailable: Toolcase Gateway not reachable at {gw_url} "
-                "(port 20129) and TOKEN_FACEBOOK is not configured."
-            )
-        if platform == "instagram":
-            mp = MetaPublisher()
-            fb_token = os.environ.get("TOKEN_FACEBOOK", "")
-            ig_acct = IG_ACCOUNT_ID
-            if not ig_acct:
-                try:
-                    info = mp._get_page_info(fb_token, FB_PAGE_ID)
-                    ig_acct = (info.get("instagram_business_account") or {}).get("id")
-                except Exception:
-                    ig_acct = None
-            if not ig_acct:
-                return "Instagram Business Account unavailable: IG_ACCOUNT_ID not configured and Page lookup failed."
-            try:
-                _ = mp._get_instagram_info(fb_token, ig_acct)
-            except Exception as e:
-                return f"Meta Instagram access unavailable for ig_account_id {ig_acct}: {e}"
-            return None
-        return None
-
     if enforce_meta_preflight is None:
         enforce_meta_preflight = raw_enforce_preflight if raw_enforce_preflight is not None else True
 
@@ -699,19 +890,11 @@ def publish_batch(
             key = publish_key(today, metadata["id"], platform, kind)
             store.session.delete(store._url(key), timeout=30)
 
-        # Step 1: Claim in Firebase before upload
         if dry_run:
             key = publish_key(today, metadata["id"], platform, kind)
             exists = video_path.exists()
-            print(
-                f"[DRY RUN] {platform}/{kind}: would upload "
-                f"{video_path} ({'found' if exists else 'MISSING'})"
-            )
-            results["platforms"][f"{platform}/{kind}"] = {
-                "status": "dry_run",
-                "video_path": str(video_path),
-                "video_exists": exists,
-            }
+            print(f"[DRY RUN] {platform}/{kind}: would upload {video_path} ({'found' if exists else 'MISSING'})")
+            results["platforms"][f"{platform}/{kind}"] = {"status": "dry_run", "video_path": str(video_path), "video_exists": exists}
             if not exists:
                 results["errors"].append(f"{platform}/{kind} video not found: {video_path}")
             continue
@@ -733,283 +916,31 @@ def publish_batch(
             existing_status = existing.get("status") if existing else "unknown"
             if retry_failed and existing_status == "failed":
                 if existing.get("video_id") or existing.get("platform_id"):
-                    print(
-                        f"[RETRY CHECK] Existing record {key} already has remote ID; "
-                        f"skipping duplicate upload"
-                    )
-                    results["platforms"][f"{platform}/{kind}"] = {
-                        "status": "skipped",
-                        "reason": "existing_remote_id",
-                        "existing_record": existing,
-                    }
+                    print(f"[RETRY CHECK] Existing record {key} already has remote ID; skipping duplicate upload")
+                    results["platforms"][f"{platform}/{kind}"] = {"status": "skipped", "reason": "existing_remote_id", "existing_record": existing}
                     continue
                 key = publish_key(today, metadata["id"], platform, kind)
-                store.update(
-                    key,
-                    {
-                        "status": "uploading",
-                        "error": None,
-                        "retry_started_at": datetime.now(timezone.utc).isoformat(),
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
+                store.update(key, {"status": "uploading", "error": None, "retry_started_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()})
             elif existing_status == "scheduling" and not (existing.get("video_id") or existing.get("platform_id")):
-                print(
-                    f"[RESERVATION RESUME] Found queued reservation for {key} without remote ID; "
-                    f"resuming upload."
-                )
+                print(f"[RESERVATION RESUME] Found queued reservation for {key} without remote ID; resuming upload.")
                 key = publish_key(today, metadata["id"], platform, kind)
-                store.update(
-                    key,
-                    {
-                        "status": "uploading",
-                        "error": None,
-                        "worker_started_at": datetime.now(timezone.utc).isoformat(),
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
+                store.update(key, {"status": "uploading", "error": None, "worker_started_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()})
             else:
-                results["platforms"][f"{platform}/{kind}"] = {
-                    "status": "skipped",
-                    "reason": "duplicate",
-                    "existing_record": existing,
-                }
+                results["platforms"][f"{platform}/{kind}"] = {"status": "skipped", "reason": "duplicate", "existing_record": existing}
                 continue
 
-        # Step 2: Upload to platform
-        result = None
+        publisher = None
         if platform == "youtube":
-            publisher = YoutubePublisher()
-            try:
-                inputs = build_youtube_payload(metadata, video_path=str(video_path), publish_at=publish_at)
-            except ValueError as exc:
-                inputs = None
-                result = {"success": False, "error": f"metadata invalid: {exc}"}
-
-            if inputs is None:
-                pass
-            elif dry_run:
-                print(f"[DRY RUN] Would upload YouTube {kind}: {video_path}")
-                result = {"success": True, "video_id": "DRY_RUN_ID", "video_url": "https://example.com/dry-run"}
-            else:
-                tool_result = publisher.execute(inputs)
-                result = {
-                    "success": tool_result.success,
-                    "video_id": tool_result.data.get("video_id") if tool_result.success else None,
-                    "video_url": tool_result.data.get("video_url") if tool_result.success else None,
-                    "thumbnail_status": tool_result.data.get("thumbnail_status") if tool_result.success else None,
-                    "thumbnail_path": tool_result.data.get("thumbnail_path") if tool_result.success else None,
-                    "error": tool_result.error if not tool_result.success else None,
-                }
-
+            result, publisher = _upload_youtube(metadata, video_path, publish_at, kind, dry_run)
         elif platform in ("instagram", "facebook"):
-            if platform in blocked_meta_reason and not dry_run:
-                # Don't burn an API call that we already know will 400; record visible failure.
-                result = {"success": False, "error": blocked_meta_reason[platform]}
-            elif dry_run:
-                print(f"[DRY RUN] Would upload {platform} {kind}: {video_path}")
-                result = {
-                    "success": True,
-                    "platform_id": f"DRY_RUN_{platform.upper()}_ID",
-                    "video_url": f"https://facebook.com/{account}/videos/dry-run",
-                }
-            else:
-                inputs = {
-                    "video_path": video_path,
-                    "title": title,
-                    "caption": meta_caption(title, description),
-                    "page_id": FB_PAGE_ID,
-                    "instagram_account_id": IG_ACCOUNT_ID,
-                    "post_to_facebook": platform == "facebook",
-                    "post_to_instagram": platform == "instagram",
-                }
-                if cfg.get("scheduled_epoch") and platform == "facebook":
-                    inputs["scheduled_publish_time"] = int(cfg["scheduled_epoch"])
-
-                if platform == "facebook":
-                    try:
-                        from tools.publishers.facebook_publisher import FacebookPublisher
-                        fb_pub = FacebookPublisher()
-                        fb_inputs = {
-                            "video_path": str(video_path),
-                            "title": title,
-                            "caption": meta_caption(title, description),
-                            "target_id": FB_PAGE_ID,
-                            "enable_auto_translate": True,
-                            "publish_type": "REEL",
-                        }
-                        if cfg.get("scheduled_epoch"):
-                            now_sec = int(time.time())
-                            sched_epoch = int(cfg["scheduled_epoch"])
-                            if sched_epoch >= now_sec + 600:
-                                fb_inputs["scheduled_publish_time"] = sched_epoch
-                            else:
-                                cfg["scheduled_epoch"] = None
-                        tool_result = fb_pub.execute(fb_inputs)
-                    except Exception as fb_exc:
-                        from tools.base_tool import ToolResult
-                        tool_result = ToolResult(success=False, error=str(fb_exc))
-                    if not tool_result.success and os.environ.get("TOKEN_FACEBOOK"):
-                        publisher = MetaPublisher()
-                        tool_result = publisher.execute(inputs)
-                else:
-                    publisher = MetaPublisher()
-                    tool_result = publisher.execute(inputs)
-
-                data = tool_result.data or {}
-                platform_id = (
-                    data.get("facebook_post_id") or data.get("video_id")
-                    if platform == "facebook"
-                    else data.get("instagram_media_id")
-                )
-                result = {
-                    "success": tool_result.success and bool(platform_id),
-                    "platform_id": platform_id,
-                    "video_url": (
-                        data.get("video_url")
-                        or (f"https://facebook.com/{account}/videos/{platform_id}" if platform_id else None)
-                        if platform == "facebook"
-                        else None
-                    ),
-                    "error": (
-                        None
-                        if tool_result.success and platform_id
-                        else tool_result.error or f"Meta returned no {platform} media ID"
-                    ),
-                }
-
+            result, publisher = _upload_meta(platform, account, kind, title, description, video_path, cfg, dry_run, blocked_meta_reason)
         elif platform == "tiktok":
-            if dry_run:
-                print(f"[DRY RUN] Would upload {platform} {kind}: {video_path}")
-                result = {
-                    "success": True,
-                    "platform_id": "DRY_RUN_TIKTOK_PROJECT_ID",
-                    "video_id": "DRY_RUN_TIKTOK_VIDEO_ID",
-                    "video_url": "https://www.tiktok.com/@creator/video/dry-run",
-                }
-            else:
-                publisher = TiktokPublisher()
-                caption = f"{title}\n\n{description}".strip() if description else title
-                visibility = os.environ.get("TIKTOK_DEFAULT_VISIBILITY", "only-me")
-                inputs = {
-                    "video_path": str(video_path),
-                    "caption": caption,
-                    "title": title,
-                    "visibility": visibility,
-                }
-                if cfg.get("scheduled_epoch"):
-                    inputs["schedule_time"] = int(cfg["scheduled_epoch"])
-                tool_result = publisher.execute(inputs)
-                data = tool_result.data or {}
-                project_id = data.get("project_id") or data.get("item_id")
-                result = {
-                    "success": tool_result.success and bool(project_id or data.get("status") in ("published", "scheduled")),
-                    "platform_id": project_id,
-                    "video_id": data.get("item_id") or project_id,
-                    "video_url": data.get("video_url") or (f"https://www.tiktok.com/video/{project_id}" if project_id else None),
-                    "error": None if tool_result.success else tool_result.error or "TikTok publish failed",
-                }
-
+            result, publisher = _upload_tiktok(platform, kind, title, description, video_path, cfg, dry_run)
         else:
             results["errors"].append(f"Unsupported platform: {platform}")
             result = {"success": False, "error": f"Unsupported platform: {platform}"}
 
-        # Step 3: Update Firebase based on result
-        if result and result.get("success"):
-            vid_id = result.get("video_id") or result.get("platform_id")
-            vid_url = result.get("video_url")
-            # F08: Instagram is uploaded directly and published immediately at its slot.
-            # YouTube, Facebook, and TikTok can be remotely scheduled when scheduled_epoch or publish_at is present.
-            if platform == "instagram":
-                is_scheduled = False
-            elif platform in ("facebook", "tiktok") and cfg.get("scheduled_epoch"):
-                is_scheduled = True
-            elif platform == "youtube" and publish_at:
-                is_scheduled = True
-            else:
-                is_scheduled = False
-            record_status = "scheduled" if is_scheduled else "published"
-            if store:
-                try:
-                    if is_scheduled:
-                        sched_target = publish_at or (
-                            datetime.fromtimestamp(cfg["scheduled_epoch"], tz=timezone.utc).isoformat().replace("+00:00", "Z")
-                            if cfg.get("scheduled_epoch")
-                            else datetime.now(timezone.utc).isoformat()
-                        )
-                        store.mark_scheduled(
-                            key,
-                            video_id=vid_id,
-                            video_url=vid_url,
-                            scheduled_for=sched_target,
-                        )
-                        print(f"✅ Firebase record updated: {key} -> scheduled")
-                    else:
-                        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-                        remote_st = None
-                        verified_at = None
-                        if platform == "youtube" and hasattr(publisher, "check_video_published"):
-                            try:
-                                v_info = publisher.check_video_published(vid_id)
-                                if v_info and v_info.get("privacy_status") and v_info.get("upload_status"):
-                                    remote_st = {
-                                        "privacy_status": v_info["privacy_status"],
-                                        "upload_status": v_info["upload_status"],
-                                    }
-                                    if v_info.get("privacy_status") == "public" and v_info.get("upload_status") == "processed":
-                                        verified_at = now_iso
-                            except Exception:
-                                pass
-                        elif platform in ("instagram", "facebook") and hasattr(publisher, "check_media_published"):
-                            try:
-                                m_info = publisher.check_media_published(vid_id, platform=platform)
-                                if m_info and m_info.get("status"):
-                                    remote_st = m_info
-                                    if m_info.get("status") == "published":
-                                        verified_at = now_iso
-                            except Exception:
-                                pass
-                        elif platform == "tiktok" and hasattr(publisher, "check_video_published"):
-                            try:
-                                t_info = publisher.check_video_published(vid_id)
-                                if t_info and t_info.get("status"):
-                                    remote_st = t_info
-                                    if t_info.get("status") == "published":
-                                        verified_at = now_iso
-                            except Exception:
-                                pass
-
-                        store.mark_published(
-                            key,
-                            video_id=vid_id,
-                            video_url=vid_url,
-                            published_at=now_iso,
-                            verified_at=verified_at,
-                            remote_status=remote_st,
-                            media_sha256=file_sha256(video_path) if video_path and Path(video_path).is_file() else None,
-                        )
-                        print(f"✅ Firebase record updated: {key} -> published")
-                except Exception as fb_error:
-                    print(f"❌ Firebase update failed for {key}: {fb_error}")
-                    # Continue anyway since the platform upload succeeded
-                
-            results["platforms"][f"{platform}/{kind}"] = {
-                "status": record_status,
-                "video_id": vid_id,
-                "video_url": vid_url,
-            }
-        else:
-            error_msg = result.get("error", "Unknown upload error") if result else "No result returned"
-            try:
-                store.mark_failed(key, error_msg)
-            except Exception as fb_error:
-                print(f"❌ Firebase mark_failed failed for {key}: {fb_error}")
-                
-            results["platforms"][f"{platform}/{kind}"] = {
-                "status": "failed",
-                "error": error_msg,
-            }
-            results["errors"].append(f"{platform}/{kind} upload failed: {error_msg}")
+        _record_platform_publish_result(store, key, platform, kind, result, cfg, publish_at, video_path, publisher, results)
 
     return results
 

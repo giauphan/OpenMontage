@@ -78,17 +78,7 @@ def copy_composition_vendor(comp_dir: Path) -> None:
         shutil.copy2(local_gsap, comp_vendor / "gsap.min.js")
 
 
-def copy_composition_audio(audio_src: Path, comp_dir: Path) -> None:
-    """Copy narration, BGM, and sound effect assets into composition directory."""
-    comp_assets = comp_dir / "assets"
-    comp_assets.mkdir(parents=True, exist_ok=True)
-    if audio_src.is_file():
-        shutil.copy2(audio_src, comp_assets / NARRATION_MP3_FILENAME)
-
-    repo_root = Path(__file__).resolve().parents[2]
-    parent_assets = comp_dir.parent / "assets"
-
-    # Copy background music bed
+def _copy_bgm(parent_assets: Path, comp_assets: Path, audio_src: Path, repo_root: Path) -> None:
     for bgm_cand in (
         parent_assets / MUSIC_BG_MP3_FILENAME,
         audio_src.parent / MUSIC_BG_MP3_FILENAME,
@@ -101,7 +91,8 @@ def copy_composition_audio(audio_src: Path, comp_dir: Path) -> None:
                 shutil.copy2(bgm_cand, parent_assets / MUSIC_BG_MP3_FILENAME)
             break
 
-    # Copy sound effects library
+
+def _copy_sfx(parent_assets: Path, comp_assets: Path, audio_src: Path, repo_root: Path) -> None:
     for sfx_dir in (
         parent_assets / "sfx",
         audio_src.parent / "sfx",
@@ -118,6 +109,19 @@ def copy_composition_audio(audio_src: Path, comp_dir: Path) -> None:
                 for f in sfx_dir.glob("*.mp3"):
                     shutil.copy2(f, parent_sfx / f.name)
             break
+
+
+def copy_composition_audio(audio_src: Path, comp_dir: Path) -> None:
+    """Copy narration, BGM, and sound effect assets into composition directory."""
+    comp_assets = comp_dir / "assets"
+    comp_assets.mkdir(parents=True, exist_ok=True)
+    if audio_src.is_file():
+        shutil.copy2(audio_src, comp_assets / NARRATION_MP3_FILENAME)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    parent_assets = comp_dir.parent / "assets"
+    _copy_bgm(parent_assets, comp_assets, audio_src, repo_root)
+    _copy_sfx(parent_assets, comp_assets, audio_src, repo_root)
 
 
 def _materialize_single_composition(
@@ -186,6 +190,57 @@ def materialize_hyperframes_project(
     return result_paths
 
 
+def _configure_hyperframes_browser_env(env: dict[str, str]) -> None:
+    if "HYPERFRAMES_BROWSER_PATH" in env:
+        return
+    playwright_shell = Path("/home/ubuntu/.cache/ms-playwright/chromium_headless_shell-1228/chrome-linux/headless_shell")
+    if playwright_shell.is_file():
+        env["HYPERFRAMES_BROWSER_PATH"] = str(playwright_shell)
+        return
+    if not Path("/opt/brave.com/brave/brave").is_file():
+        return
+    cache_dir = Path(__file__).resolve().parents[2] / ".cache"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        brave_sh = cache_dir / "brave_headless.sh"
+    except OSError:
+        temp_dir = Path(tempfile.mkdtemp(prefix="om_brave_"))
+        brave_sh = temp_dir / "brave_headless.sh"
+    if not brave_sh.is_file():
+        try:
+            brave_sh.write_text(
+                "#!/bin/bash\nexec /opt/brave.com/brave/brave --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \"$@\"\n",
+                encoding="utf-8",
+            )
+            brave_sh.chmod(0o755)
+        except OSError:
+            pass
+    if brave_sh.is_file():
+        if not os.access(brave_sh, os.X_OK):
+            try:
+                brave_sh.chmod(0o755)
+            except OSError:
+                pass
+        if os.access(brave_sh, os.X_OK):
+            env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
+
+
+def _burn_captions_if_needed(raw_mp4: Path, output_mp4: Path, ass_path: Optional[Path], burn_captions: bool) -> None:
+    if not (burn_captions and ass_path and ass_path.is_file()):
+        return
+    esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
+    burn_cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", str(raw_mp4),
+        "-vf", f"ass='{esc_ass}'",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+        "-c:a", "copy",
+        str(output_mp4),
+    ]
+    subprocess.run(burn_cmd, check=True)
+    raw_mp4.unlink(missing_ok=True)
+
+
 def render_hyperframes_composition(
     comp_dir: Path,
     output_mp4: Path,
@@ -203,7 +258,6 @@ def render_hyperframes_composition(
     output_mp4 = Path(output_mp4).resolve()
     output_mp4.parent.mkdir(parents=True, exist_ok=True)
 
-    # Ensure narration and audio assets exist in comp_dir/assets
     copy_composition_audio(comp_dir.parent / "assets" / NARRATION_MP3_FILENAME, comp_dir)
 
     raw_mp4 = output_mp4 if not burn_captions else output_mp4.with_suffix(".raw.mp4")
@@ -214,52 +268,12 @@ def render_hyperframes_composition(
         "--quality", quality,
     ]
     env = dict(os.environ)
-    if "HYPERFRAMES_BROWSER_PATH" not in env:
-        playwright_shell = Path("/home/ubuntu/.cache/ms-playwright/chromium_headless_shell-1228/chrome-linux/headless_shell")
-        if playwright_shell.is_file():
-            env["HYPERFRAMES_BROWSER_PATH"] = str(playwright_shell)
-        elif Path("/opt/brave.com/brave/brave").is_file():
-            cache_dir = Path(__file__).resolve().parents[2] / ".cache"
-            try:
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                brave_sh = cache_dir / "brave_headless.sh"
-            except OSError:
-                temp_dir = Path(tempfile.mkdtemp(prefix="om_brave_"))
-                brave_sh = temp_dir / "brave_headless.sh"
-            if not brave_sh.is_file():
-                try:
-                    brave_sh.write_text(
-                        "#!/bin/bash\nexec /opt/brave.com/brave/brave --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \"$@\"\n",
-                        encoding="utf-8",
-                    )
-                    brave_sh.chmod(0o755)
-                except OSError:
-                    pass
-            if brave_sh.is_file():
-                if not os.access(brave_sh, os.X_OK):
-                    try:
-                        brave_sh.chmod(0o755)
-                    except OSError:
-                        pass
-                if os.access(brave_sh, os.X_OK):
-                    env["HYPERFRAMES_BROWSER_PATH"] = str(brave_sh)
+    _configure_hyperframes_browser_env(env)
 
     logger.info("Executing HyperFrames render: %s", " ".join(cmd))
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=env)
     if res.returncode != 0:
         raise RuntimeError(f"HyperFrames render failed (exit {res.returncode}): {res.stderr or res.stdout}")
 
-    if burn_captions and ass_path and ass_path.is_file():
-        esc_ass = str(ass_path.resolve()).replace("\\", "/").replace(":", "\\:")
-        burn_cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", str(raw_mp4),
-            "-vf", f"ass='{esc_ass}'",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
-            "-c:a", "copy",
-            str(output_mp4),
-        ]
-        subprocess.run(burn_cmd, check=True)
-        raw_mp4.unlink(missing_ok=True)
-
+    _burn_captions_if_needed(raw_mp4, output_mp4, ass_path, burn_captions)
     return output_mp4

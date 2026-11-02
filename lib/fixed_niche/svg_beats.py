@@ -25,6 +25,29 @@ from lib.fixed_niche.svg_icons import (
 )
 
 
+def _split_into_lines(text: str, max_chars: int) -> list[str]:
+    """Split text into lines respecting '//' delimiters and max_chars limit."""
+    clean = text.strip()
+    if "//" in clean:
+        parts = [p.strip() for p in clean.split("//", 1)]
+        return [parts[0], parts[1]]
+    if len(clean) <= max_chars:
+        return [clean]
+    words = clean.split()
+    lines = []
+    cur = ""
+    for w in words:
+        cand = f"{cur} {w}".strip() if cur else w
+        if len(cand) <= max_chars or not cur:
+            cur = cand
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def render_wrapped_text(
     text: str,
     x: int,
@@ -37,26 +60,7 @@ def render_wrapped_text(
     font_family: str = "sans-serif",
 ) -> str:
     """Render single-line or multi-line SVG text, wrapping at word/delimiter boundaries to prevent overlap."""
-    clean = text.strip()
-    if "//" in clean:
-        parts = [p.strip() for p in clean.split("//", 1)]
-        lines = [parts[0], parts[1]]
-    elif len(clean) <= max_chars:
-        lines = [clean]
-    else:
-        words = clean.split()
-        lines = []
-        cur = ""
-        for w in words:
-            cand = f"{cur} {w}".strip() if cur else w
-            if len(cand) <= max_chars or not cur:
-                cur = cand
-            else:
-                lines.append(cur)
-                cur = w
-        if cur:
-            lines.append(cur)
-
+    lines = _split_into_lines(text, max_chars)
     if len(lines) <= 1:
         val = html_escape(lines[0]) if lines else ""
         return f'<text x="{x}" y="{y}" fill="{fill}" font-family="{font_family}" font-size="{font_size}" font-weight="{font_weight}">{val}</text>'

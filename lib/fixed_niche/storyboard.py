@@ -104,173 +104,136 @@ class FixedNicheStoryboardDirector:
             progressive=progressive,
         )
 
+    @staticmethod
+    def _compose_b1(family: str, title: str, clean_hook: str) -> str:
+        if clean_hook and len(clean_hook.split()) >= 6 and not _is_rhetorical_question(clean_hook):
+            return clean_hook if clean_hook.endswith((".", "!")) else f"{clean_hook}."
+        family_hooks = {
+            "agent_tool_use": "A single schema mismatch can silently crash an autonomous tool call. Here is what breaks inside the Model Context Protocol, and the defensive fix.",
+            "debugging_reliability": "Automated coding agent pull requests often pass local unit tests, yet silently break continuous integration builds. Here is the architectural breakdown and the fix.",
+            "context_memory": "Autonomous coding agents lose critical working memory the second a process restarts. Here is why prompts reset back to zero, and the repository fix.",
+            "agent_evaluation": "Single-run benchmark scores frequently mask real agent failures on production codebases. Here is why deterministic evaluation matrices are mandatory.",
+            "agent_architecture": "Untyped subagent handoffs silently corrupt state across parallel agent workflows. Here is the immutable message passing fix.",
+        }
+        if family in family_hooks:
+            return family_hooks[family]
+        if title:
+            clean_title = title.rstrip(".").strip()
+            return f"Coding agents encounter recurring catastrophic failures with {clean_title}. Here is why multi-turn loops break, and the production fix."
+        return "Autonomous coding agents silently lose critical memory across process restarts. Here is why prompts reset back to zero, and the repository fix."
+
+    @staticmethod
+    def _compose_b2(family: str, symptom: str, stmt_0: str) -> str:
+        sym = symptom or (stmt_0 if len(stmt_0.split()) >= 4 else "")
+        if sym:
+            return f"In active development workflows, {sym.rstrip('.')}. The failure derails multi-turn agent execution before code is delivered."
+        family_symptoms = {
+            "agent_tool_use": "A single type mismatch between the tool schema and the runtime payload causes immediate tool execution failure.",
+            "debugging_reliability": "In continuous integration environments, automated coding agent patches satisfy isolated unit assertions, yet silently introduce breaking regressions across downstream test suites.",
+        }
+        return family_symptoms.get(family, "You provide detailed constraints in chat, yet the next agent session resets back to zero.")
+
+    @staticmethod
+    def _compose_b3(family: str, mech: str) -> str:
+        if mech:
+            return f"The root architectural cause is {mech.rstrip('.')}. Autonomous models maintain zero persistent context across process restarts unless boundaries are explicitly declared."
+        family_mechs = {
+            "agent_tool_use": "The underlying mechanism is strict validation in client libraries. Autonomous agents frequently emit stringified arguments or hallucinated keys instead of structured dictionaries conforming to the tool definition.",
+            "debugging_reliability": "The root architectural mechanism is test blindness. Targeted tests executed in isolation miss shared runtime state, environment variables, and inter-package dependency cycles that fail during full regression builds.",
+        }
+        return family_mechs.get(family, "The root cause is ephemeral session memory. Large language models maintain zero persistent state across process restarts unless repository instructions are explicitly injected into the agent system prompt on every invocation.")
+
+    @staticmethod
+    def _compose_b4(family: str, rem: str) -> str:
+        if rem:
+            return f"The verified engineering remedy is {rem.rstrip('.')}. Enforce declarative configuration boundaries before executing code mutations."
+        family_rems = {
+            "agent_tool_use": "The verified remedy is schema defense. Enforce input schema validation before invoking the server, and provide automatic schema coercion filters that sanitize agent payloads before dispatch.",
+            "debugging_reliability": "The disciplined engineering remedy is reproduction before repair. Require agents to author hermetic reproduction tests verifying the failure under clean baseline conditions before patching.",
+        }
+        return family_rems.get(family, "The engineering remedy is declarative configuration. Define an immutable AGENTS markdown contract at the repository root, and enforce automated preflight checks that load these boundaries before executing any code modifications.")
+
+    @staticmethod
+    def _compose_b5(family: str, v_step: str) -> str:
+        if v_step and len(v_step.split()) >= 3:
+            return f"Verify this remedy locally by running {v_step.rstrip('.')}, asserting that reproduction tests pass cleanly under isolated sandbox conditions."
+        family_vsteps = {
+            "agent_tool_use": "Verify this remedy locally by executing mock MCP tool calls with malformed payloads, asserting that repair filters recover valid arguments and schema errors drop to zero.",
+            "debugging_reliability": "Verify this fix locally by running the reproduction test against clean baseline code, confirming that the patch cleanly resolves regressions and assertions deterministically.",
+        }
+        return family_vsteps.get(family, "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted.")
+
+    @staticmethod
+    def _compose_b6(family: str, takeaway: str) -> str:
+        cta_suffix = "Follow me for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint."
+        if takeaway and len(takeaway.split()) >= 4:
+            return f"Always enforce {takeaway.rstrip('.')} in code and CI. {cta_suffix}"
+        family_takeaways = {
+            "agent_tool_use": f"Enforce strict schema validation and payload coercion in production. {cta_suffix}",
+            "debugging_reliability": f"Always author hermetic reproduction tests before merging automated patches. {cta_suffix}",
+        }
+        return family_takeaways.get(family, f"Always enforce declarative AGENTS contracts in code and CI. {cta_suffix}")
+
     def compose_dynamic_narration(
         self,
         topic: Dict[str, Any],
         claims: List[Dict[str, Any]],
     ) -> Dict[str, str]:
-        """Compose 6-beat evidence-driven narration grounded in topic claims and brief.
-
-        Calibrated to ~125–130 words total for a 65–75 second shorts delivery duration.
-        """
+        """Compose 6-beat evidence-driven narration grounded in topic claims and brief."""
         family = topic.get("topic_family", "context_memory")
         title = topic.get("title", "AI Agent Engineering Explainer")
 
-        # Claims extraction
         statements = [c.get("statement", "") for c in claims if isinstance(c, dict) and c.get("statement")]
         stmt_0 = statements[0] if len(statements) > 0 else ""
         stmt_1 = statements[1] if len(statements) > 1 else ""
         stmt_2 = statements[2] if len(statements) > 2 else ""
 
-        # Beat 1: Hook (0-3s stop-the-scroll quantifiable claim / pattern interrupt)
         hook = topic.get("hook")
         clean_hook = hook.strip() if hook and isinstance(hook, str) else ""
 
-        # Priority 1: Bold explicit declarative hook (reject weak rhetorical questions)
-        if clean_hook and len(clean_hook.split()) >= 6 and not _is_rhetorical_question(clean_hook):
-            b1 = clean_hook if clean_hook.endswith((".", "!")) else f"{clean_hook}."
-        # Priority 2: Family-specific quantifiable claims and pattern interrupts (Grade A / 90+ Hook)
-        elif family == "agent_tool_use":
-            b1 = "A single schema mismatch can silently crash an autonomous tool call. Here is what breaks inside the Model Context Protocol, and the defensive fix."
-        elif family == "debugging_reliability":
-            b1 = "Automated coding agent pull requests often pass local unit tests, yet silently break continuous integration builds. Here is the architectural breakdown and the fix."
-        elif family == "context_memory":
-            b1 = "Autonomous coding agents lose critical working memory the second a process restarts. Here is why prompts reset back to zero, and the repository fix."
-        elif family == "agent_evaluation":
-            b1 = "Single-run benchmark scores frequently mask real agent failures on production codebases. Here is why deterministic evaluation matrices are mandatory."
-        elif family == "agent_architecture":
-            b1 = "Untyped subagent handoffs silently corrupt state across parallel agent workflows. Here is the immutable message passing fix."
-        elif title:
-            clean_title = title.rstrip(".").strip()
-            b1 = f"Coding agents encounter recurring catastrophic failures with {clean_title}. Here is why multi-turn loops break, and the production fix."
-        else:
-            b1 = "Autonomous coding agents silently lose critical memory across process restarts. Here is why prompts reset back to zero, and the repository fix."
+        b1 = self._compose_b1(family, title, clean_hook)
+        b2 = self._compose_b2(family, topic.get("symptom"), stmt_0)
+        b3 = self._compose_b3(family, topic.get("root_cause") or topic.get("mechanism") or (stmt_1 if len(stmt_1.split()) >= 4 else ""))
+        b4 = self._compose_b4(family, topic.get("remedy") or topic.get("fix") or (stmt_2 if len(stmt_2.split()) >= 4 else ""))
+        b5 = self._compose_b5(family, topic.get("verification_step") or topic.get("demo_command"))
+        b6 = self._compose_b6(family, topic.get("key_takeaway") or topic.get("thesis"))
 
-        # Beat 2: Developer Impact / Symptom
-        symptom = topic.get("symptom") or (stmt_0 if len(stmt_0.split()) >= 4 else "")
-        if symptom:
-            clean_sym = symptom.rstrip(".")
-            b2 = f"In active development workflows, {clean_sym}. The failure derails multi-turn agent execution before code is delivered."
-        elif family == "agent_tool_use":
-            b2 = "A single type mismatch between the tool schema and the runtime payload causes immediate tool execution failure."
-        elif family == "debugging_reliability":
-            b2 = "In continuous integration environments, automated coding agent patches satisfy isolated unit assertions, yet silently introduce breaking regressions across downstream test suites."
-        else:
-            b2 = "You provide detailed constraints in chat, yet the next agent session resets back to zero."
+        return {"b1": b1, "b2": b2, "b3": b3, "b4": b4, "b5": b5, "b6": b6}
 
-        # Beat 3: Root Cause / Mechanism
-        mech = topic.get("root_cause") or topic.get("mechanism") or (stmt_1 if len(stmt_1.split()) >= 4 else "")
-        if mech:
-            clean_mech = mech.rstrip(".")
-            b3 = f"The root architectural cause is {clean_mech}. Autonomous models maintain zero persistent context across process restarts unless boundaries are explicitly declared."
-        elif family == "agent_tool_use":
-            b3 = "The underlying mechanism is strict validation in client libraries. Autonomous agents frequently emit stringified arguments or hallucinated keys instead of structured dictionaries conforming to the tool definition."
-        elif family == "debugging_reliability":
-            b3 = "The root architectural mechanism is test blindness. Targeted tests executed in isolation miss shared runtime state, environment variables, and inter-package dependency cycles that fail during full regression builds."
-        else:
-            b3 = "The root cause is ephemeral session memory. Large language models maintain zero persistent state across process restarts unless repository instructions are explicitly injected into the agent system prompt on every invocation."
-
-        # Beat 4: Verified Remedy / Architecture Fix
-        rem = topic.get("remedy") or topic.get("fix") or (stmt_2 if len(stmt_2.split()) >= 4 else "")
-        if rem:
-            clean_rem = rem.rstrip(".")
-            b4 = f"The verified engineering remedy is {clean_rem}. Enforce declarative configuration boundaries before executing code mutations."
-        elif family == "agent_tool_use":
-            b4 = "The verified remedy is schema defense. Enforce input schema validation before invoking the server, and provide automatic schema coercion filters that sanitize agent payloads before dispatch."
-        elif family == "debugging_reliability":
-            b4 = "The disciplined engineering remedy is reproduction before repair. Require agents to author hermetic reproduction tests verifying the failure under clean baseline conditions before patching."
-        else:
-            b4 = "The engineering remedy is declarative configuration. Define an immutable AGENTS markdown contract at the repository root, and enforce automated preflight checks that load these boundaries before executing any code modifications."
-
-        # Beat 5: Local Verification / Demo Checklist
-        v_step = topic.get("verification_step") or topic.get("demo_command")
-        if v_step and len(v_step.split()) >= 3:
-            clean_step = v_step.rstrip(".")
-            b5 = f"Verify this remedy locally by running {clean_step}, asserting that reproduction tests pass cleanly under isolated sandbox conditions."
-        elif family == "agent_tool_use":
-            b5 = "Verify this remedy locally by executing mock MCP tool calls with malformed payloads, asserting that repair filters recover valid arguments and schema errors drop to zero."
-        elif family == "debugging_reliability":
-            b5 = "Verify this fix locally by running the reproduction test against clean baseline code, confirming that the patch cleanly resolves regressions and assertions deterministically."
-        else:
-            b5 = "Verify this remedy locally by asserting that newly spawned agent sub-processes explicitly acknowledge boundary rules and pass clean contract tests before any git commit is permitted."
-
-        # Beat 6: Takeaway & Call to Action (CTA)
-        cta_suffix = "Follow me for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint."
-        takeaway = topic.get("key_takeaway") or topic.get("thesis")
-        if takeaway and len(takeaway.split()) >= 4:
-            clean_ta = takeaway.rstrip(".")
-            b6 = f"Always enforce {clean_ta} in code and CI. {cta_suffix}"
-        elif family == "agent_tool_use":
-            b6 = f"Enforce strict schema validation and payload coercion in production. {cta_suffix}"
-        elif family == "debugging_reliability":
-            b6 = f"Always author hermetic reproduction tests before merging automated patches. {cta_suffix}"
-        else:
-            b6 = f"Always enforce declarative AGENTS contracts in code and CI. {cta_suffix}"
-
-        return {
-            "b1": b1, "b2": b2, "b3": b3, "b4": b4, "b5": b5, "b6": b6
-        }
-
-    def generate_storyboard(
-        self,
-        topic: Dict[str, Any],
-        claims: List[Dict[str, Any]],
-        project_dir: Path,
-        target_duration: float = 72.0,
-        *,
-        write_svg_to_disk: bool = True,
-    ) -> Dict[str, Any]:
-        """Generate a 6-beat, 65-75s visual plan and video proof map."""
-        if not (65.0 <= target_duration <= 75.0):
-            raise ValueError(
-                f"target_duration {target_duration}s is invalid; must be between 65.0 and 75.0 seconds as defined by policy."
-            )
-
-        if not claims:
-            raise ValueError("Cannot generate storyboard: claims list is empty; proof map requires verified claims.")
-        claim_ids = [c["claim_id"] for c in claims if isinstance(c, dict) and c.get("claim_id")]
-        if not claim_ids:
-            raise ValueError("Cannot generate storyboard: supplied claims contain no valid claim_id.")
-
-        project_dir = Path(project_dir)
-        visuals_dir = project_dir / "assets" / "visuals"
-        visuals_dir.mkdir(parents=True, exist_ok=True)
-        artifacts_dir = project_dir / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-        cid = topic.get("candidate_id") or topic.get("id") or "cand_01"
-        family = topic.get("topic_family", "context_memory")
-        title = topic.get("title", "AI Agent Engineering Explainer")
-        question = topic.get("viewer_question") or f"Why does this fail: {title}?"
-
-        c1 = claim_ids[0]
-        c2 = claim_ids[1] if len(claim_ids) > 1 else c1
-        c3 = claim_ids[2] if len(claim_ids) > 2 else c2
-        extra_claim_ids = claim_ids[3:]
-
-        # Compose evidence-driven narration grounded in topic claims and brief
-        narration_beats = self.compose_dynamic_narration(topic, claims)
-        b1_narration = narration_beats["b1"]
-        b2_narration = narration_beats["b2"]
-        b3_narration = narration_beats["b3"]
-        b4_narration = narration_beats["b4"]
-        b5_narration = narration_beats["b5"]
-        b6_narration = narration_beats["b6"]
-
-        # Determine number of beats: 6 beats cover up to 72.0s without exceeding the 12.0s hold limit.
-        # Durations > 72.0s (up to 75.0s) add a 7th beat so every scene hold is <= 12.0s.
+    @staticmethod
+    def _calculate_timestamps(target_duration: float) -> tuple[int, list[float]]:
         num_beats = 7 if target_duration > 72.0 else 6
         dur_step = target_duration / num_beats
         timestamps = [round(i * dur_step, 2) for i in range(num_beats + 1)]
         timestamps[-1] = round(target_duration, 2)
-
-        # Validate that actual beat intervals never exceed 12.0s
         for i in range(num_beats):
             interval = round(timestamps[i + 1] - timestamps[i], 2)
             if interval > 12.0:
                 raise ValueError(
                     f"Beat {i+1} duration ({interval}s) exceeds maximum allowed scene hold of 12.0s for target_duration {target_duration}s."
                 )
+        return num_beats, timestamps
+
+    @staticmethod
+    def _build_beats_spec(
+        timestamps: list[float],
+        num_beats: int,
+        narration_beats: dict[str, str],
+        claim_ids: list[str],
+        family: str,
+        title: str,
+    ) -> list[dict[str, Any]]:
+        c1 = claim_ids[0]
+        c2 = claim_ids[1] if len(claim_ids) > 1 else c1
+        c3 = claim_ids[2] if len(claim_ids) > 2 else c2
+        extra_claim_ids = claim_ids[3:]
+
+        b1_narration = narration_beats["b1"]
+        b2_narration = narration_beats["b2"]
+        b3_narration = narration_beats["b3"]
+        b4_narration = narration_beats["b4"]
+        b5_narration = narration_beats["b5"]
+        b6_narration = narration_beats["b6"]
 
         import os
         ai_visual_enabled = os.environ.get("AI_VISUAL_ENABLED", "0") in ("1", "true", "True")
@@ -368,15 +331,13 @@ class FixedNicheStoryboardDirector:
         if num_beats == 7:
             b6_words = b6_narration.split()
             mid = max(1, len(b6_words) // 2)
-            b6a_narration = " ".join(b6_words[:mid])
-            b6b_narration = " ".join(b6_words[mid:])
             beats_spec.append({
                 "beat_id": "B06",
                 "script_section_id": "S06",
                 "start_s": timestamps[5],
                 "end_s": timestamps[6],
                 "story_function": "contract_assertion",
-                "narration": b6a_narration,
+                "narration": " ".join(b6_words[:mid]),
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -384,7 +345,7 @@ class FixedNicheStoryboardDirector:
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b06_assertion",
                 "expected_screen_state": "CI validation pipeline: hermetic contract assertion status",
-                "visual_intent": f"Engineering blueprint showing contract assertion verification in CI: {b6a_narration[:80]}",
+                "visual_intent": f"Engineering blueprint showing contract assertion verification in CI: {' '.join(b6_words[:mid])[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             })
             beats_spec.append({
@@ -393,7 +354,7 @@ class FixedNicheStoryboardDirector:
                 "start_s": timestamps[6],
                 "end_s": timestamps[7],
                 "story_function": "payoff_and_cta",
-                "narration": b6b_narration,
+                "narration": " ".join(b6_words[mid:]),
                 "claim_ids": [c3],
                 "visual_kind": "svg_diagram",
                 "evidence_class": "conceptual_diagram",
@@ -401,7 +362,7 @@ class FixedNicheStoryboardDirector:
                 "is_proof_bearing": True,
                 "asset_id": f"{family}_b07_payoff",
                 "expected_screen_state": "Summary payoff card with repository star badge and follow call to action",
-                "visual_intent": f"Call to action card reinforcing defensive verification principle: {b6b_narration[:80]}",
+                "visual_intent": f"Call to action card reinforcing defensive verification principle: {' '.join(b6_words[mid:])[:80]}",
                 "fallback_policy": "use_builtin_verified_icon_diagram",
             })
         else:
@@ -426,28 +387,118 @@ class FixedNicheStoryboardDirector:
         for beat in beats_spec:
             beat["topic_family"] = family
             beat["title"] = title
+        return beats_spec
 
-        # Generate SVGs on disk if requested
+    def _write_storyboard_svgs(
+        self,
+        beats_spec: list[dict[str, Any]],
+        family: str,
+        title: str,
+        visuals_dir: Path,
+    ) -> None:
+        for i, beat in enumerate(beats_spec):
+            asset_id = beat["asset_id"]
+            beat_start_s = float(beat.get("start_s", 0.0))
+            beat_end_s = float(beat.get("end_s", beat_start_s + 11.0))
+            beat_dur = max(1.0, beat_end_s - beat_start_s)
+            narration = beat.get("narration", "")
+            svg_content = self.generate_technical_svg(
+                asset_id=asset_id,
+                topic_family=family,
+                title=title,
+                beat_num=i + 1,
+                total_beats=len(beats_spec),
+                duration=beat_dur,
+                narration=narration,
+                beat_start_s=beat_start_s,
+                progressive=True,
+            )
+            svg_file = visuals_dir / f"{asset_id}.svg"
+            svg_file.write_text(svg_content, encoding="utf-8")
+
+    def generate_storyboard(
+        self,
+        topic: Dict[str, Any],
+        claims: List[Dict[str, Any]],
+        project_dir: Path,
+        target_duration: float = 72.0,
+        *,
+        write_svg_to_disk: bool = True,
+    ) -> Dict[str, Any]:
+        """Generate a 6-beat, 65-75s visual plan and video proof map."""
+        if not (65.0 <= target_duration <= 75.0):
+            raise ValueError(
+                f"target_duration {target_duration}s is invalid; must be between 65.0 and 75.0 seconds as defined by policy."
+            )
+
+        if not claims:
+            raise ValueError("Cannot generate storyboard: claims list is empty; proof map requires verified claims.")
+        claim_ids = [c["claim_id"] for c in claims if isinstance(c, dict) and c.get("claim_id")]
+        if not claim_ids:
+            raise ValueError("Cannot generate storyboard: supplied claims contain no valid claim_id.")
+
+        project_dir = Path(project_dir)
+        visuals_dir = project_dir / "assets" / "visuals"
+        visuals_dir.mkdir(parents=True, exist_ok=True)
+        artifacts_dir = project_dir / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        cid = topic.get("candidate_id") or topic.get("id") or "cand_01"
+        family = topic.get("topic_family", "context_memory")
+        title = topic.get("title", "AI Agent Engineering Explainer")
+        question = topic.get("viewer_question") or f"Why does this fail: {title}?"
+
+        narration_beats = self.compose_dynamic_narration(topic, claims)
+        num_beats, timestamps = self._calculate_timestamps(target_duration)
+        beats_spec = self._build_beats_spec(timestamps, num_beats, narration_beats, claim_ids, family, title)
+
         if write_svg_to_disk:
-            for i, beat in enumerate(beats_spec):
-                asset_id = beat["asset_id"]
-                beat_start_s = float(beat.get("start_s", 0.0))
-                beat_end_s = float(beat.get("end_s", beat_start_s + 11.0))
-                beat_dur = max(1.0, beat_end_s - beat_start_s)
-                narration = beat.get("narration", "")
-                svg_content = self.generate_technical_svg(
-                    asset_id=asset_id,
-                    topic_family=family,
-                    title=title,
-                    beat_num=i + 1,
-                    total_beats=len(beats_spec),
-                    duration=beat_dur,
-                    narration=narration,
-                    beat_start_s=beat_start_s,
-                    progressive=True,
-                )
-                svg_file = visuals_dir / f"{asset_id}.svg"
-                svg_file.write_text(svg_content, encoding="utf-8")
+            self._write_storyboard_svgs(beats_spec, family, title, visuals_dir)
+
+        # 1. news_visual_plan.json
+        visual_plan = {
+            "version": "1.0",
+            "project_id": cid,
+            "beats": beats_spec,
+        }
+        visual_plan_path = artifacts_dir / "news_visual_plan.json"
+        visual_plan_path.write_text(json.dumps(visual_plan, indent=2), encoding="utf-8")
+
+        # 2. video_proof_map.json sidecar
+        proof_map_beats = []
+        for beat in beats_spec:
+            proof_map_beats.append({
+                "beat_id": beat["beat_id"],
+                "script_section_id": beat["script_section_id"],
+                "start_s": beat["start_s"],
+                "end_s": beat["end_s"],
+                "claim_ids": beat["claim_ids"],
+                "proof_kind": beat["evidence_class"],
+                "is_proof_bearing": beat.get("is_proof_bearing", False),
+                "visual_asset_ids": [f"{beat['asset_id']}.svg"],
+                "requires_real_demo": False,
+                "is_illustration": True,
+                "expected_screen_state": beat["expected_screen_state"],
+            })
+
+        proof_map = VideoProofMap(
+            version="1.0",
+            niche_id="us-ai-agent-engineering",
+            policy_sha256=self.policy_sha256,
+            topic_id=cid,
+            viewer_question=question,
+            beats=proof_map_beats,
+        )
+        proof_map_path = artifacts_dir / "video_proof_map.json"
+        proof_map_path.write_text(json.dumps(proof_map.to_dict(), indent=2), encoding="utf-8")
+
+        return {
+            "visual_plan": visual_plan,
+            "proof_map": proof_map.to_dict(),
+            "visual_plan_path": visual_plan_path,
+            "proof_map_path": proof_map_path,
+            "total_duration": target_duration,
+        }
 
         # 1. news_visual_plan.json
         visual_plan = {

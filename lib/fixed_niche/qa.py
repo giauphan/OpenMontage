@@ -75,17 +75,8 @@ class FixedNicheQAValidator:
 
         return True
 
-    def audit_fixed_niche_deliverable(
-        self,
-        project_dir: Path,
-        expected_duration: float = 72.0,
-        duration_tolerance: float = 3.0,
-    ) -> Dict[str, Any]:
-        """Audit all technical and editorial deliverables for an agent engineering project."""
-        project_dir = Path(project_dir)
-        findings: List[Dict[str, str]] = []
-
-        # 1. Scope & Policy hash audit
+    def _audit_scope(self, project_dir: Path) -> List[Dict[str, str]]:
+        findings = []
         scope_file = project_dir / "artifacts" / "fixed_niche_scope.json"
         if not scope_file.is_file():
             findings.append({"category": "SCOPE", "severity": "blocker", "message": "Missing fixed_niche_scope.json"})
@@ -99,100 +90,128 @@ class FixedNicheQAValidator:
                     findings.append({"category": "POLICY_TAMPERING", "severity": "blocker", "message": "Policy SHA256 mismatch"})
             except Exception as e:
                 findings.append({"category": "SCOPE", "severity": "blocker", "message": f"Malformed scope artifact: {e}"})
+        return findings
 
-        # 2. Meaningful visual audit with evidence substantiation
+    @staticmethod
+    def _extract_approved_claims_with_stats(project_dir: Path, combined_stat_re: Any) -> list[dict[str, Any]]:
+        approved_claims = []
+        ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+        if not ledger_path.is_file():
+            return approved_claims
+        try:
+            l_data = json.loads(ledger_path.read_text(encoding="utf-8"))
+            for c in l_data.get("claims", []):
+                if c.get("verdict") == "APPROVED":
+                    c_stats = set()
+                    for text_field in (c.get("statement", ""), c.get("evidence_excerpt", "")):
+                        for m in combined_stat_re.finditer(text_field):
+                            c_stats.add(re.sub(r"[\s,]+", "", m.group(0)).lower().lstrip("+-"))
+                    if c_stats:
+                        approved_claims.append({
+                            "claim_id": c.get("claim_id"),
+                            "stats": c_stats,
+                            "text_corpus": f"{c.get('statement', '')} {c.get('evidence_excerpt', '')}".lower(),
+                        })
+        except Exception:
+            pass
+        return approved_claims
+
+    @staticmethod
+    def _validate_visual_stat(
+        clean_t: str,
+        stat_match: Any,
+        approved_claims: list[dict[str, Any]],
+        beat_id: Any,
+    ) -> Dict[str, str] | None:
+        stat_val = re.sub(r"[\s,]+", "", stat_match.group(0)).lower().lstrip("+-")
+        matching = [c for c in approved_claims if stat_val in c["stats"]]
+        if not matching:
+            return {
+                "category": "UNGROUNDED_VISUAL_STATISTIC",
+                "severity": "blocker",
+                "message": f"Beat '{beat_id}' contains ungrounded visual statistic: '{clean_t}' (figure '{stat_val}' not substantiated in approved claims)",
+            }
+        metric_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', clean_t.lower())) - {
+            "this", "that", "with", "from", "your", "what", "when", "where", "which"
+        }
+        has_support = any(any(w in c["text_corpus"] for w in metric_words) for c in matching) if metric_words else True
+        if not has_support:
+            return {
+                "category": "UNGROUNDED_VISUAL_STATISTIC",
+                "severity": "blocker",
+                "message": f"Beat '{beat_id}' contains visual statistic '{clean_t}' where metric context does not match supporting claim",
+            }
+        return None
+
+    def _audit_beat_svg_file(
+        self,
+        svg_path: Path,
+        beat: dict[str, Any],
+        combined_stat_re: Any,
+        approved_claims: list[dict[str, Any]],
+    ) -> List[Dict[str, str]]:
+        findings = []
+        if not svg_path.is_file():
+            return findings
+        content = svg_path.read_text(encoding="utf-8")
+        if "fill=\"#0f172a\"" in content and "BeVietnamPro" in content and len(content) < 400:
+            findings.append({
+                "category": "GENERIC_FALLBACK",
+                "severity": "blocker",
+                "message": f"Beat '{beat.get('beat_id')}' contains placeholder title rectangle",
+            })
+        text_elements = re.findall(r'<text[^>]*>(.*?)</text>', content, re.DOTALL)
+        for t in text_elements:
+            clean_t = re.sub(r'<[^>]+>', '', t).strip()
+            for stat_match in combined_stat_re.finditer(clean_t):
+                f = self._validate_visual_stat(clean_t, stat_match, approved_claims, beat.get("beat_id"))
+                if f:
+                    findings.append(f)
+        return findings
+
+    def _audit_visual_plan(self, project_dir: Path) -> List[Dict[str, str]]:
+        findings = []
         visual_plan_file = project_dir / "artifacts" / "news_visual_plan.json"
-        if visual_plan_file.is_file():
-            try:
-                num = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?'
-                stat_patterns = [
-                    rf'[-+]?\b{num}x\b',
-                    rf'[-+]?\b{num}%',
-                    rf'[-+]?\b{num}[kmb]?\s+tokens?\b',
-                    rf'[-+]?\b{num}\s*(?:ms|req/s|rps|ops/sec)\b',
-                ]
-                combined_stat_re = re.compile("|".join(f"(?:{p})" for p in stat_patterns), re.IGNORECASE)
+        if not visual_plan_file.is_file():
+            return findings
+        try:
+            num = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?'
+            stat_patterns = [
+                rf'[-+]?\b{num}x\b',
+                rf'[-+]?\b{num}%',
+                rf'[-+]?\b{num}[kmb]?\s+tokens?\b',
+                rf'[-+]?\b{num}\s*(?:ms|req/s|rps|ops/sec)\b',
+            ]
+            combined_stat_re = re.compile("|".join(f"(?:{p})" for p in stat_patterns), re.IGNORECASE)
+            approved_claims = self._extract_approved_claims_with_stats(project_dir, combined_stat_re)
+            plan_data = json.loads(visual_plan_file.read_text(encoding="utf-8"))
+            for beat in plan_data.get("beats", []):
+                aid = beat.get("asset_id")
+                if aid:
+                    svg_path = project_dir / "assets" / "visuals" / f"{aid}.svg"
+                    findings.extend(self._audit_beat_svg_file(svg_path, beat, combined_stat_re, approved_claims))
+        except Exception as e:
+            findings.append({"category": "VISUAL", "severity": "blocker", "message": f"Visual plan audit error: {e}"})
+        return findings
 
-                # Extract normalized approved statistics strictly from approved claims in claim ledger
-                approved_claims_with_stats = []
-                ledger_path = project_dir / "artifacts" / "claim_ledger.json"
-                if ledger_path.is_file():
-                    try:
-                        l_data = json.loads(ledger_path.read_text(encoding="utf-8"))
-                        for c in l_data.get("claims", []):
-                            if c.get("verdict") == "APPROVED":
-                                c_stats = set()
-                                for text_field in (c.get("statement", ""), c.get("evidence_excerpt", "")):
-                                    for m in combined_stat_re.finditer(text_field):
-                                        c_stats.add(re.sub(r"[\s,]+", "", m.group(0)).lower().lstrip("+-"))
-                                if c_stats:
-                                    approved_claims_with_stats.append({
-                                        "claim_id": c.get("claim_id"),
-                                        "stats": c_stats,
-                                        "text_corpus": f"{c.get('statement', '')} {c.get('evidence_excerpt', '')}".lower(),
-                                    })
-                    except Exception:
-                        pass
-
-                plan_data = json.loads(visual_plan_file.read_text(encoding="utf-8"))
-                for beat in plan_data.get("beats", []):
-                    aid = beat.get("asset_id")
-                    if aid:
-                        svg_path = project_dir / "assets" / "visuals" / f"{aid}.svg"
-                        if svg_path.is_file():
-                            content = svg_path.read_text(encoding="utf-8")
-                            # Detect placeholder SVG fallback
-                            if "fill=\"#0f172a\"" in content and "BeVietnamPro" in content and len(content) < 400:
-                                findings.append({
-                                    "category": "GENERIC_FALLBACK",
-                                    "severity": "blocker",
-                                    "message": f"Beat '{beat.get('beat_id')}' contains placeholder title rectangle",
-                                })
-                            # Detect ungrounded statistics or performance multipliers in visual text
-                            text_elements = re.findall(r'<text[^>]*>(.*?)</text>', content, re.DOTALL)
-                            for t in text_elements:
-                                clean_t = re.sub(r'<[^>]+>', '', t).strip()
-                                for stat_match in combined_stat_re.finditer(clean_t):
-                                    stat_val = re.sub(r"[\s,]+", "", stat_match.group(0)).lower().lstrip("+-")
-                                    matching_claims = [c for c in approved_claims_with_stats if stat_val in c["stats"]]
-                                    if not matching_claims:
-                                        findings.append({
-                                            "category": "UNGROUNDED_VISUAL_STATISTIC",
-                                            "severity": "blocker",
-                                            "message": f"Beat '{beat.get('beat_id')}' contains ungrounded visual statistic: '{clean_t}' (figure '{stat_val}' not substantiated in approved claims)",
-                                        })
-                                    else:
-                                        metric_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', clean_t.lower())) - {
-                                            "this", "that", "with", "from", "your", "what", "when", "where", "which"
-                                        }
-                                        has_context_support = any(
-                                            any(w in c["text_corpus"] for w in metric_words)
-                                            for c in matching_claims
-                                        ) if metric_words else True
-                                        if not has_context_support:
-                                            findings.append({
-                                                "category": "UNGROUNDED_VISUAL_STATISTIC",
-                                                "severity": "blocker",
-                                                "message": f"Beat '{beat.get('beat_id')}' contains visual statistic '{clean_t}' where metric context does not match supporting claim",
-                                            })
-            except Exception as e:
-                findings.append({"category": "VISUAL", "severity": "blocker", "message": f"Visual plan audit error: {e}"})
-
-        # 3. Frame samples audit
+    def _audit_frame_samples(self, project_dir: Path) -> List[Dict[str, str]]:
+        findings = []
         frames_dir = project_dir / "renders" / "frame_samples"
         if frames_dir.is_dir():
             for frame_path in frames_dir.glob("*.png"):
                 ok, reason = self.storyboard_director.validate_frame_sample(frame_path)
                 if not ok:
                     findings.append({"category": "FRAME_QUALITY", "severity": "blocker", "message": f"{frame_path.name}: {reason}"})
+        return findings
 
-        # 4. Duration compliance check
+    @staticmethod
+    def _audit_duration(project_dir: Path, duration_tolerance: float) -> List[Dict[str, str]]:
+        findings = []
         ffprobe_file = project_dir / "renders" / "ffprobe.json"
         if ffprobe_file.is_file():
             try:
                 probe_data = json.loads(ffprobe_file.read_text(encoding="utf-8"))
-                fmt = probe_data.get("format", {})
-                dur_str = fmt.get("duration")
+                dur_str = probe_data.get("format", {}).get("duration")
                 if dur_str:
                     dur = float(dur_str)
                     if not (65.0 - duration_tolerance <= dur <= 75.0 + duration_tolerance):
@@ -203,8 +222,11 @@ class FixedNicheQAValidator:
                         })
             except Exception as e:
                 findings.append({"category": "DURATION", "severity": "warning", "message": f"Could not parse ffprobe duration: {e}"})
+        return findings
 
-        # 4.5. Call to Action (CTA) audit - prevents 0/10 CTA grade
+    @staticmethod
+    def _audit_cta(project_dir: Path) -> List[Dict[str, str]]:
+        findings = []
         script_file = project_dir / "artifacts" / "script_en_US.json"
         if script_file.is_file():
             try:
@@ -222,65 +244,86 @@ class FixedNicheQAValidator:
                         })
             except Exception as e:
                 findings.append({"category": "CALL_TO_ACTION", "severity": "warning", "message": f"CTA audit error: {e}"})
+        return findings
 
-        # 5. Claim ledger & Source snapshot provenance audit
+    @staticmethod
+    def _audit_claims_and_proofs(project_dir: Path) -> List[Dict[str, str]]:
+        findings = []
         claim_ledger_file = project_dir / "artifacts" / "claim_ledger.json"
         snapshot_file = project_dir / "artifacts" / "source_snapshot.txt"
         proof_map_file = project_dir / "artifacts" / "video_proof_map.json"
 
         if not claim_ledger_file.is_file():
             findings.append({"category": "EVIDENCE", "severity": "blocker", "message": "Missing claim_ledger.json"})
-        else:
-            try:
-                ledger_data = json.loads(claim_ledger_file.read_text(encoding="utf-8"))
-                claims = ledger_data.get("claims", [])
-                claim_by_id = {c.get("claim_id"): c for c in claims}
+            return findings
 
-                for c in claims:
-                    cid = c.get("claim_id")
-                    if c.get("confidence") == "verified":
-                        if not snapshot_file.is_file():
+        try:
+            ledger_data = json.loads(claim_ledger_file.read_text(encoding="utf-8"))
+            claims = ledger_data.get("claims", [])
+            claim_by_id = {c.get("claim_id"): c for c in claims}
+
+            for c in claims:
+                cid = c.get("claim_id")
+                if c.get("confidence") == "verified":
+                    if not snapshot_file.is_file():
+                        findings.append({
+                            "category": "SNAPSHOT_PROVENANCE",
+                            "severity": "blocker",
+                            "message": f"Claim {cid} marked verified but source_snapshot.txt missing on disk",
+                        })
+                    else:
+                        actual_sha = hashlib.sha256(snapshot_file.read_bytes()).hexdigest()
+                        expected_sha = c.get("snapshot_sha256")
+                        if expected_sha and actual_sha.lower() != str(expected_sha).lower():
                             findings.append({
                                 "category": "SNAPSHOT_PROVENANCE",
                                 "severity": "blocker",
-                                "message": f"Claim {cid} marked verified but source_snapshot.txt missing on disk",
+                                "message": f"Claim {cid} snapshot SHA256 mismatch: expected {expected_sha}, got {actual_sha}",
                             })
-                        else:
-                            actual_sha = hashlib.sha256(snapshot_file.read_bytes()).hexdigest()
-                            expected_sha = c.get("snapshot_sha256")
-                            if expected_sha and actual_sha.lower() != str(expected_sha).lower():
-                                findings.append({
-                                    "category": "SNAPSHOT_PROVENANCE",
-                                    "severity": "blocker",
-                                    "message": f"Claim {cid} snapshot SHA256 mismatch: expected {expected_sha}, got {actual_sha}",
-                                })
 
-                # Audit proof-bearing beats against verified claims
-                if not proof_map_file.is_file():
-                    findings.append({
-                        "category": "PROOF_MAP",
-                        "severity": "blocker",
-                        "message": "Missing video_proof_map.json artifact: technical claims must map to beat proofs",
-                    })
-                else:
-                    try:
-                        proof_data = json.loads(proof_map_file.read_text(encoding="utf-8"))
-                        for pb in proof_data.get("beats", []):
-                            bid = pb.get("beat_id")
-                            is_proof_bearing = pb.get("is_proof_bearing", False) or pb.get("requires_real_demo", False)
-                            cids = pb.get("claim_ids") or ([pb.get("claim_id")] if pb.get("claim_id") else [])
-                            for ref_cid in cids:
-                                ref_claim = claim_by_id.get(ref_cid)
-                                if is_proof_bearing and (not ref_claim or ref_claim.get("confidence") != "verified"):
-                                    findings.append({
-                                        "category": "UNVERIFIED_CLAIM_IN_PROOF_BEAT",
-                                        "severity": "blocker",
-                                        "message": f"Proof-bearing beat '{bid}' references unverified claim '{ref_cid}' without snapshot provenance",
-                                    })
-                    except Exception as pe:
-                        findings.append({"category": "EVIDENCE", "severity": "warning", "message": f"Proof map audit error: {pe}"})
-            except Exception as e:
-                findings.append({"category": "EVIDENCE", "severity": "blocker", "message": f"Malformed claim ledger: {e}"})
+            if not proof_map_file.is_file():
+                findings.append({
+                    "category": "PROOF_MAP",
+                    "severity": "blocker",
+                    "message": "Missing video_proof_map.json artifact: technical claims must map to beat proofs",
+                })
+            else:
+                try:
+                    proof_data = json.loads(proof_map_file.read_text(encoding="utf-8"))
+                    for pb in proof_data.get("beats", []):
+                        bid = pb.get("beat_id")
+                        is_proof_bearing = pb.get("is_proof_bearing", False) or pb.get("requires_real_demo", False)
+                        cids = pb.get("claim_ids") or ([pb.get("claim_id")] if pb.get("claim_id") else [])
+                        for ref_cid in cids:
+                            ref_claim = claim_by_id.get(ref_cid)
+                            if is_proof_bearing and (not ref_claim or ref_claim.get("confidence") != "verified"):
+                                findings.append({
+                                    "category": "UNVERIFIED_CLAIM_IN_PROOF_BEAT",
+                                    "severity": "blocker",
+                                    "message": f"Proof-bearing beat '{bid}' references unverified claim '{ref_cid}' without snapshot provenance",
+                                })
+                except Exception as pe:
+                    findings.append({"category": "EVIDENCE", "severity": "warning", "message": f"Proof map audit error: {pe}"})
+        except Exception as e:
+            findings.append({"category": "EVIDENCE", "severity": "blocker", "message": f"Malformed claim ledger: {e}"})
+        return findings
+
+    def audit_fixed_niche_deliverable(
+        self,
+        project_dir: Path,
+        expected_duration: float = 72.0,
+        duration_tolerance: float = 3.0,
+    ) -> Dict[str, Any]:
+        """Audit all technical and editorial deliverables for an agent engineering project."""
+        project_dir = Path(project_dir)
+        findings: List[Dict[str, str]] = []
+
+        findings.extend(self._audit_scope(project_dir))
+        findings.extend(self._audit_visual_plan(project_dir))
+        findings.extend(self._audit_frame_samples(project_dir))
+        findings.extend(self._audit_duration(project_dir, duration_tolerance))
+        findings.extend(self._audit_cta(project_dir))
+        findings.extend(self._audit_claims_and_proofs(project_dir))
 
         blockers = [f for f in findings if f.get("severity") == "blocker"]
         strict_pass = len(blockers) == 0

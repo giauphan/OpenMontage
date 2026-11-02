@@ -248,10 +248,10 @@ def bind_news_evidence(project_dir: Path) -> bool:
             or brief_data.get("metadata", {}).get("published_at")
             or brief_data.get("published_at_utc")
             or (f"{brief_data['research_date']}T00:00:00+00:00" if brief_data.get("research_date") and re.match(r"^\d{4}-\d{2}-\d{2}$", str(brief_data.get("research_date"))) else None)
-            or _iso_utc(now)
+            or (None if strict_capture_required else _iso_utc(now))
         )
         ret_date_str = (matched_prov.get("retrieved_at") if matched_prov else None) or _iso_utc(ret_time)
-        effective_pub_str = pub_date_str if (pub_date_str and _is_valid_iso(pub_date_str)) else _iso_utc(now)
+        effective_pub_str = pub_date_str if (pub_date_str and _is_valid_iso(pub_date_str)) else (None if strict_capture_required else _iso_utc(now))
 
         content_filename = f"source_evidence_{sid}.txt"
         content_path = artifacts_dir / content_filename

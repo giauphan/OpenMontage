@@ -285,39 +285,132 @@ class FacebookPublisher(BaseTool):
                 return {"error": f"Status post interrupted or ambiguous: {e}"}
         return {"error": "Failed to publish Facebook status"}
 
-    def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        """Upload video to Facebook Page with optional scheduling and auto-dubbing."""
+    def _validate_execution_params(
+        self, inputs: dict[str, Any]
+    ) -> tuple[Optional[ToolResult], Optional[Path], str, str, str, str, Optional[int]]:
         if "video_path" not in inputs:
-            return ToolResult(success=False, error="Missing required input: video_path")
+            return ToolResult(success=False, error="Missing required input: video_path"), None, "", "", "", "", None
 
         video_path = Path(inputs["video_path"]).expanduser()
         if not video_path.is_file():
-            return ToolResult(success=False, error=f"video_path not found: {video_path}")
+            return ToolResult(success=False, error=f"video_path not found: {video_path}"), None, "", "", "", "", None
 
         caption = str(inputs.get("caption") or inputs.get("description") or "").strip()
         title = str(inputs.get("title") or "").strip()
         if not caption and not title:
-            return ToolResult(success=False, error="Missing caption or title for Facebook post")
+            return ToolResult(success=False, error="Missing caption or title for Facebook post"), None, "", "", "", "", None
 
         target_id = str(inputs.get("target_id") or inputs.get("page_id") or os.environ.get("FB_PAGE_ID") or "").strip()
         publish_type = str(inputs.get("publish_type") or "REEL").upper()
 
-        # Validate scheduled_publish_time (10m to 75d) per SCHEDULING_AND_AUTO_TRANSLATE_GUIDE.md
         raw_sched = inputs.get("scheduled_publish_time") or inputs.get("schedule_time")
         scheduled_epoch: Optional[int] = None
         if raw_sched is not None:
             try:
                 scheduled_epoch = int(raw_sched)
             except (ValueError, TypeError):
-                return ToolResult(success=False, error=f"Invalid scheduled_publish_time: {raw_sched}")
+                return ToolResult(success=False, error=f"Invalid scheduled_publish_time: {raw_sched}"), None, "", "", "", "", None
             now_sec = int(time.time())
             min_sec = now_sec + 600  # 10 minutes
             max_sec = now_sec + 6480000  # 75 days
             if not (min_sec <= scheduled_epoch <= max_sec):
-                return ToolResult(
-                    success=False,
-                    error=f"scheduled_publish_time ({scheduled_epoch}) must be between 10m and 75d in advance (range {min_sec}-{max_sec})",
+                return (
+                    ToolResult(
+                        success=False,
+                        error=f"scheduled_publish_time ({scheduled_epoch}) must be between 10m and 75d in advance (range {min_sec}-{max_sec})",
+                    ),
+                    None, "", "", "", "", None,
                 )
+
+        return None, video_path, caption, title, target_id, publish_type, scheduled_epoch
+
+    def _try_fallback_endpoints(
+        self, base_url: str, payload: dict[str, Any], headers: dict[str, str], condition: str = "status"
+    ) -> Optional[requests.Response]:
+        for alt in (f"{base_url}/v1/publish", f"{base_url}/upload/video", f"{base_url}/publish"):
+            try:
+                resp = self._session.post(alt, json=payload, headers=headers, timeout=300)
+                if condition == "status" and resp.status_code == 200:
+                    return resp
+                if condition == "not_404" and resp.status_code != 404:
+                    return resp
+            except Exception:
+                continue
+        return None
+
+    def _post_video_upload(
+        self, base_url: str, payload: dict[str, Any], headers: dict[str, str]
+    ) -> tuple[Optional[requests.Response], Optional[str]]:
+        upload_url = f"{base_url}/v1/upload/video"
+        resp = None
+        try:
+            resp = self._session.post(upload_url, json=payload, headers=headers, timeout=300)
+        except requests.exceptions.ConnectTimeout as conn_err:
+            resp = self._try_fallback_endpoints(base_url, payload, headers, condition="status")
+            if resp is None:
+                err_msg = (
+                    f"Failed to connect to Facebook Gateway at {base_url}: {conn_err}\n"
+                    f"Please verify toolcase-gateway-rs is running on port {DEFAULT_GATEWAY_PORT} with facebook-suite enabled."
+                )
+                return None, err_msg
+        except requests.exceptions.ConnectionError as conn_err:
+            if "Connection refused" in str(conn_err):
+                resp = self._try_fallback_endpoints(base_url, payload, headers, condition="status")
+            if resp is None:
+                err_msg = (
+                    f"Connection failed or aborted during upload to Facebook Gateway at {base_url}: {conn_err}\n"
+                    f"Please verify toolcase-gateway-rs is running on port {DEFAULT_GATEWAY_PORT} with facebook-suite enabled."
+                )
+                return None, err_msg
+        except Exception as exc:
+            return None, f"Facebook upload request error: {exc}"
+
+        if resp is not None and resp.status_code == 404:
+            alt_resp = self._try_fallback_endpoints(base_url, payload, headers, condition="not_404")
+            if alt_resp is not None:
+                resp = alt_resp
+
+        return resp, None
+
+    def _extract_upload_result(
+        self, res_json: dict[str, Any], target_id: str
+    ) -> tuple[Optional[str], str, str, Optional[str]]:
+        if res_json.get("status") == "error":
+            err_msg = (
+                res_json.get("details", {}).get("error", {}).get("message")
+                or res_json.get("message")
+                or "Upload error"
+            )
+            return err_msg, "", "", None
+
+        if "error" in res_json and res_json["error"]:
+            err = res_json["error"]
+            err_msg = err.get("message") if isinstance(err, dict) else str(err)
+            return err_msg, "", "", None
+
+        pub_res = res_json.get("publish_result") or {}
+        video_id = str(
+            res_json.get("video_id")
+            or res_json.get("id")
+            or res_json.get("post_id")
+            or pub_res.get("id")
+            or pub_res.get("video_id")
+            or ""
+        )
+        resolved_target = str(res_json.get("target_id") or target_id or "")
+        video_url = res_json.get("video_url")
+        if not video_url and video_id and resolved_target:
+            video_url = f"https://facebook.com/{resolved_target}/videos/{video_id}"
+        elif not video_url and video_id:
+            video_url = f"https://facebook.com/watch/?v={video_id}"
+
+        return None, video_id, resolved_target, video_url
+
+    def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        """Upload video to Facebook Page with optional scheduling and auto-dubbing."""
+        err_res, video_path, caption, title, target_id, publish_type, scheduled_epoch = self._validate_execution_params(inputs)
+        if err_res is not None or video_path is None:
+            return err_res or ToolResult(success=False, error="Invalid parameters")
 
         enable_auto_translate = inputs.get("enable_auto_translate", True)
         translated_languages = inputs.get("translated_languages") or DEFAULT_14_LANGUAGES
@@ -351,57 +444,9 @@ class FacebookPublisher(BaseTool):
         if scheduled_epoch is not None:
             payload["scheduled_publish_time"] = scheduled_epoch
 
-        upload_url = f"{base_url}/v1/upload/video"
-        resp = None
-        try:
-            resp = self._session.post(upload_url, json=payload, headers=headers, timeout=300)
-        except requests.exceptions.ConnectTimeout as conn_err:
-            for alt in (f"{base_url}/v1/publish", f"{base_url}/upload/video", f"{base_url}/publish"):
-                try:
-                    resp = self._session.post(alt, json=payload, headers=headers, timeout=300)
-                    if resp.status_code == 200:
-                        break
-                except Exception:
-                    continue
-            if resp is None:
-                return ToolResult(
-                    success=False,
-                    error=(
-                        f"Failed to connect to Facebook Gateway at {base_url}: {conn_err}\n"
-                        f"Please verify toolcase-gateway-rs is running on port {DEFAULT_GATEWAY_PORT} with facebook-suite enabled."
-                    ),
-                )
-        except requests.exceptions.ConnectionError as conn_err:
-            err_str = str(conn_err)
-            if "Connection refused" in err_str:
-                for alt in (f"{base_url}/v1/publish", f"{base_url}/upload/video", f"{base_url}/publish"):
-                    try:
-                        resp = self._session.post(alt, json=payload, headers=headers, timeout=300)
-                        if resp.status_code == 200:
-                            break
-                    except Exception:
-                        continue
-            if resp is None:
-                return ToolResult(
-                    success=False,
-                    error=(
-                        f"Connection failed or aborted during upload to Facebook Gateway at {base_url}: {conn_err}\n"
-                        f"Please verify toolcase-gateway-rs is running on port {DEFAULT_GATEWAY_PORT} with facebook-suite enabled."
-                    ),
-                )
-        except Exception as exc:
-            return ToolResult(success=False, error=f"Facebook upload request error: {exc}")
-
-        # If 404 on /v1/upload/video, try /v1/publish or other endpoints
-        if resp.status_code == 404:
-            for alt in (f"{base_url}/v1/publish", f"{base_url}/upload/video", f"{base_url}/publish"):
-                try:
-                    alt_resp = self._session.post(alt, json=payload, headers=headers, timeout=300)
-                    if alt_resp.status_code != 404:
-                        resp = alt_resp
-                        break
-                except Exception:
-                    continue
+        resp, err_msg = self._post_video_upload(base_url, payload, headers)
+        if err_msg or resp is None:
+            return ToolResult(success=False, error=err_msg or "Failed to upload to Facebook")
 
         if resp.status_code != 200:
             return ToolResult(
@@ -414,34 +459,9 @@ class FacebookPublisher(BaseTool):
         except Exception as json_err:
             return ToolResult(success=False, error=f"Invalid JSON response from Facebook adapter: {json_err}")
 
-        if res_json.get("status") == "error":
-            err_msg = (
-                res_json.get("details", {}).get("error", {}).get("message")
-                or res_json.get("message")
-                or "Upload error"
-            )
-            return ToolResult(success=False, error=f"Facebook upload failed: {err_msg}")
-
-        if "error" in res_json and res_json["error"]:
-            err = res_json["error"]
-            err_msg = err.get("message") if isinstance(err, dict) else str(err)
-            return ToolResult(success=False, error=f"Facebook upload failed: {err_msg}")
-
-        pub_res = res_json.get("publish_result") or {}
-        video_id = str(
-            res_json.get("video_id")
-            or res_json.get("id")
-            or res_json.get("post_id")
-            or pub_res.get("id")
-            or pub_res.get("video_id")
-            or ""
-        )
-        resolved_target = str(res_json.get("target_id") or target_id or "")
-        video_url = res_json.get("video_url")
-        if not video_url and video_id and resolved_target:
-            video_url = f"https://facebook.com/{resolved_target}/videos/{video_id}"
-        elif not video_url and video_id:
-            video_url = f"https://facebook.com/watch/?v={video_id}"
+        extract_err, video_id, resolved_target, video_url = self._extract_upload_result(res_json, target_id)
+        if extract_err:
+            return ToolResult(success=False, error=f"Facebook upload failed: {extract_err}")
 
         status = "scheduled" if scheduled_epoch else "published"
         timestamp = datetime.now(timezone.utc).isoformat()

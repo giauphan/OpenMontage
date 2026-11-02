@@ -283,6 +283,160 @@ class FixedNicheVideoRunner:
 
         return len(beats)
 
+    def _resolve_tts_speed(self, provider: str, speed: float) -> float:
+        if not math.isclose(speed, 1.0, rel_tol=1e-5, abs_tol=1e-5):
+            return speed
+        speeds = {"kokoro": 1.36, "elevenlabs": 1.05, "edge": 1.10}
+        return speeds.get(provider, speed)
+
+    def _invoke_initial_synthesis(
+        self, text: str, out_audio: Path, provider: str, voice: str, speed: float
+    ) -> tuple[dict[str, Any], str, str, float]:
+        try:
+            res = self.orchestrator.synthesize(
+                text=text, output_path=out_audio, locale="en-US", provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
+            )
+            return res, provider, voice, speed
+        except Exception as exc:
+            if provider != "elevenlabs":
+                raise
+            logger.warning(f"ElevenLabs synthesis failed ({exc}); falling back to local TTS engine.")
+            from tools.audio.kokoro_local_tts import is_kokoro_available
+            f_prov = "kokoro" if is_kokoro_available() else "flite"
+            f_voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=f_prov)
+            f_speed = 1.36 if f_prov == "kokoro" else 1.0
+            res = self.orchestrator.synthesize(
+                text=text, output_path=out_audio, locale="en-US", provider=f_prov, voice=f_voice, settings={"speed": f_speed}, allow_fallback=True
+            )
+            return res, f_prov, f_voice, f_speed
+
+    def _calibrate_speed_and_tempo(
+        self, text: str, out_audio: Path, actual_prov: str, voice: str, speed: float, dur: float, policy_max: float
+    ) -> float:
+        if actual_prov in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
+            ratio = dur / 70.0
+            speed_min, speed_max = (0.8, 1.4) if actual_prov in ("elevenlabs", "edge") else (0.8, 1.8)
+            adj_speed = round(speed * ratio, 2)
+            if adj_speed != speed and speed_min <= adj_speed <= speed_max:
+                logger.info(f"Re-synthesizing narration with calibrated speed {adj_speed} (previous duration {dur:.2f}s)")
+                self.orchestrator.synthesize(
+                    text=text, output_path=out_audio, locale="en-US", provider=actual_prov, voice=voice, settings={"speed": adj_speed}, allow_fallback=True,
+                )
+                dur = probe_audio_duration(out_audio)
+        if policy_max < dur <= 95.0:
+            tempo = round(dur / 70.0, 3)
+            tmp_t = out_audio.with_suffix(".tempo.mp3")
+            res_t = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out_audio), "-filter:a", f"atempo={tempo}", "-vn", str(tmp_t)], capture_output=True)
+            if res_t.returncode == 0 and tmp_t.is_file():
+                os.replace(tmp_t, out_audio)
+                dur = probe_audio_duration(out_audio)
+                logger.info(f"Auto-calibrated narration tempo with ffmpeg atempo={tempo}: duration={dur:.2f}s")
+        return dur
+
+    def _validate_narration_durations(self, dur: float, actual_prov: str, policy_max: float, n_beats: int) -> None:
+        if dur > policy_max:
+            raise ValueError(
+                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s). Truncating narration mid-sentence is forbidden."
+            )
+        if actual_prov in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
+            raise ValueError(
+                f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
+            )
+        if n_beats > 0 and dur > n_beats * 12.0:
+            if dur <= policy_max:
+                logger.info(f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; re-staging storyboard with target_duration={dur:.2f}s.")
+                self._restage_for_duration(dur)
+            else:
+                raise ValueError(f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s).")
+
+    def _reconcile_artifacts(self, dur: float, target_dur: float, out_audio: Path) -> None:
+        plan_f = self.project_dir / "artifacts" / "news_visual_plan.json"
+        if not (plan_f.is_file() and dur > 0):
+            return
+        try:
+            plan_json = json.loads(plan_f.read_text(encoding="utf-8"))
+            beats = plan_json.get("beats", [])
+            if not beats:
+                return
+            p_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
+            if p_total <= 0:
+                return
+            align_dur = dur if 65.0 <= dur <= 75.0 else target_dur
+            scale = align_dur / p_total
+            curr_start = 0.0
+            for b in beats:
+                beat_dur = (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale
+                b["start_s"], curr_start = round(curr_start, 3), curr_start + beat_dur
+                b["end_s"] = round(curr_start, 3)
+            beats[-1]["end_s"] = round(align_dur, 3)
+            self._write_reconciled_artifacts(beats, align_dur, out_audio, plan_json, plan_f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
+
+    def _write_reconciled_artifacts(
+        self, beats: list[dict], align_dur: float, out_audio: Path, plan_json: dict, plan_f: Path
+    ) -> None:
+        from lib.fixed_niche.captions import build_and_align_captions
+        c_w = 1080 if self.format_kind in ("short", "shorts") else 1920
+        c_h = 1920 if self.format_kind in ("short", "shorts") else 1080
+        srt_content, ass_content, _ = build_and_align_captions(beats=beats, audio_path=out_audio, width=c_w, height=c_h)
+        (self.project_dir / "artifacts" / "captions.srt").write_text(srt_content, encoding="utf-8")
+        (self.project_dir / "artifacts" / "captions.ass").write_text(ass_content, encoding="utf-8")
+
+        beat_map = {b["beat_id"]: b for b in beats}
+        script_file = self.project_dir / "artifacts" / "script_en_US.json"
+        assets_file = self.project_dir / "artifacts" / "news_visual_assets.json"
+        ev_file = self.project_dir / "artifacts" / "news_evidence.json"
+        proof_map_file = self.project_dir / "artifacts" / "video_proof_map.json"
+
+        if script_file.is_file():
+            s_json = json.loads(script_file.read_text(encoding="utf-8"))
+            s_json["target_duration_seconds"] = round(align_dur, 3)
+            for sec in s_json.get("sections", []):
+                bid = sec.get("beat_id")
+                if bid in beat_map:
+                    sec["start_s"], sec["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+                sec["id"], sec["text"] = sec.get("id") or sec.get("section_id"), sec.get("text") or sec.get("narration")
+            s_bytes = json.dumps(s_json, indent=2).encode("utf-8")
+            script_file.write_bytes(s_bytes)
+            s_sha = hashlib.sha256(s_bytes).hexdigest()
+            for f_path in (assets_file, ev_file):
+                if f_path.is_file():
+                    data = json.loads(f_path.read_text(encoding="utf-8"))
+                    data["script_sha256"] = s_sha
+                    f_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+        if proof_map_file.is_file():
+            p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
+            for pb in p_json.get("beats", []):
+                bid = pb.get("beat_id")
+                if bid in beat_map:
+                    pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
+            proof_map_file.write_text(json.dumps(p_json, indent=2), encoding="utf-8")
+
+        plan_f.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
+        self._rematerialize_after_reconciliation(align_dur, plan_json, script_file)
+
+    def _rematerialize_after_reconciliation(self, align_dur: float, plan_json: dict, script_file: Path) -> None:
+        from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
+        topic_comp = self._staged_topic or {"candidate_id": self.candidate_id}
+        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
+        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
+        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
+            from lib.visual_style.diagram_director import AnimatedDiagramDirector
+            cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
+            claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
+            director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
+            diag_plan = director.plan_diagram_animation(
+                project_id=self.candidate_id, topic=topic_comp, claims=claims, target_duration=align_dur,
+                script_sha256=hashlib.sha256(script_file.read_bytes()).hexdigest(),
+                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claims).encode("utf-8")).hexdigest(),
+                source_visual_plan_sha256=hashlib.sha256(json.dumps(plan_json).encode("utf-8")).hexdigest(),
+            )
+            director.write_sidecar(diag_plan, self.project_dir)
+
+        materialize_hyperframes_project(project_dir=self.project_dir, topic=topic_comp, visual_plan=plan_json, duration=align_dur)
+
     def synthesize_narration(
         self,
         provider: Optional[str] = None,
@@ -298,60 +452,26 @@ class FixedNicheVideoRunner:
         out_audio = self.project_dir / "assets" / "narration.mp3"
         out_audio.parent.mkdir(parents=True, exist_ok=True)
 
-        if provider is None:
-            provider = os.environ.get("TTS_PROVIDER_EN", "edge")
-        is_default_speed = math.isclose(speed, 1.0, rel_tol=1e-5, abs_tol=1e-5)
-        if provider == "kokoro" and is_default_speed:
-            speed = 1.36
-        elif provider == "elevenlabs" and is_default_speed:
-            speed = 1.05
-        elif provider == "edge" and is_default_speed:
-            speed = 1.10
+        prov = provider or os.environ.get("TTS_PROVIDER_EN", "edge")
+        spd = self._resolve_tts_speed(prov, speed)
+        vc = voice or self.orchestrator.resolve_default_voice(locale="en-US", provider=prov)
 
-        if voice is None:
-            voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
-
-        try:
-            res = self.orchestrator.synthesize(
-                text=text, output_path=out_audio, locale="en-US", provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True,
-            )
-        except Exception as exc:
-            if provider == "elevenlabs":
-                logger.warning(f"ElevenLabs synthesis failed ({exc}); falling back to local TTS engine.")
-                from tools.audio.kokoro_local_tts import is_kokoro_available
-                provider = "kokoro" if is_kokoro_available() else "flite"
-                voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=provider)
-                speed = 1.36 if provider == "kokoro" else 1.0
-                res = self.orchestrator.synthesize(text=text, output_path=out_audio, locale="en-US", provider=provider, voice=voice, settings={"speed": speed}, allow_fallback=True)
-            else:
-                raise
-
+        res, actual_prov, vc, spd = self._invoke_initial_synthesis(text, out_audio, prov, vc, spd)
         if not res.get("success") or not out_audio.is_file():
             raise RuntimeError(f"Narration synthesis failed: {res.get('error', 'Unknown error')}")
 
         dur = probe_audio_duration(out_audio)
-        actual_provider = res.get("provider", provider)
-        if actual_provider != provider:
-            voice = self.orchestrator.resolve_default_voice(locale="en-US", provider=actual_provider)
-            speed = 1.0
-        if actual_provider in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
-            ratio = dur / 70.0
-            speed_min, speed_max = (0.8, 1.4) if actual_provider in ("elevenlabs", "edge") else (0.8, 1.8)
-            adjusted_speed = round(speed * ratio, 2)
-            if adjusted_speed != speed and speed_min <= adjusted_speed <= speed_max:
-                logger.info(f"Re-synthesizing narration with calibrated speed {adjusted_speed} (previous duration {dur:.2f}s)")
-                res = self.orchestrator.synthesize(
-                    text=text,
-                    output_path=out_audio,
-                    locale="en-US",
-                    provider=actual_provider,
-                    voice=voice,
-                    settings={"speed": adjusted_speed},
-                    allow_fallback=True,
-                )
-                dur = probe_audio_duration(out_audio)
+        if res.get("provider") and res.get("provider") != actual_prov:
+            actual_prov = res.get("provider")
+            vc = self.orchestrator.resolve_default_voice(locale="en-US", provider=actual_prov)
+            spd = 1.0
 
+        dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
+        policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
+
+        dur = self._calibrate_speed_and_tempo(text, out_audio, actual_prov, vc, spd, dur, policy_max)
         logger.info(f"Synthesized voice track: duration={dur:.2f}s")
+
         target_dur = self.get_target_duration()
         n_beats = 0
         plan_p = self.project_dir / "artifacts" / "news_visual_plan.json"
@@ -360,144 +480,9 @@ class FixedNicheVideoRunner:
                 n_beats = len(json.loads(plan_p.read_text(encoding="utf-8")).get("beats", []))
             except Exception:
                 pass
-        dur_range = self.policy.video_contract.get("shorts", {}).get("target_duration_seconds", [65, 75])
-        policy_max = float(dur_range[1]) if len(dur_range) >= 2 else 75.0
-        if dur > policy_max and dur <= 95.0:
-            tempo = round(dur / 70.0, 3)
-            tmp_t = out_audio.with_suffix(".tempo.mp3")
-            res_t = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out_audio), "-filter:a", f"atempo={tempo}", "-vn", str(tmp_t)], capture_output=True)
-            if res_t.returncode == 0 and tmp_t.is_file():
-                os.replace(tmp_t, out_audio)
-                dur = probe_audio_duration(out_audio)
-                logger.info(f"Auto-calibrated narration tempo with ffmpeg atempo={tempo}: duration={dur:.2f}s")
-        if dur > policy_max:
-            raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s). "
-                "Truncating narration mid-sentence is forbidden."
-            )
 
-        # In production synthesis with neural voice, reject narration outside 65-75s contract
-        if actual_provider in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
-            raise ValueError(
-                f"Synthesized narration duration ({dur:.2f}s) is outside required [65.0, 75.0]s shorts contract. "
-                "Full technical analysis across all 6 beats is required per VIDEO_PLAYBOOK.md."
-            )
-
-        if n_beats > 0 and dur > n_beats * 12.0:
-            if dur <= policy_max:
-                logger.info(
-                    f"Narration duration ({dur:.2f}s) exceeds {n_beats} beats x 12.0s hold limit; "
-                    f"re-staging storyboard with target_duration={dur:.2f}s."
-                )
-                n_beats = self._restage_for_duration(dur)
-            else:
-                raise ValueError(
-                    f"Synthesized narration duration ({dur:.2f}s) exceeds maximum allowed duration ({policy_max:.2f}s)."
-                )
-
-        # Re-align all timed artifacts with synthesized audio duration
-        visual_plan_file = self.project_dir / "artifacts" / "news_visual_plan.json"
-        script_file = self.project_dir / "artifacts" / "script_en_US.json"
-        proof_map_file = self.project_dir / "artifacts" / "video_proof_map.json"
-        srt_file = self.project_dir / "artifacts" / "captions.srt"
-        assets_file = self.project_dir / "artifacts" / "news_visual_assets.json"
-
-        if visual_plan_file.is_file() and dur > 0:
-            try:
-                plan_json = json.loads(visual_plan_file.read_text(encoding="utf-8"))
-                beats = plan_json.get("beats", [])
-                if beats:
-                    planned_total = float(beats[-1].get("end_s", 0.0)) - float(beats[0].get("start_s", 0.0))
-                    if planned_total > 0:
-                        align_dur = dur if 65.0 <= dur <= 75.0 else target_dur
-                        scale = align_dur / planned_total
-                        curr_start = 0.0
-                        for b in beats:
-                            beat_dur = (float(b.get("end_s", 0.0)) - float(b.get("start_s", 0.0))) * scale
-                            b["start_s"] = round(curr_start, 3)
-                            curr_start += beat_dur
-                            b["end_s"] = round(curr_start, 3)
-                        beats[-1]["end_s"] = round(align_dur, 3)
-
-                        # Prepare all reconciled payload dictionaries before writing
-                        from lib.fixed_niche.captions import build_and_align_captions
-                        c_width = 1080 if self.format_kind in ("short", "shorts") else 1920
-                        c_height = 1920 if self.format_kind in ("short", "shorts") else 1080
-                        srt_content, ass_content, _ = build_and_align_captions(
-                            beats=beats,
-                            audio_path=out_audio,
-                            width=c_width,
-                            height=c_height,
-                        )
-                        ass_file = self.project_dir / "artifacts" / "captions.ass"
-                        beat_map = {b["beat_id"]: b for b in beats}
-
-                        script_bytes_to_write, assets_json_to_write, proof_json_to_write, ev_json_to_write = None, None, None, None
-                        if script_file.is_file():
-                            script_json = json.loads(script_file.read_text(encoding="utf-8"))
-                            script_json["target_duration_seconds"] = round(align_dur, 3)
-                            for sec in script_json.get("sections", []):
-                                bid = sec.get("beat_id")
-                                if bid in beat_map:
-                                    sec["start_s"], sec["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
-                                sec["id"], sec["text"] = sec.get("id") or sec.get("section_id"), sec.get("text") or sec.get("narration")
-                            script_bytes_to_write = json.dumps(script_json, indent=2).encode("utf-8")
-                            s_sha = hashlib.sha256(script_bytes_to_write).hexdigest()
-                            if assets_file.is_file():
-                                a_json = json.loads(assets_file.read_text(encoding="utf-8"))
-                                a_json["script_sha256"] = s_sha
-                                assets_json_to_write = json.dumps(a_json, indent=2)
-                            ev_file = self.project_dir / "artifacts" / "news_evidence.json"
-                            if ev_file.is_file():
-                                e_json = json.loads(ev_file.read_text(encoding="utf-8"))
-                                e_json["script_sha256"] = s_sha
-                                ev_json_to_write = json.dumps(e_json, indent=2)
-                        if proof_map_file.is_file():
-                            p_json = json.loads(proof_map_file.read_text(encoding="utf-8"))
-                            for pb in p_json.get("beats", []):
-                                bid = pb.get("beat_id")
-                                if bid in beat_map:
-                                    pb["start_s"], pb["end_s"] = beat_map[bid]["start_s"], beat_map[bid]["end_s"]
-                            proof_json_to_write = json.dumps(p_json, indent=2)
-                        # Write all verified artifact updates
-                        visual_plan_file.write_text(json.dumps(plan_json, indent=2), encoding="utf-8")
-                        srt_file.write_text(srt_content, encoding="utf-8")
-                        ass_file.write_text(ass_content, encoding="utf-8")
-                        if script_bytes_to_write is not None: script_file.write_bytes(script_bytes_to_write)
-                        if assets_json_to_write is not None: assets_file.write_text(assets_json_to_write, encoding="utf-8")
-                        if proof_json_to_write is not None: proof_map_file.write_text(proof_json_to_write, encoding="utf-8")
-                        if ev_json_to_write is not None: ev_file.write_text(ev_json_to_write, encoding="utf-8")
-
-                        # Re-materialize HyperFrames compositions with the reconciled audio duration
-                        from lib.fixed_niche.hyperframes_composer import materialize_hyperframes_project
-                        topic_for_comp = self._staged_topic or {"candidate_id": self.candidate_id}
-                        visual_style = os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg")
-                        flag_enabled = os.environ.get("ANIMATED_AGENT_DIAGRAM_V1_ENABLED", "0") not in ("0", "false", "False")
-                        if visual_style == "animated_agent_diagram_v1" and flag_enabled:
-                            from lib.visual_style.diagram_director import AnimatedDiagramDirector
-                            cl_file = self.project_dir / "artifacts" / "claim_ledger.json"
-                            claims = json.loads(cl_file.read_text(encoding="utf-8")).get("claims", []) if cl_file.is_file() else []
-                            director = AnimatedDiagramDirector(policy_sha256=self.policy.policy_sha256)
-                            diag_plan = director.plan_diagram_animation(
-                                project_id=self.candidate_id,
-                                topic=topic_for_comp,
-                                claims=claims,
-                                target_duration=align_dur,
-                                script_sha256=hashlib.sha256(script_file.read_bytes()).hexdigest(),
-                                source_claim_ledger_sha256=hashlib.sha256(json.dumps(claims).encode("utf-8")).hexdigest(),
-                                source_visual_plan_sha256=hashlib.sha256(json.dumps(plan_json).encode("utf-8")).hexdigest(),
-                            )
-                            director.write_sidecar(diag_plan, self.project_dir)
-
-                        materialize_hyperframes_project(
-                            project_dir=self.project_dir,
-                            topic=topic_for_comp,
-                            visual_plan=plan_json,
-                            duration=align_dur,
-                        )
-            except Exception as e:
-                raise RuntimeError(f"Failed to realign timed artifacts to synthesized narration duration: {e}") from e
-
+        self._validate_narration_durations(dur, actual_prov, policy_max, n_beats)
+        self._reconcile_artifacts(dur, target_dur, out_audio)
         return out_audio
 
     def _sample_and_validate_frames(self, output_mp4: Path, render_dur: float, frames_dir: Path) -> bool:

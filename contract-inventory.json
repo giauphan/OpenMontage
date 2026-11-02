@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "tool_count": 112,
+    "tool_count": 115,
     "pipeline_count": 14
   },
   "tools": {
@@ -9965,6 +9965,253 @@
       "agent_skills": [
         "ltx2"
       ],
+      "render_engines": []
+    },
+    "facebook_publisher": {
+      "name": "facebook_publisher",
+      "version": "1.1.0",
+      "capability": "publish",
+      "provider": "facebook",
+      "tier": "ToolTier.PUBLISH",
+      "status": "unknown",
+      "module": "tools.publishers.facebook_publisher",
+      "class_name": "FacebookPublisher",
+      "dependencies": [
+        "python:requests"
+      ],
+      "supports": {
+        "local_offline": false,
+        "free": true,
+        "uploads": true,
+        "auto_dubbing": true,
+        "native_scheduling": true,
+        "chunked_upload": true
+      },
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "video_path"
+        ],
+        "properties": {
+          "video_path": {
+            "type": "string",
+            "description": "Path to the video MP4 file."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional video title."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Video caption or description."
+          },
+          "description": {
+            "type": "string",
+            "description": "Alias for caption."
+          },
+          "target_id": {
+            "type": "string",
+            "description": "Facebook Page ID or actor ID."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "Alias for target_id."
+          },
+          "publish_type": {
+            "type": "string",
+            "enum": [
+              "REEL",
+              "FEED",
+              "STORY"
+            ],
+            "default": "REEL",
+            "description": "Content type to publish: REEL, FEED (video post), or STORY."
+          },
+          "scheduled_publish_time": {
+            "type": "integer",
+            "description": "Unix timestamp in seconds for scheduled publishing (10m to 75d)."
+          },
+          "enable_auto_translate": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable automated multi-language audio dubbing (default True)."
+          },
+          "translated_languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional custom list of language codes to dub into."
+          },
+          "gateway_url": {
+            "type": "string",
+            "description": "Optional custom Toolcase Gateway Facebook endpoint."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "publish_log": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "facebook_post_id": {
+            "type": "string"
+          },
+          "video_id": {
+            "type": "string"
+          },
+          "video_url": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "scheduled_publish_time": {
+            "type": "integer"
+          }
+        }
+      },
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "muse_gateway_image": {
+      "name": "muse_gateway_image",
+      "version": "1.0.0",
+      "capability": "image_generation",
+      "provider": "muse",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.muse_gateway_image",
+      "class_name": "MuseGatewayImage",
+      "dependencies": [
+        "pillow",
+        "requests"
+      ],
+      "supports": {
+        "aspect_ratio": true,
+        "async_jobs": true,
+        "idempotency_keys": true,
+        "local_validation": true
+      },
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Conceptual illustration prompt. Must not request fake screenshots or UI."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "9:16",
+              "16:9",
+              "1:1"
+            ],
+            "default": "9:16",
+            "description": "Aspect ratio for portrait Shorts or landscape video."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "muse-image"
+            ],
+            "default": "muse-image",
+            "description": "Gateway model alias."
+          },
+          "submission_key": {
+            "type": "string",
+            "description": "Stable scoped hash for idempotency and job recovery."
+          },
+          "output_path": {
+            "type": "string",
+            "description": "Local path where verified image will be saved."
+          }
+        }
+      },
+      "output_schema": {},
+      "fallback_tools": [],
+      "agent_skills": [],
+      "render_engines": []
+    },
+    "thumbnail_generator": {
+      "name": "thumbnail_generator",
+      "version": "1.0.0",
+      "capability": "thumbnail_generation",
+      "provider": "muse",
+      "tier": "ToolTier.GENERATE",
+      "status": "unknown",
+      "module": "tools.graphics.thumbnail_generator",
+      "class_name": "ThumbnailGenerator",
+      "dependencies": [
+        "pillow",
+        "requests"
+      ],
+      "supports": {
+        "aspect_ratio": true,
+        "typography_overlay": true,
+        "youtube_safe_zones": true
+      },
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "project_dir",
+          "title"
+        ],
+        "properties": {
+          "project_dir": {
+            "type": "string",
+            "description": "Path to the project workspace directory."
+          },
+          "title": {
+            "type": "string",
+            "description": "Video title to extract context and headline from."
+          },
+          "topic": {
+            "type": "string",
+            "description": "Optional topic summary for prompt crafting."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "short",
+              "longform",
+              "9:16",
+              "16:9"
+            ],
+            "default": "short",
+            "description": "Video format (short for 9:16, longform for 16:9)."
+          },
+          "headline": {
+            "type": "string",
+            "description": "Optional custom short text to overlay on the thumbnail."
+          },
+          "output_path": {
+            "type": "string",
+            "description": "Optional custom output image path."
+          },
+          "add_headline_overlay": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to composite headline text overlay onto the thumbnail."
+          },
+          "allow_fallback": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to generate stylized fallback if Muse Gateway is unreachable."
+          }
+        }
+      },
+      "output_schema": {},
+      "fallback_tools": [],
+      "agent_skills": [],
       "render_engines": []
     }
   },
