@@ -235,6 +235,8 @@ def _newsnow_payload(source: str, count: int) -> dict:
 
 
 def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, capsys):
+    from tools.news.daily_news_gateway import DailyNewsGatewayClient
+    monkeypatch.setattr(DailyNewsGatewayClient, "consume_candidates", lambda *a, **k: {})
     monkeypatch.setenv("SKIP_SCOPE_GATE", "1")
     monkeypatch.chdir(tmp_path)
     Path("data").mkdir()
@@ -269,6 +271,39 @@ def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, caps
     captured = capsys.readouterr().out
     assert f"PROJECT_ID={c2_id}" in captured
     assert (tmp_path / f"projects/{c2_id}/artifacts/research_brief.json").exists()
+
+
+def test_muse_lead_produces_existing_research_brief_contract(tmp_path, monkeypatch, capsys):
+    from tools.news.daily_news_gateway import DailyNewsGatewayClient
+    from tools.news.muse_chat import MuseChatClient
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
+    monkeypatch.setenv("MUSE_THREAD_CACHE", str(tmp_path / "muse_threads.json"))
+    monkeypatch.setenv("EXPECTED_SUCCESS_COUNT", "3")
+    raw = {"id": "release", "url": "https://example.com/release", "title": "Coding agent tool call update",
+           "publisher": "Example", "published_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           "description": "The coding agent tool call contract changes how developers use the agent.",
+           "extra": {"editorial": {"viewer_question": "How does the tool call change?"}}}
+    monkeypatch.setattr(MuseChatClient, "chat", lambda self, context, prompt: json.dumps([raw]))
+    consumed = []
+    monkeypatch.setattr(DailyNewsGatewayClient, "consume_candidates", lambda *a, **k: consumed.append(a) or {})
+
+    class Selector:
+        def select_and_research(self, pool):
+            return {"selected_candidate_id": pool[0]["candidate_id"], **research_draft()}
+
+    monkeypatch.setattr(news_pipeline_cli, "NewsSelector", lambda: Selector())
+    feed = tmp_path / "data/newsnow_feed.json"
+    news_pipeline_cli.run_fetch(argparse.Namespace(source="muse", url=None, output=str(feed), min_items=0))
+    news_pipeline_cli.run_produce(argparse.Namespace(input=str(feed), count=8, dry_run=False,
+                                                     no_hybrid_discovery=True, require_latest_news=True, max_age_days=7))
+    project_id = capsys.readouterr().out.split("PROJECT_ID=")[1].splitlines()[0]
+    brief = json.loads((tmp_path / "projects" / project_id / "artifacts/research_brief.json").read_text())
+    assert brief["version"] == "1.0"
+    assert brief["metadata"]["source_feed"] == "muse"
+    assert brief["topic"] == raw["title"]
+    assert consumed == []
 
 
 def test_feed_converter_normalizes_and_dedupes(monkeypatch):
@@ -358,8 +393,8 @@ def test_produce_hydrates_from_hybrid_discovery_when_input_insufficient(tmp_path
         }
 
 
-def test_hydrate_from_hybrid_discovery_fallback_trigger(monkeypatch):
-    """Test _run_discovery_fallback when discovery initially yields insufficient candidates."""
+def test_hydrate_does_not_disable_freshness_for_fallback(monkeypatch):
+    """An insufficient fresh pool must not be filled with stale backlog."""
     class FakeResult:
         def __init__(self, candidates, status="ELIGIBLE"):
             self.candidates = candidates
@@ -391,8 +426,7 @@ def test_hydrate_from_hybrid_discovery_fallback_trigger(monkeypatch):
     hydrated = news_pipeline_cli._hydrate_from_hybrid_discovery(
         pool, count=1, min_required=1, used_ids=set(), args=args
     )
-    assert len(hydrated) == 1
-    assert hydrated[0]["candidate_id"] == "fb_1"
-    assert call_count == 2
+    assert hydrated == []
+    assert call_count == 1
 
 

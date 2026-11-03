@@ -4,8 +4,10 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -143,9 +145,20 @@ def _validate_safe_input_path(path: Path | str) -> Path:
 
 
 def run_fetch(args: argparse.Namespace) -> None:
-    """Fetch latest news feeds via Toolcase Gateway Daily News service and write raw feed file."""
+    """Fetch discovery leads and write the established raw feed format."""
     gw_url = getattr(args, "url", None)
-    count = write_feed(gw_url, Path(args.output), minimum=args.min_items)
+    if getattr(args, "source", "daily-news") == "muse":
+        from tools.news.daily_news_gateway import DailyNewsGatewayClient
+        from tools.news.muse_chat import MuseChatClient
+        from tools.news.muse_news import discover_news
+
+        origin = gw_url or os.environ.get("MUSE_GATEWAY_URL") or os.environ.get("TOOLCASE_GATEWAY_URL", "http://127.0.0.1:20129")
+        state_path = Path(os.environ.get("MUSE_THREAD_CACHE", "data/muse_thread_cache.json"))
+        age = float(os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS", "24"))
+        items = discover_news(MuseChatClient(origin, state_path), age)
+        count = DailyNewsGatewayClient().write_feed(output=Path(args.output), minimum=args.min_items, items=items)
+    else:
+        count = write_feed(gw_url, Path(args.output), minimum=args.min_items)
     logger.info(f"Wrote {count} raw items to {args.output}")
 
 
@@ -185,7 +198,27 @@ def _collect_used_project_ids() -> Set[str]:
     used_ids = _collect_scheduled_ids()
     for p_dir in (Path("projects"), Path("projects_news")):
         used_ids.update(_collect_directory_project_ids(p_dir))
+    history = Path("data/muse_consumed")
+    if history.is_dir() and not history.is_symlink():
+        used_ids.update(p.name for p in history.iterdir() if re.fullmatch(r"cand_[0-9a-f]{16}", p.name) and p.is_file() and not p.is_symlink())
     return used_ids
+
+
+def _mark_muse_used(candidate_id: str) -> None:
+    if not re.fullmatch(r"cand_[0-9a-f]{16}", candidate_id):
+        raise ValueError("Invalid Muse candidate ID")
+    history = Path("data/muse_consumed")
+    history.mkdir(parents=True, exist_ok=True)
+    if history.is_symlink() or not history.is_dir():
+        raise ValueError("Invalid Muse history directory")
+    marker = history / candidate_id
+    try:
+        fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError:
+        if marker.is_symlink() or not marker.is_file():
+            raise ValueError("Invalid Muse history marker")
+        return
+    os.close(fd)
 
 
 def _record_no_eligible_marker() -> None:
@@ -242,6 +275,7 @@ def _ingest_and_filter_candidates(
     count: int,
     used_ids: Set[str],
     fail_closed: bool = True,
+    freshness_window_hours: float = 48.0,
 ) -> List[Dict[str, Any]]:
     """Ingest candidates from input file and apply initial filtering."""
     safe_path = _validate_safe_input_path(input_path)
@@ -253,14 +287,13 @@ def _ingest_and_filter_candidates(
         raw_items = json.load(f)
 
     logger.info("Ingesting and normalizing...")
-    adapter = NewsNowAdapter()
+    adapter = NewsNowAdapter(freshness_window_hours=freshness_window_hours)
     candidates, diagnostics = adapter.ingest_and_normalize(raw_items)
     if diagnostics:
         logger.warning(f"Encountered {len(diagnostics)} invalid items during ingestion.")
 
     available = [c for c in candidates if c.get("candidate_id") not in used_ids]
-    candidate_pool = available if len(available) >= count else candidates
-    return _filter_by_scope_gate(candidate_pool, fail_closed=fail_closed)
+    return _filter_by_scope_gate(available, fail_closed=fail_closed)
 
 
 def _select_single_candidate(
@@ -359,24 +392,16 @@ def _merge_unique_candidates(
             seen_ids.add(cid)
 
 
-def _run_discovery_fallback(
-    disc_result: Any,
-    count: int,
-    min_required: int,
-    max_age_days: int,
-    used_ids: Set[str],
-) -> None:
-    from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
-    fallback_discovery = HybridCandidateDiscovery(
-        require_latest_news=False,
-        max_age_days=max_age_days,
-    )
-    fallback_res = fallback_discovery.discover_candidates(count=max(count, min_required * 2))
-    if not fallback_res.is_eligible:
-        return
-    _merge_unique_candidates(disc_result.candidates, fallback_res.candidates, used_ids)
-    if not disc_result.is_eligible and disc_result.candidates:
-        disc_result.status = "ELIGIBLE"
+def _filter_fresh_candidates(candidates, max_age_hours, now=None):
+    """Keep only items with a known publication time inside the freshness window."""
+    from lib.fixed_niche.candidate_helpers import parse_timestamp
+
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=max_age_hours)).timestamp()
+    end = now.timestamp()
+    return [c for c in candidates if cutoff <= parse_timestamp(
+        c.get("published_at") or c.get("published_at_utc")
+    ) <= end]
 
 
 def _hydrate_from_hybrid_discovery(
@@ -405,58 +430,81 @@ def _hydrate_from_hybrid_discovery(
     disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
     need_fallback = (not disc_result.is_eligible or len(disc_result.candidates) < min_required) and require_latest
     if need_fallback:
-        logger.info(
-            "HybridCandidateDiscovery with require_latest_news=True yielded %d candidates (need %d); "
-            "supplementing from authorized backlog without recency gate.",
-            len(disc_result.candidates) if disc_result.is_eligible else 0,
-            min_required,
-        )
-        _run_discovery_fallback(disc_result, count, min_required, max_age_days, used_ids)
+        logger.info("Latest discovery yielded fewer than %d candidates; retaining the freshness requirement.", min_required)
 
     if disc_result.is_eligible:
         _merge_unique_candidates(candidate_pool, disc_result.candidates, used_ids)
     return candidate_pool
 
 
-def run_produce(args: argparse.Namespace) -> None:
-    """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
-    count = max(1, getattr(args, "count", 1))
-    used_ids = _collect_used_project_ids()
+def _produce_limits(args: argparse.Namespace, count: int) -> tuple[int, float | None]:
     min_produce = int(os.environ.get("MIN_PRODUCE_COUNT") or os.environ.get("EXPECTED_SUCCESS_COUNT") or os.environ.get("TARGET_SUCCESS_COUNT") or 3)
     min_required = min(count, min_produce)
+    if getattr(args, "no_hybrid_discovery", False):
+        min_required = 1
+    max_age_hours = None
+    if getattr(args, "require_latest_news", True):
+        configured_age = os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS")
+        try:
+            max_age_hours = float(configured_age) if configured_age is not None else float(getattr(args, "max_age_days", 7)) * 24
+            if not math.isfinite(max_age_hours) or not 0 < max_age_hours <= 720:
+                raise ValueError("freshness limit outside (0, 720]")
+        except (ValueError, TypeError, OverflowError):
+            logger.error("Invalid NEWS_MAX_SOURCE_AGE_HOURS freshness policy")
+            sys.exit(1)
+    return min_required, max_age_hours
 
+
+def _produce_candidate_pool(args: argparse.Namespace, count: int, min_required: int, used_ids: Set[str], max_age_hours: float | None) -> List[Dict[str, Any]]:
     candidate_pool: List[Dict[str, Any]] = []
     input_file = Path(args.input)
     is_live_feed = input_file.name in ("newsnow_feed.json", "daily_candidates.json") or getattr(args, "fallback_to_curated", False)
     if input_file.is_file():
         candidate_pool = _ingest_and_filter_candidates(
-            input_file, count, used_ids, fail_closed=not is_live_feed
+            input_file,
+            count,
+            used_ids,
+            fail_closed=not is_live_feed,
+            freshness_window_hours=max_age_hours or 48.0,
         )
 
-    if is_live_feed:
+    if max_age_hours is not None:
+        candidate_pool = _filter_fresh_candidates(candidate_pool, max_age_hours)
+
+    if is_live_feed and not getattr(args, "no_hybrid_discovery", False):
         candidate_pool = _hydrate_from_hybrid_discovery(
             candidate_pool, count, min_required, used_ids, args
         )
+        if max_age_hours is not None:
+            candidate_pool = _filter_fresh_candidates(candidate_pool, max_age_hours)
+    return candidate_pool
 
+
+def _require_ranked_candidates(candidate_pool: List[Dict[str, Any]], count: int, min_required: int) -> List[Dict[str, Any]]:
     if not candidate_pool:
         logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate across input and hybrid discovery.")
         print("STATUS=NO_ELIGIBLE_TOPIC")
         _record_no_eligible_marker()
         sys.exit(2)
-
     _clear_no_eligible_marker()
-
     logger.info("Scoring and ranking...")
-    scorer = NewsCandidateScorer()
-    ranked = scorer.rank_candidates(candidate_pool, limit=max(30, count * 4))
-
+    ranked = NewsCandidateScorer().rank_candidates(candidate_pool, limit=max(30, count * 4))
     if not ranked:
         logger.error("No valid candidates found.")
         sys.exit(1)
-
     if len(ranked) < min_required:
         logger.error(f"Need at least {min_required} distinct candidates but only {len(ranked)} available.")
         sys.exit(1)
+    return ranked
+
+
+def run_produce(args: argparse.Namespace) -> None:
+    """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
+    count = max(1, getattr(args, "count", 1))
+    used_ids = _collect_used_project_ids()
+    min_required, max_age_hours = _produce_limits(args, count)
+    candidate_pool = _produce_candidate_pool(args, count, min_required, used_ids, max_age_hours)
+    ranked = _require_ranked_candidates(candidate_pool, count, min_required)
 
     if args.dry_run:
         logger.info("[DRY RUN] Skipping Codex CLI and checkpoint generation.")
@@ -481,7 +529,7 @@ def run_produce(args: argparse.Namespace) -> None:
 
     for pid in project_ids:
         print(f"PROJECT_ID={pid}")
-    if project_ids:
+    if project_ids and not getattr(args, "no_hybrid_discovery", False):
         try:
             from tools.news.daily_news_gateway import DailyNewsGatewayClient
             DailyNewsGatewayClient().consume_candidates(project_ids)
@@ -560,6 +608,7 @@ def main(argv: List[str] | None = None) -> int:
     produce_parser.add_argument("--input", required=True, help="Path to raw JSON list")
     produce_parser.add_argument("--count", type=int, default=1, help="Number of distinct topics/projects to produce")
     produce_parser.add_argument("--dry-run", action="store_true", help="Skip LLM calls and project creation")
+    produce_parser.add_argument("--no-hybrid-discovery", action="store_true", help="Use only the supplied feed, without supplementing from backlog")
     produce_parser.add_argument(
         "--require-latest-news",
         action=argparse.BooleanOptionalAction,
@@ -574,9 +623,13 @@ def main(argv: List[str] | None = None) -> int:
     )
 
     fetch_parser = subparsers.add_parser("fetch", help="Fetch latest news feeds via Toolcase Gateway Daily News service")
+    fetch_parser.add_argument("--source", choices=("daily-news", "muse"), default="daily-news", help="Discovery provider")
     fetch_parser.add_argument("--url", default=None, help="Daily News Gateway base URL (defaults to TOOLCASE_GATEWAY_URL/custom/daily-news)")
     fetch_parser.add_argument("--output", required=True, help="Path to write the raw feed JSON")
     fetch_parser.add_argument("--min-items", type=int, default=3, help="Minimum valid items required")
+
+    mark_parser = subparsers.add_parser("mark-muse-used", help="Persist a successfully validated Muse candidate ID")
+    mark_parser.add_argument("--candidate-id", required=True)
 
     capture_parser = subparsers.add_parser(
         "capture-source",
@@ -606,6 +659,8 @@ def main(argv: List[str] | None = None) -> int:
         run_produce(args)
     elif args.command == "fetch":
         run_fetch(args)
+    elif args.command == "mark-muse-used":
+        _mark_muse_used(args.candidate_id)
     elif args.command == "capture-source":
         return run_capture_source(args)
     elif args.command == "prepare-review":

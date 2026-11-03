@@ -267,6 +267,15 @@ cleanup_system_disk_space() {
 # Bounded Daily News Gateway reachability + stale-feed-age preflight (warning-only; the
 # generator enforces MAX_STALE_FEED_AGE_HOURS when it falls back to an old feed).
 newsnow_preflight() {
+  if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" ]]; then
+    local muse_origin="${MUSE_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}}"
+    if curl -sf -m 5 -o /dev/null "${muse_origin%/}/muse-ai/v1/models" 2>/dev/null; then
+      log "Muse gateway model catalog reachable"
+    else
+      log "WARN: Muse gateway model catalog unreachable; discovery must succeed before generation"
+    fi
+    return 0
+  fi
   if curl -sf -m 5 -o /dev/null "${DAILY_NEWS_GATEWAY_URL}/health" 2>/dev/null || curl -sf -m 5 -o /dev/null "$NEWSNOW_URL" 2>/dev/null; then
     log "Daily News Gateway reachable: $DAILY_NEWS_GATEWAY_URL"
   else
@@ -389,7 +398,8 @@ else
 fi
 
 # ===== STAGE 3: GENERATE — produce next-day video and assets =====
-stage 3 "generate"
+GENERATE_STAGE="generate"
+stage 3 "$GENERATE_STAGE"
 export OPENMONTAGE_PYTHON="$PY"
 PROJECT_IDS=()
 GENERATION_ATTEMPT=0
@@ -416,13 +426,20 @@ else
       if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
         continue
       fi
-      if [ -d "$ROOT/projects/$pid" ] && [ -f "$ROOT/projects/$pid/validation_status.json" ]; then
+      if [[ -d "$ROOT/projects/$pid" && -f "$ROOT/projects/$pid/validation_status.json" ]]; then
         is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$ROOT/projects/$pid/validation_status.json" 2>/dev/null || echo false)
-        if [ "$is_valid" = "true" ]; then
+        if [[ "$is_valid" == "true" ]]; then
           VALID_COUNT=$((VALID_COUNT + 1))
         fi
       fi
     done
+    if [[ "$GEN_STATUS" -eq 0 && "${#PROJECT_IDS[@]}" -eq 0 ]] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
+      log "No eligible topics were found; ending this run without generation retries or queue changes."
+      write_state "$GENERATE_STAGE" "no_eligible_topic"
+      write_state "workflow" "completed" "no_eligible_topic"
+      write_heartbeat "completed"
+      exit 0
+    fi
     if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; } && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
       log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT validated project(s) (target: $TARGET_SUCCESS_COUNT, exit=$GEN_STATUS)"
       GEN_STATUS=0
@@ -453,7 +470,7 @@ PROJECT_IDS=("${FILTERED_PROJECT_IDS[@]}")
 
 [ "${#PROJECT_IDS[@]}" -gt 0 ] || {
   cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log
-  write_state "generate" "failed"
+  write_state "$GENERATE_STAGE" "failed"
   fail "expected at least 1 new project from generation after $GENERATION_ATTEMPT attempts"
 }
 VALID_COUNT=0
@@ -468,13 +485,13 @@ done
 
 if [ "$GEN_STATUS" -ne 0 ] && [ "$VALID_COUNT" -eq 0 ]; then
   cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log
-  write_state "generate" "failed"
+  write_state "$GENERATE_STAGE" "failed"
   fail "generation failed after $GENERATION_ATTEMPT attempts (exit=$GEN_STATUS; see $GENERATE_LOG)"
 fi
 if [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; then
-  write_state "generate" "ok"
+  write_state "$GENERATE_STAGE" "ok"
 else
-  write_state "generate" "partial" "valid_count=$VALID_COUNT"
+  write_state "$GENERATE_STAGE" "partial" "valid_count=$VALID_COUNT"
 fi
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"

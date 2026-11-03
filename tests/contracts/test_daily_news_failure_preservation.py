@@ -164,10 +164,10 @@ class DailyNewsFailurePreservationTests(unittest.TestCase):
 
     def test_director_failure_branch_quarantines_after_preserving_diagnostics(self) -> None:
         source = PIPELINE.read_text(encoding="utf-8")
-        branch = re.search(r"else\n  echo .*directors FAIL.*?(?=\nfi\n\n# Step 3:)", source, re.DOTALL)
-        self.assertIsNotNone(branch)
-        body = branch.group(0)
-        self.assertIn('"$DIRECTORS_LOG"', body)
+        start = source.index('else\n  echo "[$(date -u +%FT%TZ)] directors FAIL')
+        end = source.index("\nfi\n\n# Step 3:", start)
+        body = source[start:end]
+        self.assertIn('see full transcript: $DIRECTORS_LOG', body)
         self.assertIn('"$ROOT/lib/news_failure_quarantine.py" "$ROOT/projects" "$PROJECT_ID"', body)
         self.assertIn('"Director run failed with exit code $DIRECTOR_EXIT', body)
         self.assertIn('see $DIRECTORS_LOG', body)
