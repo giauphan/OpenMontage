@@ -146,6 +146,11 @@ class NewsNowAdapter:
         content_h = self.compute_content_hash(title, body or desc, canonical_url)
 
         candidate_id = f"cand_{content_h[:16]}"
+        if raw_item.get("source_feed") == "muse":
+            # Muse may rewrite its summary each day; identify the underlying
+            # source consistently so a rewording does not create a new project.
+            source_hash = hashlib.sha256(canonical_url.lower().encode("utf-8")).hexdigest()
+            candidate_id = f"cand_{source_hash[:16]}"
 
         raw_provenance = {
             "source_id": raw_id,

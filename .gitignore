@@ -134,6 +134,7 @@ venv/
 !config/sources/*.json
 !data/daily_candidates.json
 !data/daily_candidates.example.json
+data/muse_consumed/
 logs
 *.lock
 !uv.lock

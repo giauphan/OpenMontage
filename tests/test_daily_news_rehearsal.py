@@ -282,6 +282,9 @@ def test_default_invocation_retains_live_acquisition_path_and_director_guard():
     guard = source.index('director invocation is disabled in rehearsal mode', director)
     call = source.index('run_directors > "$DIRECTORS_JSON"', guard)
     assert rehearsal_gate < fetch_path < produce_path
-    assert 'else\n# Step 0: Fetch current NewsNow sources' in source
+    assert 'else\n# DAILY_DISCOVERY_BEGIN\n# Step 0: Fetch current sources' in source
+    assert 'NEWS_DISCOVERY_PROVIDER="${NEWS_DISCOVERY_PROVIDER:-muse}"' in source
+    assert 'fetch --source muse --output data/newsnow_feed.json --min-items 0' in source
+    assert 'elif [[ "$NEWS_DISCOVERY_PROVIDER" == "daily-news" ]]; then' in source
     assert guard < call
     assert 'if [ -d "$PROJECT_DIR" ] && [ -z "$REHEARSAL_MANIFEST" ]; then' in source
