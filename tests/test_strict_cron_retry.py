@@ -41,6 +41,7 @@ def create_fixture(tmp_path: Path, validation_script: str) -> tuple[Path, Path, 
 
     for name in ("codex", "ffmpeg", "ffprobe"):
         write_executable(binaries / name, "#!/usr/bin/env bash\nexit 0\n")
+    write_executable(binaries / "curl", "#!/usr/bin/env bash\nexit 1\n")
 
     write_executable(
         scripts / "run_daily_news_pipeline.sh",
@@ -133,6 +134,47 @@ def run_pipeline(tmp_path: Path, scripts: Path, binaries: Path) -> subprocess.Co
         capture_output=True,
         text=True,
     )
+
+
+def test_no_eligible_topic_stops_generation_retries_without_queue_changes(tmp_path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    write_executable(binaries / "curl", "#!/usr/bin/env bash\nexit 1\n")
+    write_executable(scripts / "run_daily_news_pipeline.sh", "#!/usr/bin/env bash\necho run >> generation-count\necho STATUS=NO_ELIGIBLE_TOPIC\nexit 0\n")
+    before = (config / "publish_schedule.json").read_text()
+    result = run_pipeline(tmp_path, scripts, binaries)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "generation-count").read_text().splitlines() == ["run"]
+    assert (config / "publish_schedule.json").read_text() == before
+    assert json.loads((tmp_path / "logs/heartbeat/daily_orchestrator.json").read_text())["status"] == "completed"
+
+
+def test_muse_no_topic_marker_prevents_retry_despite_curated_backlog(tmp_path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data/.no_eligible_topic_marker").write_text("no topic")
+    write_executable(binaries / "python3", "#!/usr/bin/env bash\nexit 0\n")
+    write_executable(scripts / "run_strict_docker_publish.sh", "#!/usr/bin/env bash\ntouch should-not-run\n")
+    res = subprocess.run(["bash", str(scripts / "retry_daily_pipeline.sh")], cwd=tmp_path,
+                         env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC",
+                              "NEWS_DISCOVERY_PROVIDER": "muse"}, capture_output=True, text=True)
+    assert res.returncode == 0
+    assert not (tmp_path / "should-not-run").exists()
+    assert (tmp_path / "data/.no_eligible_topic_marker").exists()
+
+
+def test_muse_partial_schedule_does_not_force_quota(tmp_path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text())
+    schedule["active_projects"] = [{"project_id": "p1", "publish_date": tomorrow, "publish_time": "01:00"}]
+    schedule_path.write_text(json.dumps(schedule))
+    write_executable(scripts / "run_strict_docker_publish.sh", "#!/usr/bin/env bash\ntouch should-not-run\n")
+    res = subprocess.run(["bash", str(scripts / "retry_daily_pipeline.sh")], cwd=tmp_path,
+                         env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC",
+                              "NEWS_DISCOVERY_PROVIDER": "muse"}, capture_output=True, text=True)
+    assert res.returncode == 0
+    assert not (tmp_path / "should-not-run").exists()
 
 
 def test_retries_generation_and_validation_before_next_day_queue(tmp_path: Path):
@@ -665,7 +707,7 @@ def test_retry_daily_pipeline_triggers_when_incomplete(tmp_path: Path):
     res = subprocess.run(
         ["bash", str(scripts / "retry_daily_pipeline.sh")],
         cwd=tmp_path,
-        env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC"},
+        env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC", "NEWS_DISCOVERY_PROVIDER": "daily-news"},
         capture_output=True,
         text=True,
     )

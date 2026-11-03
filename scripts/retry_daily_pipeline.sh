@@ -42,6 +42,11 @@ TODAY=$(TZ="$PUBLISH_TZ" date +%F)
 
 # 3.5 Check if NO_ELIGIBLE_TOPIC was recorded for today.
 if [ -f "$ROOT/data/.no_eligible_topic_marker" ]; then
+  MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
+  if [ "${NEWS_DISCOVERY_PROVIDER:-muse}" = "muse" ] && [ "$MARKER_DATE" = "$TODAY" ]; then
+    log "Muse found no eligible topics today; skipping quota-driven retries."
+    exit 0
+  fi
   # If eligible candidates are available in curated or source feeds, remove stale marker and proceed
   if "$PY" -c "
 import sys
@@ -71,6 +76,11 @@ log "Schedule check for $NEXT_DATE (tomorrow in $PUBLISH_TZ): $SCHEDULED_COUNT/$
 
 if [ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]; then
   log "Next-day schedule requirement satisfied ($SCHEDULED_COUNT >= $EXPECTED_SUCCESS_COUNT). No retry needed."
+  exit 0
+fi
+
+if [ "${NEWS_DISCOVERY_PROVIDER:-muse}" = "muse" ] && [ "$SCHEDULED_COUNT" -gt 0 ]; then
+  log "Muse produced a scheduled project; not forcing a daily quota."
   exit 0
 fi
 

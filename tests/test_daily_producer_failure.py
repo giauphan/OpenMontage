@@ -25,6 +25,22 @@ def producer_block():
         "# PRODUCER_EXECUTION_END", 1)[0]
 
 
+@pytest.mark.parametrize("fetch_status", [0, 9])
+def test_muse_acquisition_calls_muse_and_never_falls_back(tmp_path, fetch_status):
+    body = SOURCE.split("# DAILY_DISCOVERY_BEGIN\n", 1)[1].split("# DAILY_DISCOVERY_END", 1)[0]
+    setup = f'''
+fetcher() {{ printf '%s\\n' "$*" >> fetch_calls; return {fetch_status}; }}
+PY=fetcher
+NEWS_DISCOVERY_PROVIDER=muse
+'''
+    result = run_shell(tmp_path, body + '\nprintf "FETCH_COMPLETE\\n"', setup)
+    calls = (tmp_path / "fetch_calls").read_text().splitlines()
+    assert len(calls) == 1
+    assert "fetch --source muse" in calls[0]
+    assert result.returncode == (0 if fetch_status == 0 else 1)
+    assert ("FETCH_COMPLETE" in result.stdout) is (fetch_status == 0)
+
+
 @pytest.mark.parametrize("producer_status,tee_status,expected", [(23, 0, 23), (0, 19, 19), (23, 19, 23)])
 def test_producer_and_log_failure_preserve_status(tmp_path, producer_status, tee_status, expected):
     setup = f'''
@@ -47,6 +63,23 @@ awk() { return 17; }
     result = run_shell(tmp_path, producer_block() + '\nprintf "ACCEPTED\\n"', setup)
     assert result.returncode != 0
     assert "ACCEPTED" not in result.stdout
+
+
+def test_no_eligible_marker_does_not_mask_producer_failure(tmp_path):
+    setup = '''
+producer() { printf 'STATUS=NO_ELIGIBLE_TOPIC\\n'; return 7; }
+PY=producer
+'''
+    result = run_shell(tmp_path, producer_block(), setup)
+    assert result.returncode == 7
+
+
+def test_muse_does_not_require_more_projects_than_were_found(tmp_path):
+    body = SOURCE.split("# DAILY_TARGET_BEGIN\n", 1)[1].split("# DAILY_TARGET_END", 1)[0]
+    setup = 'NEWS_DISCOVERY_PROVIDER=muse\nREHEARSAL_MANIFEST=""\nPROJECT_IDS=(one)\nEXPECTED_SUCCESS_COUNT=3'
+    result = run_shell(tmp_path, body + '\nprintf "TARGET:%s\\n" "$EXPECTED_SUCCESS_COUNT"', setup)
+    assert result.returncode == 0, result.stderr
+    assert "TARGET:1" in result.stdout
 
 def test_producer_missing_project_id_blocks_candidates(tmp_path):
     """Missing PROJECT_ID in producer output should block candidates (new regression)."""

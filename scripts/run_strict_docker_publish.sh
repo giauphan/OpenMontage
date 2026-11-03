@@ -267,6 +267,15 @@ cleanup_system_disk_space() {
 # Bounded Daily News Gateway reachability + stale-feed-age preflight (warning-only; the
 # generator enforces MAX_STALE_FEED_AGE_HOURS when it falls back to an old feed).
 newsnow_preflight() {
+  if [ "${NEWS_DISCOVERY_PROVIDER:-muse}" = "muse" ]; then
+    local muse_origin="${MUSE_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}}"
+    if curl -sf -m 5 -o /dev/null "${muse_origin%/}/muse-ai/v1/models" 2>/dev/null; then
+      log "Muse gateway model catalog reachable"
+    else
+      log "WARN: Muse gateway model catalog unreachable; discovery must succeed before generation"
+    fi
+    return 0
+  fi
   if curl -sf -m 5 -o /dev/null "${DAILY_NEWS_GATEWAY_URL}/health" 2>/dev/null || curl -sf -m 5 -o /dev/null "$NEWSNOW_URL" 2>/dev/null; then
     log "Daily News Gateway reachable: $DAILY_NEWS_GATEWAY_URL"
   else
@@ -423,6 +432,13 @@ else
         fi
       fi
     done
+    if [ "$GEN_STATUS" -eq 0 ] && [ "${#PROJECT_IDS[@]}" -eq 0 ] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
+      log "No eligible topics were found; ending this run without generation retries or queue changes."
+      write_state "generate" "no_eligible_topic"
+      write_state "workflow" "completed" "no_eligible_topic"
+      write_heartbeat "completed"
+      exit 0
+    fi
     if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; } && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
       log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT validated project(s) (target: $TARGET_SUCCESS_COUNT, exit=$GEN_STATUS)"
       GEN_STATUS=0

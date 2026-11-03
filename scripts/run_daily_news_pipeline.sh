@@ -190,22 +190,20 @@ raise SystemExit(0 if resolved.is_dir() and resolved.is_relative_to(root) else 1
     fi
   done
 else
-# Step 0: Fetch current NewsNow sources
+# DAILY_DISCOVERY_BEGIN
+# Step 0: Fetch current sources
 FEED_STALE=0
 DAILY_NEWS_GATEWAY_URL="${DAILY_NEWS_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}/custom/daily-news}"
 NEWSNOW_URL="${DAILY_NEWS_GATEWAY_URL}"
 HAS_CURATED_READY=0
-if "$PY" -c "
-import sys
-from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery, DiscoveryTier
-res = HybridCandidateDiscovery().discover_candidates(count=1)
-sys.exit(0 if res.tier == DiscoveryTier.TIER_1_CURATED else 1)
-" 2>/dev/null; then
-  HAS_CURATED_READY=1
-  echo "[$(date -u +%FT%TZ)] [HYBRID DISCOVERY] Tier 1 curated candidate backlog detected; proceeding directly to production."
-fi
-
-if [[ "$HAS_CURATED_READY" -eq 0 ]] && ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 3; then
+NEWS_DISCOVERY_PROVIDER="${NEWS_DISCOVERY_PROVIDER:-muse}"
+if [[ "$NEWS_DISCOVERY_PROVIDER" == "muse" ]]; then
+  if ! "$PY" tools/news/news_pipeline_cli.py fetch --source muse --output data/newsnow_feed.json --min-items 0; then
+    echo "[$(date -u +%FT%TZ)] ERROR: Muse discovery failed; no substitute feed will be used." >&2
+    exit 1
+  fi
+elif [[ "$NEWS_DISCOVERY_PROVIDER" == "daily-news" ]]; then
+if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 1; then
   if "$PY" -c "
 import sys
 from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
@@ -252,6 +250,11 @@ sys.exit(0 if res.is_eligible else 1)
     fi
   fi
 fi
+else
+  echo "ERROR: unsupported NEWS_DISCOVERY_PROVIDER: $NEWS_DISCOVERY_PROVIDER" >&2
+  exit 1
+fi
+# DAILY_DISCOVERY_END
 
 # Step 1: Select and initialize distinct current topics. Preserve the producer's
 # exit status across tee so partial output cannot make a failed acquisition look
@@ -264,13 +267,17 @@ if [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.j
 elif [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/config/sources/production_agent_engineering_feed.json" ]]; then
   PRODUCE_INPUT="config/sources/production_agent_engineering_feed.json"
 fi
+PRODUCE_DISCOVERY_ARGS=()
+if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" ]]; then
+  PRODUCE_DISCOVERY_ARGS+=(--no-hybrid-discovery)
+fi
 set +e
-"$PY" tools/news/news_pipeline_cli.py produce --input "$PRODUCE_INPUT" --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news 2>&1 | tee "$PRODUCE_LOG"
+"$PY" tools/news/news_pipeline_cli.py produce --input "$PRODUCE_INPUT" --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news "${PRODUCE_DISCOVERY_ARGS[@]}" 2>&1 | tee "$PRODUCE_LOG"
 PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
 TEE_STATUS="${PRODUCER_PIPE_STATUS[1]}"
-if grep -q "STATUS=NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG" || grep -q "NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG"; then
+if [[ "$PRODUCE_STATUS" -eq 2 && "$TEE_STATUS" -eq 0 ]] && grep -qx "STATUS=NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG"; then
   echo "[$(date -u +%FT%TZ)] NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate. Exiting cleanly without retry."
   exit 0
 fi
@@ -294,14 +301,20 @@ if [ -n "$PROJECT_ID_OUTPUT" ]; then
   mapfile -t PROJECT_IDS <<< "$PROJECT_ID_OUTPUT"
 fi
 # PRODUCER_EXECUTION_END
-if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
+if [ "${#PROJECT_IDS[@]}" -lt 1 ]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: No projects were initialized."
   exit 1
 fi
 fi
 
 SUCCESSFUL_COUNT=0
+# DAILY_TARGET_BEGIN
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
+if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" ]] && [ "${#PROJECT_IDS[@]}" -lt "$EXPECTED_SUCCESS_COUNT" ]; then
+  EXPECTED_SUCCESS_COUNT="${#PROJECT_IDS[@]}"
+  echo "Muse supplied $EXPECTED_SUCCESS_COUNT eligible project(s); proceeding without filling a quota."
+fi
+# DAILY_TARGET_END
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
@@ -1593,6 +1606,12 @@ if [ -f "$REELS_RENDER_PATH" ]; then
   "$PY" "$ROOT/scripts/check_copyright.py" "$REELS_RENDER_PATH"
 fi
 
+if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" ]]; then
+  if ! "$PY" tools/news/news_pipeline_cli.py mark-muse-used --candidate-id "$PROJECT_ID"; then
+    echo "ERROR: unable to persist Muse candidate history for $PROJECT_ID" >&2
+    exit 1
+  fi
+fi
 SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))
 if [ -n "$REHEARSAL_MANIFEST" ]; then
   REHEARSAL_SUCCESSFUL_IDS+=("$PROJECT_ID")
