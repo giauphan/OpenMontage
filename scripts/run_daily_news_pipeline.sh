@@ -190,89 +190,32 @@ raise SystemExit(0 if resolved.is_dir() and resolved.is_relative_to(root) else 1
     fi
   done
 else
-# DAILY_DISCOVERY_BEGIN
-# Step 0: Fetch current sources
-FEED_STALE=0
+# Step 0: Select current Gateway candidates directly, or use a curated backlog.
 DAILY_NEWS_GATEWAY_URL="${DAILY_NEWS_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}/custom/daily-news}"
-NEWSNOW_URL="${DAILY_NEWS_GATEWAY_URL}"
 HAS_CURATED_READY=0
-NEWS_DISCOVERY_PROVIDER="${NEWS_DISCOVERY_PROVIDER:-muse}"
-if [[ "$NEWS_DISCOVERY_PROVIDER" == "muse" ]]; then
-  if ! "$PY" tools/news/news_pipeline_cli.py fetch --source muse --output data/newsnow_feed.json --min-items 0; then
-    echo "[$(date -u +%FT%TZ)] ERROR: Muse discovery failed; no substitute feed will be used." >&2
-    exit 1
-  fi
-elif [[ "$NEWS_DISCOVERY_PROVIDER" == "daily-news" ]]; then
-if ! "$PY" tools/news/news_pipeline_cli.py fetch --url "$NEWSNOW_URL" --output data/newsnow_feed.json --min-items 1; then
-  if "$PY" -c "
+if "$PY" -c "
 import sys
-from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery, DiscoveryTier
 res = HybridCandidateDiscovery().discover_candidates(count=1)
-sys.exit(0 if res.is_eligible else 1)
+sys.exit(0 if res.tier == DiscoveryTier.TIER_1_CURATED else 1)
 " 2>/dev/null; then
-    echo "[$(date -u +%FT%TZ)] [HYBRID DISCOVERY] NewsNow fetch failed, but eligible candidates exist in hybrid discovery; proceeding with curated backlog."
-    HAS_CURATED_READY=1
-  elif [[ ! -f data/newsnow_feed.json ]]; then
-    echo "[$(date -u +%FT%TZ)] ERROR: NewsNow fetch failed and no prior feed or curated candidates exist."
-    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
-      --error-type "NEWSNOW_FETCH_FAILED" --message "NewsNow fetch failed and no prior feed exists" || true
-    exit 1
-  fi
-  if [[ "$HAS_CURATED_READY" -eq 0 ]]; then
-    FEED_STALE=1
-    echo "[$(date -u +%FT%TZ)] WARN: NewsNow fetch failed; using existing feed."
-    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-retry --stage "news_fetch" \
-      --reason "NewsNow fetch failed, using fallback feed" --attempt 1 --max-attempts 1 || true
-
-    # Enforce an acceptable stale-feed age on the fallback path. A very old feed
-    # produces stale news content, so fail closed rather than generate from it.
-    MAX_STALE_FEED_AGE_HOURS="${MAX_STALE_FEED_AGE_HOURS:-48}"
-    FEED_FILE="$ROOT/data/newsnow_feed.json"
-    if [[ -f "$FEED_FILE" ]]; then
-      FEED_MTIME="$(stat -c %Y "$FEED_FILE" 2>/dev/null || echo 0)"
-      FEED_AGE_H=$(( ( $(date +%s) - FEED_MTIME ) / 3600 ))
-      if [[ "$FEED_AGE_H" -gt "$MAX_STALE_FEED_AGE_HOURS" ]]; then
-        if "$PY" -c "
-import sys
-from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
-res = HybridCandidateDiscovery().discover_candidates(count=1)
-sys.exit(0 if res.is_eligible else 1)
-" 2>/dev/null; then
-          echo "[$(date -u +%FT%TZ)] [HYBRID DISCOVERY] Fallback feed is stale (${FEED_AGE_H}h), but curated backlog is available; switching to curated backlog."
-          HAS_CURATED_READY=1
-        else
-          echo "[$(date -u +%FT%TZ)] ERROR: fallback NewsNow feed is ${FEED_AGE_H}h old (max ${MAX_STALE_FEED_AGE_HOURS}h); refusing to generate from stale feed."
-          "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "news_fetch" \
-            --error-type "STALE_NEWSNOW_FEED" --message "fallback NewsNow feed ${FEED_AGE_H}h old exceeds max ${MAX_STALE_FEED_AGE_HOURS}h" || true
-          exit 1
-        fi
-      fi
-    fi
-  fi
+  HAS_CURATED_READY=1
+  echo "[$(date -u +%FT%TZ)] [HYBRID DISCOVERY] Tier 1 curated candidate backlog detected; proceeding directly to production."
 fi
-else
-  echo "ERROR: unsupported NEWS_DISCOVERY_PROVIDER: $NEWS_DISCOVERY_PROVIDER" >&2
-  exit 1
-fi
-# DAILY_DISCOVERY_END
 
 # Step 1: Select and initialize distinct current topics. Preserve the producer's
 # exit status across tee so partial output cannot make a failed acquisition look
 # like a successful generation attempt.
 # PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
-PRODUCE_INPUT="data/newsnow_feed.json"
+PRODUCE_ARGS=(--gateway-url "$DAILY_NEWS_GATEWAY_URL")
 if [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.json" ]]; then
-  PRODUCE_INPUT="data/daily_candidates.json"
+  PRODUCE_ARGS=(--input "data/daily_candidates.json")
 elif [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/config/sources/production_agent_engineering_feed.json" ]]; then
-  PRODUCE_INPUT="config/sources/production_agent_engineering_feed.json"
-fi
-PRODUCE_DISCOVERY_ARGS=()
-if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" ]]; then
-  PRODUCE_DISCOVERY_ARGS+=(--no-hybrid-discovery)
+  PRODUCE_ARGS=(--input "config/sources/production_agent_engineering_feed.json")
 fi
 set +e
-"$PY" tools/news/news_pipeline_cli.py produce --input "$PRODUCE_INPUT" --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news "${PRODUCE_DISCOVERY_ARGS[@]}" 2>&1 | tee "$PRODUCE_LOG"
+"$PY" tools/news/news_pipeline_cli.py produce "${PRODUCE_ARGS[@]}" --count "${NEWS_PRODUCE_COUNT:-8}" --require-latest-news 2>&1 | tee "$PRODUCE_LOG"
 PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
@@ -301,20 +244,14 @@ if [ -n "$PROJECT_ID_OUTPUT" ]; then
   mapfile -t PROJECT_IDS <<< "$PROJECT_ID_OUTPUT"
 fi
 # PRODUCER_EXECUTION_END
-if [[ "${#PROJECT_IDS[@]}" -lt 1 ]]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: No projects were initialized." >&2
+if [[ "${#PROJECT_IDS[@]}" -lt 3 ]]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}." >&2
   exit 1
 fi
 fi
 
 SUCCESSFUL_COUNT=0
-# DAILY_TARGET_BEGIN
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
-if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" && "${#PROJECT_IDS[@]}" -lt "$EXPECTED_SUCCESS_COUNT" ]]; then
-  EXPECTED_SUCCESS_COUNT="${#PROJECT_IDS[@]}"
-  echo "Muse supplied $EXPECTED_SUCCESS_COUNT eligible project(s); proceeding without filling a quota."
-fi
-# DAILY_TARGET_END
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
@@ -1606,10 +1543,6 @@ if [ -f "$REELS_RENDER_PATH" ]; then
   "$PY" "$ROOT/scripts/check_copyright.py" "$REELS_RENDER_PATH"
 fi
 
-if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" ]] && ! "$PY" tools/news/news_pipeline_cli.py mark-muse-used --candidate-id "$PROJECT_ID"; then
-  echo "ERROR: unable to persist Muse candidate history for $PROJECT_ID" >&2
-  exit 1
-fi
 SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))
 if [ -n "$REHEARSAL_MANIFEST" ]; then
   REHEARSAL_SUCCESSFUL_IDS+=("$PROJECT_ID")

@@ -1,4 +1,4 @@
-"""Focused tests for NewsNow pipeline contracts."""
+"""Focused tests for Gateway Daily News pipeline contracts."""
 
 import argparse
 import datetime
@@ -15,7 +15,7 @@ from lib.claude_news_selector import ClaudeNewsSelector
 from lib.news_research_bridge import NewsResearchBridge
 from lib.news_scoring import NewsCandidateScorer
 from tools.news.newsnow_adapter import NewsNowAdapter
-from tools.news import news_pipeline_cli, newsnow_feed
+from tools.news import gateway_daily_news_feed, news_pipeline_cli
 
 
 URLS = [f"https://example.com/{number}" for number in range(1, 6)]
@@ -217,9 +217,10 @@ def test_bridge_blocks_when_supplied_sources_do_not_meet_schema_minimum():
     bridge = NewsResearchBridge()
     incomplete = research_draft()
     incomplete["research_draft"]["sources"] = incomplete["research_draft"]["sources"][:4]
+    source_candidate = candidate(1)
 
     with pytest.raises(ValueError, match="BLOCKED: research incomplete; fewer than five supplied source records"):
-        bridge.build_brief(candidate(1), incomplete)
+        bridge.build_brief(source_candidate, incomplete)
 
 
 def _newsnow_payload(source: str, count: int) -> dict:
@@ -235,8 +236,6 @@ def _newsnow_payload(source: str, count: int) -> dict:
 
 
 def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, capsys):
-    from tools.news.daily_news_gateway import DailyNewsGatewayClient
-    monkeypatch.setattr(DailyNewsGatewayClient, "consume_candidates", lambda *a, **k: {})
     monkeypatch.setenv("SKIP_SCOPE_GATE", "1")
     monkeypatch.chdir(tmp_path)
     Path("data").mkdir()
@@ -273,37 +272,36 @@ def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, caps
     assert (tmp_path / f"projects/{c2_id}/artifacts/research_brief.json").exists()
 
 
-def test_muse_lead_produces_existing_research_brief_contract(tmp_path, monkeypatch, capsys):
-    from tools.news.daily_news_gateway import DailyNewsGatewayClient
-    from tools.news.muse_chat import MuseChatClient
-
+def test_produce_uses_gateway_candidates_without_an_intermediate_feed_file(tmp_path, monkeypatch, capsys):
+    """The live production path reads Gateway candidates directly, without a feed-file handoff."""
+    monkeypatch.setenv("SKIP_SCOPE_GATE", "1")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
-    monkeypatch.setenv("MUSE_THREAD_CACHE", str(tmp_path / "muse_threads.json"))
-    monkeypatch.setenv("EXPECTED_SUCCESS_COUNT", "3")
-    raw = {"id": "release", "url": "https://example.com/release", "title": "Coding agent tool call update",
-           "publisher": "Example", "published_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-           "description": "The coding agent tool call contract changes how developers use the agent.",
-           "extra": {"editorial": {"viewer_question": "How does the tool call change?"}}}
-    monkeypatch.setattr(MuseChatClient, "chat", lambda self, context, prompt: json.dumps([raw]))
-    consumed = []
-    monkeypatch.setattr(DailyNewsGatewayClient, "consume_candidates", lambda *a, **k: consumed.append(a) or {})
+    published_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    gateway_items = [{
+        "candidate_id": "gateway-latest",
+        "url": "https://example.com/latest",
+        "title": "Latest gateway story",
+        "publisher": "Example",
+        "published_at": published_at,
+        "description": "A source-backed artificial intelligence development with practical engineering impact.",
+    }]
 
-    class Selector:
-        def select_and_research(self, pool):
-            return {"selected_candidate_id": pool[0]["candidate_id"], **research_draft()}
+    monkeypatch.setattr(
+        "tools.news.daily_news_gateway.DailyNewsGatewayClient.fetch_feed",
+        lambda self, **kwargs: gateway_items,
+    )
 
-    monkeypatch.setattr(news_pipeline_cli, "NewsSelector", lambda: Selector())
-    feed = tmp_path / "data/newsnow_feed.json"
-    news_pipeline_cli.run_fetch(argparse.Namespace(source="muse", url=None, output=str(feed), min_items=0))
-    news_pipeline_cli.run_produce(argparse.Namespace(input=str(feed), count=8, dry_run=False,
-                                                     no_hybrid_discovery=True, require_latest_news=True, max_age_days=7))
-    project_id = capsys.readouterr().out.split("PROJECT_ID=")[1].splitlines()[0]
-    brief = json.loads((tmp_path / "projects" / project_id / "artifacts/research_brief.json").read_text())
-    assert brief["version"] == "1.0"
-    assert brief["metadata"]["source_feed"] == "muse"
-    assert brief["topic"] == raw["title"]
-    assert consumed == []
+    news_pipeline_cli.run_produce(argparse.Namespace(
+        input=None,
+        gateway_url="http://127.0.0.1:20129/custom/daily-news",
+        count=1,
+        dry_run=True,
+        require_latest_news=True,
+        max_age_days=7,
+    ))
+
+    assert "Latest gateway story" in capsys.readouterr().out
+    assert not (tmp_path / "data/newsnow_feed.json").exists()
 
 
 def test_feed_converter_normalizes_and_dedupes(monkeypatch):
@@ -351,7 +349,7 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
             return json.dumps({"count": len(raw_feed_items), "items": raw_feed_items}).encode("utf-8")
 
     monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", lambda req, timeout=0: _Response())
-    items = newsnow_feed.fetch_feed("http://127.0.0.1:20129/custom/daily-news")
+    items = gateway_daily_news_feed.fetch_feed("http://127.0.0.1:20129/custom/daily-news")
 
     urls = [item["url"] for item in items]
     assert len(urls) == len(set(urls))
@@ -368,9 +366,9 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
 
 
 def test_feed_write_requires_minimum(monkeypatch, tmp_path):
-    monkeypatch.setattr(newsnow_feed, "fetch_feed", lambda url, *a, **k: [{"id": "1"}])
+    monkeypatch.setattr(gateway_daily_news_feed, "fetch_feed", lambda url, *a, **k: [{"id": "1"}])
     with pytest.raises(RuntimeError, match="need at least 3"):
-        newsnow_feed.write_feed("http://127.0.0.1:20129/custom/daily-news", tmp_path / "feed.json", minimum=3)
+        gateway_daily_news_feed.write_feed("http://127.0.0.1:20129/custom/daily-news", tmp_path / "feed.json", minimum=3)
 
 
 def test_produce_hydrates_from_hybrid_discovery_when_input_insufficient(tmp_path):
@@ -393,8 +391,8 @@ def test_produce_hydrates_from_hybrid_discovery_when_input_insufficient(tmp_path
         }
 
 
-def test_hydrate_does_not_disable_freshness_for_fallback(monkeypatch):
-    """An insufficient fresh pool must not be filled with stale backlog."""
+def test_hydrate_from_hybrid_discovery_fallback_trigger(monkeypatch):
+    """Test _run_discovery_fallback when discovery initially yields insufficient candidates."""
     class FakeResult:
         def __init__(self, candidates, status="ELIGIBLE"):
             self.candidates = candidates
@@ -426,7 +424,8 @@ def test_hydrate_does_not_disable_freshness_for_fallback(monkeypatch):
     hydrated = news_pipeline_cli._hydrate_from_hybrid_discovery(
         pool, count=1, min_required=1, used_ids=set(), args=args
     )
-    assert hydrated == []
-    assert call_count == 1
+    assert len(hydrated) == 1
+    assert hydrated[0]["candidate_id"] == "fb_1"
+    assert call_count == 2
 
 

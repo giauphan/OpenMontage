@@ -5,8 +5,8 @@ Integrates OpenMontage with the native daily-news module hosted on Toolcase Gate
 
 Provides:
 - SSRF-safe base URL resolution via TOOLCASE_GATEWAY_URL.
-- Fetching normalized latest news feed items via GET /custom/daily-news/api/v1/feed.
-- Tiered content discovery via POST /custom/daily-news/api/v1/discover.
+- Fetching normalized latest ranked candidates via POST /custom/daily-news/api/v1/discover,
+  with GET /custom/daily-news/api/v1/feed as a compatibility fallback.
 - Candidate consumption / removal logic via POST /custom/daily-news/api/v1/consume.
 - Health inspection via GET /custom/daily-news/health.
 
@@ -153,10 +153,22 @@ class DailyNewsGatewayClient:
     def fetch_feed(
         self,
         base_url: Optional[str] = None,
-        sources: Optional[Sequence[str]] = DEFAULT_SOURCES,
+        sources: Optional[Sequence[str]] = None,
         limit: int = 30,
     ) -> List[Dict[str, Any]]:
-        """Fetch latest raw news items from gateway endpoint GET /api/v1/feed."""
+        """Fetch the gateway's latest ranked candidates, then fall back to its raw feed."""
+        try:
+            discovery = self.discover_candidates(
+                base_url=base_url,
+                limit=limit,
+                sources=list(sources) if sources else None,
+            )
+            candidates = discovery.get("candidates") if isinstance(discovery, dict) else None
+            if isinstance(candidates, list) and candidates:
+                return self._sanitize_and_dedupe_items(candidates)
+        except RuntimeError as exc:
+            logger.warning("Latest gateway discovery failed; falling back to raw feed: %s", exc)
+
         gw_base = self.get_gateway_base_url(base_url)
         params: Dict[str, Any] = {"limit": limit}
         if sources:
@@ -257,13 +269,13 @@ class DailyNewsGatewayClient:
     def write_feed(
         self,
         base_url: Optional[str] = None,
-        output: Path | str = Path("data/newsnow_feed.json"),
+        output: Path | str = Path("data/gateway_daily_news_feed.json"),
         minimum: int = 3,
-        sources: Optional[Sequence[str]] = DEFAULT_SOURCES,
+        sources: Optional[Sequence[str]] = None,
         limit: int = 30,
         items: Optional[List[Dict[str, Any]]] = None,
     ) -> int:
-        """Fetch feed items from gateway and write atomically to output path."""
+        """Fetch latest gateway items and write them atomically to the output path."""
         if items is None:
             items = self.fetch_feed(base_url=base_url, sources=sources, limit=limit)
         if len(items) < minimum:
