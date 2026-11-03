@@ -45,14 +45,17 @@ def _sanitize_log_val(val: Any, max_len: int = 120) -> str:
 
 def _resolve_safe_output_path(output: Path | str) -> Path:
     """Resolve and sanitize output path against traversal attacks (CWE-22 / CWE-73)."""
-    raw_path = Path(output).expanduser()
-    resolved = (Path.cwd() / raw_path).resolve() if not raw_path.is_absolute() else raw_path.resolve()
+    raw_path = Path(output)
+    if ".." in raw_path.parts:
+        raise ValueError(f"Path traversal detected or path outside allowed root: {output}")
+
+    expanded = raw_path.expanduser()
+    resolved = (Path.cwd() / expanded).resolve() if not expanded.is_absolute() else expanded.resolve()
 
     repo_root = Path(__file__).resolve().parents[2]
     allowed_roots = (
         repo_root,
         Path.cwd().resolve(),
-        Path.home().resolve(),
         Path(tempfile.gettempdir()).resolve(),
     )
     if not any(resolved == r or resolved.is_relative_to(r) for r in allowed_roots if r != Path(r.anchor)):
