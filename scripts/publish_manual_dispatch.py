@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.publish_store import PublishStore, publish_key
+from tools.publish_store import PublishStore
 from scripts.publish_config import canonical_platform_name, is_platform_enabled, is_platform_held
 from tools.publishers.platform_routes import compose_release_metadata, PLATFORM_ROUTES, youtube_shorts_title
 from tools.publishers.youtube_publisher import YoutubePublisher
@@ -117,14 +117,9 @@ def build_youtube_payload(
 
 def _clear_uniqueness_for_topic(store: PublishStore, topic: str) -> int:
     """Delete all uniqueness documents for a topic so claim() can succeed on re-publish."""
-    prefix = publish_key(topic)
-    cleared = 0
-    try:
-        from scripts.clear_uniqueness import clear_topic_uniqueness
+    from scripts.clear_uniqueness import clear_uniqueness
 
-        cleared = clear_topic_uniqueness(store, topic)
-    except ImportError:
-        pass
+    _, cleared = clear_uniqueness(store, topic)
     return cleared
 
 
