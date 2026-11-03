@@ -56,8 +56,8 @@
         "description": "Product changes, capabilities, technical steps and limitations. No fake screenshots or undocumented features."
       },
       "integrity": {
-        "full_html_sha256": "6d6597c0c6458882bdd068bf42a59a9654d05e5cc73685c4e6aab56750645b6c",
-        "short_html_sha256": "d4ba66e489f3c50ed438c85506fa65b714efaac292d904563c83a0469cab1095"
+        "full_html_sha256": "947621d79c9794758edbce699c01ce6dba81b343673bd0aecff49fcf73261d42",
+        "short_html_sha256": "913fe4ca324ef39eba509d5cd68b15f15fc2c481830e8b7f777342d76efa6026"
       },
       "previews": [],
       "created": "2026-10-04"

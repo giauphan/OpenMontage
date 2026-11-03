@@ -466,7 +466,7 @@ def test_news_explainer_template_sound_design_and_pacing(tmp_path: Path):
         assert "y: -24, scale: 0.96" in html
         # 4. CTA engagement banner
         assert 'id="cta-banner"' in html
-        assert "What do you think? Let me know below" in html
+        assert "Bạn nghĩ sao? Hãy bình luận bên dưới" in html
 
     # 5. Verify materializer emits identical enhanced capabilities
     fixture_path = root_pkg / "fixtures" / "short_story_1.json"
