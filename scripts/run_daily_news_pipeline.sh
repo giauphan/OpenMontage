@@ -1511,9 +1511,10 @@ if [ -n "$CONCEPT_CTA" ]; then
 fi
 if [ "$is_en" -eq 1 ]; then
   if [ -z "$DESCRIPTION" ]; then
-    DESCRIPTION="Latest AI technology and engineering breakdown."
+    TOPIC_TEXT=$(printf '%s' "$TITLE" | sed 's/ #.*//')
+    DESCRIPTION="${TOPIC_TEXT:-Latest AI technology and engineering breakdown}: what changed and why it matters for AI engineers."
   fi
-  DESCRIPTION="$DESCRIPTION"$'\n\n'"#ai #tech #anthropic #claude"
+  DESCRIPTION="$DESCRIPTION"$'\n\n'"#ai #tech #shorts"
 else
   if [ -z "$DESCRIPTION" ]; then
     DESCRIPTION="Điểm tin công nghệ AI mới nhất."
