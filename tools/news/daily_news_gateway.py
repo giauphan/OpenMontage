@@ -39,7 +39,7 @@ JSON_HEADERS = {"Content-Type": APPLICATION_JSON, "Accept": APPLICATION_JSON}
 
 def _sanitize_log_val(val: Any, max_len: int = 120) -> str:
     """Sanitize strings before logging to prevent log injection (CWE-117)."""
-    clean = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", " ", str(val)).strip()
+    clean = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(val)).strip()
     return clean[:max_len]
 
 
