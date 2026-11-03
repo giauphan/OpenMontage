@@ -1,4 +1,4 @@
-"""Focused tests for NewsNow pipeline contracts."""
+"""Focused tests for Gateway Daily News pipeline contracts."""
 
 import argparse
 import datetime
@@ -15,7 +15,7 @@ from lib.claude_news_selector import ClaudeNewsSelector
 from lib.news_research_bridge import NewsResearchBridge
 from lib.news_scoring import NewsCandidateScorer
 from tools.news.newsnow_adapter import NewsNowAdapter
-from tools.news import news_pipeline_cli, newsnow_feed
+from tools.news import gateway_daily_news_feed, news_pipeline_cli
 
 
 URLS = [f"https://example.com/{number}" for number in range(1, 6)]
@@ -271,6 +271,38 @@ def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, caps
     assert (tmp_path / f"projects/{c2_id}/artifacts/research_brief.json").exists()
 
 
+def test_produce_uses_gateway_candidates_without_an_intermediate_feed_file(tmp_path, monkeypatch, capsys):
+    """The live production path reads Gateway candidates directly, without a feed-file handoff."""
+    monkeypatch.setenv("SKIP_SCOPE_GATE", "1")
+    monkeypatch.chdir(tmp_path)
+    published_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    gateway_items = [{
+        "candidate_id": "gateway-latest",
+        "url": "https://example.com/latest",
+        "title": "Latest gateway story",
+        "publisher": "Example",
+        "published_at": published_at,
+        "description": "A source-backed artificial intelligence development with practical engineering impact.",
+    }]
+
+    monkeypatch.setattr(
+        "tools.news.daily_news_gateway.DailyNewsGatewayClient.fetch_feed",
+        lambda self, **kwargs: gateway_items,
+    )
+
+    news_pipeline_cli.run_produce(argparse.Namespace(
+        input=None,
+        gateway_url="http://127.0.0.1:20129/custom/daily-news",
+        count=1,
+        dry_run=True,
+        require_latest_news=True,
+        max_age_days=7,
+    ))
+
+    assert "Latest gateway story" in capsys.readouterr().out
+    assert not (tmp_path / "data/newsnow_feed.json").exists()
+
+
 def test_feed_converter_normalizes_and_dedupes(monkeypatch):
     raw_feed_items = [
         {
@@ -316,7 +348,7 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
             return json.dumps({"count": len(raw_feed_items), "items": raw_feed_items}).encode("utf-8")
 
     monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", lambda req, timeout=0: _Response())
-    items = newsnow_feed.fetch_feed("http://127.0.0.1:20129/custom/daily-news")
+    items = gateway_daily_news_feed.fetch_feed("http://127.0.0.1:20129/custom/daily-news")
 
     urls = [item["url"] for item in items]
     assert len(urls) == len(set(urls))
@@ -333,9 +365,9 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
 
 
 def test_feed_write_requires_minimum(monkeypatch, tmp_path):
-    monkeypatch.setattr(newsnow_feed, "fetch_feed", lambda url, *a, **k: [{"id": "1"}])
+    monkeypatch.setattr(gateway_daily_news_feed, "fetch_feed", lambda url, *a, **k: [{"id": "1"}])
     with pytest.raises(RuntimeError, match="need at least 3"):
-        newsnow_feed.write_feed("http://127.0.0.1:20129/custom/daily-news", tmp_path / "feed.json", minimum=3)
+        gateway_daily_news_feed.write_feed("http://127.0.0.1:20129/custom/daily-news", tmp_path / "feed.json", minimum=3)
 
 
 def test_produce_hydrates_from_hybrid_discovery_when_input_insufficient(tmp_path):

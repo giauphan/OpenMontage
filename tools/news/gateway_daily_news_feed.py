@@ -1,7 +1,7 @@
-"""Fetch latest news feeds via Toolcase Gateway Daily News service.
+"""Gateway Daily News feed compatibility helpers.
 
 Migrated from legacy direct NewsNow scraping to Toolcase Gateway /custom/daily-news.
-Delegates to DailyNewsGatewayClient with SSRF-safe TOOLCASE_GATEWAY_URL resolution.
+Delegates to discovery-first DailyNewsGatewayClient with SSRF-safe TOOLCASE_GATEWAY_URL resolution.
 """
 
 from __future__ import annotations
@@ -28,10 +28,10 @@ __all__ = [
 
 def fetch_feed(
     base_url: Optional[str] = None,
-    sources: Sequence[str] = DEFAULT_SOURCES,
+    sources: Optional[Sequence[str]] = None,
     limit: int = 30,
 ) -> List[Dict[str, Any]]:
-    """Fetch latest raw news items via the Toolcase Gateway Daily News service.
+    """Fetch the gateway's latest ranked news items.
 
     Resolves base URL via TOOLCASE_GATEWAY_URL if base_url is omitted.
     """
@@ -41,12 +41,12 @@ def fetch_feed(
 
 def write_feed(
     base_url: Optional[str] = None,
-    output: Path | str = Path("data/newsnow_feed.json"),
+    output: Path | str = Path("data/gateway_daily_news_feed.json"),
     minimum: int = 3,
-    sources: Sequence[str] = DEFAULT_SOURCES,
+    sources: Optional[Sequence[str]] = None,
     limit: int = 30,
 ) -> int:
-    """Fetch feed items from Daily News Gateway and write to output path atomically."""
+    """Fetch latest gateway items and write them to the output path atomically."""
     items = fetch_feed(base_url, sources=sources, limit=limit)
     client = DailyNewsGatewayClient(base_url=base_url)
     return client.write_feed(

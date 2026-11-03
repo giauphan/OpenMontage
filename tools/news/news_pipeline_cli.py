@@ -1,4 +1,4 @@
-"""CLI entrypoint for the NewsNow to OpenMontage pipeline."""
+"""CLI entrypoint for the Gateway Daily News to OpenMontage pipeline."""
 
 import argparse
 import json
@@ -20,7 +20,8 @@ from lib.news_claim_review import (
 )
 from lib.news_source_capture import CaptureError, CapturePersistenceError, capture_source
 from tools.news.newsnow_adapter import NewsNowAdapter
-from tools.news.newsnow_feed import write_feed
+from tools.news.daily_news_gateway import DailyNewsGatewayClient
+from tools.news.gateway_daily_news_feed import write_feed
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -252,6 +253,16 @@ def _ingest_and_filter_candidates(
     with safe_path.open("r", encoding="utf-8") as f:
         raw_items = json.load(f)
 
+    return _normalize_and_filter_candidates(raw_items, count, used_ids, fail_closed=fail_closed)
+
+
+def _normalize_and_filter_candidates(
+    raw_items: List[Dict[str, Any]],
+    count: int,
+    used_ids: Set[str],
+    fail_closed: bool = True,
+) -> List[Dict[str, Any]]:
+    """Normalize in-memory raw items and apply the production scope gate."""
     logger.info("Ingesting and normalizing...")
     adapter = NewsNowAdapter()
     candidates, diagnostics = adapter.ingest_and_normalize(raw_items)
@@ -261,6 +272,29 @@ def _ingest_and_filter_candidates(
     available = [c for c in candidates if c.get("candidate_id") not in used_ids]
     candidate_pool = available if len(available) >= count else candidates
     return _filter_by_scope_gate(candidate_pool, fail_closed=fail_closed)
+
+
+def _gateway_candidate_to_raw_item(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    """Adapt a Gateway discovery candidate to the strict raw-news input contract."""
+    raw: Dict[str, Any] = {
+        "id": str(candidate.get("id") or candidate.get("candidate_id") or "").strip(),
+        "url": str(candidate.get("url") or candidate.get("canonical_url") or "").strip(),
+        "title": str(candidate.get("title") or "").strip(),
+        "published_at": str(candidate.get("published_at") or candidate.get("published_at_utc") or "").strip(),
+        "publisher": str(candidate.get("publisher") or "Unknown").strip() or "Unknown",
+        "source_feed": str(candidate.get("source_feed") or "daily-news-gateway"),
+    }
+    for field in ("author", "description", "body", "language", "image_url"):
+        if candidate.get(field) is not None:
+            raw[field] = str(candidate[field])
+    if isinstance(candidate.get("tags"), list):
+        raw["tags"] = [str(tag) for tag in candidate["tags"]]
+    raw["extra"] = {
+        "gateway_candidate_id": candidate.get("candidate_id"),
+        "discussion_url": candidate.get("discussion_url"),
+        "scoring": candidate.get("scoring"),
+    }
+    return raw
 
 
 def _select_single_candidate(
@@ -426,12 +460,28 @@ def run_produce(args: argparse.Namespace) -> None:
     min_required = min(count, min_produce)
 
     candidate_pool: List[Dict[str, Any]] = []
-    input_file = Path(args.input)
-    is_live_feed = input_file.name in ("newsnow_feed.json", "daily_candidates.json") or getattr(args, "fallback_to_curated", False)
-    if input_file.is_file():
+    input_value = getattr(args, "input", None)
+    gateway_url = getattr(args, "gateway_url", None)
+    input_file = Path(input_value) if input_value else None
+    is_live_feed = bool(gateway_url) or bool(
+        input_file and input_file.name in ("gateway_daily_news_feed.json", "newsnow_feed.json", "daily_candidates.json")
+    ) or getattr(args, "fallback_to_curated", False)
+    if gateway_url:
+        logger.info("Fetching current candidates directly from Daily News Gateway...")
+        gateway_items = DailyNewsGatewayClient(base_url=gateway_url).fetch_feed(base_url=gateway_url)
+        candidate_pool = _normalize_and_filter_candidates(
+            [_gateway_candidate_to_raw_item(item) for item in gateway_items],
+            count,
+            used_ids,
+            fail_closed=False,
+        )
+    elif input_file and input_file.is_file():
         candidate_pool = _ingest_and_filter_candidates(
             input_file, count, used_ids, fail_closed=not is_live_feed
         )
+    elif not input_file:
+        logger.error("Either --input or --gateway-url is required.")
+        sys.exit(2)
 
     if is_live_feed:
         candidate_pool = _hydrate_from_hybrid_discovery(
@@ -483,7 +533,6 @@ def run_produce(args: argparse.Namespace) -> None:
         print(f"PROJECT_ID={pid}")
     if project_ids:
         try:
-            from tools.news.daily_news_gateway import DailyNewsGatewayClient
             DailyNewsGatewayClient().consume_candidates(project_ids)
         except Exception as e:
             logger.debug("Candidate consume sync to gateway skipped: %s", e)
@@ -548,7 +597,7 @@ def run_prepare_review(args: argparse.Namespace) -> int:
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="NewsNow to OpenMontage CLI")
+    parser = argparse.ArgumentParser(description="Gateway Daily News to OpenMontage CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     ingest_parser = subparsers.add_parser("ingest", help="Ingest and rank raw feed JSON")
@@ -557,7 +606,12 @@ def main(argv: List[str] | None = None) -> int:
     ingest_parser.add_argument("--limit", type=int, default=50, help="Max candidates to output")
 
     produce_parser = subparsers.add_parser("produce", help="Run full ingestion -> selection -> project initialization")
-    produce_parser.add_argument("--input", required=True, help="Path to raw JSON list")
+    produce_input = produce_parser.add_mutually_exclusive_group(required=True)
+    produce_input.add_argument("--input", help="Path to raw JSON list")
+    produce_input.add_argument(
+        "--gateway-url",
+        help="Daily News Gateway base URL; candidates are fetched directly without a feed file",
+    )
     produce_parser.add_argument("--count", type=int, default=1, help="Number of distinct topics/projects to produce")
     produce_parser.add_argument("--dry-run", action="store_true", help="Skip LLM calls and project creation")
     produce_parser.add_argument(

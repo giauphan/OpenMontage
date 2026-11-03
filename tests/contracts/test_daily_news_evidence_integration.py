@@ -173,10 +173,8 @@ class DailyNewsEvidenceIntegrationTests(unittest.TestCase):
     def test_config_gate_precedes_paid_selection_and_director_generation(self) -> None:
         script = PIPELINE.read_text(encoding="utf-8")
         config_gate_at = script.index("if ! validate_news_generation_config; then")
-        fetch_at = script.index('tools/news/news_pipeline_cli.py fetch')
         produce_at = script.index('tools/news/news_pipeline_cli.py produce')
         directors_at = script.index("run_directors >")
-        self.assertLess(config_gate_at, fetch_at)
         self.assertLess(config_gate_at, produce_at)
         self.assertLess(config_gate_at, directors_at)
 

@@ -30,7 +30,7 @@ from tools.news.daily_news_gateway import (
     _sanitize_log_val,
     resolve_gateway_base_url,
 )
-from tools.news import newsnow_feed
+from tools.news import gateway_daily_news_feed
 from tools.news import news_pipeline_cli
 from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
 
@@ -184,6 +184,46 @@ def test_fetch_feed_deduplication(monkeypatch):
     assert items[0]["id"] == "1"
 
 
+def test_fetch_feed_uses_ranked_discovery_candidates_before_raw_feed(monkeypatch):
+    """Breaks if the daily pipeline regresses to selecting an unranked raw feed item."""
+    client = DailyNewsGatewayClient("http://127.0.0.1:20129/custom/daily-news")
+    calls = []
+
+    def fake_urlopen(req, timeout=0):
+        body = json.loads(req.data.decode("utf-8")) if req.data else None
+        calls.append((req.get_method(), req.full_url, body))
+        if req.get_method() == "GET":
+            return FakeHttpResponse({
+                "items": [{
+                    "id": "stale_raw_item",
+                    "url": "https://example.com/stale",
+                    "title": "Stale raw feed story",
+                }],
+            })
+        return FakeHttpResponse({
+            "tier": "tier_2_automated",
+            "status": "ELIGIBLE",
+            "count": 1,
+            "candidates": [{
+                "candidate_id": "cand_latest",
+                "canonical_url": "https://example.com/latest",
+                "title": "Latest ranked gateway story",
+                "publisher": "Example",
+                "published_at": "2026-11-03T09:00:00Z",
+                "hook": "What changed today?",
+            }],
+        })
+
+    monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", fake_urlopen)
+
+    items = client.fetch_feed(limit=3)
+
+    assert [item["candidate_id"] for item in items] == ["cand_latest"]
+    assert items[0]["url"] == "https://example.com/latest"
+    assert items[0]["hook"] == "What changed today?"
+    assert calls == [("POST", "http://127.0.0.1:20129/custom/daily-news/api/v1/discover", {"limit": 3})]
+
+
 def test_fetch_feed_error_propagation(monkeypatch):
     client = DailyNewsGatewayClient("http://127.0.0.1:20129/custom/daily-news")
 
@@ -318,7 +358,7 @@ def test_news_pipeline_cli_fetch_defaults_to_gateway(tmp_path, monkeypatch):
     assert called_url[0] is None  # Auto-resolves via TOOLCASE_GATEWAY_URL
 
 
-def test_newsnow_feed_consume_candidates_delegation(monkeypatch):
+def test_gateway_daily_news_feed_consume_candidates_delegation(monkeypatch):
     consumed = []
 
     def mock_consume(self, candidate_ids, base_url=None):
@@ -326,7 +366,7 @@ def test_newsnow_feed_consume_candidates_delegation(monkeypatch):
         return {"status": "consumed", "count": len(candidate_ids)}
 
     monkeypatch.setattr(DailyNewsGatewayClient, "consume_candidates", mock_consume)
-    res = newsnow_feed.consume_candidates(["cand_direct_feed_api"])
+    res = gateway_daily_news_feed.consume_candidates(["cand_direct_feed_api"])
     assert res["status"] == "consumed"
     assert "cand_direct_feed_api" in consumed
 
@@ -353,7 +393,7 @@ def test_resolve_safe_output_path_accepts_valid_paths(tmp_path):
     resolved_tmp = _resolve_safe_output_path(safe_tmp)
     assert resolved_tmp == safe_tmp.resolve()
 
-    safe_rel = Path("data/newsnow_feed.json")
+    safe_rel = Path("data/gateway_daily_news_feed.json")
     resolved_rel = _resolve_safe_output_path(safe_rel)
     assert resolved_rel == (Path.cwd() / safe_rel).resolve()
 

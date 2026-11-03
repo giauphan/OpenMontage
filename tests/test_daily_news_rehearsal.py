@@ -276,12 +276,13 @@ def test_default_invocation_retains_live_acquisition_path_and_director_guard():
     rehearsal_gate = source.index(
         'if [ -n "$REHEARSAL_MANIFEST" ]; then\n  REHEARSAL_TERMINAL_STAGE="directors_and_validation"'
     )
-    fetch_path = source.index('tools/news/news_pipeline_cli.py fetch')
+    gateway_path = source.index('DAILY_NEWS_GATEWAY_URL=')
     produce_path = source.index('tools/news/news_pipeline_cli.py produce')
     director = source.index("run_directors() {")
     guard = source.index('director invocation is disabled in rehearsal mode', director)
     call = source.index('run_directors > "$DIRECTORS_JSON"', guard)
-    assert rehearsal_gate < fetch_path < produce_path
-    assert 'else\n# Step 0: Fetch current NewsNow sources' in source
+    assert rehearsal_gate < gateway_path < produce_path
+    assert 'tools/news/news_pipeline_cli.py fetch' not in source
+    assert 'else\n# Step 0: Select current Gateway candidates directly, or use a curated backlog.' in source
     assert guard < call
     assert 'if [ -d "$PROJECT_DIR" ] && [ -z "$REHEARSAL_MANIFEST" ]; then' in source
