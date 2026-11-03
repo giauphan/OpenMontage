@@ -54,3 +54,13 @@ def test_qa_conforms_to_port():
     """evaluate_plan_qa callable must conform to VisualQaPort."""
     assert callable(evaluate_plan_qa)
     assert isinstance(evaluate_plan_qa, VisualQaPort)
+
+
+def test_daily_news_gateway_conforms_to_candidate_consumer_port():
+    """DailyNewsGatewayClient instance must conform to CandidateConsumerPort."""
+    from lib.fixed_niche.candidate_helpers import CandidateConsumerPort
+    from tools.news.daily_news_gateway import DailyNewsGatewayClient
+
+    client = DailyNewsGatewayClient()
+    assert isinstance(client, CandidateConsumerPort)
+

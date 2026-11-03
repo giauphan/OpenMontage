@@ -425,3 +425,40 @@ def test_sliding_window_fails_closed_when_all_topics_older_than_7_days(discovery
     assert res.status == OutcomeStatus.NO_ELIGIBLE_TOPIC.value
 
 
+def test_candidate_helpers_parse_timestamp_formats():
+    from lib.fixed_niche.candidate_helpers import parse_timestamp
+
+    assert parse_timestamp(None) == 0.0
+    assert parse_timestamp("") == 0.0
+    assert parse_timestamp(1700000000) == 1700000000.0
+    assert parse_timestamp("2026-11-01T12:00:00Z") > 0.0
+    assert parse_timestamp("2026-11-01") > 0.0
+    assert parse_timestamp("2026-11-01 10:00:00") > 0.0
+    assert parse_timestamp("2026-11-01 10:00:00Z") > 0.0
+    assert parse_timestamp("2026/11/01") > 0.0
+    assert parse_timestamp("01/11/2026") > 0.0
+    assert parse_timestamp("invalid-date-string-random") == 0.0
+
+
+def test_candidate_helpers_load_files(tmp_path):
+    from lib.fixed_niche.candidate_helpers import load_candidates_from_file
+
+    non_existent = tmp_path / "does_not_exist.json"
+    assert load_candidates_from_file(non_existent) == []
+
+    empty_file = tmp_path / "empty.json"
+    empty_file.write_text("   \n", encoding="utf-8")
+    assert load_candidates_from_file(empty_file) == []
+
+    yaml_file = tmp_path / "candidates.yaml"
+    yaml_file.write_text("- candidate_id: c1\n  title: Title 1\n", encoding="utf-8")
+    loaded_yaml = load_candidates_from_file(yaml_file)
+    assert len(loaded_yaml) == 1
+    assert loaded_yaml[0]["candidate_id"] == "c1"
+
+    corrupt_file = tmp_path / "corrupt.json"
+    corrupt_file.write_text("{invalid json", encoding="utf-8")
+    assert load_candidates_from_file(corrupt_file) == []
+
+
+

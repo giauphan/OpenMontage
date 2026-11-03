@@ -272,32 +272,51 @@ def test_produce_retries_rejected_research_candidate(tmp_path, monkeypatch, caps
 
 
 def test_feed_converter_normalizes_and_dedupes(monkeypatch):
-    payloads = {
-        "hackernews": _newsnow_payload("hackernews", 2),
-        "github": _newsnow_payload("github", 2),
-        "producthunt": _newsnow_payload("producthunt", 0),
-    }
-    # Inject a cross-source duplicate URL to verify dedupe.
-    payloads["github"]["items"][0]["url"] = payloads["hackernews"]["items"][0]["url"]
-    payloads["hackernews"]["items"][0]["publishedAt"] = "2026-08-10T10:00:00Z"
+    raw_feed_items = [
+        {
+            "id": "newsnow_hn_1",
+            "url": "https://docs.anthropic.com/agent-tools",
+            "title": "Model Context Protocol Tool Schema Update",
+            "publisher": "Anthropic",
+            "published_at": "2026-08-10T10:00:00Z",
+            "description": "Dynamic tool scoping specifications for multi-server MCP environments.",
+            "body": "Dynamic tool scoping specifications for multi-server MCP environments.",
+            "tags": ["hackernews"],
+            "extra": {"retrieved_at": "2026-08-10T11:00:00Z"},
+        },
+        {
+            "id": "newsnow_gh_1",
+            "url": "https://docs.anthropic.com/agent-tools",  # duplicate URL to test dedupe
+            "title": "Model Context Protocol Tool Schema Update",
+            "publisher": "Anthropic",
+            "published_at": "2026-08-10T10:00:00Z",
+            "description": "Duplicate feed entry",
+            "body": "Duplicate feed entry",
+            "tags": ["github"],
+            "extra": {"retrieved_at": "2026-08-10T11:00:00Z"},
+        },
+        {
+            "id": "newsnow_hn_2",
+            "url": "https://github.com/swe-bench/eval",
+            "title": "SWE-bench Evaluation Suite Update",
+            "publisher": "GitHub",
+            "tags": ["hackernews"],
+            "extra": {"retrieved_at": "2026-08-10T11:00:00Z"},
+        },
+    ]
 
-    def fake_urlopen(request, timeout=0):
-        source = request.full_url.split("id=")[1]
+    class _Response:
+        def __enter__(self):
+            return self
 
-        class _Response:
-            def __enter__(self):
-                return self
+        def __exit__(self, *args):
+            return False
 
-            def __exit__(self, *args):
-                return False
+        def read(self):
+            return json.dumps({"count": len(raw_feed_items), "items": raw_feed_items}).encode("utf-8")
 
-            def read(self):
-                return json.dumps(payloads[source]).encode()
-
-        return _Response()
-
-    monkeypatch.setattr(newsnow_feed, "urlopen", fake_urlopen)
-    items = newsnow_feed.fetch_feed("http://127.0.0.1:4444")
+    monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", lambda req, timeout=0: _Response())
+    items = newsnow_feed.fetch_feed("http://127.0.0.1:20129/custom/daily-news")
 
     urls = [item["url"] for item in items]
     assert len(urls) == len(set(urls))
@@ -316,7 +335,7 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
 def test_feed_write_requires_minimum(monkeypatch, tmp_path):
     monkeypatch.setattr(newsnow_feed, "fetch_feed", lambda url, *a, **k: [{"id": "1"}])
     with pytest.raises(RuntimeError, match="need at least 3"):
-        newsnow_feed.write_feed("http://127.0.0.1:4444", tmp_path / "feed.json", minimum=3)
+        newsnow_feed.write_feed("http://127.0.0.1:20129/custom/daily-news", tmp_path / "feed.json", minimum=3)
 
 
 def test_produce_hydrates_from_hybrid_discovery_when_input_insufficient(tmp_path):
