@@ -181,6 +181,9 @@ done
             **os.environ,
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "PUBLISH_TZ": "UTC",
+            "STRICT_PUBLISH_NOW_EPOCH": str(
+                int(datetime.now(timezone.utc).replace(hour=23, minute=0, second=0, microsecond=0).timestamp())
+            ),
             "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
             "GENERATION_RETRY_DELAY_SECONDS": "0",
             "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",

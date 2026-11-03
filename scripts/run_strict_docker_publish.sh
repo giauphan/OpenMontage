@@ -614,7 +614,7 @@ while IFS= read -r SLOT; do
   [ -z "$SLOT" ] || NEXT_OCCUPIED["$SLOT"]=1
 done < <(jq -r --arg date "$NEXT_DATE" '.active_projects[]? | select(type == "object" and (.publish_date // "") == $date) | .publish_time // empty' "$SCHEDULE")
 
-NOW_EPOCH=$(date +%s)
+NOW_EPOCH="${STRICT_PUBLISH_NOW_EPOCH:-$(date +%s)}"
 TODAY_SLOTS=()
 NEXT_SLOTS=()
 for SLOT in "${TODAY_CANDIDATE_SLOTS[@]}"; do
