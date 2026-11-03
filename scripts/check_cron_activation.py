@@ -36,12 +36,14 @@ def check_static_contract(root: Path) -> list[str]:
 
 def check_installed(container: str, cron_file: Path) -> list[str]:
     """Read installed scheduler state through Docker without mutating it."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", container):
+        return ["invalid scheduler container name"]
     errors: list[str] = []
-    inspect = subprocess.run(["docker", "inspect", "--format", "{{.State.Health.Status}}", container], text=True, capture_output=True)
+    inspect = subprocess.run(["docker", "inspect", "--format", "{{.State.Health.Status}}", "--", container], text=True, capture_output=True)
     if inspect.returncode or inspect.stdout.strip() != "healthy":
         errors.append(f"scheduler is not healthy: {inspect.stdout.strip() or inspect.stderr.strip()}")
         return errors
-    installed = subprocess.run(["docker", "exec", container, "crontab", "-l"], text=True, capture_output=True)
+    installed = subprocess.run(["docker", "exec", "--", container, "crontab", "-l"], text=True, capture_output=True)
     if installed.returncode:
         errors.append("scheduler has no readable installed crontab")
     elif cron_file.read_text(encoding="utf-8").strip() != installed.stdout.strip():
