@@ -38,6 +38,7 @@ def test_cta_narration_and_visual_banner():
     # 1. Narration CTA check across families
     narration_dict = director.compose_dynamic_narration(topic, claims)
     b6_text = narration_dict["b6"]
+    assert "What do you think? Let me know below" in b6_text
     assert "Follow" in b6_text
     assert "star the repo" in b6_text
     assert "defensive blueprint" in b6_text
@@ -52,6 +53,7 @@ def test_cta_narration_and_visual_banner():
         is_vertical=True,
     )
     assert 'id="flow-cta-banner"' in svg
+    assert "What do you think? Let me know below" in svg
     assert "Follow" in svg
     assert "Star" in svg
     assert "CALL TO ACTION // ARCHITECTURAL BLUEPRINT" in svg
@@ -124,6 +126,23 @@ def test_sound_design_bgm_and_sfx_elements():
     # 4. GSAP volume keyframes for BGM fade-in and fade-out
     assert 'tl.fromTo("#bgm", { volume: 0 }, { volume: 0.12, duration: 1.5' in html
     assert 'tl.to("#bgm", { volume: 0, duration: 1.5' in html
+
+    # 5. Dynamic music arc & section momentum in 6-beat explainer
+    full_beats = [
+        {"beat_id": "b01", "start_s": 0.0, "end_s": 11.0, "story_function": "problem_hook"},
+        {"beat_id": "b02", "start_s": 11.0, "end_s": 22.0, "story_function": "developer_impact"},
+        {"beat_id": "b03", "start_s": 22.0, "end_s": 33.0, "story_function": "architectural_mechanism"},
+        {"beat_id": "b04", "start_s": 33.0, "end_s": 44.0, "story_function": "verified_fix"},
+        {"beat_id": "b05", "start_s": 44.0, "end_s": 55.0, "story_function": "verification_checklist"},
+        {"beat_id": "b06", "start_s": 55.0, "end_s": 66.0, "story_function": "payoff_and_cta"},
+    ]
+    html_6b = compose_hyperframes_html(title="Full 6-Beat Arc", duration=66.0, beats=full_beats)
+    assert 'tl.to("#bgm", { volume: 0.18, duration: 1.2, ease: "power2.in" }, st);' in html_6b
+    assert 'tl.to("#bgm", { volume: 0.06, duration: 0.6, ease: "power2.out" }, st + 2.5);' in html_6b
+    assert 'tl.to("#bgm", { volume: 0.13, duration: 0.8, ease: "power1.out" }, st);' in html_6b
+    assert 'tl.to("#bgm", { volume: 0.16, duration: 0.8, ease: "power2.out" },' in html_6b
+    assert 'y: 35, scale: 0.96' in html_6b
+    assert 'y: -24, scale: 0.96' in html_6b
 
 
 def test_audio_assets_materialization_and_ffmpeg_mix(tmp_path: Path):
@@ -426,3 +445,37 @@ def test_hyperframes_materializer_branches(tmp_path: Path):
             mat.render_hyperframes_composition(comp_dir, out_mp4, burn_captions=False)
 
 
+def test_news_explainer_template_sound_design_and_pacing(tmp_path: Path):
+    """Verify news-explainer template and materializer include SFX, dynamic music arc, momentum, and CTA."""
+    from scripts.materialize_news_template import materialize
+
+    root_pkg = Path(__file__).resolve().parents[2] / "templates" / "news" / "packages" / "news-explainer"
+    reels_html = (root_pkg / "hyperframes_reels" / "index.html").read_text(encoding="utf-8")
+    full_html = (root_pkg / "hyperframes" / "index.html").read_text(encoding="utf-8")
+
+    for html in (reels_html, full_html):
+        # 1. SFX clips present
+        assert "assets/sfx/whoosh-short.mp3" in html
+        assert "assets/sfx/chime.mp3" in html
+        # 2. Dynamic music arc
+        assert 'tl.to("#music-bg", { volume: 0.18' in html
+        assert 'tl.to("#music-bg", { volume: 0.06' in html
+        assert 'tl.to("#music-bg", { volume: 0.16' in html
+        # 3. Kinetic momentum transitions
+        assert "y: 35, scale: 0.96" in html
+        assert "y: -24, scale: 0.96" in html
+        # 4. CTA engagement banner
+        assert 'id="cta-banner"' in html
+        assert "What do you think? Let me know below" in html
+
+    # 5. Verify materializer emits identical enhanced capabilities
+    fixture_path = root_pkg / "fixtures" / "short_story_1.json"
+    content = json.loads(fixture_path.read_text(encoding="utf-8"))
+    out_dir = tmp_path / "explainer_test"
+    materialize("news-explainer", content, out_dir, variant="both")
+
+    mat_reels = (out_dir / "hyperframes_reels" / "index.html").read_text(encoding="utf-8")
+    assert "assets/sfx/whoosh-short.mp3" in mat_reels
+    assert 'tl.to("#music-bg", { volume: 0.18' in mat_reels
+    assert 'id="cta-banner"' in mat_reels
+    assert "scale: 0.96" in mat_reels

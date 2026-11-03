@@ -161,6 +161,12 @@ def test_t09_real_render_mp4_integrity(tmp_path: Path):
         for svg_f in (ROOT / "assets" / "visuals").glob("*.svg"):
             shutil.copy(svg_f, visuals_dir / svg_f.name)
 
+        sfx_dir = assets_dir / "sfx"
+        sfx_dir.mkdir(parents=True, exist_ok=True)
+        if (ROOT / "assets" / "audio" / "sfx").is_dir():
+            for sfx_f in (ROOT / "assets" / "audio" / "sfx").glob("*.mp3"):
+                shutil.copy(svg_f if False else sfx_f, sfx_dir / sfx_f.name)
+
         dummy_mp3 = assets_dir / "narration_reels.mp3"
         subprocess.run(
             ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "8", "-c:a", "libmp3lame", str(dummy_mp3)],

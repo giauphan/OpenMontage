@@ -400,12 +400,13 @@ def _beat_default_content(p: str, fam_label: str) -> tuple[str, str, str]:
 
   <g id="{p}flow-cta-banner" class="flow-cta-banner">
     <rect x="50" y="730" width="880" height="230" rx="16" fill="url(#cta-bg-grad)" stroke="#38bdf8" stroke-width="2.5" filter="url(#glow-cyan)"/>
-    <rect x="80" y="750" width="310" height="28" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-width="1.5"/>
-    <text x="235" y="769" fill="#38bdf8" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">CALL TO ACTION // ARCHITECTURAL BLUEPRINT</text>
-    <text x="490" y="810" fill="#f8fafc" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">Follow me for Daily Agent Engineering Patterns</text>
-    <rect x="110" y="835" width="760" height="46" rx="10" fill="url(#star-btn-grad)" stroke="#fbbf24" stroke-width="2" filter="url(#glow-gold)"/>
-    <text x="490" y="864" fill="#fbbf24" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">★ Star the Repository on GitHub</text>
-    <text x="490" y="910" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">Defensive Contracts • Schema Validation • Hermetic Reproduction</text>
+    <rect x="80" y="748" width="310" height="26" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-width="1.5"/>
+    <text x="235" y="766" fill="#38bdf8" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">CALL TO ACTION // ARCHITECTURAL BLUEPRINT</text>
+    <text x="490" y="802" fill="#f8fafc" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">What do you think? Let me know below 👇</text>
+    <text x="490" y="826" fill="#38bdf8" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Follow for Daily Agent Engineering Patterns</text>
+    <rect x="110" y="842" width="760" height="42" rx="10" fill="url(#star-btn-grad)" stroke="#fbbf24" stroke-width="2" filter="url(#glow-gold)"/>
+    <text x="490" y="868" fill="#fbbf24" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">★ Star the Repository on GitHub</text>
+    <text x="490" y="910" fill="#94a3b8" font-family="sans-serif" font-size="12" text-anchor="middle">Defensive Contracts • Schema Validation • Hermetic Reproduction</text>
   </g>
 """
     return accent, badge, body

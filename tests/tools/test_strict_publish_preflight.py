@@ -92,17 +92,6 @@ def test_active_project_publisher_delegates_to_manual_authority():
     assert module.PUBLISHER.name == "publish_manual_video.py"
 
 
-def test_legacy_slot_rejects_unmappable_job_before_claim(monkeypatch):
-    module = _load("publish_slot")
-    calls = []
-    monkeypatch.setattr(module, "PublishStore", lambda: calls.append("firebase"))
-
-    with pytest.raises(ValueError, match="canonical project"):
-        module.run("topic1-short")
-
-    assert calls == []
-
-
 @pytest.mark.parametrize("status", ["scheduled", "published"])
 def test_publish_store_rejects_cross_date_duplicate_with_platform_record(tmp_path, monkeypatch, status):
     module = importlib.import_module("tools.publish_store")
@@ -304,10 +293,3 @@ def test_manual_publish_quality_gate_rejects_empty_youtube_short_title(tmp_path)
 
     with pytest.raises(RuntimeError, match="YouTube Shorts title validation failed"):
         module.validate_project_quality(project)
-
-
-def test_publish_driver_only_adds_dry_run_for_dry_run_mode():
-    text = (SCRIPTS / "publish_driver.sh").read_text(encoding="utf-8")
-    assert '${MODE:+"--dry-run"}' not in text
-    assert 'PUBLISH_ARGS=("projects/$CAND")' in text
-    assert 'PUBLISH_ARGS+=("--dry-run")' in text

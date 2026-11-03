@@ -66,12 +66,12 @@ class FixedNicheVideoRunner:
         self._staged_topic: Optional[Dict[str, Any]] = None
 
     def get_target_duration(self) -> float:
-        """Return target duration in seconds (65.0 - 75.0s for shorts, default 72.0s)."""
+        """Return target duration in seconds (65.0 - 75.0s for shorts, default 66.0s for high-retention pacing)."""
         shorts_contract = self.policy.video_contract.get("shorts", {})
         dur_range = shorts_contract.get("target_duration_seconds", [65, 75])
-        if len(dur_range) >= 2 and dur_range[0] <= 72.0 <= dur_range[1]:
-            return 72.0
-        return float(dur_range[0] if dur_range else 72.0)
+        if len(dur_range) >= 2 and dur_range[0] <= 66.0 <= dur_range[1]:
+            return 66.0
+        return float(dur_range[0] if dur_range else 66.0)
 
     def build_and_stage_project(
         self,
@@ -291,7 +291,7 @@ class FixedNicheVideoRunner:
         self, text: str, out_audio: Path, actual_prov: str, voice: str, speed: float, dur: float, policy_max: float
     ) -> float:
         if actual_prov in ("kokoro", "elevenlabs", "edge") and not (65.0 <= dur <= 75.0):
-            ratio = dur / 70.0
+            ratio = dur / 68.0
             speed_min, speed_max = (0.8, 1.4) if actual_prov in ("elevenlabs", "edge") else (0.8, 1.8)
             adj_speed = round(speed * ratio, 2)
             if adj_speed != speed and speed_min <= adj_speed <= speed_max:
@@ -301,7 +301,7 @@ class FixedNicheVideoRunner:
                 )
                 dur = probe_audio_duration(out_audio)
         if policy_max < dur <= 95.0:
-            tempo = round(dur / 70.0, 3)
+            tempo = round(dur / 68.0, 3)
             tmp_t = out_audio.with_suffix(".tempo.mp3")
             res_t = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out_audio), "-filter:a", f"atempo={tempo}", "-vn", str(tmp_t)], capture_output=True)
             if res_t.returncode == 0 and tmp_t.is_file():

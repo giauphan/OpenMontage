@@ -72,27 +72,17 @@ def derive_captions(narration: str, duration: float, max_captions: int) -> list[
     words = (narration or "").split()
     if not words:
         return []
-
     n_caps = min(max_captions, max(1, len(words)))
     seg_dur = float(duration) / n_caps
-
     cues: list[dict[str, Any]] = []
-    words_per_cap = max(1, len(words) // n_caps)
+    wpc = max(1, len(words) // n_caps)
     for i in range(n_caps):
-        start_index = i * words_per_cap
-        end_index = (i + 1) * words_per_cap if i < n_caps - 1 else len(words)
-        chunk = words[start_index:end_index]
-        text = " ".join(chunk).strip()
+        text = " ".join(words[i * wpc : ((i + 1) * wpc if i < n_caps - 1 else len(words))]).strip()
         if not text:
             continue
-
         start = round(i * seg_dur + 0.5, 2)
         end = round(min((i + 1) * seg_dur - 0.5, float(duration)), 2)
-        if end <= start:
-            end = min(start + 2.0, float(duration))
-
-        cues.append({"text": text, "start": start, "end": end})
-
+        cues.append({"text": text, "start": start, "end": end if end > start else min(start + 2.0, float(duration))})
     return cues
 
 
@@ -569,6 +559,15 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
     s4_start = 36.0
     s4_dur = 9.0
 
+    raw_cta = content.get("cta_text")
+    if not raw_cta:
+        sample = f"{e_title} {e_kicker} {narration}"
+        is_vi = any(c in sample for c in "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđĐ")
+        raw_cta = "Bạn nghĩ sao? Hãy bình luận bên dưới 👇" if is_vi else "What do you think? Let me know below 👇"
+    e_cta = esc(raw_cta)
+    cta_banner_html = f'        <div id="cta-banner" class="cta-banner"><span>{e_cta}</span></div>\n'
+    steps_cta = "" if include_lim else cta_banner_html
+
     media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
     slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
     hook_v = " has-visual" if hook.get("visual") else ""
@@ -595,36 +594,66 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         ".limitation-box { width:100%;max-width:820px;padding:42px 48px;border:1px solid rgba(255,255,255,.12);border-left:4px solid var(--accent);border-radius:12px;background:rgba(255,255,255,.03);text-align:left; }\n"
         ".limitation-box p { font-size:28px;line-height:1.5;color:#c8d8d4;margin:0; }\n"
         ".steps-box { width:100%;max-width:820px; }\n"
+        ".cta-banner { display:inline-flex;align-items:center;justify-content:center;margin-top:28px;padding:14px 32px;background:linear-gradient(135deg,rgba(6,214,160,0.2) 0%,rgba(6,214,160,0.08) 100%);border:1.5px solid var(--accent);border-radius:30px;font-size:24px;font-weight:700;color:#fff;letter-spacing:0.02em;box-shadow:0 8px 24px rgba(6,214,160,0.18); }\n"
         f"{media_css}\n"
         f"{visual_layout_css()}\n"
         "</style>"
     )
 
     lim_section = ""
-    lim_tl = ""
     if include_lim:
         lim_section = (
             f"    <section id=\"scene-limitations\" class=\"clip{lim_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
             "      <div class=\"scene-inner\">\n"
             f"        <span class=\"kicker\">{e_lim_head}</span>\n"
             f"        <div class=\"limitation-box\"><p>{e_lim_text}</p></div>\n"
+            f"{cta_banner_html}"
             "      </div>\n"
             "    </section>\n"
         )
-        lim_tl = (
-            f"      tl.from('#scene-limitations .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s4_start + 0.1)});\n"
-        )
+
+    sfx_html = (
+        '    <audio class="clip sfx" data-start="0" data-duration="0.8" data-track-index="10" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
+        f'    <audio class="clip sfx" data-start="{_fmt_time(max(0.1, s2_start - 0.2))}" data-duration="0.8" data-track-index="11" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
+        f'    <audio class="clip sfx" data-start="{_fmt_time(s2_start + 0.4)}" data-duration="0.3" data-track-index="12" src="assets/sfx/pop.mp3" data-volume="0.16"></audio>\n'
+        f'    <audio class="clip sfx" data-start="{_fmt_time(max(0.1, s3_start - 0.2))}" data-duration="0.8" data-track-index="13" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
+        f'    <audio class="clip sfx" data-start="{_fmt_time(s3_start + 0.4)}" data-duration="0.3" data-track-index="14" src="assets/sfx/click.mp3" data-volume="0.16"></audio>\n'
+        + (f'    <audio class="clip sfx" data-start="{_fmt_time(max(0.1, s4_start - 0.2))}" data-duration="0.8" data-track-index="15" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
+           f'    <audio class="clip sfx" data-start="{_fmt_time(s4_start + 0.3)}" data-duration="0.3" data-track-index="16" src="assets/sfx/buzz.mp3" data-volume="0.24"></audio>\n' if include_lim else '')
+        + f'    <audio class="clip sfx" data-start="{_fmt_time(max(1.0, total - 4.5))}" data-duration="0.8" data-track-index="17" src="assets/sfx/chime.mp3" data-volume="0.20"></audio>\n'
+    )
+    t_st = s4_start if include_lim else s3_start
+    bgm_tl = (
+        f'  tl.to("#music-bg", {{ volume: 0.18, duration: 1.0, ease: "power2.in" }}, {_fmt_time(max(0.5, t_st - 1.5))});\n'
+        f'  tl.to("#music-bg", {{ volume: 0.06, duration: 0.5, ease: "power2.out" }}, {_fmt_time(t_st)});\n'
+        f'  tl.to("#music-bg", {{ volume: 0.16, duration: 0.8, ease: "power2.out" }}, {_fmt_time(max(1.0, total - 4.5))});\n'
+        f'  tl.to("#music-bg", {{ volume: 0, duration: 1.5, ease: "power2.in" }}, {_fmt_time(max(1.0, total - 1.5))});\n'
+    )
 
     gsap = (
         "<script>\n"
         "(function() {\n"
         "  window.__timelines = window.__timelines || {};\n"
         "  var tl = gsap.timeline({ paused: true });\n"
-        f"  tl.from('#scene-hook .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, 0.1);\n"
-        f"  tl.from('#scene-capability .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s2_start + 0.1)});\n"
-        f"  tl.from('.capability-card', {{ opacity: 0, scale: 0.9, duration: 0.8, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.5)});\n"
-        f"  tl.from('#scene-steps .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s3_start + 0.1)});\n"
-        f"{lim_tl}"
+        f"{bgm_tl}"
+        f"  tl.fromTo('#scene-hook .scene-inner', {{ opacity: 0, y: 35, scale: 0.96 }}, {{ opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'power2.out' }}, 0.1);\n"
+        f"  tl.to('#scene-hook .scene-inner', {{ opacity: 0, y: -24, scale: 0.96, duration: 0.28, ease: 'power2.in' }}, {_fmt_time(s2_start - 0.3)});\n"
+        f"  tl.fromTo('#scene-capability .scene-inner', {{ opacity: 0, y: 35, scale: 0.96 }}, {{ opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'power2.out' }}, {_fmt_time(s2_start)});\n"
+        f"  tl.fromTo('.capability-card', {{ opacity: 0, scale: 0.9 }}, {{ opacity: 1, scale: 1.0, duration: 0.7, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.4)});\n"
+        f"  tl.to('#scene-capability .scene-inner', {{ opacity: 0, y: -24, scale: 0.96, duration: 0.28, ease: 'power2.in' }}, {_fmt_time(s3_start - 0.3)});\n"
+        f"  tl.fromTo('#scene-steps .scene-inner', {{ opacity: 0, y: 35, scale: 0.96 }}, {{ opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'power2.out' }}, {_fmt_time(s3_start)});\n"
+    )
+    if include_lim:
+        gsap += (
+            f"  tl.to('#scene-steps .scene-inner', {{ opacity: 0, y: -24, scale: 0.96, duration: 0.28, ease: 'power2.in' }}, {_fmt_time(s4_start - 0.3)});\n"
+            f"  tl.fromTo('#scene-limitations .scene-inner', {{ opacity: 0, y: 35, scale: 0.96 }}, {{ opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'power2.out' }}, {_fmt_time(s4_start)});\n"
+            f"  tl.fromTo('#cta-banner', {{ opacity: 0, y: 20, scale: 0.94 }}, {{ opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'back.out(1.7)' }}, {_fmt_time(s4_start + 1.2)});\n"
+        )
+    else:
+        gsap += (
+            f"  tl.fromTo('#cta-banner', {{ opacity: 0, y: 20, scale: 0.94 }}, {{ opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'back.out(1.7)' }}, {_fmt_time(s3_start + 1.2)});\n"
+        )
+    gsap += (
         f"{media_tl}\n"
         f"{slot_v_tl}\n"
         f"{cap_tl}"
@@ -647,7 +676,8 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         f"  <div id=\"root\" data-composition-id=\"main\" data-width=\"1080\" data-height=\"1920\" data-duration=\"{_fmt_time(total)}\">\n"
         "    <div class=\"bg-fill\"></div>\n"
         f"    <audio id=\"narration\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"{audio_src}\"></audio>\n"
-        f"    <audio id=\"music-bg\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"0\" src=\"assets/music-bg.mp3\"></audio>\n"
+        f"    <audio id=\"music-bg\" class=\"clip\" data-start=\"0\" data-duration=\"{_fmt_time(total)}\" data-track-index=\"1\" src=\"assets/music-bg.mp3\" data-volume=\"0.12\" loop></audio>\n"
+        f"{sfx_html}"
         f"{media_html}\n"
         f"{slot_v_html}\n"
         f"    <section id=\"scene-hook\" class=\"clip{hook_v}\" data-start=\"0\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"2\">\n"
@@ -669,6 +699,7 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         "      <div class=\"scene-inner\">\n"
         "        <span class=\"kicker\">CÁC BƯỚC</span>\n"
         f"        <p class=\"scene-text\">{e_steps_text}</p>\n"
+        f"{steps_cta}"
         "      </div>\n"
         "    </section>\n"
         f"{lim_section}"
@@ -721,6 +752,15 @@ def materialize(package_id: str, content: dict[str, Any], project_dir: Path, var
         out_reels = project_dir / "hyperframes_reels" / "index.html"
         out_reels.parent.mkdir(parents=True, exist_ok=True)
         out_reels.write_text(short_html, encoding="utf-8")
+
+    sfx_src = ROOT / "assets" / "audio" / "sfx"
+    if sfx_src.is_dir():
+        import shutil
+        for cname in (["hyperframes"] if do_full else []) + (["hyperframes_reels"] if do_reels else []):
+            stgt = project_dir / cname / "assets" / "sfx"
+            stgt.mkdir(parents=True, exist_ok=True)
+            for sfile in sfx_src.glob("*.mp3"):
+                shutil.copy2(sfile, stgt / sfile.name)
 
     from tools.news import template_provenance
 

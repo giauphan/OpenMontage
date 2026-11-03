@@ -379,7 +379,7 @@ def _build_svg_beat(
         )
     tweens.append(
         f'  tl.fromTo("#{sec_id} .stage-card", '
-        f'{{ opacity: 0, y: 30, scale: 0.98 }}, '
+        f'{{ opacity: 0, y: 35, scale: 0.96 }}, '
         f'{{ opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }}, '
         f'{entry_t});'
     )
@@ -398,10 +398,10 @@ def _build_svg_beat(
         tweens.extend(step_tweens)
 
     if i < total_beats - 1:
-        exit_start_t = _fmt_time(max(0.0, end_s - 0.25))
+        exit_start_t = _fmt_time(max(0.0, end_s - 0.28))
         exit_end_t = _fmt_time(max(0.0, end_s))
         tweens.extend([
-            f'  tl.to("#{sec_id} .stage-card", {{ opacity: 0, duration: 0.25, ease: "power2.in" }}, {exit_start_t});',
+            f'  tl.to("#{sec_id} .stage-card", {{ opacity: 0, y: -24, scale: 0.96, duration: 0.28, ease: "power2.in" }}, {exit_start_t});',
             f'  tl.set("#{sec_id} .stage-card", {{ opacity: 0 }}, {exit_end_t});',
         ])
 
@@ -411,6 +411,8 @@ def _build_svg_beat(
 def _select_step_sfx(idx: int, s_idx: int, num_steps: int, total_beats: int) -> tuple[str, str]:
     if idx in (0, 1) and s_idx == 2:
         return "buzz.mp3", "0.22"
+    if idx == 2 and s_idx in (1, 2):
+        return "buzz.mp3", "0.26"  # Tension alert on controversy step
     if idx in (3, 4) and s_idx in (2, 3):
         return "pass-ping.mp3", "0.20"
     if idx == total_beats - 1 and s_idx == num_steps:
@@ -640,13 +642,22 @@ def compose_hyperframes_html(
     window.__timelines = window.__timelines || {{}};
     const tl = gsap.timeline({{ paused: true }});
     tl.fromTo("#bgm", {{ volume: 0 }}, {{ volume: 0.12, duration: 1.5, ease: "power2.out" }}, 0);
-    starts.forEach(st => {{
+    starts.forEach((st, idx) => {{
       if (st > 1.0 && st < {_fmt_time(max(0.0, duration - 2.5))}) {{
-        tl.to("#bgm", {{ volume: 0.14, duration: 0.4, ease: "power1.in" }}, st - 0.4);
-        tl.to("#bgm", {{ volume: 0.09, duration: 0.6, ease: "power1.out" }}, st + 0.1);
+        if (idx === 2) {{
+          // Beat 3 Controversy & Root Cause: build tension, then duck for revelation
+          tl.to("#bgm", {{ volume: 0.18, duration: 1.2, ease: "power2.in" }}, st);
+          tl.to("#bgm", {{ volume: 0.06, duration: 0.6, ease: "power2.out" }}, st + 2.5);
+        }} else if (idx === 3) {{
+          // Beat 4 Verified Remedy: uplifting resolution
+          tl.to("#bgm", {{ volume: 0.13, duration: 0.8, ease: "power1.out" }}, st);
+        }} else {{
+          tl.to("#bgm", {{ volume: 0.14, duration: 0.4, ease: "power1.in" }}, st - 0.4);
+          tl.to("#bgm", {{ volume: 0.09, duration: 0.6, ease: "power1.out" }}, st + 0.1);
+        }}
       }}
     }});
-    tl.to("#bgm", {{ volume: 0.15, duration: 0.8, ease: "power2.out" }}, {_fmt_time(cta_sfx_t)});
+    tl.to("#bgm", {{ volume: 0.16, duration: 0.8, ease: "power2.out" }}, {_fmt_time(cta_sfx_t)});
     tl.to("#bgm", {{ volume: 0, duration: 1.5, ease: "power2.in" }}, {bgm_fadeout_t});
 {tweens_block}
     window.__timelines["main"] = tl;

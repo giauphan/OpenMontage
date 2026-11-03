@@ -74,6 +74,9 @@ class NormalizedSourceItem:
     remedy: Optional[str] = None
     evidence_excerpt: Optional[str] = None
     independent_fact_check: Optional[Dict[str, Any]] = None
+    hook: Optional[str] = None
+    viewer_question: Optional[str] = None
+    key_takeaway: Optional[str] = None
 
 
 class FixedNicheSourceAdapter:
@@ -159,6 +162,9 @@ class FixedNicheSourceAdapter:
             remedy=raw_item.get("remedy"),
             evidence_excerpt=raw_item.get("evidence_excerpt"),
             independent_fact_check=raw_item.get("independent_fact_check"),
+            hook=raw_item.get("hook"),
+            viewer_question=raw_item.get("viewer_question"),
+            key_takeaway=raw_item.get("key_takeaway"),
         )
 
     def to_candidate_dict(self, item: NormalizedSourceItem) -> Dict[str, Any]:
@@ -197,6 +203,12 @@ class FixedNicheSourceAdapter:
             d["evidence_excerpt"] = item.evidence_excerpt
         if item.independent_fact_check:
             d["independent_fact_check"] = item.independent_fact_check
+        if item.hook:
+            d["hook"] = item.hook
+        if item.viewer_question:
+            d["viewer_question"] = item.viewer_question
+        if item.key_takeaway:
+            d["key_takeaway"] = item.key_takeaway
         return d
 
     def _resolve_feed_paths(self, sources_feed_path: Optional[Path] = None) -> List[Path]:
