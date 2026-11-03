@@ -92,6 +92,7 @@ def resolve_gateway_base_url(base_url: Optional[str] = None) -> str:
         or os.environ.get("DAILY_NEWS_GATEWAY_BASE_URL")
         or os.environ.get("DAILY_NEWS_GATEWAY_URL")
         or os.environ.get("DAILY_NEWS_URL")
+        or os.environ.get("NEWSNOW_API_URL")
     )
 
     if not candidate:
@@ -132,7 +133,9 @@ class DailyNewsGatewayClient:
     def check_health(self, base_url: Optional[str] = None) -> Dict[str, Any]:
         """Query GET /health (or /custom/daily-news/health) for service availability."""
         url = self.get_gateway_base_url(base_url)
-        endpoints = (f"{url}/health", f"{url}/custom/daily-news/health")
+        parsed = urlparse(url)
+        root = f"{parsed.scheme}://{parsed.netloc}"
+        endpoints = (f"{url}/health", f"{root}/health")
         for ep in endpoints:
             try:
                 req = Request(ep, headers=ACCEPT_JSON_HEADER)
@@ -221,8 +224,7 @@ class DailyNewsGatewayClient:
         base_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Mark candidate IDs as consumed (removal logic) via POST /api/v1/consume."""
-        valid_ids = [_sanitize_log_val(cid, max_len=64) for cid in candidate_ids if str(cid).strip()]
-        valid_ids = [cid for cid in valid_ids if cid]
+        valid_ids = [str(cid).strip() for cid in candidate_ids if str(cid).strip()]
         if not valid_ids:
             return {"status": "consumed", "count": 0}
 
@@ -240,7 +242,7 @@ class DailyNewsGatewayClient:
         try:
             with urlopen(req, timeout=self.timeout) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-                safe_logged = ", ".join(valid_ids[:10])
+                safe_logged = ", ".join(_sanitize_log_val(cid, 64) for cid in valid_ids[:10])
                 if len(valid_ids) > 10:
                     safe_logged += f"... (+{len(valid_ids) - 10} more)"
                 logger.info("Marked %d candidate(s) as consumed on gateway: [%s]", len(valid_ids), safe_logged)
@@ -256,9 +258,11 @@ class DailyNewsGatewayClient:
         minimum: int = 3,
         sources: Optional[Sequence[str]] = DEFAULT_SOURCES,
         limit: int = 30,
+        items: Optional[List[Dict[str, Any]]] = None,
     ) -> int:
         """Fetch feed items from gateway and write atomically to output path."""
-        items = self.fetch_feed(base_url=base_url, sources=sources, limit=limit)
+        if items is None:
+            items = self.fetch_feed(base_url=base_url, sources=sources, limit=limit)
         if len(items) < minimum:
             raise RuntimeError(f"News gateway returned {len(items)} valid items; need at least {minimum}")
 

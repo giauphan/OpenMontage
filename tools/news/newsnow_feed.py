@@ -8,18 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
-import urllib.request
 
-import tools.news.daily_news_gateway as daily_news_gateway
 from tools.news.daily_news_gateway import (
     DEFAULT_SOURCES,
     DEFAULT_TOOLCASE_GATEWAY_URL,
     DailyNewsGatewayClient,
     resolve_gateway_base_url,
 )
-
-# Re-export urlopen for backward-compatible test hooks
-urlopen = urllib.request.urlopen
 
 __all__ = [
     "DEFAULT_SOURCES",
@@ -28,14 +23,7 @@ __all__ = [
     "write_feed",
     "consume_candidates",
     "resolve_gateway_base_url",
-    "urlopen",
 ]
-
-
-def _sync_urlopen_hook() -> None:
-    """Propagate monkeypatched urlopen from this module to gateway client module if altered."""
-    if urlopen is not urllib.request.urlopen:
-        daily_news_gateway.urlopen = urlopen
 
 
 def fetch_feed(
@@ -44,10 +32,9 @@ def fetch_feed(
     limit: int = 30,
 ) -> List[Dict[str, Any]]:
     """Fetch latest raw news items via the Toolcase Gateway Daily News service.
-    
+
     Resolves base URL via TOOLCASE_GATEWAY_URL if base_url is omitted.
     """
-    _sync_urlopen_hook()
     client = DailyNewsGatewayClient(base_url=base_url)
     return client.fetch_feed(base_url=base_url, sources=sources, limit=limit)
 
@@ -60,7 +47,7 @@ def write_feed(
     limit: int = 30,
 ) -> int:
     """Fetch feed items from Daily News Gateway and write to output path atomically."""
-    _sync_urlopen_hook()
+    items = fetch_feed(base_url, sources=sources, limit=limit)
     client = DailyNewsGatewayClient(base_url=base_url)
     return client.write_feed(
         base_url=base_url,
@@ -68,6 +55,7 @@ def write_feed(
         minimum=minimum,
         sources=sources,
         limit=limit,
+        items=items,
     )
 
 
@@ -76,6 +64,5 @@ def consume_candidates(
     base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Mark candidate IDs as consumed on the Daily News Gateway (removal logic)."""
-    _sync_urlopen_hook()
     client = DailyNewsGatewayClient(base_url=base_url)
     return client.consume_candidates(candidate_ids=candidate_ids, base_url=base_url)

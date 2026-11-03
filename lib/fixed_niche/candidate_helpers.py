@@ -51,19 +51,27 @@ def parse_timestamp(val: Any) -> float:
         if isinstance(val, (int, float)):
             return float(val)
         s = str(val).strip().replace("Z", "+00:00")
-        if "T" in s:
+        try:
             dt = datetime.fromisoformat(s)
-        elif "-" in s:
-            parts = [int(p) for p in s.split("-")]
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            pass
+
+        if "-" in s:
+            date_part = s.split()[0]
+            parts = [int(p) for p in date_part.split("-")]
             dt = datetime(parts[0], parts[1], parts[2], tzinfo=timezone.utc)
         elif "/" in s:
-            parts = [int(p) for p in s.split("/")]
+            date_part = s.split()[0]
+            parts = [int(p) for p in date_part.split("/")]
             if parts[0] > 1000:
                 dt = datetime(parts[0], parts[1], parts[2], tzinfo=timezone.utc)
             else:
                 dt = datetime(parts[2], parts[1], parts[0], tzinfo=timezone.utc)
         else:
-            dt = datetime.fromisoformat(s)
+            return 0.0
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.timestamp()

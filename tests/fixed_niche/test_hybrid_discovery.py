@@ -433,6 +433,8 @@ def test_candidate_helpers_parse_timestamp_formats():
     assert parse_timestamp(1700000000) == 1700000000.0
     assert parse_timestamp("2026-11-01T12:00:00Z") > 0.0
     assert parse_timestamp("2026-11-01") > 0.0
+    assert parse_timestamp("2026-11-01 10:00:00") > 0.0
+    assert parse_timestamp("2026-11-01 10:00:00Z") > 0.0
     assert parse_timestamp("2026/11/01") > 0.0
     assert parse_timestamp("01/11/2026") > 0.0
     assert parse_timestamp("invalid-date-string-random") == 0.0

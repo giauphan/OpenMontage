@@ -52,11 +52,19 @@ class FakeHttpResponse:
         return str(self.data).encode("utf-8")
 
 
-def test_resolve_gateway_base_url_default(monkeypatch):
-    monkeypatch.delenv("TOOLCASE_GATEWAY_URL", raising=False)
-    monkeypatch.delenv("DAILY_NEWS_GATEWAY_URL", raising=False)
-    monkeypatch.delenv("DAILY_NEWS_URL", raising=False)
+@pytest.fixture(autouse=True)
+def _clean_gateway_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (
+        "TOOLCASE_GATEWAY_URL",
+        "DAILY_NEWS_GATEWAY_BASE_URL",
+        "DAILY_NEWS_GATEWAY_URL",
+        "DAILY_NEWS_URL",
+        "NEWSNOW_API_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
 
+
+def test_resolve_gateway_base_url_default():
     url = resolve_gateway_base_url()
     assert url == f"{DEFAULT_TOOLCASE_GATEWAY_URL}{DEFAULT_GATEWAY_NAMESPACE}"
 
@@ -69,6 +77,12 @@ def test_resolve_gateway_base_url_from_toolcase_env(monkeypatch):
 
 def test_resolve_gateway_base_url_from_daily_news_env(monkeypatch):
     monkeypatch.setenv("DAILY_NEWS_GATEWAY_URL", "http://127.0.0.1:20129/custom/daily-news")
+    url = resolve_gateway_base_url()
+    assert url == "http://127.0.0.1:20129/custom/daily-news"
+
+
+def test_resolve_gateway_base_url_from_newsnow_api_env(monkeypatch):
+    monkeypatch.setenv("NEWSNOW_API_URL", "http://127.0.0.1:20129")
     url = resolve_gateway_base_url()
     assert url == "http://127.0.0.1:20129/custom/daily-news"
 
@@ -111,6 +125,22 @@ def test_check_health_failure(monkeypatch):
     res = client.check_health()
     assert res["status"] == "unhealthy"
     assert "error" in res
+
+
+def test_check_health_fallback_root(monkeypatch):
+    client = DailyNewsGatewayClient("http://127.0.0.1:20129/custom/daily-news")
+    calls = []
+
+    def fake_urlopen(req, timeout=0):
+        calls.append(req.full_url)
+        if req.full_url.endswith("/custom/daily-news/health"):
+            raise HTTPError(req.full_url, 404, "Not Found", {}, None)
+        return FakeHttpResponse({"status": "healthy", "service": "root"})
+
+    monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", fake_urlopen)
+    res = client.check_health()
+    assert res["status"] == "healthy"
+    assert "http://127.0.0.1:20129/health" in calls
 
 
 def test_fetch_feed_successful(monkeypatch):
@@ -209,6 +239,21 @@ def test_consume_candidates_removal_logic(monkeypatch):
     assert res["count"] == 2
     assert captured_payload["endpoint"].endswith("/api/v1/consume")
     assert captured_payload["body"]["candidate_ids"] == ["cand_1", "cand_2"]
+
+
+def test_consume_candidates_preserves_long_id(monkeypatch):
+    client = DailyNewsGatewayClient("http://127.0.0.1:20129/custom/daily-news")
+    captured_payload = {}
+    long_id = "agent_candidate_" + "x" * 120
+
+    def fake_urlopen(req, timeout=0):
+        captured_payload["body"] = json.loads(req.data.decode("utf-8"))
+        return FakeHttpResponse({"status": "consumed", "count": 1})
+
+    monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", fake_urlopen)
+    res = client.consume_candidates([long_id])
+    assert res["status"] == "consumed"
+    assert captured_payload["body"]["candidate_ids"] == [long_id]
 
 
 def test_consume_candidates_empty_noop():

@@ -315,7 +315,7 @@ def test_feed_converter_normalizes_and_dedupes(monkeypatch):
         def read(self):
             return json.dumps({"count": len(raw_feed_items), "items": raw_feed_items}).encode("utf-8")
 
-    monkeypatch.setattr(newsnow_feed, "urlopen", lambda req, timeout=0: _Response())
+    monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", lambda req, timeout=0: _Response())
     items = newsnow_feed.fetch_feed("http://127.0.0.1:20129/custom/daily-news")
 
     urls = [item["url"] for item in items]
