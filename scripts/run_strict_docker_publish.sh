@@ -267,7 +267,7 @@ cleanup_system_disk_space() {
 # Bounded Daily News Gateway reachability + stale-feed-age preflight (warning-only; the
 # generator enforces MAX_STALE_FEED_AGE_HOURS when it falls back to an old feed).
 newsnow_preflight() {
-  if [ "${NEWS_DISCOVERY_PROVIDER:-muse}" = "muse" ]; then
+  if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" ]]; then
     local muse_origin="${MUSE_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}}"
     if curl -sf -m 5 -o /dev/null "${muse_origin%/}/muse-ai/v1/models" 2>/dev/null; then
       log "Muse gateway model catalog reachable"
@@ -425,14 +425,14 @@ else
       if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
         continue
       fi
-      if [ -d "$ROOT/projects/$pid" ] && [ -f "$ROOT/projects/$pid/validation_status.json" ]; then
+      if [[ -d "$ROOT/projects/$pid" && -f "$ROOT/projects/$pid/validation_status.json" ]]; then
         is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$ROOT/projects/$pid/validation_status.json" 2>/dev/null || echo false)
-        if [ "$is_valid" = "true" ]; then
+        if [[ "$is_valid" == "true" ]]; then
           VALID_COUNT=$((VALID_COUNT + 1))
         fi
       fi
     done
-    if [ "$GEN_STATUS" -eq 0 ] && [ "${#PROJECT_IDS[@]}" -eq 0 ] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
+    if [[ "$GEN_STATUS" -eq 0 && "${#PROJECT_IDS[@]}" -eq 0 ]] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
       log "No eligible topics were found; ending this run without generation retries or queue changes."
       write_state "generate" "no_eligible_topic"
       write_state "workflow" "completed" "no_eligible_topic"

@@ -41,9 +41,9 @@ NEXT_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
 TODAY=$(TZ="$PUBLISH_TZ" date +%F)
 
 # 3.5 Check if NO_ELIGIBLE_TOPIC was recorded for today.
-if [ -f "$ROOT/data/.no_eligible_topic_marker" ]; then
+if [[ -f "$ROOT/data/.no_eligible_topic_marker" ]]; then
   MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
-  if [ "${NEWS_DISCOVERY_PROVIDER:-muse}" = "muse" ] && [ "$MARKER_DATE" = "$TODAY" ]; then
+  if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && "$MARKER_DATE" == "$TODAY" ]]; then
     log "Muse found no eligible topics today; skipping quota-driven retries."
     exit 0
   fi
@@ -58,7 +58,7 @@ sys.exit(0 if res.is_eligible else 1)
     rm -f "$ROOT/data/.no_eligible_topic_marker"
   else
     MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
-    if [ "$MARKER_DATE" = "$TODAY" ]; then
+    if [[ "$MARKER_DATE" == "$TODAY" ]]; then
       log "NO_ELIGIBLE_TOPIC was recorded for today ($TODAY) and backlog is empty. Skipping retry loop to prevent infinite retry storms."
       exit 0
     fi
@@ -74,12 +74,12 @@ SCHEDULED_COUNT="${SCHEDULED_COUNT:-0}"
 
 log "Schedule check for $NEXT_DATE (tomorrow in $PUBLISH_TZ): $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects scheduled."
 
-if [ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]; then
+if [[ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]]; then
   log "Next-day schedule requirement satisfied ($SCHEDULED_COUNT >= $EXPECTED_SUCCESS_COUNT). No retry needed."
   exit 0
 fi
 
-if [ "${NEWS_DISCOVERY_PROVIDER:-muse}" = "muse" ] && [ "$SCHEDULED_COUNT" -gt 0 ]; then
+if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && "$SCHEDULED_COUNT" -gt 0 ]]; then
   log "Muse produced a scheduled project; not forcing a daily quota."
   exit 0
 fi

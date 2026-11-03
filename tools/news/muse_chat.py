@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 import time
 from typing import Any, Callable
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from uuid import UUID
@@ -26,7 +26,7 @@ def _post(url: str, payload: dict, timeout: float) -> dict:
         raise MuseChatError("Muse response exceeded size limit")
     try:
         return json.loads(body)
-    except (ValueError, UnicodeError) as exc:
+    except ValueError as exc:
         raise MuseChatError("Muse returned invalid JSON") from exc
 
 
@@ -70,6 +70,50 @@ class MuseChatClient:
             if os.path.exists(tmp):
                 os.unlink(tmp)
 
+    def _request(self, state: dict, context_key: str, payload: dict, thread: str | None) -> tuple[dict, str | None, dict | None]:
+        try:
+            return self.transport(self.url, payload, self.timeout), thread, state.get(context_key)
+        except HTTPError as exc:
+            if exc.code != 404 or not thread:
+                raise MuseChatError(f"Muse gateway returned HTTP {exc.code}") from exc
+        del state[context_key]
+        self._save(state)
+        payload = {key: value for key, value in payload.items() if key != "reply_thread_id"}
+        try:
+            return self.transport(self.url, payload, self.timeout), None, None
+        except HTTPError as exc:
+            raise MuseChatError(f"Muse gateway returned HTTP {exc.code}") from exc
+        except (OSError, TimeoutError) as exc:
+            raise MuseChatError("Muse gateway request failed") from exc
+
+    @staticmethod
+    def _completion(result: dict) -> tuple[str, str]:
+        if not isinstance(result, dict):
+            raise MuseChatError("Muse returned a malformed response")
+        next_thread = _uuid(result.get("reply_thread_id") or result.get("thread_id") or result.get("session_id"))
+        try:
+            choice = result["choices"][0]
+            content = choice["message"]["content"]
+            if choice.get("finish_reason") != "stop" or not isinstance(content, str) or not content.strip():
+                raise ValueError("empty or incomplete completion")
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise MuseChatError("Muse returned an incomplete completion") from exc
+        return next_thread, content
+
+    def _persist_turn(self, state: dict, context_key: str, cached: dict | None, thread: str | None, next_thread: str, content: str) -> None:
+        if thread and next_thread != thread:
+            raise MuseChatError("Muse returned a different thread for a continuation")
+        timestamp_ms = int(time.time() * 1000)
+        old_turns = cached.get("turns", 0) if cached else 0
+        if not isinstance(old_turns, int) or isinstance(old_turns, bool) or old_turns < 0:
+            raise MuseChatError("Invalid Muse thread turn count")
+        state[context_key] = {
+            "thread_id": next_thread, "turns": old_turns + 1,
+            "created_at": cached.get("created_at", timestamp_ms) if cached else timestamp_ms,
+            "last_active_at": timestamp_ms, "last_summary": " ".join(content.split())[:200],
+        }
+        self._save(state)
+
     def chat(self, context_key: str, prompt: str) -> str:
         if not context_key or not prompt:
             raise ValueError("Muse context and prompt are required")
@@ -85,41 +129,9 @@ class MuseChatClient:
             if thread:
                 payload["reply_thread_id"] = thread
             try:
-                try:
-                    result = self.transport(self.url, payload, self.timeout)
-                except HTTPError as exc:
-                    if exc.code != 404 or not thread:
-                        raise
-                    del state[context_key]
-                    self._save(state)
-                    payload = {key: value for key, value in payload.items() if key != "reply_thread_id"}
-                    thread = None
-                    cached = None
-                    result = self.transport(self.url, payload, self.timeout)
-            except HTTPError as exc:
-                raise MuseChatError(f"Muse gateway returned HTTP {exc.code}") from exc
-            except (OSError, URLError, TimeoutError) as exc:
+                result, thread, cached = self._request(state, context_key, payload, thread)
+            except (OSError, TimeoutError) as exc:
                 raise MuseChatError("Muse gateway request failed") from exc
-            if not isinstance(result, dict):
-                raise MuseChatError("Muse returned a malformed response")
-            next_thread = _uuid(result.get("reply_thread_id") or result.get("thread_id") or result.get("session_id"))
-            if thread and next_thread != thread:
-                raise MuseChatError("Muse returned a different thread for a continuation")
-            timestamp_ms = int(time.time() * 1000)
-            old_turns = cached.get("turns", 0) if cached else 0
-            if not isinstance(old_turns, int) or isinstance(old_turns, bool) or old_turns < 0:
-                raise MuseChatError("Invalid Muse thread turn count")
-            state[context_key] = {"thread_id": next_thread, "turns": old_turns + 1,
-                                  "created_at": cached.get("created_at", timestamp_ms) if cached else timestamp_ms,
-                                  "last_active_at": timestamp_ms}
-            self._save(state)
-            try:
-                choice = result["choices"][0]
-                content = choice["message"]["content"]
-                if choice.get("finish_reason") != "stop" or not isinstance(content, str) or not content.strip():
-                    raise ValueError("empty or incomplete completion")
-            except (KeyError, IndexError, TypeError, ValueError) as exc:
-                raise MuseChatError("Muse returned an incomplete completion") from exc
-            state[context_key]["last_summary"] = " ".join(content.split())[:200]
-            self._save(state)
+            next_thread, content = self._completion(result)
+            self._persist_turn(state, context_key, cached, thread, next_thread, content)
             return content

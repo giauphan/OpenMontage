@@ -6,7 +6,6 @@ import json
 import logging
 import math
 from pathlib import Path
-import re
 from urllib.parse import urlsplit
 
 from jsonschema.exceptions import ValidationError
@@ -20,6 +19,47 @@ class MuseNewsError(RuntimeError):
     pass
 
 
+def _parse_response(content: object) -> list[dict]:
+    if isinstance(content, str):
+        stripped = content.strip()
+        lines = stripped.splitlines()
+        if len(lines) >= 2 and lines[0].lower() in ("```", "```json") and lines[-1] == "```":
+            content = "\n".join(lines[1:-1])
+    try:
+        raw = json.loads(content)
+    except (TypeError, ValueError) as exc:
+        raise MuseNewsError("Muse discovery did not return a JSON array") from exc
+    if not isinstance(raw, list) or len(raw) > 100:
+        raise MuseNewsError("Muse discovery did not return a bounded JSON array")
+    return raw
+
+
+def _normalize_item(item: object, adapter: NewsNowAdapter) -> tuple[dict, datetime, str] | None:
+    if not isinstance(item, dict):
+        return None
+    try:
+        url = urlsplit(item.get("url", ""))
+        raw_date = item.get("published_at")
+        if url.scheme != "https" or not url.hostname or url.username or url.password:
+            return None
+        if not isinstance(raw_date, str) or datetime.fromisoformat(raw_date.replace("Z", "+00:00")).tzinfo is None:
+            return None
+        candidate = adapter.normalize_item(item)
+        published = datetime.fromisoformat(candidate["published_at_utc"])
+    except (ValueError, TypeError, KeyError, AttributeError, ValidationError):
+        return None
+    return dict(item), published, candidate["canonical_url"]
+
+
+def _accept_item(item: dict, published: datetime, canonical_url: str, cutoff: datetime, now: datetime, seen: set[str]) -> dict | None:
+    if not cutoff <= published <= now or canonical_url in seen:
+        return None
+    normalized = dict(item)
+    normalized["source_feed"] = "muse"
+    seen.add(canonical_url)
+    return normalized
+
+
 def discover_news(client, max_age_hours: float, *, now: datetime | None = None, limit: int = 30) -> list[dict]:
     if not math.isfinite(max_age_hours) or not 0 < max_age_hours <= 720 or not 1 <= limit <= 100:
         raise ValueError("Invalid discovery freshness window or limit")
@@ -30,17 +70,7 @@ def discover_news(client, max_age_hours: float, *, now: datetime | None = None, 
     cutoff = now - timedelta(hours=max_age_hours)
     prompt_path = Path(__file__).resolve().parents[2] / "scripts/prompts/muse_news_discovery.prompt.md"
     prompt = prompt_path.read_text(encoding="utf-8").format(now=now.isoformat(), cutoff=cutoff.isoformat(), limit=limit)
-    content = client.chat("us-ai-agent-engineering:news-discovery", prompt)
-    if isinstance(content, str):
-        fenced = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", content, re.DOTALL | re.IGNORECASE)
-        if fenced:
-            content = fenced.group(1)
-    try:
-        raw = json.loads(content)
-    except (TypeError, ValueError) as exc:
-        raise MuseNewsError("Muse discovery did not return a JSON array") from exc
-    if not isinstance(raw, list) or len(raw) > 100:
-        raise MuseNewsError("Muse discovery did not return a bounded JSON array")
+    raw = _parse_response(client.chat("us-ai-agent-engineering:news-discovery", prompt))
     if not raw:
         logger.info("Muse returned no discovery leads")
         return []
@@ -49,27 +79,14 @@ def discover_news(client, max_age_hours: float, *, now: datetime | None = None, 
     seen = set()
     valid_count = 0
     for item in raw:
-        if not isinstance(item, dict):
-            continue
-        try:
-            url = urlsplit(item.get("url", ""))
-            if url.scheme != "https" or not url.hostname or url.username or url.password:
-                continue
-            raw_date = item.get("published_at")
-            if not isinstance(raw_date, str) or datetime.fromisoformat(raw_date.replace("Z", "+00:00")).tzinfo is None:
-                continue
-            candidate = adapter.normalize_item(item)
-            published = datetime.fromisoformat(candidate["published_at_utc"])
-        except (ValueError, TypeError, KeyError, AttributeError, ValidationError):
+        normalized_item = _normalize_item(item, adapter)
+        if normalized_item is None:
             continue
         valid_count += 1
-        canonical_url = candidate["canonical_url"]
-        if not cutoff <= published <= now or canonical_url in seen:
+        normalized = _accept_item(*normalized_item, cutoff, now, seen)
+        if normalized is None:
             continue
-        normalized = dict(item)
-        normalized["source_feed"] = "muse"
         accepted.append(normalized)
-        seen.add(canonical_url)
         if len(accepted) >= limit:
             break
     if not valid_count:

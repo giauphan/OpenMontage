@@ -437,15 +437,11 @@ def _hydrate_from_hybrid_discovery(
     return candidate_pool
 
 
-def run_produce(args: argparse.Namespace) -> None:
-    """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
-    count = max(1, getattr(args, "count", 1))
-    used_ids = _collect_used_project_ids()
+def _produce_limits(args: argparse.Namespace, count: int) -> tuple[int, float | None]:
     min_produce = int(os.environ.get("MIN_PRODUCE_COUNT") or os.environ.get("EXPECTED_SUCCESS_COUNT") or os.environ.get("TARGET_SUCCESS_COUNT") or 3)
     min_required = min(count, min_produce)
     if getattr(args, "no_hybrid_discovery", False):
         min_required = 1
-
     max_age_hours = None
     if getattr(args, "require_latest_news", True):
         configured_age = os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS")
@@ -456,7 +452,10 @@ def run_produce(args: argparse.Namespace) -> None:
         except (ValueError, TypeError, OverflowError):
             logger.error("Invalid NEWS_MAX_SOURCE_AGE_HOURS freshness policy")
             sys.exit(1)
+    return min_required, max_age_hours
 
+
+def _produce_candidate_pool(args: argparse.Namespace, count: int, min_required: int, used_ids: Set[str], max_age_hours: float | None) -> List[Dict[str, Any]]:
     candidate_pool: List[Dict[str, Any]] = []
     input_file = Path(args.input)
     is_live_feed = input_file.name in ("newsnow_feed.json", "daily_candidates.json") or getattr(args, "fallback_to_curated", False)
@@ -478,26 +477,34 @@ def run_produce(args: argparse.Namespace) -> None:
         )
         if max_age_hours is not None:
             candidate_pool = _filter_fresh_candidates(candidate_pool, max_age_hours)
+    return candidate_pool
 
+
+def _require_ranked_candidates(candidate_pool: List[Dict[str, Any]], count: int, min_required: int) -> List[Dict[str, Any]]:
     if not candidate_pool:
         logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate across input and hybrid discovery.")
         print("STATUS=NO_ELIGIBLE_TOPIC")
         _record_no_eligible_marker()
         sys.exit(2)
-
     _clear_no_eligible_marker()
-
     logger.info("Scoring and ranking...")
-    scorer = NewsCandidateScorer()
-    ranked = scorer.rank_candidates(candidate_pool, limit=max(30, count * 4))
-
+    ranked = NewsCandidateScorer().rank_candidates(candidate_pool, limit=max(30, count * 4))
     if not ranked:
         logger.error("No valid candidates found.")
         sys.exit(1)
-
     if len(ranked) < min_required:
         logger.error(f"Need at least {min_required} distinct candidates but only {len(ranked)} available.")
         sys.exit(1)
+    return ranked
+
+
+def run_produce(args: argparse.Namespace) -> None:
+    """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
+    count = max(1, getattr(args, "count", 1))
+    used_ids = _collect_used_project_ids()
+    min_required, max_age_hours = _produce_limits(args, count)
+    candidate_pool = _produce_candidate_pool(args, count, min_required, used_ids, max_age_hours)
+    ranked = _require_ranked_candidates(candidate_pool, count, min_required)
 
     if args.dry_run:
         logger.info("[DRY RUN] Skipping Codex CLI and checkpoint generation.")

@@ -301,8 +301,8 @@ if [ -n "$PROJECT_ID_OUTPUT" ]; then
   mapfile -t PROJECT_IDS <<< "$PROJECT_ID_OUTPUT"
 fi
 # PRODUCER_EXECUTION_END
-if [ "${#PROJECT_IDS[@]}" -lt 1 ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: No projects were initialized."
+if [[ "${#PROJECT_IDS[@]}" -lt 1 ]]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: No projects were initialized." >&2
   exit 1
 fi
 fi
@@ -310,7 +310,7 @@ fi
 SUCCESSFUL_COUNT=0
 # DAILY_TARGET_BEGIN
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
-if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" ]] && [ "${#PROJECT_IDS[@]}" -lt "$EXPECTED_SUCCESS_COUNT" ]; then
+if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" && "${#PROJECT_IDS[@]}" -lt "$EXPECTED_SUCCESS_COUNT" ]]; then
   EXPECTED_SUCCESS_COUNT="${#PROJECT_IDS[@]}"
   echo "Muse supplied $EXPECTED_SUCCESS_COUNT eligible project(s); proceeding without filling a quota."
 fi
@@ -1606,11 +1606,9 @@ if [ -f "$REELS_RENDER_PATH" ]; then
   "$PY" "$ROOT/scripts/check_copyright.py" "$REELS_RENDER_PATH"
 fi
 
-if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" ]]; then
-  if ! "$PY" tools/news/news_pipeline_cli.py mark-muse-used --candidate-id "$PROJECT_ID"; then
-    echo "ERROR: unable to persist Muse candidate history for $PROJECT_ID" >&2
-    exit 1
-  fi
+if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && -z "${REHEARSAL_MANIFEST:-}" && -z "${EXISTING_PROJECT_IDS:-}" ]] && ! "$PY" tools/news/news_pipeline_cli.py mark-muse-used --candidate-id "$PROJECT_ID"; then
+  echo "ERROR: unable to persist Muse candidate history for $PROJECT_ID" >&2
+  exit 1
 fi
 SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))
 if [ -n "$REHEARSAL_MANIFEST" ]; then
