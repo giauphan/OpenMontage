@@ -27,6 +27,13 @@ SILENCE_THRESHOLD_DB = -50.0  # dBFS
 EXPECTED_EXTRACTED_FRAMES = 3
 MIN_FRAME_BYTES = 100
 
+CHECK_NAME_METADATA_VALIDATION = "Metadata Validation"
+CHECK_NAME_VISUAL_QUALITY = "Visual Quality"
+
+DNS_PROBE_HOST = os.environ.get("CODEX_DNS_PROBE_HOST") or ".".join(["8", "8", "8", "8"])
+DNS_PROBE_PORT = int(os.environ.get("CODEX_DNS_PROBE_PORT", "53"))
+FENCE_PATTERN = re.compile(r"```(?:json)?\r?\n?(.*?)```", re.DOTALL | re.IGNORECASE)
+
 REVIEW_KEYS = (
     "visual_quality",
     "audio_sync",
@@ -57,7 +64,7 @@ def is_network_available() -> bool:
     try:
         import socket
 
-        socket.create_connection(("8.8.8.8", 53), timeout=0.3)
+        socket.create_connection((DNS_PROBE_HOST, DNS_PROBE_PORT), timeout=0.3)
         return True
     except OSError:
         return False
@@ -172,22 +179,83 @@ def _is_review_dict(value) -> bool:
     return any(key in value for key in REVIEW_KEYS)
 
 
-def _pick_review_dict(value):
+def _search_dict(value: dict) -> Optional[dict]:
+    for candidate_key in ("review", "result", "data", "validation", "report"):
+        nested = value.get(candidate_key)
+        found = _pick_review_dict(nested)
+        if found:
+            return found
+    for nested in value.values():
+        found = _pick_review_dict(nested)
+        if found:
+            return found
+    return None
+
+
+def _pick_review_dict(value: Any) -> Optional[dict]:
     if _is_review_dict(value):
         return value
     if isinstance(value, dict):
-        for candidate_key in ("review", "result", "data", "validation", "report"):
-            nested = value.get(candidate_key)
-            found = _pick_review_dict(nested)
-            if found:
-                return found
-        for nested in value.values():
-            found = _pick_review_dict(nested)
-            if found:
-                return found
-    elif isinstance(value, list):
+        return _search_dict(value)
+    if isinstance(value, list):
         for item in value:
             found = _pick_review_dict(item)
+            if found:
+                return found
+    return None
+
+
+def _validate_cand_envelopes(candidates: list[Any]) -> None:
+    for cand in candidates:
+        if isinstance(cand, dict) and cand.get("is_error") is True:
+            raise ValueError(f"Agent CLI error: {cand.get('result')}")
+        if isinstance(cand, dict) and cand.get("is_error") is False and "result" not in cand:
+            raise ValueError("result missing from output envelope")
+
+
+def _extract_from_text(text: str) -> Optional[dict]:
+    if not isinstance(text, str):
+        return None
+    for inner in _json_values(text):
+        found_inner = _pick_review_dict(inner)
+        if found_inner:
+            return found_inner
+    for match in FENCE_PATTERN.finditer(text):
+        content = match.group(1).strip()
+        for inner in _json_values(content):
+            found_inner = _pick_review_dict(inner)
+            if found_inner:
+                return found_inner
+    return None
+
+
+def _search_cand_dict(val: dict) -> Optional[dict]:
+    for k in ("text", "result", "message", "content"):
+        if k in val and isinstance(val[k], str):
+            found = _extract_from_text(val[k])
+            if found:
+                return found
+    for sub_v in val.values():
+        if isinstance(sub_v, (dict, list)):
+            found = _search_cand(sub_v)
+            if found:
+                return found
+        elif isinstance(sub_v, str):
+            found = _extract_from_text(sub_v)
+            if found:
+                return found
+    return None
+
+
+def _search_cand(val: Any) -> Optional[dict]:
+    found = _pick_review_dict(val)
+    if found:
+        return found
+    if isinstance(val, dict):
+        return _search_cand_dict(val)
+    if isinstance(val, list):
+        for item in val:
+            found = _search_cand(item)
             if found:
                 return found
     return None
@@ -196,64 +264,15 @@ def _pick_review_dict(value):
 def parse_codex_review(response_text: str) -> dict:
     """Parse Codex review response."""
     candidates = _json_values(response_text)
-    for cand in candidates:
-        if isinstance(cand, dict) and cand.get("is_error") is True:
-            raise ValueError(f"Agent CLI error: {cand.get('result')}")
-        if isinstance(cand, dict) and cand.get("is_error") is False and "result" not in cand:
-            raise ValueError("result missing from output envelope")
-
-    fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
-
-    def _extract_from_text(text: str):
-        if not isinstance(text, str):
-            return None
-        for inner in _json_values(text):
-            found_inner = _pick_review_dict(inner)
-            if found_inner:
-                return found_inner
-        for match in fence_pattern.finditer(text):
-            for inner in _json_values(match.group(1)):
-                found_inner = _pick_review_dict(inner)
-                if found_inner:
-                    return found_inner
-        return None
-
-    def _search_cand(val):
-        found = _pick_review_dict(val)
-        if found:
-            return found
-        if isinstance(val, dict):
-            for k in ("text", "result", "message", "content"):
-                if k in val and isinstance(val[k], str):
-                    found = _extract_from_text(val[k])
-                    if found:
-                        return found
-            for k, sub_v in val.items():
-                if isinstance(sub_v, (dict, list)):
-                    found = _search_cand(sub_v)
-                    if found:
-                        return found
-                elif isinstance(sub_v, str):
-                    found = _extract_from_text(sub_v)
-                    if found:
-                        return found
-        elif isinstance(val, list):
-            for item in val:
-                found = _search_cand(item)
-                if found:
-                    return found
-        return None
-
+    _validate_cand_envelopes(candidates)
     for cand in candidates:
         found = _search_cand(cand)
         if found:
             return found
 
-    for match in fence_pattern.finditer(response_text):
-        for inner in _json_values(match.group(1)):
-            found_inner = _pick_review_dict(inner)
-            if found_inner:
-                return found_inner
+    found = _extract_from_text(response_text)
+    if found:
+        return found
 
     raise ValueError(f"Agent CLI review invalid: {response_text!r}")
 
@@ -306,6 +325,39 @@ def validate_technical_contract_helper(
     ]
 
 
+def _check_content_binaries_and_hash(ffprobe_bin: str, ffmpeg_bin: str, artifact_hash: str) -> tuple[bool, str, str]:
+    which_fn = _facade_symbol("shutil", shutil).which
+    if not ffprobe_bin or (which_fn(ffprobe_bin) is None and not Path(ffprobe_bin).is_file()):
+        return False, "Content quality check failed: ffprobe unavailable", "ffprobe_unavailable"
+    if not ffmpeg_bin or (which_fn(ffmpeg_bin) is None and not Path(ffmpeg_bin).is_file()):
+        return False, "Content quality check failed: ffmpeg unavailable", "ffmpeg_unavailable"
+    if not artifact_hash:
+        return False, "Content quality check failed: video missing or empty", "video_missing_or_empty"
+    return True, "", ""
+
+
+def _validate_media_streams(video_path: Path, ffprobe_bin: str, ffmpeg_bin: str) -> tuple[Optional[str], Optional[str], float, bool, bool, list]:
+    from scripts.validate_render_quality import probe, validate_content
+
+    media = probe(Path(video_path), ffprobe_bin)
+    streams = media.get("streams", [])
+    has_video = any(stream.get("codec_type") == "video" for stream in streams)
+    has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+    try:
+        duration = float(media.get("format", {}).get("duration") or 0.0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    if not has_video:
+        return "Content quality check failed: no video stream", "video_stream_missing", duration, has_audio, has_video, []
+    if not has_audio:
+        return "Content quality check failed: expected audio stream is missing", "audio_stream_missing", duration, has_audio, has_video, []
+    if duration <= 0:
+        return "Content quality check failed: invalid video duration", "invalid_duration", duration, has_audio, has_video, []
+
+    issues = validate_content(Path(video_path), ffmpeg_bin, duration, has_audio, has_video, strict=True)
+    return None, None, duration, has_audio, has_video, issues
+
+
 def validate_content_quality_helper(
     validator_self: Any,
     video_path: Path,
@@ -332,33 +384,14 @@ def validate_content_quality_helper(
             )
         ]
 
-    which_fn = _facade_symbol("shutil", shutil).which
-    if not ffprobe_bin or which_fn(ffprobe_bin) is None and not Path(ffprobe_bin).is_file():
-        return failed("Content quality check failed: ffprobe unavailable", error="ffprobe_unavailable")
-    if not ffmpeg_bin or which_fn(ffmpeg_bin) is None and not Path(ffmpeg_bin).is_file():
-        return failed("Content quality check failed: ffmpeg unavailable", error="ffmpeg_unavailable")
-    if not artifact_hash:
-        return failed("Content quality check failed: video missing or empty", error="video_missing_or_empty")
+    ok, bin_msg, bin_err = _check_content_binaries_and_hash(ffprobe_bin, ffmpeg_bin, artifact_hash)
+    if not ok:
+        return failed(bin_msg, error=bin_err)
 
     try:
-        from scripts.validate_render_quality import probe, validate_content
-
-        media = probe(Path(video_path), ffprobe_bin)
-        streams = media.get("streams", [])
-        has_video = any(stream.get("codec_type") == "video" for stream in streams)
-        has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
-        try:
-            duration = float(media.get("format", {}).get("duration") or 0.0)
-        except (TypeError, ValueError):
-            duration = 0.0
-        if not has_video:
-            return failed("Content quality check failed: no video stream", error="video_stream_missing")
-        if not has_audio:
-            return failed("Content quality check failed: expected audio stream is missing", error="audio_stream_missing")
-        if duration <= 0:
-            return failed("Content quality check failed: invalid video duration", error="invalid_duration")
-
-        issues = validate_content(Path(video_path), ffmpeg_bin, duration, has_audio, has_video, strict=True)
+        err_msg, err_code, duration, has_audio, has_video, issues = _validate_media_streams(video_path, ffprobe_bin, ffmpeg_bin)
+        if err_msg:
+            return failed(err_msg, error=err_code)
     except Exception as exc:
         return failed(f"Content quality check failed: {exc}", error=str(exc), error_type=type(exc).__name__)
 
@@ -390,10 +423,25 @@ def validate_metadata_helper(
     result_factory: Any,
 ) -> list:
     """Validate metadata quality."""
-    if not metadata_path.exists():
+    resolved_meta = Path(metadata_path).resolve()
+    project_dir = getattr(validator_self, "project_dir", None)
+    if project_dir is not None:
+        resolved_proj = Path(project_dir).resolve()
+        try:
+            resolved_meta.relative_to(resolved_proj)
+        except ValueError:
+            return [
+                result_factory(
+                    check_name=CHECK_NAME_METADATA_VALIDATION,
+                    passed=False,
+                    message=f"Path traversal detected: {metadata_path} is outside project dir {resolved_proj}",
+                )
+            ]
+
+    if not resolved_meta.exists():
         return [
             result_factory(
-                check_name="Metadata Validation",
+                check_name=CHECK_NAME_METADATA_VALIDATION,
                 passed=False,
                 message=f"Metadata file missing: {metadata_path}",
             )
@@ -403,13 +451,14 @@ def validate_metadata_helper(
     validate_script = root_dir / "scripts" / "validate_publish_metadata.py"
     subproc = _facade_symbol("subprocess", subprocess)
     if validate_script.exists():
-        cmd = [sys.executable, str(validate_script), str(validator_self.project_dir)]
+        proj_arg = str(Path(validator_self.project_dir).resolve()) if project_dir else str(resolved_meta.parent)
+        cmd = [sys.executable, str(validate_script), proj_arg]
         try:
             result = subproc.run(cmd, capture_output=True, text=True, cwd=str(root_dir), timeout=30)
         except (OSError, subprocess.TimeoutExpired) as exc:
             return [
                 result_factory(
-                    check_name="Metadata Validation",
+                    check_name=CHECK_NAME_METADATA_VALIDATION,
                     passed=False,
                     message=f"Metadata validator failed to run: {exc}",
                     details={"error": type(exc).__name__},
@@ -418,7 +467,7 @@ def validate_metadata_helper(
         if result.returncode == 0:
             return [
                 result_factory(
-                    check_name="Metadata Validation",
+                    check_name=CHECK_NAME_METADATA_VALIDATION,
                     passed=True,
                     message="Metadata validation passed ✓",
                     details={"stdout": result.stdout, "stderr": result.stderr},
@@ -429,7 +478,7 @@ def validate_metadata_helper(
             messages = [f"Metadata validator exited with {result.returncode} without diagnostics"]
         return [
             result_factory(
-                check_name="Metadata Validation",
+                check_name=CHECK_NAME_METADATA_VALIDATION,
                 passed=False,
                 message=msg,
                 details={"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
@@ -438,19 +487,19 @@ def validate_metadata_helper(
         ]
 
     try:
-        data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        data = json.loads(resolved_meta.read_text(encoding="utf-8"))
         title = data.get("title", "")
         if "#tintuc" in title and "#congnghe" in title and "#ai" in title:
             return [
                 result_factory(
-                    check_name="Metadata Validation",
+                    check_name=CHECK_NAME_METADATA_VALIDATION,
                     passed=True,
                     message="Metadata validation passed ✓",
                 )
             ]
         return [
             result_factory(
-                check_name="Metadata Validation",
+                check_name=CHECK_NAME_METADATA_VALIDATION,
                 passed=False,
                 message="Missing required hashtags in metadata title",
             )
@@ -458,7 +507,7 @@ def validate_metadata_helper(
     except Exception as e:
         return [
             result_factory(
-                check_name="Metadata Validation",
+                check_name=CHECK_NAME_METADATA_VALIDATION,
                 passed=False,
                 message=f"Invalid metadata JSON: {e}",
             )
@@ -534,13 +583,84 @@ def extract_frames_helper(video_path: Path, out_dir: Path) -> list[Path]:
     return frame_paths if len(frame_paths) == EXPECTED_EXTRACTED_FRAMES else []
 
 
+def _check_autonomous_visual(has_video: bool, has_scaffold: bool, scene_count: int, common_details: dict, result_factory: Any):
+    if has_video and not has_scaffold:
+        scenes_desc = f"{scene_count} detected scenes" if scene_count > 0 else "smooth visual pacing"
+        notes = (
+            f"1080x1920 portrait composition with {scenes_desc}, structured HUD elements, "
+            "dynamic AI interface visualizations, and styled editorial layouts. "
+            "No raw browser page, test scaffold, or unstyled placeholder presentation detected."
+        )
+        return result_factory(
+            check_name=CHECK_NAME_VISUAL_QUALITY,
+            passed=True,
+            message=f"Visual Quality: ✓ PASS (Heuristic) - {notes}",
+            details={**common_details, "score": None, "notes": notes},
+        )
+    reason = "Unstyled scaffold detected in composition" if has_scaffold else "Video render missing or corrupted"
+    return result_factory(
+        check_name=CHECK_NAME_VISUAL_QUALITY,
+        passed=False,
+        message=f"Visual Quality: ✗ FAIL (Heuristic) - {reason}",
+        details={**common_details, "score": None, "notes": reason},
+    )
+
+
+def _check_autonomous_audio(has_video: bool, common_details: dict, result_factory: Any):
+    if has_video:
+        notes = (
+            "Vietnamese narration structure aligns with the provided script sections. "
+            "No empty English placeholders or obvious typography synchronization issues detected."
+        )
+        return result_factory(
+            check_name="Audio Sync",
+            passed=True,
+            message=f"Audio Sync: ✓ PASS (Heuristic) - {notes}",
+            details={**common_details, "score": None, "notes": notes},
+        )
+    notes = "Narration audio missing or audio track missing"
+    return result_factory(
+        check_name="Audio Sync",
+        passed=False,
+        message=f"Audio Sync: ✗ FAIL (Heuristic) - {notes}",
+        details={**common_details, "score": None, "notes": notes},
+    )
+
+
+def _check_autonomous_brand(metadata_text: str, comp_text: str, common_details: dict, result_factory: Any):
+    prohibited_brands = ["openmontage", "montage"]
+    brand_violation = None
+    for brand in prohibited_brands:
+        if brand in metadata_text.lower():
+            brand_violation = f"Found '{brand}' in metadata"
+            break
+        if comp_text and brand in comp_text.lower():
+            brand_violation = f"Found '{brand}' in composition HTML"
+            break
+
+    if brand_violation:
+        notes = f"Prohibited brand violation: {brand_violation}"
+        return result_factory(
+            check_name="Brand Compliance",
+            passed=False,
+            message=f"Brand Compliance: ✗ FAIL (Heuristic) - {notes}",
+            details={**common_details, "score": 0, "notes": notes},
+        )
+    notes = "No prohibited brand names such as Montage or OpenMontage detected in visible HTML text, title, metadata content, or narration."
+    return result_factory(
+        check_name="Brand Compliance",
+        passed=True,
+        message=f"Brand Compliance: ✓ PASS (Heuristic) - {notes}",
+        details={**common_details, "score": None, "notes": notes},
+    )
+
+
 def autonomous_quality_review_helper(
     validator_self: Any,
     video_path: Path,
     metadata_path: Path,
     result_factory: Any,
-    prior_results: Optional[List[Any]] = None,
-    frame_paths: Optional[List[Path]] = None,
+    **_extra: Any,
 ) -> list:
     """Autonomous AI quality agent evaluation for visual, audio sync, content, and brand compliance."""
     results = []
@@ -554,27 +674,25 @@ def autonomous_quality_review_helper(
     if not comp_path.is_file():
         return [
             result_factory(
-                check_name="Visual Quality",
+                check_name=CHECK_NAME_VISUAL_QUALITY,
                 passed=False,
                 message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
                 details={"error": "Missing HyperFrames HTML source"},
             )
         ]
 
-    scene_count = 0
     comp_text = ""
-    if comp_path.is_file():
-        try:
-            comp_text = comp_path.read_text(encoding="utf-8")
-            scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
-            scene_count = len(scene_ids) or len(
-                re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text)
-            )
-        except Exception:
-            pass
+    scene_count = 0
+    try:
+        comp_text = comp_path.read_text(encoding="utf-8")
+        scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
+        scene_count = len(scene_ids) or len(
+            re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text)
+        )
+    except Exception:
+        pass
 
     has_video = video_path.is_file() and video_path.stat().st_size > 1000
-
     scaffold_indicators = ["Template Scaffold", "LOREM IPSUM", "TODO: REPLACE", "UNSTYLED_CANVAS"]
     has_scaffold = any(ind in comp_text for ind in scaffold_indicators)
 
@@ -591,56 +709,10 @@ def autonomous_quality_review_helper(
     }
 
     # 1. VISUAL QUALITY
-    if has_video and not has_scaffold:
-        scenes_desc = f"{scene_count} detected scenes" if scene_count > 0 else "smooth visual pacing"
-        notes = (
-            f"1080x1920 portrait composition with {scenes_desc}, structured HUD elements, "
-            "dynamic AI interface visualizations, and styled editorial layouts. "
-            "No raw browser page, test scaffold, or unstyled placeholder presentation detected."
-        )
-        results.append(
-            result_factory(
-                check_name="Visual Quality",
-                passed=True,
-                message=f"Visual Quality: ✓ PASS (Heuristic) - {notes}",
-                details={**common_details, "score": None, "notes": notes},
-            )
-        )
-    else:
-        reason = "Unstyled scaffold detected in composition" if has_scaffold else "Video render missing or corrupted"
-        results.append(
-            result_factory(
-                check_name="Visual Quality",
-                passed=False,
-                message=f"Visual Quality: ✗ FAIL (Heuristic) - {reason}",
-                details={**common_details, "score": None, "notes": reason},
-            )
-        )
+    results.append(_check_autonomous_visual(has_video, has_scaffold, scene_count, common_details, result_factory))
 
     # 2. AUDIO SYNC & TYPOGRAPHY
-    if has_video:
-        notes = (
-            "Vietnamese narration structure aligns with the provided script sections. "
-            "No empty English placeholders or obvious typography synchronization issues detected."
-        )
-        results.append(
-            result_factory(
-                check_name="Audio Sync",
-                passed=True,
-                message=f"Audio Sync: ✓ PASS (Heuristic) - {notes}",
-                details={**common_details, "score": None, "notes": notes},
-            )
-        )
-    else:
-        notes = "Narration audio missing or audio track missing"
-        results.append(
-            result_factory(
-                check_name="Audio Sync",
-                passed=False,
-                message=f"Audio Sync: ✗ FAIL (Heuristic) - {notes}",
-                details={**common_details, "score": None, "notes": notes},
-            )
-        )
+    results.append(_check_autonomous_audio(has_video, common_details, result_factory))
 
     # 3. CONTENT APPROPRIATENESS
     metadata_text = ""
@@ -661,36 +733,7 @@ def autonomous_quality_review_helper(
     )
 
     # 4. BRAND COMPLIANCE
-    prohibited_brands = ["openmontage", "montage"]
-    brand_violation = None
-    for brand in prohibited_brands:
-        if brand in metadata_text.lower():
-            brand_violation = f"Found '{brand}' in metadata"
-            break
-        if comp_text and brand in comp_text.lower():
-            brand_violation = f"Found '{brand}' in composition HTML"
-            break
-
-    if brand_violation:
-        notes = f"Prohibited brand violation: {brand_violation}"
-        results.append(
-            result_factory(
-                check_name="Brand Compliance",
-                passed=False,
-                message=f"Brand Compliance: ✗ FAIL (Heuristic) - {notes}",
-                details={**common_details, "score": 0, "notes": notes},
-            )
-        )
-    else:
-        notes = "No prohibited brand names such as Montage or OpenMontage detected in visible HTML text, title, metadata content, or narration."
-        results.append(
-            result_factory(
-                check_name="Brand Compliance",
-                passed=True,
-                message=f"Brand Compliance: ✓ PASS (Heuristic) - {notes}",
-                details={**common_details, "score": None, "notes": notes},
-            )
-        )
+    results.append(_check_autonomous_brand(metadata_text, comp_text, common_details, result_factory))
 
     return results
 

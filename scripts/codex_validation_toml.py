@@ -14,12 +14,21 @@ from pathlib import Path
 from typing import Dict, Optional
 
 # Strict single-line TOML fallback validator regexes
-_TOML_INT_RE = re.compile(r"[+-]?(0x[0-9a-fA-F_]+|0o[0-7_]+|0b[0-1_]+|(0|[1-9](_?[0-9])*))")
+_TOML_INT_RE = re.compile(r"[+-]?(?:0[xob][\da-fA-F_]+|0|[1-9](?:_?\d)*)")
 _TOML_FLOAT_RE = re.compile(
-    r"([+-]?(0|[1-9](_?[0-9])*)(\.[0-9](_?[0-9])*)?([eE][+-]?[0-9](_?[0-9])*)?)|([+-]?(inf|nan))"
+    r"[+-]?(?:(?:\d(?:_?\d)*)?\.\d(?:_?\d)*(?:[eE][+-]?\d(?:_?\d)*)?|\d+(?:_?\d)*[eE][+-]?\d(?:_?\d)*|inf|nan)",
+    re.IGNORECASE,
 )
-_TOML_DATETIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}([Tt ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?([zZ]|[+-]\d{2}:\d{2})?")
+_TOML_DATETIME_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?",
+    re.IGNORECASE,
+)
 _TOML_KEY_SEG_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+ERR_MISSING_MODEL_PROVIDER = "Missing required root-level 'model_provider' in config.toml"
+ERR_INVALID_MODEL_PROVIDER = (
+    "Invalid root-level 'model_provider' in config.toml: must be a non-empty string"
+)
 
 
 def _toml_close_quote(s: str, q: str) -> Optional[int]:
@@ -37,30 +46,35 @@ def _toml_close_quote(s: str, q: str) -> Optional[int]:
     return None
 
 
+def _is_hex_digits(s: str) -> bool:
+    return len(s) > 0 and all(c in "0123456789abcdefABCDEF" for c in s)
+
+
+def _validate_escape(inner: str, i: int, n: int) -> tuple[bool, int]:
+    if i + 1 >= n:
+        return False, 0
+    esc = inner[i + 1]
+    if esc in 'btnfr"\\':
+        return True, 2
+    if esc == "u":
+        valid = (i + 6 <= n) and _is_hex_digits(inner[i + 2 : i + 6])
+        return valid, 6
+    if esc == "U":
+        valid = (i + 10 <= n) and _is_hex_digits(inner[i + 2 : i + 10])
+        return valid, 10
+    return False, 0
+
+
 def _toml_validate_basic_string_inner(inner: str) -> bool:
     i, n = 0, len(inner)
     while i < n:
-        ch = inner[i]
-        if ch != "\\":
+        if inner[i] != "\\":
             i += 1
             continue
-        if i + 1 >= n:
+        ok, step = _validate_escape(inner, i, n)
+        if not ok:
             return False
-        esc = inner[i + 1]
-        if esc in "btnfr\"\\":
-            i += 2
-            continue
-        if esc == "u":
-            if i + 6 > n or not all(c in "0123456789abcdefABCDEF" for c in inner[i + 2 : i + 6]):
-                return False
-            i += 6
-            continue
-        if esc == "U":
-            if i + 10 > n or not all(c in "0123456789abcdefABCDEF" for c in inner[i + 2 : i + 10]):
-                return False
-            i += 10
-            continue
-        return False
+        i += step
     return True
 
 
@@ -94,32 +108,52 @@ def _toml_valid_key(k: str) -> bool:
     return len(parts) >= 1 and all(_TOML_KEY_SEG_RE.fullmatch(p) for p in parts)
 
 
+def _handle_toml_in_string(ch: str, q: Optional[str], esc: bool) -> tuple[bool, bool]:
+    if esc:
+        return True, False
+    if q == '"' and ch == "\\":
+        return True, True
+    if ch == q:
+        return False, False
+    return True, False
+
+
 def _toml_split_top(inner: str):
-    elems, depth, cur, in_s, q = [], 0, "", False, None
+    elems: list[str] = []
+    depth = 0
+    cur = ""
+    in_s, q, esc = False, None, False
     for ch in inner:
         if in_s:
             cur += ch
-            if q == '"' and ch == "\\":
-                pass
-            elif ch == q:
-                in_s = False
+            in_s, esc = _handle_toml_in_string(ch, q, esc)
             continue
-        if ch == '"' or ch == "'":
+        if ch in ('"', "'"):
             in_s, q = True, ch
-            cur += ch
         elif ch in ("[", "{"):
             depth += 1
-            cur += ch
         elif ch in ("]", "}"):
             depth -= 1
-            cur += ch
         elif ch == "," and depth == 0:
             elems.append(cur)
             cur = ""
-        else:
-            cur += ch
+            continue
+        cur += ch
     elems.append(cur)
     return elems, depth
+
+
+def _toml_validate_string_scalar(v: str, line_idx: int, ctx: str) -> str:
+    q = v[0]
+    end = _toml_close_quote(v, q)
+    if end is None:
+        raise ValueError(f"Line {line_idx}: unterminated string {ctx}")
+    rem = v[end + 1 :].strip()
+    if rem:
+        raise ValueError(f"Line {line_idx}: unexpected trailing content after string {ctx}")
+    if q == '"' and not _toml_validate_basic_string_inner(v[1:end]):
+        raise ValueError(f"Line {line_idx}: invalid escape sequence in basic string {ctx}")
+    return v[1:end]
 
 
 def _toml_validate_scalar(v: str, line_idx: int, ctx: str):
@@ -127,16 +161,22 @@ def _toml_validate_scalar(v: str, line_idx: int, ctx: str):
     if not v:
         raise ValueError(f"Line {line_idx}: missing value {ctx}")
     if v[0] in "\"'":
-        q = v[0]
-        end = _toml_close_quote(v, q)
-        if end is None:
-            raise ValueError(f"Line {line_idx}: unterminated string {ctx}")
-        rem = v[end + 1 :].strip()
-        if rem:
-            raise ValueError(f"Line {line_idx}: unexpected trailing content after string {ctx}")
-        if q == '"' and not _toml_validate_basic_string_inner(v[1:end]):
-            raise ValueError(f"Line {line_idx}: invalid escape sequence in basic string {ctx}")
-        return v[1:end]
+        return _toml_validate_string_scalar(v, line_idx, ctx)
+    if v in ("true", "false"):
+        return v == "true"
+    if v[0] == "[":
+        return _toml_validate_array(v, line_idx, ctx)
+    if v[0] == "{":
+        return _toml_validate_inline_table(v, line_idx, ctx)
+    if _TOML_INT_RE.fullmatch(v):
+        if re.match(r"[+-]?0[xob]", v, re.I):
+            return int(v.replace("_", ""), 0)
+        return int(v.replace("_", ""))
+    if _TOML_FLOAT_RE.fullmatch(v):
+        return float(v.replace("_", ""))
+    if _TOML_DATETIME_RE.fullmatch(v):
+        return v
+    raise ValueError(f"Line {line_idx}: invalid TOML value for {ctx}: {v!r}")
     if v in ("true", "false"):
         return v == "true"
     if v[0] == "[":
@@ -205,6 +245,68 @@ def _toml_validate_inline_table(v: str, line_idx: int, ctx: str):
     return s
 
 
+def _validate_model_provider(root_config: dict) -> None:
+    if "model_provider" not in root_config:
+        raise ValueError(ERR_MISSING_MODEL_PROVIDER)
+    mp = root_config["model_provider"]
+    if not isinstance(mp, str) or not mp.strip():
+        raise ValueError(ERR_INVALID_MODEL_PROVIDER)
+
+
+def _handle_table_header(
+    line: str,
+    raw: str,
+    line_idx: int,
+    declared_tables: set,
+    table_keysets: Dict[Optional[str], set],
+) -> str:
+    if line.startswith("[["):
+        if not line.endswith("]]") or len(line) <= 4:
+            raise ValueError(f"Line {line_idx}: malformed array-of-tables header: {raw}")
+        table_name = line[2:-2].strip()
+    else:
+        if not line.endswith("]") or len(line) <= 2:
+            raise ValueError(f"Line {line_idx}: malformed table header: {raw}")
+        table_name = line[1:-1].strip()
+
+    if not _toml_valid_key(table_name):
+        raise ValueError(f"Line {line_idx}: invalid table key in header: {table_name!r}")
+    if not line.startswith("[["):
+        if table_name in declared_tables:
+            raise ValueError(f"Line {line_idx}: duplicate table header [{table_name}]")
+        declared_tables.add(table_name)
+    table_keysets.setdefault(table_name, set())
+    return table_name
+
+
+def _handle_toml_kv_line(
+    line: str,
+    raw: str,
+    line_idx: int,
+    current_table: Optional[str],
+    table_keysets: Dict[Optional[str], set],
+    root_config: Dict[str, object],
+) -> None:
+    if "=" not in line:
+        raise ValueError(f"Line {line_idx}: expected key = value, got: {line!r}")
+    key_part, val_part = line.split("=", 1)
+    key = key_part.strip()
+    val = _toml_rstrip_comment(val_part).strip()
+    if not _toml_valid_key(key):
+        raise ValueError(f"Line {line_idx}: invalid key {key!r}")
+    if not val:
+        raise ValueError(f"Line {line_idx}: missing value after '=': {raw}")
+
+    table_keysets.setdefault(current_table, set())
+    if key in table_keysets[current_table]:
+        where = "root" if current_table is None else f"table [{current_table}]"
+        raise ValueError(f"Line {line_idx}: duplicate key '{key}' in {where}")
+    table_keysets[current_table].add(key)
+    parsed = _toml_validate_scalar(val, line_idx, f"key '{key}'")
+    if current_table is None:
+        root_config[key] = parsed
+
+
 def _strict_toml_validate(content: str) -> dict:
     """Return root-level parsed dict; raise ValueError on any malformed TOML."""
     root_config: Dict[str, object] = {}
@@ -216,81 +318,41 @@ def _strict_toml_validate(content: str) -> dict:
         if not line or line.startswith("#"):
             continue
         if line.startswith("["):
-            if line.startswith("[["):
-                if not line.endswith("]]") or len(line) <= 4:
-                    raise ValueError(f"Line {line_idx}: malformed array-of-tables header: {raw}")
-                current_table = line[2:-2].strip()
-            else:
-                if not line.endswith("]") or len(line) <= 2:
-                    raise ValueError(f"Line {line_idx}: malformed table header: {raw}")
-                current_table = line[1:-1].strip()
-            if not _toml_valid_key(current_table):
-                raise ValueError(f"Line {line_idx}: invalid table key in header: {current_table!r}")
-            if not line.startswith("[["):
-                if current_table in declared_tables:
-                    raise ValueError(f"Line {line_idx}: duplicate table header [{current_table}]")
-                declared_tables.add(current_table)
-            table_keysets.setdefault(current_table, set())
+            current_table = _handle_table_header(line, raw, line_idx, declared_tables, table_keysets)
             continue
-        if "=" not in line:
-            raise ValueError(f"Line {line_idx}: expected key = value, got: {line!r}")
-        key_part, val_part = line.split("=", 1)
-        key = key_part.strip()
-        val = _toml_rstrip_comment(val_part).strip()
-        if not _toml_valid_key(key):
-            raise ValueError(f"Line {line_idx}: invalid key {key!r}")
-        if not val:
-            raise ValueError(f"Line {line_idx}: missing value after '=': {raw}")
-        scope = current_table
-        table_keysets.setdefault(scope, set())
-        if key in table_keysets[scope]:
-            where = "root" if scope is None else "table [" + str(scope) + "]"
-            raise ValueError(f"Line {line_idx}: duplicate key '{key}' in {where}")
-        table_keysets[scope].add(key)
-        parsed = _toml_validate_scalar(val, line_idx, "key '" + key + "'")
-        if scope is None:
-            root_config[key] = parsed
-    if "model_provider" not in root_config:
-        raise ValueError("Missing required root-level 'model_provider' in config.toml")
-    mp = root_config["model_provider"]
-    if not isinstance(mp, str) or not mp.strip():
-        raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
+        _handle_toml_kv_line(line, raw, line_idx, current_table, table_keysets, root_config)
+
+    _validate_model_provider(root_config)
     return root_config
+
+
+def _load_toml_parser():
+    try:
+        import tomllib
+
+        return tomllib.loads
+    except ImportError:
+        pass
+    try:
+        import tomli
+
+        return tomli.loads
+    except ImportError:
+        return None
 
 
 def parse_and_validate_config_toml(content: str) -> dict:
     """Parse and validate config.toml ensuring well-formed TOML and valid root-level model_provider."""
-    try:
-        import tomllib
-
-        data = tomllib.loads(content)
-        if not isinstance(data, dict):
-            raise ValueError("Parsed TOML is not a dictionary")
-        if "model_provider" not in data:
-            raise ValueError("Missing required root-level 'model_provider' in config.toml")
-        mp = data["model_provider"]
-        if not isinstance(mp, str) or not mp.strip():
-            raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
-        return data
-    except ImportError:
+    parser = _load_toml_parser()
+    if parser is not None:
         try:
-            import tomli
-
-            data = tomli.loads(content)
-            if not isinstance(data, dict):
-                raise ValueError("Parsed TOML is not a dictionary")
-            if "model_provider" not in data:
-                raise ValueError("Missing required root-level 'model_provider' in config.toml")
-            mp = data["model_provider"]
-            if not isinstance(mp, str) or not mp.strip():
-                raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
-            return data
-        except ImportError:
-            pass
+            data = parser(content)
         except Exception as exc:
             raise ValueError(f"Invalid TOML syntax: {exc}") from exc
-    except Exception as exc:
-        raise ValueError(f"Invalid TOML syntax: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError("Parsed TOML is not a dictionary")
+        _validate_model_provider(data)
+        return data
 
     return _strict_toml_validate(content)
 

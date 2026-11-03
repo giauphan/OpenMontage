@@ -27,9 +27,70 @@ from tools.publishers.tiktok_publisher import TiktokPublisher
 from tools.publishers.social_metadata import meta_caption
 
 
+THUMBNAIL_PNG = "thumbnail.png"
+THUMBNAIL_JPG = "thumbnail.jpg"
+
+
 def _facade_symbol(name: str, fallback: Any) -> Any:
     mod = sys.modules.get("scripts.publish_manual_video")
     return getattr(mod, name, fallback) if mod is not None else fallback
+
+
+def _find_candidate_thumbnail(video_path: Path) -> Path | None:
+    search_dirs = [
+        video_path.parent.parent / "artifacts",
+        video_path.parent / "artifacts",
+        video_path.parent.parent / "thumbnails",
+        video_path.parent,
+        video_path.parent / "thumbnails",
+    ]
+    for d in search_dirs:
+        for fname in (THUMBNAIL_PNG, THUMBNAIL_JPG):
+            candidate = d / fname
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _generate_fallback_thumbnail(video_path: Path, payload_meta: dict) -> str | None:
+    try:
+        from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
+
+        pdir = video_path.parent.parent if video_path.parent.name == "renders" else video_path.parent
+        if pdir.is_dir() and pdir.name.startswith("cand_"):
+            title = payload_meta.get("title") or pdir.name
+            res = ThumbnailOrchestrator.generate_thumbnail(
+                project_dir=pdir,
+                title=title,
+                topic=payload_meta.get("topic", "") or payload_meta.get("summary", ""),
+                format_type=payload_meta.get("format", "short"),
+                allow_fallback=True,
+            )
+            if res.success and res.thumbnail_path and Path(res.thumbnail_path).is_file():
+                return res.thumbnail_path
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_youtube_thumbnail(
+    video_path: str,
+    thumbnail_path: str | None,
+    payload_meta: dict,
+) -> str | None:
+    thumb = thumbnail_path or payload_meta.get("thumbnail_path") or payload_meta.get("thumbnail")
+    v_p = Path(video_path)
+    if not thumb or not Path(thumb).is_file():
+        candidate = _find_candidate_thumbnail(v_p)
+        if candidate is not None:
+            thumb = str(candidate)
+
+    if not thumb or not Path(thumb).is_file() or Path(thumb).stat().st_size < 50_000:
+        fallback = _generate_fallback_thumbnail(v_p, payload_meta)
+        if fallback:
+            thumb = fallback
+
+    return str(thumb) if (thumb and Path(thumb).is_file()) else None
 
 
 def build_youtube_payload(
@@ -68,49 +129,9 @@ def build_youtube_payload(
     if "contains_synthetic_media" in payload_meta:
         payload["contains_synthetic_media"] = payload_meta["contains_synthetic_media"]
 
-    # Thumbnail resolution
-    thumb = thumbnail_path or payload_meta.get("thumbnail_path") or payload_meta.get("thumbnail")
-    if not thumb or not Path(thumb).is_file():
-        v_p = Path(video_path)
-        candidates = [
-            v_p.parent.parent / "artifacts" / "thumbnail.png",
-            v_p.parent.parent / "artifacts" / "thumbnail.jpg",
-            v_p.parent / "artifacts" / "thumbnail.png",
-            v_p.parent / "artifacts" / "thumbnail.jpg",
-            v_p.parent.parent / "thumbnails" / "thumbnail.png",
-            v_p.parent.parent / "thumbnails" / "thumbnail.jpg",
-            v_p.parent / "thumbnail.png",
-            v_p.parent / "thumbnail.jpg",
-            v_p.parent / "thumbnails" / "thumbnail.png",
-            v_p.parent / "thumbnails" / "thumbnail.jpg",
-        ]
-        for c in candidates:
-            if c.is_file():
-                thumb = str(c)
-                break
-
-    if not thumb or not Path(thumb).is_file() or Path(thumb).stat().st_size < 50_000:
-        try:
-            from lib.news_visual.thumbnail_orchestrator import ThumbnailOrchestrator
-
-            v_p = Path(video_path)
-            pdir = v_p.parent.parent if v_p.parent.name == "renders" else v_p.parent
-            if pdir.is_dir() and pdir.name.startswith("cand_"):
-                title = payload_meta.get("title") or pdir.name
-                res = ThumbnailOrchestrator.generate_thumbnail(
-                    project_dir=pdir,
-                    title=title,
-                    topic=payload_meta.get("topic", "") or payload_meta.get("summary", ""),
-                    format_type=payload_meta.get("format", "short"),
-                    allow_fallback=True,
-                )
-                if res.success and res.thumbnail_path and Path(res.thumbnail_path).is_file():
-                    thumb = res.thumbnail_path
-        except Exception:
-            pass
-
-    if thumb and Path(thumb).is_file():
-        payload["thumbnail_path"] = str(thumb)
+    thumb = _resolve_youtube_thumbnail(video_path, thumbnail_path, payload_meta)
+    if thumb:
+        payload["thumbnail_path"] = thumb
 
     return payload
 

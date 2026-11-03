@@ -30,30 +30,36 @@ from scripts.codex_validation_toml import (
 
 logger = logging.getLogger(__name__)
 
+CODEX_AGENT_VALIDATION_MODULE = "scripts.codex_agent_validation"
+HYPERFRAMES_INDEX_HTML = "hyperframes/index.html"
+CHECK_NAME_VISUAL_QUALITY = "Visual Quality"
+SCRIPT_EN_US_JSON = "script_en_US.json"
+CHECK_NAME_CODEX_GATE = "Codex Agent Review Gate"
+
 
 def _get_resolve_agent_cli() -> Callable[[], Optional[str]]:
-    mod = sys.modules.get("scripts.codex_agent_validation")
+    mod = sys.modules.get(CODEX_AGENT_VALIDATION_MODULE)
     if mod and hasattr(mod, "resolve_agent_cli"):
         return getattr(mod, "resolve_agent_cli")
     return default_resolve_agent_cli
 
 
 def _get_resolve_codex_home() -> Callable[[Dict[str, str]], str]:
-    mod = sys.modules.get("scripts.codex_agent_validation")
+    mod = sys.modules.get(CODEX_AGENT_VALIDATION_MODULE)
     if mod and hasattr(mod, "resolve_and_validate_codex_home"):
         return getattr(mod, "resolve_and_validate_codex_home")
     return default_resolve_and_validate_codex_home
 
 
 def _get_parse_codex_review() -> Callable[[str], Any]:
-    mod = sys.modules.get("scripts.codex_agent_validation")
+    mod = sys.modules.get(CODEX_AGENT_VALIDATION_MODULE)
     if mod and hasattr(mod, "parse_codex_review"):
         return getattr(mod, "parse_codex_review")
     return default_parse_codex_review
 
 
 def _get_probe_audio_streams() -> Callable[[Path], str]:
-    mod = sys.modules.get("scripts.codex_agent_validation")
+    mod = sys.modules.get(CODEX_AGENT_VALIDATION_MODULE)
     if mod and hasattr(mod, "_probe_audio_streams"):
         return getattr(mod, "_probe_audio_streams")
     return default_probe_audio_streams
@@ -63,7 +69,7 @@ def _get_subprocess_run() -> Callable[..., subprocess.CompletedProcess[Any]]:
     claude_mod = sys.modules.get("scripts.claude_agent_validation")
     if claude_mod and hasattr(claude_mod, "subprocess") and hasattr(claude_mod.subprocess, "run"):
         return getattr(claude_mod.subprocess, "run")
-    codex_mod = sys.modules.get("scripts.codex_agent_validation")
+    codex_mod = sys.modules.get(CODEX_AGENT_VALIDATION_MODULE)
     if codex_mod and hasattr(codex_mod, "subprocess") and hasattr(codex_mod.subprocess, "run"):
         return getattr(codex_mod.subprocess, "run")
     return subprocess.run
@@ -123,124 +129,52 @@ Return a valid JSON object matching this schema:
     return prompt
 
 
-def execute_cli_review_helper(
-    validator_self: Any,
-    agent_bin: str,
-    video_path: Path,
-    metadata_path: Path,
-    result_factory: Any,
-    prior_results: Optional[List[Any]] = None,
-) -> List[Any]:
-    """Execute review via CLI binary and parse result."""
-    abs_video_path = Path(video_path).resolve()
-    frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-review-"))
-    frame_paths: List[Path] = []
-    abs_metadata_path = Path(metadata_path).resolve()
-    metadata_str = "{}"
-    if abs_metadata_path.is_file():
-        try:
-            metadata_str = abs_metadata_path.read_text(encoding="utf-8")
-        except Exception:
-            pass
-
-    file_exists = abs_video_path.is_file()
-    file_size = abs_video_path.stat().st_size if file_exists else 0
-
-    comp_path = validator_self.project_dir / (
-        "hyperframes_reels/index.html" if "reels" in video_path.name else "hyperframes/index.html"
+def _resolve_comp_summary_and_text(project_dir: Path, video_path: Path) -> tuple[Optional[Path], str, str]:
+    comp_path = project_dir / (
+        "hyperframes_reels/index.html" if "reels" in video_path.name else HYPERFRAMES_INDEX_HTML
     )
     if not comp_path.is_file():
-        comp_path = validator_self.project_dir / "hyperframes/index.html"
-
+        comp_path = project_dir / HYPERFRAMES_INDEX_HTML
     if not comp_path.is_file():
-        return [
-            result_factory(
-                check_name="Visual Quality",
-                passed=False,
-                message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
-                details={"error": "Missing HyperFrames HTML source"},
-            )
-        ]
+        return None, "", ""
+    try:
+        comp_text = comp_path.read_text(encoding="utf-8").strip()
+        scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
+        scene_count = len(scene_ids) or len(
+            re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text)
+        )
+        comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {scene_count}"
+        return comp_path, comp_summary, comp_text
+    except OSError:
+        return comp_path, "Composition: error reading", ""
 
-    if (validator_self.project_dir / "artifacts" / "script_en_US.json").is_file():
-        script_path = validator_self.project_dir / "artifacts" / "script_en_US.json"
-    elif (validator_self.project_dir / "artifacts" / "script_vi.json").is_file():
-        script_path = validator_self.project_dir / "artifacts" / "script_vi.json"
-    elif (validator_self.project_dir / "artifacts" / "script.json").is_file():
-        script_path = validator_self.project_dir / "artifacts" / "script.json"
+
+def _resolve_script_summary_and_text(project_dir: Path) -> tuple[str, str]:
+    artifacts_dir = project_dir / "artifacts"
+    for candidate_name in (SCRIPT_EN_US_JSON, "script_vi.json", "script.json"):
+        script_path = artifacts_dir / candidate_name
+        if script_path.is_file():
+            break
     else:
-        script_path = validator_self.project_dir / "artifacts" / "script_en_US.json"
+        script_path = artifacts_dir / SCRIPT_EN_US_JSON
 
-    comp_summary = "Composition: not found"
-    comp_text = ""
-    if comp_path.is_file():
-        try:
-            comp_text = comp_path.read_text(encoding="utf-8").strip()
-            scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
-            scene_count = len(scene_ids) or len(
-                re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text)
-            )
-            comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {scene_count}"
-        except OSError:
-            comp_text = ""
+    if not script_path.is_file():
+        return "Script: not found", ""
 
-    script_summary = "Script: not found"
-    script_full_text = ""
-    if script_path.is_file():
-        try:
-            script_data = json.loads(script_path.read_text(encoding="utf-8"))
-            sections = script_data.get("sections", [])
-            script_summary = f"Script Sections: {len(sections)}"
-            script_full_text = "\n".join(
-                str(s.get("text") or s.get("text_vi") or s.get("narration") or "")
-                for s in sections
-            ).strip()
-        except Exception:
-            pass
+    try:
+        script_data = json.loads(script_path.read_text(encoding="utf-8"))
+        sections = script_data.get("sections", [])
+        script_summary = f"Script Sections: {len(sections)}"
+        script_full_text = "\n".join(
+            str(s.get("text") or s.get("text_vi") or s.get("narration") or "")
+            for s in sections
+        ).strip()
+        return script_summary, script_full_text
+    except Exception:
+        return "Script: error reading", ""
 
-    if file_exists and file_size > 0:
-        try:
-            frame_paths = validator_self._extract_frames(abs_video_path, frame_dir)
-        except Exception:
-            frame_paths = []
 
-    if not frame_paths:
-        return [
-            result_factory(
-                check_name="Visual Quality",
-                passed=False,
-                message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
-                details={"error": "Frame extraction failed"},
-            )
-        ]
-
-    probe_fn = _get_probe_audio_streams()
-    audio_stream_summary = probe_fn(abs_video_path)
-
-    narration_asset = validator_self.project_dir / "assets" / "narration.mp3"
-    narration_words_js = validator_self.project_dir / "hyperframes" / "assets" / "narration_words.js"
-    narration_assets_summary = (
-        f"narration.mp3: {'present (' + str(narration_asset.stat().st_size) + ' bytes)' if narration_asset.is_file() else 'absent'}"
-        + f"; narration_words.js: {'present' if narration_words_js.is_file() else 'absent'}"
-    )
-
-    prompt = build_review_prompt(
-        abs_video_path=abs_video_path,
-        file_exists=file_exists,
-        file_size=file_size,
-        comp_summary=comp_summary,
-        comp_text=comp_text,
-        script_summary=script_summary,
-        script_full_text=script_full_text,
-        audio_stream_summary=audio_stream_summary,
-        narration_assets_summary=narration_assets_summary,
-        metadata_str=metadata_str,
-        frame_paths=frame_paths,
-    )
-
-    root_dir = str(Path(__file__).resolve().parent.parent)
-    timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "120"))
-
+def _setup_agent_env_and_cmd(agent_bin: str) -> tuple[list[str], dict[str, str]]:
     is_codex = "codex" in Path(agent_bin).name.lower()
     env = os.environ.copy()
     if is_codex:
@@ -262,7 +196,6 @@ def execute_cli_review_helper(
                 except Exception:
                     pass
 
-    if is_codex:
         codex_model = env.get("CODEX_MODEL", "model-medium-hight")
         cmd = [
             agent_bin,
@@ -283,6 +216,145 @@ def execute_cli_review_helper(
             "json",
             "-",
         ]
+    return cmd, env
+
+
+def _build_review_category_results(
+    response_data: dict,
+    result_factory: Any,
+    reviewer_name: str,
+    is_transport: bool,
+    artifact_hash: str,
+    ts: str,
+) -> list[Any]:
+    results = []
+    checks = {
+        CHECK_NAME_VISUAL_QUALITY: "visual_quality",
+        "Audio Sync": "audio_sync",
+        "Content Appropriateness": "content_appropriateness",
+        "Brand Compliance": "brand_compliance",
+    }
+    for check_name, check_key in checks.items():
+        if check_key not in response_data:
+            raise ValueError(f"Agent CLI review missing mandatory category: {check_key}")
+        check_data = response_data.get(check_key, {})
+        if not isinstance(check_data, dict):
+            raise ValueError(f"Agent CLI review invalid format for category: {check_key}")
+        passed = check_data.get("passed") is True
+        score = check_data.get("score", 0)
+        notes = check_data.get("notes", "")
+        results.append(
+            result_factory(
+                check_name=check_name,
+                passed=passed,
+                message=f"{check_name}: {'✓ PASS' if passed else '✗ FAIL'} (Score: {score}) - {notes}",
+                details={
+                    "score": score,
+                    "notes": notes,
+                    "reviewer": reviewer_name,
+                    "review_mode": "offline_transport" if is_transport else "codex_cli",
+                    "test_only_transport": is_transport,
+                    "inspected_artifact_hash": artifact_hash,
+                    "timestamp": ts,
+                },
+            )
+        )
+
+    if response_data.get("overall_passed") is not True and all(r.passed for r in results):
+        results.append(
+            result_factory(
+                check_name="Agent Review Gate",
+                passed=False,
+                message=str(response_data.get("summary") or "Strict review rejected asset"),
+                details={
+                    "reviewer": reviewer_name,
+                    "review_mode": "offline_transport" if is_transport else "codex_cli",
+                    "test_only_transport": is_transport,
+                    "inspected_artifact_hash": artifact_hash,
+                    "timestamp": ts,
+                },
+            )
+        )
+    return results
+
+
+def execute_cli_review_helper(
+    validator_self: Any,
+    agent_bin: str,
+    video_path: Path,
+    metadata_path: Path,
+    result_factory: Any,
+    **_kwargs: Any,
+) -> List[Any]:
+    """Execute review via CLI binary and parse result."""
+    abs_video_path = Path(video_path).resolve()
+    file_exists = abs_video_path.is_file()
+    file_size = abs_video_path.stat().st_size if file_exists else 0
+
+    comp_path, comp_summary, comp_text = _resolve_comp_summary_and_text(validator_self.project_dir, video_path)
+    if comp_path is None:
+        return [
+            result_factory(
+                check_name=CHECK_NAME_VISUAL_QUALITY,
+                passed=False,
+                message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
+                details={"error": "Missing HyperFrames HTML source"},
+            )
+        ]
+
+    frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-review-"))
+    frame_paths: List[Path] = []
+    if file_exists and file_size > 0:
+        try:
+            frame_paths = validator_self._extract_frames(abs_video_path, frame_dir)
+        except Exception:
+            frame_paths = []
+
+    if not frame_paths:
+        return [
+            result_factory(
+                check_name=CHECK_NAME_VISUAL_QUALITY,
+                passed=False,
+                message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
+                details={"error": "Frame extraction failed"},
+            )
+        ]
+
+    script_summary, script_full_text = _resolve_script_summary_and_text(validator_self.project_dir)
+    audio_stream_summary = _get_probe_audio_streams()(abs_video_path)
+
+    narration_asset = validator_self.project_dir / "assets" / "narration.mp3"
+    narration_words_js = validator_self.project_dir / "hyperframes" / "assets" / "narration_words.js"
+    narration_assets_summary = (
+        f"narration.mp3: {'present (' + str(narration_asset.stat().st_size) + ' bytes)' if narration_asset.is_file() else 'absent'}"
+        + f"; narration_words.js: {'present' if narration_words_js.is_file() else 'absent'}"
+    )
+
+    metadata_str = "{}"
+    abs_metadata_path = Path(metadata_path).resolve()
+    if abs_metadata_path.is_file():
+        try:
+            metadata_str = abs_metadata_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    prompt = build_review_prompt(
+        abs_video_path=abs_video_path,
+        file_exists=file_exists,
+        file_size=file_size,
+        comp_summary=comp_summary,
+        comp_text=comp_text,
+        script_summary=script_summary,
+        script_full_text=script_full_text,
+        audio_stream_summary=audio_stream_summary,
+        narration_assets_summary=narration_assets_summary,
+        metadata_str=metadata_str,
+        frame_paths=frame_paths,
+    )
+
+    cmd, env = _setup_agent_env_and_cmd(agent_bin)
+    timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "120"))
+    root_dir = str(Path(__file__).resolve().parent.parent)
 
     run_fn = validator_self._review_transport or _get_subprocess_run()
     proc = run_fn(
@@ -308,56 +380,131 @@ def execute_cli_review_helper(
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     reviewer_name = "offline_test_transport" if validator_self._review_transport else Path(agent_bin).name
 
-    results = []
-    checks = {
-        "Visual Quality": "visual_quality",
-        "Audio Sync": "audio_sync",
-        "Content Appropriateness": "content_appropriateness",
-        "Brand Compliance": "brand_compliance",
-    }
-    for check_name, check_key in checks.items():
-        if check_key not in response_data:
-            raise ValueError(f"Agent CLI review missing mandatory category: {check_key}")
-        check_data = response_data.get(check_key, {})
-        if not isinstance(check_data, dict):
-            raise ValueError(f"Agent CLI review invalid format for category: {check_key}")
-        passed = check_data.get("passed") is True
-        score = check_data.get("score", 0)
-        notes = check_data.get("notes", "")
-        results.append(
-            result_factory(
-                check_name=check_name,
-                passed=passed,
-                message=f"{check_name}: {'✓ PASS' if passed else '✗ FAIL'} (Score: {score}) - {notes}",
-                details={
-                    "score": score,
-                    "notes": notes,
-                    "reviewer": reviewer_name,
-                    "review_mode": "offline_transport" if validator_self._review_transport else "codex_cli",
-                    "test_only_transport": bool(validator_self._review_transport),
-                    "inspected_artifact_hash": artifact_hash,
-                    "timestamp": ts,
-                },
-            )
-        )
+    return _build_review_category_results(
+        response_data=response_data,
+        result_factory=result_factory,
+        reviewer_name=reviewer_name,
+        is_transport=bool(validator_self._review_transport),
+        artifact_hash=artifact_hash,
+        ts=ts,
+    )
 
-    if response_data.get("overall_passed") is not True and all(r.passed for r in results):
-        results.append(
+
+def _check_mock_review_policy(
+    validator_self: Any,
+    result_factory: Any,
+    artifact_hash: str,
+    ts: str,
+) -> Optional[List[Any]]:
+    is_mock_env = os.environ.get("CODEX_AGENT_VALIDATION_MOCK") == "1" or os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1"
+    is_production = os.environ.get("PRODUCTION_RELEASE") == "1" or os.environ.get("STRICT_PRODUCTION") == "1"
+
+    if not (is_mock_env or validator_self._review_transport is not None):
+        return None
+
+    if is_production:
+        injected = validator_self._review_transport is not None
+        return [
             result_factory(
-                check_name="Agent Review Gate",
+                check_name=CHECK_NAME_CODEX_GATE,
                 passed=False,
-                message=str(response_data.get("summary") or "Strict review rejected asset"),
+                message=(
+                    "Offline test review transport strictly forbidden in production mode"
+                    if injected
+                    else "Mock review strictly forbidden in production mode"
+                ),
                 details={
-                    "reviewer": reviewer_name,
-                    "review_mode": "offline_transport" if validator_self._review_transport else "codex_cli",
-                    "test_only_transport": bool(validator_self._review_transport),
-                    "inspected_artifact_hash": artifact_hash,
+                    "error": "test_transport_forbidden_in_production" if injected else "mock_forbidden_in_production",
+                    "review_mode": "offline_transport" if injected else "mock",
+                    "test_only_transport": injected,
                     "timestamp": ts,
+                    "inspected_artifact_hash": artifact_hash,
                 },
             )
-        )
+        ]
+    if is_mock_env:
+        return [
+            result_factory(check_name=CHECK_NAME_VISUAL_QUALITY, passed=True, message=f"{CHECK_NAME_VISUAL_QUALITY}: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+            result_factory(check_name="Audio Sync", passed=True, message="Audio Sync: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+            result_factory(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+            result_factory(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
+        ]
+    return None
 
-    return results
+
+def _check_strict_pre_frames(
+    validator_self: Any,
+    video_path: Path,
+    abs_video_path: Path,
+    result_factory: Any,
+) -> Optional[List[Any]]:
+    comp_path = validator_self.project_dir / (
+        "hyperframes_reels/index.html"
+        if "reels" in Path(video_path).name
+        else HYPERFRAMES_INDEX_HTML
+    )
+    if not comp_path.is_file():
+        comp_path = validator_self.project_dir / HYPERFRAMES_INDEX_HTML
+    if not comp_path.is_file():
+        return [
+            result_factory(
+                check_name=CHECK_NAME_VISUAL_QUALITY,
+                passed=False,
+                message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
+                details={"error": "Missing HyperFrames HTML source"},
+            )
+        ]
+    _pre_frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-pre-"))
+    try:
+        _pre_frames = validator_self._extract_frames(abs_video_path, _pre_frame_dir)
+    except Exception:
+        _pre_frames = []
+    if not _pre_frames:
+        return [
+            result_factory(
+                check_name=CHECK_NAME_VISUAL_QUALITY,
+                passed=False,
+                message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
+                details={"error": "Frame extraction failed"},
+            )
+        ]
+    return None
+
+
+def _check_claude_module_lambda(result_factory: Any, ts: str, artifact_hash: str) -> Optional[List[Any]]:
+    claude_mod = sys.modules.get("scripts.claude_agent_validation")
+    if claude_mod and hasattr(claude_mod, "resolve_claude_cli"):
+        claude_fn = getattr(claude_mod, "resolve_claude_cli")
+        if getattr(claude_fn, "__name__", "") == "<lambda>" and not claude_fn():
+            return [
+                result_factory(
+                    check_name="CLAUDE Agent Review Gate",
+                    passed=False,
+                    message="CLAUDE Agent strict review unavailable: FileNotFoundError: claude CLI not found",
+                    details={"error": "claude CLI not found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
+                )
+            ]
+    return None
+
+
+def _run_cli_review_with_retries(
+    validator_self: Any,
+    agent_bin: str,
+    video_path: Path,
+    metadata_path: Path,
+    prior_results: Optional[List[Any]],
+) -> tuple[Optional[List[Any]], Optional[Exception]]:
+    attempts = max(1, getattr(validator_self, "retry_count", 1))
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return validator_self._execute_cli_review(agent_bin, video_path, metadata_path, prior_results), None
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts:
+                logger.warning("Agent CLI review attempt %d/%d failed: %s; retrying...", attempt, attempts, exc)
+                time.sleep(0.5)
+    return None, last_exc
 
 
 def codex_agent_strict_review_helper(
@@ -372,77 +519,15 @@ def codex_agent_strict_review_helper(
     artifact_hash = compute_sha256(abs_video_path)
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    # Mock isolation: mock reviews are blocked in strict production release
-    is_mock_env = os.environ.get("CODEX_AGENT_VALIDATION_MOCK") == "1" or os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1"
-    is_production = os.environ.get("PRODUCTION_RELEASE") == "1" or os.environ.get("STRICT_PRODUCTION") == "1"
+    mock_res = _check_mock_review_policy(validator_self, result_factory, artifact_hash, ts)
+    if mock_res is not None:
+        return mock_res
 
-    if is_mock_env or validator_self._review_transport is not None:
-        if is_production:
-            injected_transport = validator_self._review_transport is not None
-            return [
-                result_factory(
-                    check_name="Codex Agent Review Gate",
-                    passed=False,
-                    message=(
-                        "Offline test review transport strictly forbidden in production mode"
-                        if injected_transport
-                        else "Mock review strictly forbidden in production mode"
-                    ),
-                    details={
-                        "error": "test_transport_forbidden_in_production" if injected_transport else "mock_forbidden_in_production",
-                        "review_mode": "offline_transport" if injected_transport else "mock",
-                        "test_only_transport": injected_transport,
-                        "timestamp": ts,
-                        "inspected_artifact_hash": artifact_hash,
-                    },
-                )
-            ]
-        if is_mock_env:
-            return [
-                result_factory(check_name="Visual Quality", passed=True, message="Visual Quality: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                result_factory(check_name="Audio Sync", passed=True, message="Audio Sync: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                result_factory(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                result_factory(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-            ]
-
-    # R6/R7: Hoist missing-HTML and frame-extraction pre-checks before the
-    # CLI gate so strict-mode failures are reported even when no CLI binary
-    # is available on the host.
     if validator_self.strict_mode:
-        comp_path = validator_self.project_dir / (
-            "hyperframes_reels/index.html"
-            if "reels" in Path(video_path).name
-            else "hyperframes/index.html"
-        )
-        if not comp_path.is_file():
-            comp_path = validator_self.project_dir / "hyperframes/index.html"
-        if not comp_path.is_file():
-            return [
-                result_factory(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
-                    details={"error": "Missing HyperFrames HTML source"},
-                )
-            ]
-        _pre_frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-pre-"))
-        try:
-            _pre_frames = validator_self._extract_frames(abs_video_path, _pre_frame_dir)
-        except Exception:
-            _pre_frames = []
-        if not _pre_frames:
-            return [
-                result_factory(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
-                    details={"error": "Frame extraction failed"},
-                )
-            ]
+        pre_err = _check_strict_pre_frames(validator_self, video_path, abs_video_path, result_factory)
+        if pre_err is not None:
+            return pre_err
 
-    # An explicitly injected offline transport is authoritative for this
-    # instance. Route it before CLI discovery so rehearsal/tests cannot
-    # accidentally touch a live agent binary or fall back to heuristics.
     if validator_self._review_transport is not None:
         try:
             return validator_self._execute_cli_review(
@@ -452,10 +537,10 @@ def codex_agent_strict_review_helper(
                 prior_results,
             )
         except Exception as exc:
-            logger.error("Injected strict review transport failed: %s", exc)
+            logger.exception("Injected strict review transport failed: %s", exc)
             return [
                 result_factory(
-                    check_name="Codex Agent Review Gate",
+                    check_name=CHECK_NAME_CODEX_GATE,
                     passed=False,
                     message=f"Injected strict review transport failed: {exc}",
                     details={
@@ -470,28 +555,16 @@ def codex_agent_strict_review_helper(
                 )
             ]
 
-    claude_mod = sys.modules.get("scripts.claude_agent_validation")
-    if claude_mod and hasattr(claude_mod, "resolve_claude_cli"):
-        claude_fn = getattr(claude_mod, "resolve_claude_cli")
-        if getattr(claude_fn, "__name__", "") == "<lambda>":
-            claude_bin = claude_fn()
-            if not claude_bin:
-                return [
-                    result_factory(
-                        check_name="CLAUDE Agent Review Gate",
-                        passed=False,
-                        message="CLAUDE Agent strict review unavailable: FileNotFoundError: claude CLI not found",
-                        details={"error": "claude CLI not found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
-                    )
-                ]
+    claude_res = _check_claude_module_lambda(result_factory, ts, artifact_hash)
+    if claude_res is not None:
+        return claude_res
 
-    resolver_fn = _get_resolve_agent_cli()
-    agent_bin = resolver_fn()
+    agent_bin = _get_resolve_agent_cli()()
     if not agent_bin:
         if validator_self.strict_mode:
             return [
                 result_factory(
-                    check_name="Codex Agent Review Gate",
+                    check_name=CHECK_NAME_CODEX_GATE,
                     passed=False,
                     message="Codex agent review unavailable: Agent CLI binary not found",
                     details={"error": "agent_cli_not_found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
@@ -500,22 +573,15 @@ def codex_agent_strict_review_helper(
         logger.info("Agent CLI not found; falling back to non-strict autonomous heuristic review")
         return validator_self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
 
-    attempts = max(1, getattr(validator_self, "retry_count", 1))
-    last_exc = None
-    for attempt in range(1, attempts + 1):
-        try:
-            return validator_self._execute_cli_review(agent_bin, video_path, metadata_path, prior_results)
-        except Exception as exc:
-            last_exc = exc
-            if attempt < attempts:
-                logger.warning("Agent CLI review attempt %d/%d failed: %s; retrying...", attempt, attempts, exc)
-                time.sleep(0.5)
-    exc = last_exc
+    results, exc = _run_cli_review_with_retries(validator_self, agent_bin, video_path, metadata_path, prior_results)
+    if results is not None:
+        return results
+
     if validator_self.strict_mode:
-        logger.error("Strict Codex Agent review failed after %d attempts: %s", attempts, exc)
+        logger.error("Strict Codex Agent review failed after retry attempts: %s", exc)
         return [
             result_factory(
-                check_name="Codex Agent Review Gate",
+                check_name=CHECK_NAME_CODEX_GATE,
                 passed=False,
                 message=f"Strict Codex agent review failed: {exc}",
                 details={"error": str(exc), "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},

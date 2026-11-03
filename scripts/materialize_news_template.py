@@ -511,117 +511,79 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
     return html
 
 
-def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
-    is_full = variant == "full"
-    total = float(content.get("duration", 45.0 if is_full else 40.0))
-    if not is_full:
-        total = min(total, 58.0)
+def _resolve_explainer_slots(content: dict[str, Any]) -> tuple[dict, dict, dict, dict, dict]:
+    slots = content.get("slots") if isinstance(content.get("slots"), dict) else {}
+    return (
+        slots,
+        slots.get("hook") if isinstance(slots.get("hook"), dict) else {},
+        slots.get("capability") if isinstance(slots.get("capability"), dict) else {},
+        slots.get("steps") if isinstance(slots.get("steps"), dict) else {},
+        slots.get("limitations") if isinstance(slots.get("limitations"), dict) else {},
+    )
 
-    slots = content.get("slots", {}) if isinstance(content.get("slots"), dict) else {}
-    hook = slots.get("hook", {}) if isinstance(slots.get("hook"), dict) else {}
-    cap = slots.get("capability", {}) if isinstance(slots.get("capability"), dict) else {}
-    steps = slots.get("steps", {}) if isinstance(slots.get("steps"), dict) else {}
-    lim = slots.get("limitations", {}) if isinstance(slots.get("limitations"), dict) else {}
 
-    e_kicker = esc(content.get("kicker", "HƯỚNG DẪN"))
-    e_title = esc(content.get("title", ""))
-    e_hook_text = esc(hook.get("text", ""))
+def _resolve_explainer_timings(content: dict[str, Any], is_full: bool) -> tuple[float, float, float, float, float, float, float, float]:
+    total = min(float(content.get("duration", 40.0)), 58.0) if not is_full else float(content.get("duration", 45.0))
+    s1 = 8.0 if is_full else 10.0
+    return total, s1, s1, (14.0 if is_full else 18.0), (22.0 if is_full else 28.0), (14.0 if is_full else 12.0), 36.0, 9.0
 
-    e_cap_label = esc(cap.get("label", ""))
-    e_cap_text = esc(cap.get("text", ""))
 
-    e_steps_text = esc(steps.get("text", ""))
-
-    e_lim_head = esc(lim.get("heading", "Hạn chế"))
-    e_lim_text = esc(lim.get("text", ""))
-
-    narration_key = "narration" if is_full else "narration_short"
-    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
-    narration = esc(narration_src)
-
-    max_caps = 4 if is_full else 3
-    captions = content.get("caption_lines")
-    if not captions:
-        captions = derive_captions(narration_src, total, max_caps)
-
-    cap_html, cap_tl = _caption_elements(captions, track_index=10)
-
-    audio_src = "assets/narration.mp3" if is_full else "assets/narration_reels.mp3"
-
-    include_lim = is_full and bool(e_lim_text)
-
-    # timings
-    s1_dur = 8.0 if is_full else 10.0
-    s2_start = 8.0 if is_full else 10.0
-    s2_dur = 14.0 if is_full else 18.0
-    s3_start = 22.0 if is_full else 28.0
-    s3_dur = 14.0 if is_full else 12.0
-    s4_start = 36.0
-    s4_dur = 9.0
-
+def _resolve_explainer_cta(content: dict[str, Any], e_title: str, e_kicker: str, narration: str) -> str:
     raw_cta = content.get("cta_text")
     if not raw_cta:
         sample = f"{e_title} {e_kicker} {narration}"
         is_vi = any(c in sample for c in "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđĐ")
         raw_cta = "Bạn nghĩ sao? Hãy bình luận bên dưới 👇" if is_vi else "What do you think? Let me know below 👇"
-    e_cta = esc(raw_cta)
-    cta_banner_html = f'        <div id="cta-banner" class="cta-banner"><span>{e_cta}</span></div>\n'
-    steps_cta = "" if include_lim else cta_banner_html
+    return esc(raw_cta)
 
-    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
-    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
-    hook_v = " has-visual" if hook.get("visual") else ""
-    cap_v = " has-visual" if cap.get("visual") else ""
-    steps_v = " has-visual" if steps.get("visual") else ""
-    lim_v = " has-visual" if lim.get("visual") else ""
 
-    css = (
-        "<style>\n"
-        ":root { --accent: #06d6a0; }\n"
-        "* { box-sizing: border-box; }\n"
-        "body { margin:0;background:#0a1410;color:#f1f1f1;font-family:'BeVietnamPro',Inter,system-ui,sans-serif; }\n"
-        "#root { position:relative;width:1080px;height:1920px;overflow:hidden;background:#0a1410; }\n"
-        ".bg-fill { position:absolute;inset:0;background:radial-gradient(ellipse at 30% 80%,rgba(6,214,160,.08) 0%,transparent 55%),linear-gradient(180deg,#0a1410 0%,#0d1f1a 100%); }\n"
-        ".clip { position:absolute;inset:0; }\n"
-        ".scene-inner { display:flex;flex-direction:column;justify-content:center;align-items:center;width:100%;height:100%;padding:110px 70px 170px;text-align:center; }\n"
-        f".kicker {{ font-size:22px;font-weight:700;letter-spacing:.35em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;padding:8px 24px;border:2px solid var(--accent);border-radius:6px; }}\n"
-        f".title {{ font-size:{'56px' if is_full else '48px'};font-weight:900;line-height:1.15;color:#fff;max-width:900px;margin:0 auto 40px; }}\n"
-        f".scene-text {{ font-size:{'34px' if is_full else '30px'};font-weight:400;line-height:1.6;color:#c8d8d4;max-width:860px;margin:0; }}\n"
-        f".capability-card {{ width:100%;max-width:{'820px' if is_full else '780px'};padding:40px 48px;border:1px solid rgba(6,214,160,.3);border-radius:14px;background:rgba(6,214,160,.07); }}\n"
-        f".capability-label {{ display:block;font-size:26px;font-weight:700;color:var(--accent);margin-bottom:14px; }}\n"
-        f".capability-text {{ font-size:{'36px' if is_full else '32px'};line-height:1.45;color:#fff;margin:0; }}\n"
-        f".caption {{ position:absolute;top:auto !important;bottom:96px !important;left:60px;right:60px;height:auto !important;min-height:56px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:14px 28px;background:rgba(0,0,0,0.75);border-radius:14px;backdrop-filter:blur(8px);z-index:100; }}\n"
-        ".limitation-box { width:100%;max-width:820px;padding:42px 48px;border:1px solid rgba(255,255,255,.12);border-left:4px solid var(--accent);border-radius:12px;background:rgba(255,255,255,.03);text-align:left; }\n"
-        ".limitation-box p { font-size:28px;line-height:1.5;color:#c8d8d4;margin:0; }\n"
-        ".steps-box { width:100%;max-width:820px; }\n"
-        ".cta-banner { display:inline-flex;align-items:center;justify-content:center;margin-top:28px;padding:14px 32px;background:linear-gradient(135deg,rgba(6,214,160,0.2) 0%,rgba(6,214,160,0.08) 100%);border:1.5px solid var(--accent);border-radius:30px;font-size:24px;font-weight:700;color:#fff;letter-spacing:0.02em;box-shadow:0 8px 24px rgba(6,214,160,0.18); }\n"
-        f"{media_css}\n"
-        f"{visual_layout_css()}\n"
-        "</style>"
-    )
+def _build_explainer_css(is_full: bool, media_css: str) -> str:
+    title_sz = "56px" if is_full else "48px"
+    scene_sz = "34px" if is_full else "30px"
+    cap_w = "820px" if is_full else "780px"
+    cap_sz = "36px" if is_full else "32px"
+    return f"""<style>
+:root {{ --accent: #06d6a0; }}
+* {{ box-sizing: border-box; }}
+body {{ margin:0;background:#0a1410;color:#f1f1f1;font-family:'BeVietnamPro',Inter,system-ui,sans-serif; }}
+#root {{ position:relative;width:1080px;height:1920px;overflow:hidden;background:#0a1410; }}
+.bg-fill {{ position:absolute;inset:0;background:radial-gradient(ellipse at 30% 80%,rgba(6,214,160,.08) 0%,transparent 55%),linear-gradient(180deg,#0a1410 0%,#0d1f1a 100%); }}
+.clip {{ position:absolute;inset:0; }}
+.scene-inner {{ display:flex;flex-direction:column;justify-content:center;align-items:center;width:100%;height:100%;padding:110px 70px 170px;text-align:center; }}
+.kicker {{ font-size:22px;font-weight:700;letter-spacing:.35em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;padding:8px 24px;border:2px solid var(--accent);border-radius:6px; }}
+.title {{ font-size:{title_sz};font-weight:900;line-height:1.15;color:#fff;max-width:900px;margin:0 auto 40px; }}
+.scene-text {{ font-size:{scene_sz};font-weight:400;line-height:1.6;color:#c8d8d4;max-width:860px;margin:0; }}
+.capability-card {{ width:100%;max-width:{cap_w};padding:40px 48px;border:1px solid rgba(6,214,160,.3);border-radius:14px;background:rgba(6,214,160,.07); }}
+.capability-label {{ display:block;font-size:26px;font-weight:700;color:var(--accent);margin-bottom:14px; }}
+.capability-text {{ font-size:{cap_sz};line-height:1.45;color:#fff;margin:0; }}
+.caption {{ position:absolute;top:auto !important;bottom:96px !important;left:60px;right:60px;height:auto !important;min-height:56px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.95);text-align:center;padding:14px 28px;background:rgba(0,0,0,0.75);border-radius:14px;backdrop-filter:blur(8px);z-index:100; }}
+.limitation-box {{ width:100%;max-width:820px;padding:42px 48px;border:1px solid rgba(255,255,255,.12);border-left:4px solid var(--accent);border-radius:12px;background:rgba(255,255,255,.03);text-align:left; }}
+.limitation-box p {{ font-size:28px;line-height:1.5;color:#c8d8d4;margin:0; }}
+.steps-box {{ width:100%;max-width:820px; }}
+.cta-banner {{ display:inline-flex;align-items:center;justify-content:center;margin-top:28px;padding:14px 32px;background:linear-gradient(135deg,rgba(6,214,160,0.2) 0%,rgba(6,214,160,0.08) 100%);border:1.5px solid var(--accent);border-radius:30px;font-size:24px;font-weight:700;color:#fff;letter-spacing:0.02em;box-shadow:0 8px 24px rgba(6,214,160,0.18); }}
+{media_css}
+{visual_layout_css()}
+</style>"""
 
-    lim_section = ""
-    if include_lim:
-        lim_section = (
-            f"    <section id=\"scene-limitations\" class=\"clip{lim_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
-            "      <div class=\"scene-inner\">\n"
-            f"        <span class=\"kicker\">{e_lim_head}</span>\n"
-            f"        <div class=\"limitation-box\"><p>{e_lim_text}</p></div>\n"
-            f"{cta_banner_html}"
-            "      </div>\n"
-            "    </section>\n"
-        )
 
-    sfx_html = (
+def _build_explainer_sfx(include_lim: bool, s2_start: float, s3_start: float, s4_start: float, total: float) -> str:
+    sfx = (
         '    <audio class="clip sfx" data-start="0" data-duration="0.8" data-track-index="10" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
         f'    <audio class="clip sfx" data-start="{_fmt_time(max(0.1, s2_start - 0.2))}" data-duration="0.8" data-track-index="11" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
         f'    <audio class="clip sfx" data-start="{_fmt_time(s2_start + 0.4)}" data-duration="0.3" data-track-index="12" src="assets/sfx/pop.mp3" data-volume="0.16"></audio>\n'
         f'    <audio class="clip sfx" data-start="{_fmt_time(max(0.1, s3_start - 0.2))}" data-duration="0.8" data-track-index="13" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
         f'    <audio class="clip sfx" data-start="{_fmt_time(s3_start + 0.4)}" data-duration="0.3" data-track-index="14" src="assets/sfx/click.mp3" data-volume="0.16"></audio>\n'
-        + (f'    <audio class="clip sfx" data-start="{_fmt_time(max(0.1, s4_start - 0.2))}" data-duration="0.8" data-track-index="15" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
-           f'    <audio class="clip sfx" data-start="{_fmt_time(s4_start + 0.3)}" data-duration="0.3" data-track-index="16" src="assets/sfx/buzz.mp3" data-volume="0.24"></audio>\n' if include_lim else '')
-        + f'    <audio class="clip sfx" data-start="{_fmt_time(max(1.0, total - 4.5))}" data-duration="0.8" data-track-index="17" src="assets/sfx/chime.mp3" data-volume="0.20"></audio>\n'
     )
+    if include_lim:
+        sfx += (
+            f'    <audio class="clip sfx" data-start="{_fmt_time(max(0.1, s4_start - 0.2))}" data-duration="0.8" data-track-index="15" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>\n'
+            f'    <audio class="clip sfx" data-start="{_fmt_time(s4_start + 0.3)}" data-duration="0.3" data-track-index="16" src="assets/sfx/buzz.mp3" data-volume="0.24"></audio>\n'
+        )
+    sfx += f'    <audio class="clip sfx" data-start="{_fmt_time(max(1.0, total - 4.5))}" data-duration="0.8" data-track-index="17" src="assets/sfx/chime.mp3" data-volume="0.20"></audio>\n'
+    return sfx
+
+
+def _build_explainer_gsap(include_lim: bool, s2_start: float, s3_start: float, s4_start: float, total: float, media_tl: str, slot_v_tl: str, cap_tl: str) -> str:
     t_st = s4_start if include_lim else s3_start
     bgm_tl = (
         f'  tl.to("#music-bg", {{ volume: 0.18, duration: 1.0, ease: "power2.in" }}, {_fmt_time(max(0.5, t_st - 1.5))});\n'
@@ -629,7 +591,6 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         f'  tl.to("#music-bg", {{ volume: 0.16, duration: 0.8, ease: "power2.out" }}, {_fmt_time(max(1.0, total - 4.5))});\n'
         f'  tl.to("#music-bg", {{ volume: 0, duration: 1.5, ease: "power2.in" }}, {_fmt_time(max(1.0, total - 1.5))});\n'
     )
-
     gsap = (
         "<script>\n"
         "(function() {\n"
@@ -661,6 +622,55 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
         "})();\n"
         "</script>"
     )
+    return gsap
+
+
+def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
+    is_full = variant == "full"
+    total, s1_dur, s2_start, s2_dur, s3_start, s3_dur, s4_start, s4_dur = _resolve_explainer_timings(content, is_full)
+    slots, hook, cap, steps, lim = _resolve_explainer_slots(content)
+
+    e_kicker = esc(content.get("kicker", "HƯỚNG DẪN"))
+    e_title = esc(content.get("title", ""))
+    e_hook_text, e_cap_label, e_cap_text = esc(hook.get("text", "")), esc(cap.get("label", "")), esc(cap.get("text", ""))
+    e_steps_text, e_lim_head, e_lim_text = esc(steps.get("text", "")), esc(lim.get("heading", "Hạn chế")), esc(lim.get("text", ""))
+
+    narration_key = "narration" if is_full else "narration_short"
+    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
+    narration = esc(narration_src)
+
+    max_caps = 4 if is_full else 3
+    captions = content.get("caption_lines") or derive_captions(narration_src, total, max_caps)
+
+    cap_html, cap_tl = _caption_elements(captions, track_index=10)
+    audio_src = "assets/narration.mp3" if is_full else "assets/narration_reels.mp3"
+    include_lim = is_full and bool(e_lim_text)
+
+    e_cta = _resolve_explainer_cta(content, e_title, e_kicker, narration)
+    cta_banner_html = f'        <div id="cta-banner" class="cta-banner"><span>{e_cta}</span></div>\n'
+    steps_cta = "" if include_lim else cta_banner_html
+
+    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
+    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
+    hook_v, cap_v = (" has-visual" if hook.get("visual") else ""), (" has-visual" if cap.get("visual") else "")
+    steps_v, lim_v = (" has-visual" if steps.get("visual") else ""), (" has-visual" if lim.get("visual") else "")
+
+    css = _build_explainer_css(is_full, media_css)
+
+    lim_section = ""
+    if include_lim:
+        lim_section = (
+            f"    <section id=\"scene-limitations\" class=\"clip{lim_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
+            "      <div class=\"scene-inner\">\n"
+            f"        <span class=\"kicker\">{e_lim_head}</span>\n"
+            f"        <div class=\"limitation-box\"><p>{e_lim_text}</p></div>\n"
+            f"{cta_banner_html}"
+            "      </div>\n"
+            "    </section>\n"
+        )
+
+    sfx_html = _build_explainer_sfx(include_lim, s2_start, s3_start, s4_start, total)
+    gsap = _build_explainer_gsap(include_lim, s2_start, s3_start, s4_start, total, media_tl, slot_v_tl, cap_tl)
 
     html = (
         "<!doctype html>\n"
@@ -713,54 +723,44 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
     return html
 
 
+def _render_package_html(package_id: str, content: dict[str, Any], variant: str) -> str:
+    if package_id == "news-debate":
+        return _build_debate_html(content, variant)
+    if package_id == "news-evidence":
+        return _build_evidence_html(content, variant)
+    return _build_explainer_html(content, variant)
+
+
+def _copy_template_sfx(project_dir: Path, dirs: list[str]) -> None:
+    sfx_src = ROOT / "assets" / "audio" / "sfx"
+    if not sfx_src.is_dir():
+        return
+    import shutil
+
+    for cname in dirs:
+        stgt = project_dir / cname / "assets" / "sfx"
+        stgt.mkdir(parents=True, exist_ok=True)
+        for sfile in sfx_src.glob("*.mp3"):
+            shutil.copy2(sfile, stgt / sfile.name)
+
+
 def materialize(package_id: str, content: dict[str, Any], project_dir: Path, variant: str) -> dict[str, Any]:
     if package_id not in ALLOWED_PACKAGES:
         raise ValueError(f"Unknown package: {package_id}")
-
     validate_content(content, package_id)
 
-    do_full = variant in {"full", "both"}
-    do_short = variant in {"short", "both"}
+    do_full, do_reels = variant in {"full", "both"}, variant in {"short", "both"}
+    full_html = _render_package_html(package_id, content, "full") if do_full else ""
+    short_html = _render_package_html(package_id, content, "reels") if do_reels else ""
 
-    do_reels = do_short
+    for subdir, html in (("hyperframes", full_html), ("hyperframes_reels", short_html)):
+        if html:
+            out = project_dir / subdir / "index.html"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(html, encoding="utf-8")
 
-    full_html = ""
-    short_html = ""
-
-    if do_full:
-        full_html = (
-            _build_debate_html(content, "full")
-            if package_id == "news-debate"
-            else _build_evidence_html(content, "full")
-            if package_id == "news-evidence"
-            else _build_explainer_html(content, "full")
-        )
-
-        out_full = project_dir / "hyperframes" / "index.html"
-        out_full.parent.mkdir(parents=True, exist_ok=True)
-        out_full.write_text(full_html, encoding="utf-8")
-
-    if do_reels:
-        short_html = (
-            _build_debate_html(content, "reels")
-            if package_id == "news-debate"
-            else _build_evidence_html(content, "reels")
-            if package_id == "news-evidence"
-            else _build_explainer_html(content, "reels")
-        )
-
-        out_reels = project_dir / "hyperframes_reels" / "index.html"
-        out_reels.parent.mkdir(parents=True, exist_ok=True)
-        out_reels.write_text(short_html, encoding="utf-8")
-
-    sfx_src = ROOT / "assets" / "audio" / "sfx"
-    if sfx_src.is_dir():
-        import shutil
-        for cname in (["hyperframes"] if do_full else []) + (["hyperframes_reels"] if do_reels else []):
-            stgt = project_dir / cname / "assets" / "sfx"
-            stgt.mkdir(parents=True, exist_ok=True)
-            for sfile in sfx_src.glob("*.mp3"):
-                shutil.copy2(sfile, stgt / sfile.name)
+    dirs = (["hyperframes"] if do_full else []) + (["hyperframes_reels"] if do_reels else [])
+    _copy_template_sfx(project_dir, dirs)
 
     from tools.news import template_provenance
 
