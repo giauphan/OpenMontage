@@ -13,7 +13,7 @@ SOURCE = (ROOT / "scripts/run_daily_news_pipeline.sh").read_text(encoding="utf-8
 def run_shell(tmp_path, body, setup=""):
     (tmp_path / "logs").mkdir(exist_ok=True)
     return subprocess.run(
-        ["bash", "-c", 'set -euo pipefail\nROOT="$1"\nPY="$2"\n' + setup + "\n" + body,
+        ["bash", "-c", 'set -euo pipefail\nROOT="$1"\nPY="$2"\nDAILY_NEWS_GATEWAY_URL="${DAILY_NEWS_GATEWAY_URL:-http://127.0.0.1:20129/custom/daily-news}"\n' + setup + "\n" + body,
          "boundary-test", str(tmp_path), sys.executable],
         cwd=tmp_path, env=os.environ.copy(), capture_output=True, text=True,
         timeout=15, check=False,
@@ -23,6 +23,18 @@ def run_shell(tmp_path, body, setup=""):
 def producer_block():
     return SOURCE.split("# PRODUCER_EXECUTION_BEGIN\n", 1)[1].split(
         "# PRODUCER_EXECUTION_END", 1)[0]
+
+
+def test_live_acquisition_uses_gateway_directly_without_cached_feed():
+    """The production runner must not recreate the retired NewsNow feed handoff."""
+    acquisition = SOURCE.split("# Step 0: Select current Gateway candidates directly", 1)[1].split(
+        "# Step 1: Select and initialize distinct current topics", 1
+    )[0]
+    producer = producer_block()
+
+    assert "news_pipeline_cli.py fetch" not in acquisition
+    assert "data/newsnow_feed.json" not in acquisition
+    assert 'PRODUCE_ARGS=(--gateway-url "$DAILY_NEWS_GATEWAY_URL")' in producer
 
 
 @pytest.mark.parametrize("producer_status,tee_status,expected", [(23, 0, 23), (0, 19, 19), (23, 19, 23)])
@@ -47,6 +59,16 @@ awk() { return 17; }
     result = run_shell(tmp_path, producer_block() + '\nprintf "ACCEPTED\\n"', setup)
     assert result.returncode != 0
     assert "ACCEPTED" not in result.stdout
+
+
+def test_no_eligible_marker_does_not_mask_producer_failure(tmp_path):
+    setup = '''
+producer() { printf 'STATUS=NO_ELIGIBLE_TOPIC\\n'; return 7; }
+PY=producer
+'''
+    result = run_shell(tmp_path, producer_block(), setup)
+    assert result.returncode == 7
+
 
 def test_producer_missing_project_id_blocks_candidates(tmp_path):
     """Missing PROJECT_ID in producer output should block candidates (new regression)."""

@@ -220,7 +220,7 @@ PRODUCER_PIPE_STATUS=("${PIPESTATUS[@]}")
 set -e
 PRODUCE_STATUS="${PRODUCER_PIPE_STATUS[0]}"
 TEE_STATUS="${PRODUCER_PIPE_STATUS[1]}"
-if grep -q "STATUS=NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG" || grep -q "NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG"; then
+if [[ "$PRODUCE_STATUS" -eq 2 && "$TEE_STATUS" -eq 0 ]] && grep -qx "STATUS=NO_ELIGIBLE_TOPIC" "$PRODUCE_LOG"; then
   echo "[$(date -u +%FT%TZ)] NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate. Exiting cleanly without retry."
   exit 0
 fi
