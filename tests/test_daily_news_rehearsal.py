@@ -284,5 +284,8 @@ def test_default_invocation_retains_live_acquisition_path_and_director_guard():
     assert rehearsal_gate < gateway_path < produce_path
     assert 'tools/news/news_pipeline_cli.py fetch' not in source
     assert 'else\n# Step 0: Select current Gateway candidates directly, or use a curated backlog.' in source
+    assert 'if [[ "${#PROJECT_IDS[@]}" -lt 3 ]]; then' in source
+    assert 'ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}.' in source
+    assert 'got ${#PROJECT_IDS[@]}." >&2' in source
     assert guard < call
     assert 'if [ -d "$PROJECT_DIR" ] && [ -z "$REHEARSAL_MANIFEST" ]; then' in source

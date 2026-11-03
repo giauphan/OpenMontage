@@ -244,8 +244,8 @@ if [ -n "$PROJECT_ID_OUTPUT" ]; then
   mapfile -t PROJECT_IDS <<< "$PROJECT_ID_OUTPUT"
 fi
 # PRODUCER_EXECUTION_END
-if [ "${#PROJECT_IDS[@]}" -lt 3 ]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}."
+if [[ "${#PROJECT_IDS[@]}" -lt 3 ]]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}." >&2
   exit 1
 fi
 fi

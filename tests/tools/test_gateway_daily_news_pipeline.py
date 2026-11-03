@@ -217,9 +217,10 @@ def test_bridge_blocks_when_supplied_sources_do_not_meet_schema_minimum():
     bridge = NewsResearchBridge()
     incomplete = research_draft()
     incomplete["research_draft"]["sources"] = incomplete["research_draft"]["sources"][:4]
+    source_candidate = candidate(1)
 
     with pytest.raises(ValueError, match="BLOCKED: research incomplete; fewer than five supplied source records"):
-        bridge.build_brief(candidate(1), incomplete)
+        bridge.build_brief(source_candidate, incomplete)
 
 
 def _newsnow_payload(source: str, count: int) -> dict:

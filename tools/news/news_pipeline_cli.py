@@ -289,7 +289,6 @@ def _ingest_and_filter_candidates(
 
     return _normalize_and_filter_candidates(
         raw_items,
-        count,
         used_ids,
         fail_closed=fail_closed,
         freshness_window_hours=freshness_window_hours,
@@ -298,7 +297,6 @@ def _ingest_and_filter_candidates(
 
 def _normalize_and_filter_candidates(
     raw_items: List[Dict[str, Any]],
-    count: int,
     used_ids: Set[str],
     fail_closed: bool = True,
     freshness_window_hours: float = 48.0,
@@ -534,7 +532,6 @@ def _produce_candidate_pool(args: argparse.Namespace, count: int, min_required: 
         gateway_items = DailyNewsGatewayClient(base_url=gateway_url).fetch_feed(base_url=gateway_url)
         candidate_pool = _normalize_and_filter_candidates(
             [_gateway_candidate_to_raw_item(item) for item in gateway_items],
-            count,
             used_ids,
             fail_closed=False,
             freshness_window_hours=max_age_hours or 48.0,
