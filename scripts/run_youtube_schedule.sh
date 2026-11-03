@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
 if [ -f .env ]; then
-  set -a; . ./.env; set +a
+  set -a
+  . ./.env
+  set +a
 fi
-export PYTHONPATH="$ROOT"
+
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 if [ -n "${OPENMONTAGE_PYTHON:-}" ]; then
   PY="$OPENMONTAGE_PYTHON"
@@ -15,4 +20,9 @@ else
   PY="$(command -v python3)"
 fi
 
-exec "$PY" scripts/schedule_youtube_today.py "$@"
+# Preserve the documented optional positional date while using the maintained CLI.
+if [ "$#" -gt 0 ] && [[ "$1" != -* ]]; then
+  set -- --date "$1" "${@:2}"
+fi
+
+exec "$PY" scripts/schedule_today_native.py "$@"

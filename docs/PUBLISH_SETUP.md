@@ -137,19 +137,18 @@ python3 scripts/publish_manual_video.py projects/quantum-ai-chips-2026 --dry-run
 python3 scripts/publish_manual_video.py projects/quantum-ai-chips-2026
 ```
 
-### Schedule Today/Tomorrow's YouTube Slots
+### Schedule Today's Queued Platform Slots
 ```bash
-# Schedule today's active projects:
+# Schedule today's queued projects across enabled platform routes:
 ./scripts/run_youtube_schedule.sh
 
 # Schedule specific date:
 ./scripts/run_youtube_schedule.sh 2026-08-17
 ```
 
-### Publish Scheduled FB + Immediate IG
-```bash
-./scripts/run_meta_publish.sh
-```
+`run_youtube_schedule.sh` delegates to the native scheduler, which handles
+enabled YouTube, Instagram, Facebook, and TikTok routes from the queued project
+configuration. It does not require the removed Meta-only wrapper.
 
 ---
 
