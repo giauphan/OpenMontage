@@ -21,7 +21,7 @@ else
 fi
 
 # Preserve the documented optional positional date while using the maintained CLI.
-if [ "$#" -gt 0 ] && [[ "$1" != -* ]]; then
+if [[ "$#" -gt 0 && "$1" != -* ]]; then
   set -- --date "$1" "${@:2}"
 fi
 
