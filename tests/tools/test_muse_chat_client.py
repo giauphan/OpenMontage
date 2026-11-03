@@ -50,8 +50,9 @@ def test_missing_thread_reseeds_once_but_approval_errors_do_not(tmp_path):
 
     def denied(url, payload, timeout):
         raise HTTPError(url, 409, "approval required", {}, None)
+    denied_client = MuseChatClient("http://127.0.0.1:20129", path, transport=denied)
     with pytest.raises(MuseChatError, match="409"):
-        MuseChatClient("http://127.0.0.1:20129", path, transport=denied).chat("news", "prompt")
+        denied_client.chat("news", "prompt")
     assert json.loads(path.read_text())["news"]["thread_id"] == NEW_THREAD
 
 

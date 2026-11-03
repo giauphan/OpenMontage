@@ -83,7 +83,8 @@ def discover_news(client, max_age_hours: float, *, now: datetime | None = None, 
         if normalized_item is None:
             continue
         valid_count += 1
-        normalized = _accept_item(*normalized_item, cutoff, now, seen)
+        raw_item, published, canonical_url = normalized_item
+        normalized = _accept_item(raw_item, published, canonical_url, cutoff, now, seen)
         if normalized is None:
             continue
         accepted.append(normalized)

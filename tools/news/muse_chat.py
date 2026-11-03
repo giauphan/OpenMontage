@@ -83,7 +83,7 @@ class MuseChatClient:
             return self.transport(self.url, payload, self.timeout), None, None
         except HTTPError as exc:
             raise MuseChatError(f"Muse gateway returned HTTP {exc.code}") from exc
-        except (OSError, TimeoutError) as exc:
+        except OSError as exc:
             raise MuseChatError("Muse gateway request failed") from exc
 
     @staticmethod
@@ -130,7 +130,7 @@ class MuseChatClient:
                 payload["reply_thread_id"] = thread
             try:
                 result, thread, cached = self._request(state, context_key, payload, thread)
-            except (OSError, TimeoutError) as exc:
+            except OSError as exc:
                 raise MuseChatError("Muse gateway request failed") from exc
             next_thread, content = self._completion(result)
             self._persist_turn(state, context_key, cached, thread, next_thread, content)

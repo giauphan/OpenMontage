@@ -43,8 +43,9 @@ def test_discovery_emits_existing_feed_contract_and_editorial_prompt():
 
 @pytest.mark.parametrize("payload", ["not json", "{}", '[{"title":"missing fields"}]', json.dumps([item("http://example.org/a")]), json.dumps([item(timestamp="unknown")]), json.dumps([item(timestamp="2026-11-03T10:00:00")])])
 def test_discovery_rejects_malformed_or_unusable_output(payload):
+    chat = Chat(payload)
     with pytest.raises(MuseNewsError):
-        discover_news(Chat(payload), max_age_hours=24, now=NOW)
+        discover_news(chat, max_age_hours=24, now=NOW)
 
 
 def test_empty_array_is_a_valid_no_news_result():
@@ -53,8 +54,9 @@ def test_empty_array_is_a_valid_no_news_result():
 
 def test_json_fence_is_accepted_without_accepting_extra_prose():
     assert len(discover_news(Chat("```json\n" + json.dumps([item()]) + "\n```"), max_age_hours=24, now=NOW)) == 1
+    prose_chat = Chat("Here is your feed: []")
     with pytest.raises(MuseNewsError):
-        discover_news(Chat("Here is your feed: []"), max_age_hours=24, now=NOW)
+        discover_news(prose_chat, max_age_hours=24, now=NOW)
 
 
 def test_fetch_command_writes_muse_leads_in_existing_format(monkeypatch, tmp_path):

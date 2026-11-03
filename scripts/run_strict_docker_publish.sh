@@ -398,7 +398,8 @@ else
 fi
 
 # ===== STAGE 3: GENERATE — produce next-day video and assets =====
-stage 3 "generate"
+GENERATE_STAGE="generate"
+stage 3 "$GENERATE_STAGE"
 export OPENMONTAGE_PYTHON="$PY"
 PROJECT_IDS=()
 GENERATION_ATTEMPT=0
@@ -434,7 +435,7 @@ else
     done
     if [[ "$GEN_STATUS" -eq 0 && "${#PROJECT_IDS[@]}" -eq 0 ]] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
       log "No eligible topics were found; ending this run without generation retries or queue changes."
-      write_state "generate" "no_eligible_topic"
+      write_state "$GENERATE_STAGE" "no_eligible_topic"
       write_state "workflow" "completed" "no_eligible_topic"
       write_heartbeat "completed"
       exit 0
@@ -469,7 +470,7 @@ PROJECT_IDS=("${FILTERED_PROJECT_IDS[@]}")
 
 [ "${#PROJECT_IDS[@]}" -gt 0 ] || {
   cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log
-  write_state "generate" "failed"
+  write_state "$GENERATE_STAGE" "failed"
   fail "expected at least 1 new project from generation after $GENERATION_ATTEMPT attempts"
 }
 VALID_COUNT=0
@@ -484,13 +485,13 @@ done
 
 if [ "$GEN_STATUS" -ne 0 ] && [ "$VALID_COUNT" -eq 0 ]; then
   cleanup_failed_generation "$LOG_DIR"/generate_"${RUN_TS}"_attempt*.log
-  write_state "generate" "failed"
+  write_state "$GENERATE_STAGE" "failed"
   fail "generation failed after $GENERATION_ATTEMPT attempts (exit=$GEN_STATUS; see $GENERATE_LOG)"
 fi
 if [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; then
-  write_state "generate" "ok"
+  write_state "$GENERATE_STAGE" "ok"
 else
-  write_state "generate" "partial" "valid_count=$VALID_COUNT"
+  write_state "$GENERATE_STAGE" "partial" "valid_count=$VALID_COUNT"
 fi
 log "generated projects: ${PROJECT_IDS[*]}"
 write_state "generate-projects" "ok" "projects=$(IFS=,; echo "${PROJECT_IDS[*]}")"
