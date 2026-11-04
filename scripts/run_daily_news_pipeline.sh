@@ -900,8 +900,14 @@ materialize_hyperframes_assets() {
     local max_narration_cap=74.5
     if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
       if command -v "$edge_tts_cmd" >/dev/null 2>&1 || [ -x "$edge_tts_cmd" ]; then
-        # Preserve natural speech pacing: allow only subtle conversational adjustments (max +/-10%)
-        for try_rate in "+3%" "-3%" "+5%" "-5%" "+8%" "-8%" "+10%" "-10%"; do
+        # Preserve natural speech pacing: allow conversational adjustments (up to +/-15%)
+        local try_rates=()
+        if awk -v d="$narration_duration" 'BEGIN{exit !(d < 65.0)}'; then
+          try_rates=("-3%" "-5%" "-7%" "-9%" "-11%" "-13%" "-15%")
+        else
+          try_rates=("+3%" "+5%" "+7%" "+9%" "+11%" "+13%" "+15%")
+        fi
+        for try_rate in "${try_rates[@]}"; do
           if "$edge_tts_cmd" --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
             try_dur=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration.rate_try.mp3" 2>/dev/null || echo 0)
             if awk -v d="$try_dur" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
@@ -917,11 +923,11 @@ materialize_hyperframes_assets() {
 
       # If edge-tts was unavailable or couldn't land in [65, 74.5]s, use ffmpeg atempo on near-fit audio
       if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
-        if awk -v d="$narration_duration" 'BEGIN{exit !(d >= 55.0 && d <= 85.0)}'; then
+        if awk -v d="$narration_duration" 'BEGIN{exit !(d >= 50.0 && d <= 90.0)}'; then
           local target_dur=69.0
           local tempo
           tempo=$(awk -v d="$narration_duration" -v t="$target_dur" 'BEGIN{printf "%.4f", d / t}')
-          if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.9 && t <= 1.1)}'; then
+          if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.80 && t <= 1.25)}'; then
             if "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -filter:a "atempo=$tempo" -vn "$narration.tempo_adj.mp3" >/dev/null 2>&1; then
               mv "$narration.tempo_adj.mp3" "$narration"
               narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
