@@ -209,7 +209,9 @@ fi
 # PRODUCER_EXECUTION_BEGIN
 PRODUCE_LOG="$(mktemp "$ROOT/logs/news_produce_XXXXXXXX.log")"
 PRODUCE_ARGS=(--gateway-url "$DAILY_NEWS_GATEWAY_URL")
-if [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.json" ]]; then
+if [[ "${STRICT_FRESH_GATEWAY_CACHE:-0}" == "1" ]]; then
+  PRODUCE_ARGS=(--input "data/newsnow_feed.json" --no-hybrid-discovery)
+elif [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/data/daily_candidates.json" ]]; then
   PRODUCE_ARGS=(--input "data/daily_candidates.json")
 elif [[ "${HAS_CURATED_READY:-0}" -eq 1 ]] && [[ -f "$ROOT/config/sources/production_agent_engineering_feed.json" ]]; then
   PRODUCE_ARGS=(--input "config/sources/production_agent_engineering_feed.json")

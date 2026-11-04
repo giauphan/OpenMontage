@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any, Dict, List
@@ -317,6 +318,77 @@ def test_write_feed_atomic_write(tmp_path, monkeypatch):
     assert len(saved) == 4
 
 
+def test_refresh_feed_replaces_cache_only_with_fresh_ranked_candidates(tmp_path, monkeypatch):
+    """Catches accepting a stale/malformed Gateway response or overwriting the cache before validation."""
+    client = DailyNewsGatewayClient("http://127.0.0.1:20129/custom/daily-news")
+    cache = tmp_path / "newsnow_feed.json"
+    cache.write_text(json.dumps([{"id": "previous"}]), encoding="utf-8")
+
+    def fake_urlopen(req, timeout=0):
+        assert req.full_url.endswith("/api/v1/discover")
+        assert json.loads(req.data.decode("utf-8")) == {"limit": 2, "topics": ["agent_tool_use"]}
+        return FakeHttpResponse({
+            "status": "ELIGIBLE",
+            "tier": "tier_2_automated",
+            "count": 2,
+            "candidates": [
+                {
+                    "candidate_id": "fresh-1",
+                    "canonical_url": "https://example.com/fresh-1",
+                    "title": "Fresh agent release one",
+                    "published_at": "2026-11-04T05:00:00Z",
+                },
+                {
+                    "candidate_id": "fresh-2",
+                    "canonical_url": "https://example.com/fresh-2",
+                    "title": "Fresh agent release two",
+                    "published_at": "2026-11-04T04:30:00Z",
+                },
+            ],
+        })
+
+    monkeypatch.setattr("tools.news.daily_news_gateway.urlopen", fake_urlopen)
+
+    result = client.refresh_feed(
+        output=cache,
+        minimum=2,
+        max_age_hours=24,
+        topics=["agent_tool_use"],
+        reference_time=datetime(2026, 11, 4, 6, tzinfo=timezone.utc),
+    )
+
+    assert result == {"count": 2, "tier": "tier_2_automated", "output": str(cache.resolve())}
+    assert [item["id"] for item in json.loads(cache.read_text(encoding="utf-8"))] == ["fresh-1", "fresh-2"]
+
+
+def test_refresh_feed_rejects_stale_candidates_without_replacing_cache(tmp_path, monkeypatch):
+    """Catches falling back to a stale Gateway candidate merely because it has a valid shape."""
+    client = DailyNewsGatewayClient("http://127.0.0.1:20129/custom/daily-news")
+    cache = tmp_path / "newsnow_feed.json"
+    cache.write_text(json.dumps([{"id": "previous"}]), encoding="utf-8")
+
+    monkeypatch.setattr(client, "discover_candidates", lambda **_: {
+        "status": "ELIGIBLE",
+        "tier": "tier_2_automated",
+        "candidates": [{
+            "candidate_id": "stale-1",
+            "canonical_url": "https://example.com/stale",
+            "title": "Stale agent release",
+            "published_at": "2026-10-30T00:00:00Z",
+        }],
+    })
+
+    with pytest.raises(RuntimeError, match="fresh"):
+        client.refresh_feed(
+            output=cache,
+            minimum=1,
+            max_age_hours=24,
+            reference_time=datetime(2026, 11, 4, 6, tzinfo=timezone.utc),
+        )
+
+    assert json.loads(cache.read_text(encoding="utf-8")) == [{"id": "previous"}]
+
+
 def test_hybrid_discovery_mark_consumed_syncs_to_gateway(tmp_path, monkeypatch):
     consumed_on_gw = []
 
@@ -369,6 +441,30 @@ def test_gateway_daily_news_feed_consume_candidates_delegation(monkeypatch):
     res = gateway_daily_news_feed.consume_candidates(["cand_direct_feed_api"])
     assert res["status"] == "consumed"
     assert "cand_direct_feed_api" in consumed
+
+
+def test_gateway_daily_news_feed_refresh_delegates_quota_and_freshness(monkeypatch, tmp_path):
+    """Catches losing the exact quota or freshness guard between the scheduler and Gateway client."""
+    captured = {}
+
+    def fake_refresh(self, **kwargs):
+        captured.update(kwargs)
+        return {"count": 2, "tier": "tier_2_automated", "output": str(kwargs["output"])}
+
+    monkeypatch.setattr(DailyNewsGatewayClient, "refresh_feed", fake_refresh)
+
+    result = gateway_daily_news_feed.refresh_feed(
+        base_url="http://127.0.0.1:20129/custom/daily-news",
+        output=tmp_path / "newsnow_feed.json",
+        minimum=2,
+        max_age_hours=24,
+        topics=["agent_tool_use"],
+    )
+
+    assert result["count"] == 2
+    assert captured["minimum"] == 2
+    assert captured["max_age_hours"] == 24
+    assert captured["topics"] == ["agent_tool_use"]
 
 
 def test_sanitize_log_val_removes_newlines_and_control_chars():

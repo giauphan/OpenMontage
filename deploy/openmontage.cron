@@ -30,13 +30,13 @@ NEWS_VISUAL_MODE=1
 
 # 23:00 UTC (06:00 Vietnam next day) — Strict orchestrator: publish today's slots,
 # generate next-day videos, validate, queue them for tomorrow's slot cron.
-0 23 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; EXPECTED_SUCCESS_COUNT=3 OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/run_strict_docker_publish.sh >> logs/cron_pipeline.log 2>&1
+0 23 * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; NEWS_DISCOVERY_PROVIDER=daily-news EXPECTED_SUCCESS_COUNT=3 OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/run_strict_docker_publish.sh >> logs/cron_pipeline.log 2>&1
 
 # Automated pipeline retry checkpoints:
 # Verifies that tomorrow's slots are successfully scheduled. If incomplete (<3),
 # retries the daily pipeline automatically before the day's publishing slots.
 # Safe & idempotent: exits immediately in 0.05s if lock is held or >=3 videos already scheduled.
-30 * * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; EXPECTED_SUCCESS_COUNT=3 OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/retry_daily_pipeline.sh >> logs/cron_pipeline.log 2>&1
+30 * * * * cd /app && [ -f .env ] && set -a && . ./.env && set +a; NEWS_DISCOVERY_PROVIDER=daily-news EXPECTED_SUCCESS_COUNT=3 OPENMONTAGE_PYTHON=/usr/bin/python3 MULTI_PLATFORM=0 ./scripts/retry_daily_pipeline.sh >> logs/cron_pipeline.log 2>&1
 
 
 # 02:15 UTC (09:15 Vietnam) — Publish slot 1 (Instagram only)

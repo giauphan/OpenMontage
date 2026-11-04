@@ -20,6 +20,7 @@ __all__ = [
     "DEFAULT_SOURCES",
     "DEFAULT_TOOLCASE_GATEWAY_URL",
     "fetch_feed",
+    "refresh_feed",
     "write_feed",
     "consume_candidates",
     "resolve_gateway_base_url",
@@ -56,6 +57,25 @@ def write_feed(
         sources=sources,
         limit=limit,
         items=items,
+    )
+
+
+def refresh_feed(
+    base_url: Optional[str],
+    output: Path | str,
+    minimum: int,
+    max_age_hours: float,
+    topics: Optional[List[str]] = None,
+    sources: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """Atomically cache only fresh, ranked Gateway discovery candidates."""
+    return DailyNewsGatewayClient(base_url=base_url).refresh_feed(
+        base_url=base_url,
+        output=output,
+        minimum=minimum,
+        max_age_hours=max_age_hours,
+        topics=topics,
+        sources=sources,
     )
 
 

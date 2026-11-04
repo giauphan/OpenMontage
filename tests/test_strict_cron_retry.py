@@ -119,7 +119,8 @@ def occupy_today_slots(config: Path) -> list[dict[str, str]]:
 
 
 def run_pipeline(
-    tmp_path: Path, scripts: Path, binaries: Path, expected_success_count: int = 3
+    tmp_path: Path, scripts: Path, binaries: Path, expected_success_count: int = 3,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(scripts / "run_strict_docker_publish.sh")],
@@ -134,6 +135,7 @@ def run_pipeline(
             "CLAUDE_VALIDATION_RETRIES": "3",
             "NEWS_MAX_SOURCE_AGE_HOURS": "24",
             "EXPECTED_SUCCESS_COUNT": str(expected_success_count),
+            **(extra_env or {}),
         },
         capture_output=True,
         text=True,

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import signal
 import subprocess
@@ -129,6 +130,39 @@ def test_lock_released_after_success_and_failure(tmp_path: Path):
     succeeded = run_pipeline(tmp_path, scripts, binaries, expected_success_count=2)
     assert succeeded.returncode == 0, succeeded.stdout + succeeded.stderr
     assert (tmp_path / "native-schedule-call").exists()
+
+
+def test_strict_pipeline_rejects_stale_cache_when_fresh_gateway_refresh_fails(tmp_path: Path):
+    """Catches entering generation after Gateway discovery failed and only a stale cache remains."""
+    scripts, _, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    tools = tmp_path / "tools" / "news"
+    tools.mkdir(parents=True)
+    (tools / "news_pipeline_cli.py").write_text(
+        "import json, sys\nfrom pathlib import Path\nPath('refresh-attempted').write_text(json.dumps(sys.argv[1:]))\nraise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    policy = tmp_path / "config" / "niches"
+    policy.mkdir()
+    (policy / "us-ai-agent-engineering.locked.yaml").write_text(
+        "allowed_topic_families:\n  - id: agent_tool_use\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "newsnow_feed.json").write_text("[]", encoding="utf-8")
+    write_generator = scripts / "run_daily_news_pipeline.sh"
+    write_generator.write_text("#!/usr/bin/env bash\ntouch generation-started\nexit 0\n", encoding="utf-8")
+    write_generator.chmod(0o755)
+
+    result = run_pipeline(
+        tmp_path, scripts, binaries, expected_success_count=2,
+        extra_env={"NEWS_DISCOVERY_PROVIDER": "daily-news"},
+    )
+
+    assert result.returncode != 0
+    refresh_args = json.loads((tmp_path / "refresh-attempted").read_text(encoding="utf-8"))
+    assert refresh_args[-2:] == ["--topic", "agent_tool_use"]
+    assert not (tmp_path / "generation-started").exists()
+    assert "fresh Gateway discovery failed" in (result.stdout + result.stderr)
 
 
 def test_lock_released_after_process_group_termination(tmp_path: Path):

@@ -159,7 +159,16 @@ def run_fetch(args: argparse.Namespace) -> None:
         items = discover_news(MuseChatClient(origin, state_path), age)
         count = DailyNewsGatewayClient().write_feed(output=Path(args.output), minimum=args.min_items, items=items)
     else:
-        count = write_feed(gw_url, Path(args.output), minimum=args.min_items)
+        if getattr(args, "strict_fresh", False):
+            count = DailyNewsGatewayClient(base_url=gw_url).refresh_feed(
+                base_url=gw_url,
+                output=Path(args.output),
+                minimum=args.min_items,
+                max_age_hours=args.max_age_hours,
+                topics=args.topic or None,
+            )["count"]
+        else:
+            count = write_feed(gw_url, Path(args.output), minimum=args.min_items)
     logger.info(f"Wrote {count} raw items to {args.output}")
 
 
@@ -711,6 +720,9 @@ def main(argv: List[str] | None = None) -> int:
     fetch_parser.add_argument("--url", default=None, help="Daily News Gateway base URL (defaults to TOOLCASE_GATEWAY_URL/custom/daily-news)")
     fetch_parser.add_argument("--output", required=True, help="Path to write the raw feed JSON")
     fetch_parser.add_argument("--min-items", type=int, default=3, help="Minimum valid items required")
+    fetch_parser.add_argument("--strict-fresh", action="store_true", help="Reject stale or unranked Gateway output instead of falling back to raw feed")
+    fetch_parser.add_argument("--max-age-hours", type=float, default=24.0, help="Maximum publication age for --strict-fresh")
+    fetch_parser.add_argument("--topic", action="append", default=[], help="Gateway topic family for --strict-fresh (repeatable)")
 
     mark_parser = subparsers.add_parser("mark-muse-used", help="Persist a successfully validated Muse candidate ID")
     mark_parser.add_argument("--candidate-id", required=True)

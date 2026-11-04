@@ -160,6 +160,7 @@ GENERATION_RETRY_DELAY_SECONDS="${GENERATION_RETRY_DELAY_SECONDS:-30}"
 PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS="${PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS:-15}"
 EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
 export EXPECTED_SUCCESS_COUNT
+TARGET_SUCCESS_COUNT="$EXPECTED_SUCCESS_COUNT"
 DAILY_NEWS_GATEWAY_URL="${DAILY_NEWS_GATEWAY_URL:-${TOOLCASE_GATEWAY_URL:-http://127.0.0.1:20129}/custom/daily-news}"
 NEWSNOW_URL="${DAILY_NEWS_GATEWAY_URL}"
 PY="${OPENMONTAGE_PYTHON:-$(command -v python3)}"
@@ -356,6 +357,36 @@ if [ "${STRICT_PUBLISH_SKIP_DOCKER_CHECK:-0}" != "1" ]; then
 fi
 log "preflight OK (docker=$(hostname), py=$(python3 --version | awk '{print $2}'), codex=$(codex --version 2>&1 | head -1), codex_home=$CODEX_HOME)"
 newsnow_preflight
+if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "daily-news" ]]; then
+  FRESH_NEWS_ARGS=(
+    fetch --url "$DAILY_NEWS_GATEWAY_URL" --output "$ROOT/data/newsnow_feed.json"
+    --min-items "$TARGET_SUCCESS_COUNT" --strict-fresh
+    --max-age-hours "$NEWS_MAX_SOURCE_AGE_HOURS"
+  )
+  while IFS= read -r topic_family; do
+    [ -n "$topic_family" ] && FRESH_NEWS_ARGS+=(--topic "$topic_family")
+  done < <("$PY" - "$ROOT/config/niches/us-ai-agent-engineering.locked.yaml" <<'PY'
+import sys
+from pathlib import Path
+import yaml
+try:
+    policy = yaml.safe_load(Path(sys.argv[1]).read_text(encoding="utf-8")) or {}
+except Exception:
+    raise SystemExit(0)
+for topic in policy.get("allowed_topic_families", []) or []:
+    if isinstance(topic, dict) and isinstance(topic.get("id"), str):
+        print(topic["id"])
+    elif isinstance(topic, str):
+        print(topic)
+PY
+)
+  if ! "$PY" "$ROOT/tools/news/news_pipeline_cli.py" "${FRESH_NEWS_ARGS[@]}"; then
+    "$PY" "$ROOT/scripts/pipeline_monitoring.py" log-error --stage "preflight" \
+      --error-type "GATEWAY_UNAVAILABLE" --message "fresh Gateway discovery failed; stale cache rejected" || true
+    fail "fresh Gateway discovery failed; refusing stale cache"
+  fi
+  export STRICT_FRESH_GATEWAY_CACHE=1
+fi
 write_state "preflight" "ok"
 
 # ===== STAGE 1: PREPARE — isolate due-today batch from next-day generation =====
@@ -409,7 +440,6 @@ if [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
   GEN_STATUS=0
   log "STRICT_PUBLISH_SKIP_GENERATE=1: reusing projects from $GENERATE_LOG"
 else
-  TARGET_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-3}"
   while [ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]; do
     GENERATION_ATTEMPT=$((GENERATION_ATTEMPT + 1))
     GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}_attempt${GENERATION_ATTEMPT}.log"

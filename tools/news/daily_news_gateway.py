@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -86,6 +87,19 @@ def _normalize_feed_item(raw: Dict[str, Any], url: str) -> Dict[str, Any]:
         source_tag = item["tags"][0] if item.get("tags") else "daily-news"
         item["source_feed"] = f"daily-news:{source_tag}"
     return item
+
+
+def _parse_published_at(value: Any) -> datetime | None:
+    """Return a UTC publication timestamp only when the supplied value is valid."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def resolve_gateway_base_url(base_url: Optional[str] = None) -> str:
@@ -287,6 +301,92 @@ class DailyNewsGatewayClient:
         tmp_path.write_text(json.dumps(items, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         tmp_path.replace(out_path)
         return len(items)
+
+    def refresh_feed(
+        self,
+        output: Path | str,
+        minimum: int,
+        max_age_hours: float,
+        *,
+        base_url: Optional[str] = None,
+        topics: Optional[List[str]] = None,
+        sources: Optional[Sequence[str]] = None,
+        reference_time: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Atomically replace a feed cache only with fresh ranked Gateway candidates."""
+        if minimum < 1:
+            raise ValueError("minimum must be at least 1")
+        if not math.isfinite(max_age_hours) or max_age_hours <= 0:
+            raise ValueError("max_age_hours must be a finite positive number")
+
+        response = self.discover_candidates(
+            base_url=base_url,
+            limit=minimum,
+            topics=topics,
+            sources=list(sources) if sources else None,
+        )
+        if not isinstance(response, dict) or response.get("status") != "ELIGIBLE":
+            raise RuntimeError("Gateway returned no eligible fresh candidates")
+        candidates = response.get("candidates")
+        if not isinstance(candidates, list):
+            raise RuntimeError("Gateway returned no eligible fresh candidates")
+
+        now = reference_time or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            raise ValueError("reference_time must be timezone-aware")
+        now = now.astimezone(timezone.utc)
+        fresh_items: List[Dict[str, Any]] = []
+        seen_urls: set[str] = set()
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            candidate_id = str(candidate.get("candidate_id") or candidate.get("id") or "").strip()
+            url, title = _extract_item_keys(candidate)
+            published_at = _parse_published_at(candidate.get("published_at") or candidate.get("published_at_utc"))
+            parsed_url = urlparse(url)
+            age_hours = (now - published_at).total_seconds() / 3600 if published_at else None
+            if (
+                not candidate_id
+                or not title
+                or parsed_url.scheme not in ("http", "https")
+                or not parsed_url.hostname
+                or published_at is None
+                or age_hours is None
+                or age_hours < 0
+                or age_hours > max_age_hours
+            ):
+                continue
+            key = url.lower().rstrip("/")
+            if key in seen_urls:
+                continue
+            seen_urls.add(key)
+            item = _normalize_feed_item(candidate, url)
+            item["id"] = candidate_id
+            item["published_at"] = published_at.isoformat().replace("+00:00", "Z")
+            fresh_items.append(item)
+
+        if len(fresh_items) < minimum:
+            raise RuntimeError(f"Gateway returned {len(fresh_items)} fresh candidates; need {minimum}")
+
+        out_path = _resolve_safe_output_path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=out_path.parent,
+            prefix=f".{out_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp_file:
+            json.dump(fresh_items, tmp_file, ensure_ascii=False, indent=2)
+            tmp_file.write("\n")
+            tmp_path = Path(tmp_file.name)
+        try:
+            os.replace(tmp_path, out_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        return {"count": len(fresh_items), "tier": str(response.get("tier") or ""), "output": str(out_path)}
 
     @staticmethod
     def _sanitize_and_dedupe_items(raw_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
