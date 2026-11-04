@@ -274,9 +274,9 @@ class FixedNicheQAValidator:
                 s_data = json.loads(script_file.read_text(encoding="utf-8"))
                 sections = s_data.get("sections", [])
                 if sections:
-                    final_narration = sections[-1].get("narration", "").lower()
+                    final_narration = (sections[-1].get("narration") or sections[-1].get("text") or "").lower()
                     has_cta_verb = bool(re.search(r"\b(follow|subscribe|star)\b", final_narration))
-                    has_channel = bool(re.search(r"(@\w+|\bopenmontage\b|\bfollow me\b|\bsubscribe\b|\bstar the repo\b)", final_narration))
+                    has_channel = bool(re.search(r"(@\w+|\bopenmontage\b|\bfollow\b|\bsubscribe\b|\bstar\s+(?:the\s+|our\s+)?repo\b|\brepository\b)", final_narration))
                     if not (has_cta_verb and has_channel):
                         findings.append({
                             "category": "CALL_TO_ACTION",

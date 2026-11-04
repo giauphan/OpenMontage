@@ -65,21 +65,12 @@ def _tokens_match(token: str, source_tokens: set[str]) -> bool:
 
 
 def _min_token_overlap(token_count: int) -> int:
-    if token_count >= 4:
-        return 2
-    if token_count >= 1:
-        return 1
-    return 0
+    return 2 if token_count >= 4 else (1 if token_count >= 1 else 0)
 
 
 def _dp_source_label(dp: dict[str, Any]) -> str:
-    src = dp.get("source_name")
-    if src:
-        return str(src).strip()
-    url = dp.get("source_url")
-    if url:
-        return str(url).strip()
-    return ""
+    src = dp.get("source_name") or dp.get("source_url")
+    return str(src).strip() if src else ""
 
 
 def _extract_data_point_lines(brief_data: dict[str, Any]) -> list[str]:
@@ -382,18 +373,41 @@ def _extract_source_metadata(
     return provenance_map, cap_lines, cap_map, cap_src_lines
 
 
+def _is_cta_section(section: dict[str, Any], idx: int, total_sections: int) -> bool:
+    sec_id = str(section.get("id") or "").lower()
+    sec_label = str(section.get("label") or "").lower()
+    sec_type = str(section.get("type") or "").lower()
+    if any(k in sec_id or k in sec_label or k in sec_type for k in ("cta", "outro", "call_to_action", "call to action")):
+        return True
+    sec_text = (
+        section.get("text_vi") or section.get("text") or section.get("narration") or ""
+    ).strip().lower()
+    cta_patterns = (
+        r"\b(?:follow|subscribe|star\s+(?:the\s+|our\s+)?repo|defensive blueprint|theo dõi|đăng ký)\b",
+        r"\b(?:follow for daily|star the repo|leave a comment|what do you think)\b",
+    )
+    is_last = (idx >= total_sections - 1) and (total_sections > 1)
+    has_cta_text = any(bool(re.search(p, sec_text, re.IGNORECASE)) for p in cta_patterns)
+    if is_last and has_cta_text:
+        return True
+    if re.search(r"^\s*(?:follow|subscribe|star\s+(?:the\s+)?repo|theo dõi|đăng ký)\b", sec_text, re.IGNORECASE):
+        return True
+    return False
+
+
 def _build_claim_entry(
     sec_id: str,
     sec_text: str,
     primary_source_id: str,
     is_verified: bool,
     now_iso: str,
+    is_cta: bool = False,
 ) -> dict[str, Any]:
     claim_text = sec_text[:180].strip() or "Nội dung tin tức công nghệ đã được xác thực."
     return {
         "section_id": sec_id,
         "claim": claim_text,
-        "classification": "reported_fact",
+        "classification": "opinion" if is_cta else "reported_fact",
         "consequential": False,
         "source_ids": [primary_source_id],
         "reviewer": "Ban biên tập OpenMontage (Tự động hóa)",

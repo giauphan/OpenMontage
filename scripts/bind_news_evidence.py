@@ -33,6 +33,7 @@ from scripts.evidence_binder_helpers import (
     _find_best_capture,
     _find_matching_provenance,
     _format_claim_error,
+    _is_cta_section,
     _is_valid_iso,
     _is_valid_url,
     _iso_utc,
@@ -234,24 +235,28 @@ def _build_evidence_payload(
 
 
 def _evaluate_section(
-    section: dict[str, Any], idx: int, script_name: str, brief_data: dict[str, Any],
+    section: dict[str, Any], idx: int, total_sections: int, script_name: str, brief_data: dict[str, Any],
     primary_source: dict[str, Any], primary_title: str, target_corpus: str, strict_capture_required: bool,
-) -> tuple[str, str, bool, str | None]:
+) -> tuple[str, str, bool, str | None, bool]:
     sec_id = str(section.get("id", "sec"))
-    sec_text = (section.get("text_vi") or section.get("text") or "").strip()
+    sec_text = (section.get("text_vi") or section.get("text") or section.get("narration") or "").strip()
     is_en_us = script_name == SCRIPT_EN_US_JSON
     should_verify = is_en_us or bool(brief_data.get("data_points"))
+    is_cta = _is_cta_section(section, idx, total_sections)
 
     has_fig_err, missing_figs = _check_quantitative_figures(sec_text, target_corpus, should_verify)
-    has_sem_err, sem_reason = _check_semantic_grounding(
-        sec_text=sec_text, target_corpus=target_corpus, publisher=primary_title,
-        canonical_url=primary_source["url"], strict_capture_required=strict_capture_required, is_en_us=is_en_us,
-    )
+    if is_cta:
+        has_sem_err, sem_reason = False, ""
+    else:
+        has_sem_err, sem_reason = _check_semantic_grounding(
+            sec_text=sec_text, target_corpus=target_corpus, publisher=primary_title,
+            canonical_url=primary_source["url"], strict_capture_required=strict_capture_required, is_en_us=is_en_us,
+        )
     is_verified = (not has_fig_err) and (not has_sem_err)
     err = _format_claim_error(
         sec_id, idx, has_fig_err, missing_figs, has_sem_err, sem_reason, strict_capture_required
     )
-    return sec_id, sec_text, is_verified, err
+    return sec_id, sec_text, is_verified, err, is_cta
 
 
 def _match_evidence_to_claims(
@@ -264,18 +269,19 @@ def _match_evidence_to_claims(
     ledger_claims: list[dict[str, Any]] = []
     unverified_errors: list[str] = []
     primary_source = evidence_sources[0]
+    total_sections = len(sections)
 
     for idx, section in enumerate(sections):
         if not isinstance(section, dict):
             continue
-        sec_id, sec_text, is_verified, err = _evaluate_section(
-            section, idx, script_name, brief_data, primary_source,
+        sec_id, sec_text, is_verified, err, is_cta = _evaluate_section(
+            section, idx, total_sections, script_name, brief_data, primary_source,
             primary_title, target_corpus, strict_capture_required,
         )
         if err:
             unverified_errors.append(err)
         claims.append(
-            _build_claim_entry(sec_id, sec_text, primary_source["id"], is_verified, now_iso)
+            _build_claim_entry(sec_id, sec_text, primary_source["id"], is_verified, now_iso, is_cta=is_cta)
         )
         if sec_text:
             ledger_claims.append(

@@ -247,5 +247,67 @@ def test_bind_news_evidence_rejects_non_numeric_ungrounded_claims(tmp_path: Path
     assert claims_by_id["C002"]["confidence"] == "unverified"
 
 
+def test_bind_news_evidence_approves_cta_opinion_section(tmp_path: Path):
+    project_dir = tmp_path / "cand_en_us_cta"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    script_data = {
+        "version": "1.0",
+        "title": "AI Agent Engineering Patterns",
+        "total_duration_seconds": 70.0,
+        "sections": [
+            {
+                "id": "s1",
+                "text": "Multimodal desktop agents cut UI recognition errors below 12% across benchmarks.",
+                "start_seconds": 0.0,
+                "end_seconds": 35.0,
+            },
+            {
+                "id": "s2",
+                "text": "Follow for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint.",
+                "start_seconds": 35.0,
+                "end_seconds": 70.0,
+            },
+        ],
+    }
+    (artifacts_dir / "script_en_US.json").write_text(json.dumps(script_data, indent=2), encoding="utf-8")
+
+    brief_data = {
+        "version": "1.0",
+        "topic": "AI Desktop Operating Layers",
+        "data_points": [
+            {
+                "claim": "Recent desktop benchmarks report UI-recognition error rates below 12%.",
+                "source_url": "https://arxiv.org/abs/2401.00001",
+                "credibility": "high",
+            }
+        ],
+        "sources": [
+            {
+                "url": "https://arxiv.org/abs/2401.00001",
+                "title": "Desktop Agent Benchmark Paper",
+                "used_for": "Benchmark error rate",
+            }
+        ],
+    }
+    (artifacts_dir / "research_brief.json").write_text(json.dumps(brief_data, indent=2), encoding="utf-8")
+
+    assert bind_news_evidence(project_dir) is True
+
+    evidence = json.loads((artifacts_dir / "news_evidence.json").read_text(encoding="utf-8"))
+    c2 = next(c for c in evidence["claims"] if c["section_id"] == "s2")
+    assert c2["classification"] == "opinion"
+    assert c2["review_status"] == "approved"
+
+    ledger = json.loads((artifacts_dir / "claim_ledger.json").read_text(encoding="utf-8"))
+    claims_by_id = {c["claim_id"]: c for c in ledger["claims"]}
+    assert claims_by_id["C002"]["verdict"] == "APPROVED"
+    assert claims_by_id["C002"]["confidence"] == "verified"
+
+    val_res = validate_news_evidence(project_dir, 24.0)
+    assert val_res["ok"] is True
+
+
 
 
