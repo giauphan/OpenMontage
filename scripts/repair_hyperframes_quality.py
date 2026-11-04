@@ -468,10 +468,41 @@ def _ensure_clipping_guard(html: str, path: Path) -> str:
     raise ValueError(f"{path}: missing viewport CSS rule for clipping guard")
 
 
+EMOJI_SVG_MAP: dict[str, str] = {
+    "🔍": '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:6px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+    "🤖": '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:6px;"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="16" y1="16" x2="16.01" y2="16"/></svg>',
+    "🚀": '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:6px;"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>',
+    "⚡": '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:6px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    "🎯": '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:6px;"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+    "💡": '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:6px;"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5"/></svg>',
+}
+
+
+def _sanitize_emojis_to_vector_svg(html: str) -> str:
+    for emoji, svg in EMOJI_SVG_MAP.items():
+        html = html.replace(emoji, svg)
+    return re.sub(r'[\U00010000-\U0010ffff]', '', html)
+
+
+def _sanitize_metrics_and_symbols(html: str) -> str:
+    def _strip_period(m: re.Match) -> str:
+        open_tag, body, close_tag = m.group(1), m.group(2).rstrip(), m.group(3)
+        if body.endswith("."):
+            body = body[:-1].rstrip()
+        return f"{open_tag}{body}{close_tag}"
+
+    for cls in ("metric-value", "flow-box", "flow-arrow", "date-pill", "badge"):
+        html = re.sub(rf'(<[a-zA-Z0-9]+\b[^>]*\bclass="[^"]*{cls}[^"]*"[^>]*>)(.*?)(</[a-zA-Z0-9]+>)', _strip_period, html, flags=re.DOTALL)
+    html = re.sub(r'([↓↑→←])\.(?=\s*<)', r'\1', html)
+    html = re.sub(r'(<h[1-6]\b[^>]*>.*?<span\b[^>]*>.*?)\.(</span>.*?)(</h[1-6]>)', r'\1\2\3', html, flags=re.DOTALL)
+    return html
+
+
 def _sanitize_sentence_cutoffs(html: str, path: Path) -> str:
-    html = re.sub(r'([.!?])\s+[^<>\r\n]{2,80}?(</(?:p|div|span)>)', r'\1\2', html)
-    html = re.sub(r'([^\s<>]{1,64})\s*?(</(?:p|div|span)>)', _replace_trailing_stopword, html)
-    html = re.sub(r'([^.!?\s>])\s*?(</(?:p|div|span)>)', r'\1.\2', html)
+    html = re.sub(r'([.!?])\s+[^<>\r\n]{2,80}?(</p>)', r'\1\2', html)
+    html = re.sub(r'([^\s<>]{1,64})\s*?(</p>)', _replace_trailing_stopword, html)
+    html = _sanitize_metrics_and_symbols(html)
+    html = _sanitize_emojis_to_vector_svg(html)
     return _ensure_clipping_guard(html, path)
 
 

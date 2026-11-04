@@ -90,11 +90,13 @@ class HybridCandidateDiscovery:
         reference_time: Optional[datetime] = None,
         strict_news_only: Optional[bool] = None,
         consumer: Optional[CandidateConsumerPort] = None,
+        used_ids: Optional[Set[str]] = None,
     ) -> None:
         self.policy = policy or load_locked_policy()
         self.gate = gate or FixedNicheScopeGate(self.policy)
         self.root_dir = Path(root_dir or Path(__file__).resolve().parent.parent.parent).resolve()
         self.consumer = consumer
+        self.used_ids = set(used_ids) if used_ids is not None else None
 
         # Configurable paths with environment variable overrides
         env_curated = os.environ.get("DAILY_CANDIDATES_FILE") or os.environ.get("OPENMONTAGE_CANDIDATES_FILE")
@@ -380,15 +382,17 @@ class HybridCandidateDiscovery:
 
         return valid_feed[:count]
 
-    def discover_candidates(self, count: int = 1) -> TieredDiscoveryResult:
+    def discover_candidates(self, count: int = 1, used_ids: Optional[Set[str]] = None) -> TieredDiscoveryResult:
         """Execute Option C: Hybrid Tiered Strategy discovery.
 
         Tier 1 (Curated Queue) -> Tier 2 (Automated Feed) -> Fail-Closed (NO_ELIGIBLE_TOPIC).
         """
-        used_ids = self.get_used_project_ids()
+        effective_used_ids = set(used_ids) if used_ids is not None else (
+            self.used_ids if self.used_ids is not None else self.get_used_project_ids()
+        )
         cutoff_dt = self.reference_time - timedelta(days=self.max_age_days)
         diagnostics: Dict[str, Any] = {
-            "used_ids_count": len(used_ids),
+            "used_ids_count": len(effective_used_ids),
             "tier_1_checked": False,
             "tier_2_checked": False,
             "require_latest_news_active": self.require_latest_news,
@@ -398,7 +402,7 @@ class HybridCandidateDiscovery:
         }
 
         # Step 1: Check Tier 1 Curated Backlog
-        tier_1_candidates = self._discover_tier_1_curated(used_ids, count, diagnostics)
+        tier_1_candidates = self._discover_tier_1_curated(effective_used_ids, count, diagnostics)
         if tier_1_candidates:
             logger.info(
                 "[Tier 1: Curated Queue] Selected %d candidate(s): %s",
@@ -414,7 +418,7 @@ class HybridCandidateDiscovery:
             )
 
         # Step 2: Check Tier 2 Automated Live Feed
-        tier_2_candidates = self._discover_tier_2_feed(used_ids, count, diagnostics)
+        tier_2_candidates = self._discover_tier_2_feed(effective_used_ids, count, diagnostics)
         if tier_2_candidates:
             logger.info(
                 "[Tier 2: Automated Feed] Selected %d candidate(s): %s",

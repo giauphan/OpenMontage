@@ -149,16 +149,20 @@ fi
 # Rehearsal inputs are frozen, copied, and marked test-only by the preflight helper.
 # Never execute acquisition/production selectors in this branch.
 FEED_STALE=0
+MIN_INITIALIZED_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
 if [ -n "$REHEARSAL_MANIFEST" ]; then
   REHEARSAL_TERMINAL_STAGE="directors_and_validation"
   FEED_STALE=0
   PROJECT_IDS=("${REHEARSAL_PROJECT_IDS[@]}")
   export OPENMONTAGE_REHEARSAL=1
+  EXPECTED_SUCCESS_COUNT="${#PROJECT_IDS[@]}"
+  MIN_INITIALIZED_COUNT="${#PROJECT_IDS[@]}"
 elif [ -n "$EXISTING_PROJECT_IDS" ]; then
   REHEARSAL_TERMINAL_STAGE="directors_and_validation"
   FEED_STALE=0
   IFS=',' read -r -a PROJECT_IDS <<< "$EXISTING_PROJECT_IDS"
   EXPECTED_SUCCESS_COUNT="${#PROJECT_IDS[@]}"
+  MIN_INITIALIZED_COUNT="${#PROJECT_IDS[@]}"
   for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     if ! [[ "$PROJECT_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$ ]]; then
       echo "[$(date -u +%FT%TZ)] ERROR: invalid project id: $PROJECT_ID" >&2
@@ -255,7 +259,7 @@ fi
 fi
 
 SUCCESSFUL_COUNT=0
-EXPECTED_SUCCESS_COUNT="$MIN_INITIALIZED_COUNT"
+EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-$MIN_INITIALIZED_COUNT}"
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"

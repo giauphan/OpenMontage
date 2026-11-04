@@ -449,10 +449,14 @@ def _run_discovery_fallback(
     """Supplement an insufficient current-discovery result from the authorized backlog."""
     from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
 
-    fallback = HybridCandidateDiscovery(
+    fallback_inst = HybridCandidateDiscovery(
         require_latest_news=False,
         max_age_days=max_age_days,
-    ).discover_candidates(count=max(count, min_required * 2))
+    )
+    try:
+        fallback = fallback_inst.discover_candidates(count=max(count, min_required * 2), used_ids=used_ids)
+    except TypeError:
+        fallback = fallback_inst.discover_candidates(count=max(count, min_required * 2))
     if not fallback.is_eligible:
         return
     _merge_unique_candidates(disc_result.candidates, fallback.candidates, used_ids)
@@ -495,7 +499,10 @@ def _hydrate_from_hybrid_discovery(
         require_latest_news=require_latest,
         max_age_days=max_age_days,
     )
-    disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
+    try:
+        disc_result = discovery.discover_candidates(count=max(count, min_required * 2), used_ids=used_ids)
+    except TypeError:
+        disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
     need_fallback = (not disc_result.is_eligible or len(disc_result.candidates) < min_required) and require_latest
     if need_fallback:
         logger.info(
