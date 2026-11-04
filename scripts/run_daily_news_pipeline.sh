@@ -148,6 +148,7 @@ fi
 
 # Rehearsal inputs are frozen, copied, and marked test-only by the preflight helper.
 # Never execute acquisition/production selectors in this branch.
+FEED_STALE=0
 if [ -n "$REHEARSAL_MANIFEST" ]; then
   REHEARSAL_TERMINAL_STAGE="directors_and_validation"
   FEED_STALE=0
@@ -1321,7 +1322,7 @@ if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$PUB_FULL_PATH
   --arg ig_reels "$REELS_RENDER_PATH" \
   --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
   --arg format "short" \
-  --argjson feed_stale "$FEED_STALE" \
+  --argjson feed_stale "${FEED_STALE:-0}" \
   '{
     id: $id,
     topic: $title,
@@ -1409,7 +1410,7 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
   continue
 fi
 
-if [ "$FEED_STALE" -eq 1 ]; then
+if [ "${FEED_STALE:-0}" -eq 1 ]; then
   echo "[$(date -u +%FT%TZ)] NOTICE: Render completed using STALE feed data."
 fi
 
@@ -1499,7 +1500,7 @@ jq -n \
   --arg locale "${locale:-${PROJECT_LOCALE:-en-US}}" \
   --arg format "short" \
   --arg thumb "$(if [ -s "$PROJECT_DIR/thumbnails/thumbnail.jpg" ]; then echo "$PROJECT_DIR/thumbnails/thumbnail.jpg"; elif [ -s "$PROJECT_DIR/thumbnails/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnails/thumbnail.png"; elif [ -s "$PROJECT_DIR/thumbnail.jpg" ]; then echo "$PROJECT_DIR/thumbnail.jpg"; elif [ -s "$PROJECT_DIR/thumbnail.png" ]; then echo "$PROJECT_DIR/thumbnail.png"; else echo ""; fi)" \
-  --argjson feed_stale "$FEED_STALE" \
+  --argjson feed_stale "${FEED_STALE:-0}" \
   --argjson template_prov "$TEMPLATE_PROV_JSON" \
   '{
     id: $id,
@@ -1581,7 +1582,7 @@ if [ -n "$REHEARSAL_MANIFEST" ] && [ "$SUCCESSFUL_COUNT" -ne "$EXPECTED_SUCCESS_
 fi
 if [ "$SUCCESSFUL_COUNT" -eq "$EXPECTED_SUCCESS_COUNT" ]; then
   REHEARSAL_TERMINAL_STAGE="completed"
-  echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: $FEED_STALE, Successful: $SUCCESSFUL_COUNT)"
+  echo "Daily pipeline completed: ${PROJECT_IDS[*]} (Feed stale: ${FEED_STALE:-0}, Successful: $SUCCESSFUL_COUNT)"
   exit 0
 elif [ "$SUCCESSFUL_COUNT" -gt 0 ]; then
   REHEARSAL_TERMINAL_STAGE="partial_completion"
