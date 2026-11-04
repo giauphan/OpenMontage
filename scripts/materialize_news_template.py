@@ -156,113 +156,71 @@ def _scene_timing(content: dict[str, Any], total: float, variant: str) -> dict[s
     }
 
 
-def _build_debate_html(content: dict[str, Any], variant: str) -> str:
-    is_full = variant == "full"
-    total = float(content.get("duration", 45.0 if variant == "full" else 40.0))
-    if not is_full:
-        total = min(total, 58.0)
-    timing = _scene_timing(content, total, variant)
+def _resolve_debate_slots(content: dict[str, Any]) -> tuple[dict, dict, dict, dict, dict, dict[str, str]]:
+    slots = content.get("slots") if isinstance(content.get("slots"), dict) else {}
+    hook = slots.get("hook") if isinstance(slots.get("hook"), dict) else {}
+    stmt = slots.get("statement") if isinstance(slots.get("statement"), dict) else {}
+    ctx = slots.get("context") if isinstance(slots.get("context"), dict) else {}
+    tkw = slots.get("takeaway") if isinstance(slots.get("takeaway"), dict) else {}
+    es = {
+        "kicker": esc(content.get("kicker", "TIN NÓNG")),
+        "title": esc(content.get("title", "")),
+        "hook_text": esc(hook.get("text", "")),
+        "stmt_head": esc(stmt.get("heading", "Ý kiến")),
+        "stmt_text": esc(stmt.get("text", "")),
+        "stmt_attr": esc(stmt.get("attribution", "")),
+        "ctx_head": esc(ctx.get("heading", "Bối cảnh")),
+        "ctx_text": esc(ctx.get("text", "")),
+        "tkw_head": esc(tkw.get("heading", "Lời kết")),
+        "tkw_text": esc(tkw.get("text", "")),
+    }
+    return slots, hook, stmt, ctx, tkw, es
 
-    slots = content.get("slots", {}) if isinstance(content.get("slots"), dict) else {}
-    hook = slots.get("hook", {}) if isinstance(slots.get("hook"), dict) else {}
-    stmt = slots.get("statement", {}) if isinstance(slots.get("statement"), dict) else {}
-    ctx = slots.get("context", {}) if isinstance(slots.get("context"), dict) else {}
-    tkw = slots.get("takeaway", {}) if isinstance(slots.get("takeaway"), dict) else {}
 
-    e_kicker = esc(content.get("kicker", "TIN NÓNG"))
-    e_title = esc(content.get("title", ""))
-
-    e_hook_text = esc(hook.get("text", ""))
-    e_stmt_head = esc(stmt.get("heading", "Ý kiến"))
-    e_stmt_text = esc(stmt.get("text", ""))
-    e_stmt_attr = esc(stmt.get("attribution", ""))
-
-    e_ctx_head = esc(ctx.get("heading", "Bối cảnh"))
-    e_ctx_text = esc(ctx.get("text", ""))
-
-    e_tkw_head = esc(tkw.get("heading", "Lời kết"))
-    e_tkw_text = esc(tkw.get("text", ""))
-
-    is_full = variant == "full"
-
-    narration_key = "narration" if is_full else "narration_short"
-    # Reels falls back to the full narration when no dedicated short narration
-    # is supplied, so captions never render empty for the reels variant.
-    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
-    narration = esc(narration_src)
-
-    # captions
-    max_caps = 4 if is_full else 3
-    captions = content.get("caption_lines")
-    if not captions:
-        captions = derive_captions(narration_src, total, max_caps)
-
-    cap_html, cap_tl = _caption_elements(captions, track_index=10)
-
-    s1_start, s1_end = timing["hook"]
-    s2_start, s2_end = timing["statement"]
-    s4_start, s4_end = timing["takeaway"]
-
-    s1_dur = max(0.5, s1_end - s1_start)
-    s2_dur = max(0.5, s2_end - s2_start)
-    s4_dur = max(0.5, s4_end - s4_start)
-
-    attr_line = (
-        f"        <p id=\"statement-attribution\" class=\"attribution\">{e_stmt_attr}</p>\n"
-        if e_stmt_attr
-        else ""
-    )
-
-    attr_tl = (
-        f"      tl.from('#statement-attribution', {{ opacity: 0, duration: 0.5, ease: 'power2.out' }}, {_fmt_time(s2_start + 4)});\n"
-        if e_stmt_attr
-        else ""
-    )
-
-    scene3_html = ""
-    scene3_tl = ""
-    ctx_v = HAS_VISUAL if ctx.get("visual") else ""
-    tkw_v = HAS_VISUAL if tkw.get("visual") else ""
-    hook_v = HAS_VISUAL if hook.get("visual") else ""
-    stmt_v = HAS_VISUAL if stmt.get("visual") else ""
-
-    if is_full and e_ctx_text:
+def _resolve_debate_scenes(
+    timing: dict[str, tuple[float, float]],
+    es: dict[str, str],
+    is_full: bool,
+    ctx_v: str,
+    tkw_v: str,
+    s2_start: float,
+) -> tuple[str, str, str, str, str, str]:
+    attr_line = f'        <p id="statement-attribution" class="attribution">{es["stmt_attr"]}</p>\n' if es["stmt_attr"] else ""
+    attr_tl = f"      tl.from('#statement-attribution', {{ opacity: 0, duration: 0.5, ease: 'power2.out' }}, {_fmt_time(s2_start + 4)});\n" if es["stmt_attr"] else ""
+    scene3_html, scene3_tl = "", ""
+    if is_full and es["ctx_text"]:
         s3_start, s3_dur = timing["context"]
         scene3_html = (
             f"    <section id=\"scene-context\" class=\"clip{ctx_v}\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"3\">\n"
             f"      <div class=\"scene-inner\">\n"
-            f"        <span class=\"scene-heading\">{e_ctx_head}</span>\n"
-            f"        <p class=\"scene-text\">{e_ctx_text}</p>\n"
+            f"        <span class=\"scene-heading\">{es['ctx_head']}</span>\n"
+            f"        <p class=\"scene-text\">{es['ctx_text']}</p>\n"
             f"      </div>\n"
             f"    </section>\n"
         )
-        scene3_tl = (
-            f"      tl.from('#scene-context .scene-inner', {{ opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }}, {_fmt_time(s3_start + 0.1)});\n"
-        )
+        scene3_tl = f"      tl.from('#scene-context .scene-inner', {{ opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }}, {_fmt_time(s3_start + 0.1)});\n"
 
+    s4_start, s4_end = timing["takeaway"]
+    s4_dur = max(0.5, s4_end - s4_start)
+    track_idx = 4 if is_full else 3
     scene4_html = (
-        f"    <section id=\"scene-takeaway\" class=\"clip{tkw_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"{4 if is_full else 3}\">\n"
+        f"    <section id=\"scene-takeaway\" class=\"clip{tkw_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"{track_idx}\">\n"
         f"      <div class=\"scene-inner\">\n"
-        f"        <span class=\"kicker\" style=\"font-size:22px\">{e_tkw_head}</span>\n"
-        f"        <p class=\"scene-text\">{e_tkw_text}</p>\n"
+        f"        <span class=\"kicker\" style=\"font-size:22px\">{es['tkw_head']}</span>\n"
+        f"        <p class=\"scene-text\">{es['tkw_text']}</p>\n"
         f"      </div>\n"
         f"    </section>\n"
     )
+    scene4_tl = f"      tl.from('#scene-takeaway .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s4_start + 0.1)});\n"
+    return attr_line, attr_tl, scene3_html, scene3_tl, scene4_html, scene4_tl
 
-    scene4_tl = (
-        f"      tl.from('#scene-takeaway .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s4_start + 0.1)});\n"
-    )
 
-    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
-    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
-
-    font_size_title = "56px" if is_full else "48px"
-    font_size_text = "34px" if is_full else "30px"
-
-    accent = "#e63946"
-    css = (
+def _build_debate_css(is_full: bool, media_css: str) -> str:
+    title_sz = "56px" if is_full else "48px"
+    text_sz = "34px" if is_full else "30px"
+    return (
         f"<style>\n"
-        f":root {{ --accent: {accent}; }}\n"
+        f":root {{ --accent: #e63946; }}\n"
         f"* {{ box-sizing: border-box; }}\n"
         f"body {{ margin:0;background:#0a0a14;color:#f1f1f1;font-family:'BeVietnamPro',Inter,system-ui,sans-serif; }}\n"
         f"#root {{ position:relative;width:1080px;height:1920px;overflow:hidden;background:#0a0a14; }}\n"
@@ -270,8 +228,8 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         f".clip {{ position:absolute;inset:0; }}\n"
         f".scene-inner {{ display:flex;flex-direction:column;justify-content:center;align-items:center;width:100%;height:100%;padding:120px 80px 160px;text-align:center; }}\n"
         f".kicker {{ font-size:24px;font-weight:700;letter-spacing:.35em;text-transform:uppercase;color:var(--accent);margin-bottom:32px;padding:8px 24px;border:2px solid var(--accent);border-radius:6px; }}\n"
-        f".title {{ font-size:{font_size_title};font-weight:900;line-height:1.15;color:#fff;max-width:900px;margin:0 auto 40px; }}\n"
-        f".scene-text {{ font-size:{font_size_text};font-weight:400;line-height:1.6;color:#ccc;max-width:860px;margin:0; }}\n"
+        f".title {{ font-size:{title_sz};font-weight:900;line-height:1.15;color:#fff;max-width:900px;margin:0 auto 40px; }}\n"
+        f".scene-text {{ font-size:{text_sz};font-weight:400;line-height:1.6;color:#ccc;max-width:860px;margin:0; }}\n"
         f".scene-heading {{ font-size:28px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);margin-bottom:36px; }}\n"
         f".statement {{ font-size:40px;font-weight:300;line-height:1.5;color:#fff;max-width:860px;margin:0 auto 32px;font-style:italic;border-left:3px solid var(--accent);padding-left:32px;text-align:left; }}\n"
         f".attribution {{ font-size:24px;font-weight:600;color:#aaa;margin:0;max-width:860px;text-align:left; }}\n"
@@ -281,35 +239,66 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         f"</style>"
     )
 
-    gsap = (
-        "<script>\n"
-        "(function() {\n"
-        "  window.__timelines = window.__timelines || {};\n"
-        "  var tl = gsap.timeline({ paused: true });\n"
-        f"  tl.from('#scene-hook .scene-inner', {{ opacity: 0, y: 40, duration: {0.7 if is_full else 0.6}, ease: 'power2.out' }}, {_fmt_time(s1_start + 0.1)});\n"
-        f"  tl.from('#scene-statement .scene-inner', {{ opacity: 0, y: 40, duration: {0.7 if is_full else 0.6}, ease: 'power2.out' }}, {_fmt_time(s2_start + 0.1)});\n"
-        f"{attr_tl}"
-        f"{scene3_tl}"
-        f"{scene4_tl}"
-        f"{media_tl}\n"
+
+def _build_debate_gsap(
+    is_full: bool, s1_start: float, s2_start: float, attr_tl: str, scene3_tl: str, scene4_tl: str,
+    media_tl: str, slot_v_tl: str, cap_tl: str,
+) -> str:
+    dur = 0.7 if is_full else 0.6
+    return (
+        f"<script>\n"
+        f"(function() {{\n"
+        f"  window.__timelines = window.__timelines || {{}};\n"
+        f"  var tl = gsap.timeline({{ paused: true }});\n"
+        f"  tl.from('#scene-hook .scene-inner', {{ opacity: 0, y: 40, duration: {dur}, ease: 'power2.out' }}, {_fmt_time(s1_start + 0.1)});\n"
+        f"  tl.from('#scene-statement .scene-inner', {{ opacity: 0, y: 40, duration: {dur}, ease: 'power2.out' }}, {_fmt_time(s2_start + 0.1)});\n"
+        f"{attr_tl}{scene3_tl}{scene4_tl}{media_tl}\n"
         f"{slot_v_tl}\n"
         f"{cap_tl}"
-        "  window.__timelines.main = tl;\n"
-        "})();\n"
-        "</script>"
+        f"  window.__timelines.main = tl;\n"
+        f"}})();\n"
+        f"</script>"
     )
 
+
+def _build_debate_html(content: dict[str, Any], variant: str) -> str:
+    is_full = variant == "full"
+    total = min(float(content.get("duration", 40.0)), 58.0) if not is_full else float(content.get("duration", 45.0))
+    timing = _scene_timing(content, total, variant)
+
+    slots, hook, stmt, ctx, tkw, es = _resolve_debate_slots(content)
+    narration_key = "narration" if is_full else "narration_short"
+    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
+    captions = content.get("caption_lines") or derive_captions(narration_src, total, 4 if is_full else 3)
+    cap_html, cap_tl = _caption_elements(captions, track_index=10)
+
+    s1_start, s1_end = timing["hook"]
+    s2_start, s2_end = timing["statement"]
+    s1_dur = max(0.5, s1_end - s1_start)
+    s2_dur = max(0.5, s2_end - s2_start)
+
+    ctx_v = HAS_VISUAL if ctx.get("visual") else ""
+    tkw_v = HAS_VISUAL if tkw.get("visual") else ""
+    hook_v = HAS_VISUAL if hook.get("visual") else ""
+    stmt_v = HAS_VISUAL if stmt.get("visual") else ""
+
+    attr_line, attr_tl, scene3_html, scene3_tl, scene4_html, scene4_tl = _resolve_debate_scenes(
+        timing, es, is_full, ctx_v, tkw_v, s2_start
+    )
+
+    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
+    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
+    css = _build_debate_css(is_full, media_css)
+    gsap = _build_debate_gsap(is_full, s1_start, s2_start, attr_tl, scene3_tl, scene4_tl, media_tl, slot_v_tl, cap_tl)
     audio_src = ASSET_NARRATION_FULL if is_full else ASSET_NARRATION_REELS
 
-    title_tag = f"<title>{e_title} — news-debate</title>"
-
-    html = (
+    return (
         "<!doctype html>\n"
         "<html lang=\"vi\">\n"
         "<head>\n"
         "  <meta charset=\"UTF-8\" />\n"
         "  <meta name=\"viewport\" content=\"width=1080, height=1920\" />\n"
-        f"  {title_tag}\n"
+        f"  <title>{es['title']} — news-debate</title>\n"
         f"  <script src=\"{GSAP_CDN}\"></script>\n"
         f"  {css}\n"
         "</head>\n"
@@ -322,15 +311,15 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         f"{slot_v_html}\n"
         f"    <section id=\"scene-hook\" class=\"clip{hook_v}\" data-start=\"{_fmt_time(s1_start)}\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
-        f"        <span class=\"kicker\">{e_kicker}</span>\n"
-        f"        <h1 class=\"title\">{e_title}</h1>\n"
-        f"        <p class=\"scene-text\">{e_hook_text}</p>\n"
+        f"        <span class=\"kicker\">{es['kicker']}</span>\n"
+        f"        <h1 class=\"title\">{es['title']}</h1>\n"
+        f"        <p class=\"scene-text\">{es['hook_text']}</p>\n"
         "      </div>\n"
         "    </section>\n"
         f"    <section id=\"scene-statement\" class=\"clip{stmt_v}\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
-        f"        <span class=\"scene-heading\">{e_stmt_head}</span>\n"
-        f"        <blockquote class=\"statement\">{e_stmt_text}</blockquote>\n"
+        f"        <span class=\"scene-heading\">{es['stmt_head']}</span>\n"
+        f"        <blockquote class=\"statement\">{es['stmt_text']}</blockquote>\n"
         f"{attr_line}"
         "      </div>\n"
         "    </section>\n"
@@ -346,80 +335,41 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
     return html
 
 
-def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
-    is_full = variant == "full"
-    total = float(content.get("duration", 45.0 if is_full else 40.0))
-    if not is_full:
-        total = min(total, 58.0)
+def _resolve_evidence_slots(content: dict[str, Any]) -> tuple[dict, dict, dict, dict, dict, dict[str, str]]:
+    slots = content.get("slots") if isinstance(content.get("slots"), dict) else {}
+    hook = slots.get("hook") if isinstance(slots.get("hook"), dict) else {}
+    metric = slots.get("metric") if isinstance(slots.get("metric"), dict) else {}
+    comp = slots.get("comparison") if isinstance(slots.get("comparison"), dict) else {}
+    caveat = slots.get("caveat") if isinstance(slots.get("caveat"), dict) else {}
+    es = {
+        "kicker": esc(content.get("kicker", "SỐ LIỆU")),
+        "title": esc(content.get("title", "")),
+        "hook_text": esc(hook.get("text", "")),
+        "metric_value": esc(metric.get("label", metric.get("text", ""))),
+        "metric_desc": esc(metric.get("text", metric.get("heading", ""))),
+        "comp_label": esc(comp.get("label", "So sánh")),
+        "comp_text": esc(comp.get("text", "")),
+        "caveat_head": esc(caveat.get("heading", "Điều cần lưu ý")),
+        "caveat_text": esc(caveat.get("text", "")),
+    }
+    return slots, hook, metric, comp, caveat, es
+
+
+def _resolve_evidence_timings(content: dict[str, Any], is_full: bool) -> tuple[float, float, float, float, float, float, float, float]:
+    total = min(float(content.get("duration", 40.0)), 58.0) if not is_full else float(content.get("duration", 45.0))
     s1_dur = 8.0 if is_full else 10.0
     s2_start = 8.0 if is_full else 10.0
     s2_dur = 14.0 if is_full else 16.0
     s3_start = 22.0 if is_full else 20.0
     s3_dur = 14.0 if is_full else 15.0
-    s4_start = 36.0
-    s4_dur = 9.0
+    return total, s1_dur, s2_start, s2_dur, s3_start, s3_dur, 36.0, 9.0
 
-    slots = content.get("slots", {}) if isinstance(content.get("slots"), dict) else {}
-    hook = slots.get("hook", {}) if isinstance(slots.get("hook"), dict) else {}
-    metric = slots.get("metric", {}) if isinstance(slots.get("metric"), dict) else {}
-    comp = slots.get("comparison", {}) if isinstance(slots.get("comparison"), dict) else {}
-    caveat = slots.get("caveat", {}) if isinstance(slots.get("caveat"), dict) else {}
 
-    e_kicker = esc(content.get("kicker", "SỐ LIỆU"))
-    e_title = esc(content.get("title", ""))
-    e_hook_text = esc(hook.get("text", ""))
-
-    e_metric_value = esc(metric.get("label", metric.get("text", "")))
-    e_metric_desc = esc(metric.get("text", metric.get("heading", "")))
-
-    e_comp_label = esc(comp.get("label", "So sánh"))
-    e_comp_text = esc(comp.get("text", ""))
-
-    e_caveat_head = esc(caveat.get("heading", "Điều cần lưu ý"))
-    e_caveat_text = esc(caveat.get("text", ""))
-
-    narration_key = "narration" if is_full else "narration_short"
-    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
-    max_caps = 4 if is_full else 3
-
-    captions = content.get("caption_lines")
-    if not captions:
-        captions = derive_captions(narration_src, total, max_caps)
-
-    cap_html, cap_tl = _caption_elements(captions, track_index=10)
-
-    audio_src = ASSET_NARRATION_FULL if is_full else ASSET_NARRATION_REELS
-
-    include_caveat = is_full and bool(e_caveat_text)
-
-    metric_tl = (
-        f"      tl.from('#metric-value', {{ opacity: 0, scale: 0.82, duration: 0.8, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.5)});\n"
-    )
-
-    hook_v = HAS_VISUAL if hook.get("visual") else ""
-    metric_v = HAS_VISUAL if metric.get("visual") else ""
-    comp_v = HAS_VISUAL if comp.get("visual") else ""
-    caveat_v = HAS_VISUAL if caveat.get("visual") else ""
-
-    caveat_html = ""
-    caveat_tl = ""
-    if include_caveat:
-        caveat_html = (
-            f"    <section id=\"scene-caveat\" class=\"clip{caveat_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
-            "      <div class=\"scene-inner\">\n"
-            f"        <span class=\"kicker\">{e_caveat_head}</span>\n"
-            f"        <p class=\"scene-text\">{e_caveat_text}</p>\n"
-            "      </div>\n"
-            "    </section>\n"
-        )
-        caveat_tl = (
-            f"      tl.from('#scene-caveat .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s4_start + 0.1)});\n"
-        )
-
-    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
-    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
-
-    css = (
+def _build_evidence_css(is_full: bool, media_css: str) -> str:
+    title_sz = "56px" if is_full else "48px"
+    scene_sz = "34px" if is_full else "30px"
+    val_sz = "112px" if is_full else "88px"
+    return (
         "<style>\n"
         ":root { --accent: #3b82f6; }\n"
         "* { box-sizing: border-box; }\n"
@@ -429,10 +379,10 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         ".clip { position:absolute;inset:0; }\n"
         ".scene-inner { display:flex;flex-direction:column;justify-content:center;align-items:center;width:100%;height:100%;padding:110px 70px 170px;text-align:center; }\n"
         ".kicker { font-size:22px;font-weight:700;letter-spacing:.3em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;padding:6px 20px;border:2px solid var(--accent);border-radius:6px; }\n"
-        f".title {{ font-size:{'56px' if is_full else '48px'};font-weight:900;line-height:1.15;color:#fff;max-width:900px;margin:0 auto 40px; }}\n"
-        f".scene-text {{ font-size:{'34px' if is_full else '30px'};font-weight:400;line-height:1.5;color:#d5deed;max-width:900px;margin:0; }}\n"
+        f".title {{ font-size:{title_sz};font-weight:900;line-height:1.15;color:#fff;max-width:900px;margin:0 auto 40px; }}\n"
+        f".scene-text {{ font-size:{scene_sz};font-weight:400;line-height:1.5;color:#d5deed;max-width:900px;margin:0; }}\n"
         ".metric-card { width:100%; max-width:820px; padding:58px 60px; border:1px solid rgba(130,180,255,.35); border-radius:16px; background:rgba(59,130,246,.10); }\n"
-        f".metric-value {{ font-size:{'112px' if is_full else '88px'};line-height:1;font-weight:900;color:var(--accent);margin:0 0 18px; }}\n"
+        f".metric-value {{ font-size:{val_sz};line-height:1;font-weight:900;color:var(--accent);margin:0 0 18px; }}\n"
         ".metric-label { font-size:28px;line-height:1.4;color:#d5deed;margin:0; }\n"
         ".comparison-card { width:100%; max-width:860px; text-align:left; padding:42px 48px; border-left:4px solid var(--accent); background:rgba(255,255,255,.04); }\n"
         ".comparison-label { font-size:26px; color:#91b8f4; margin-bottom:16px; }\n"
@@ -443,12 +393,32 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         "</style>"
     )
 
-    gsap = (
+
+def _build_evidence_caveat(is_full: bool, caveat_head: str, caveat_text: str, caveat_v: str, s4_start: float, s4_dur: float) -> tuple[str, str]:
+    if not (is_full and caveat_text):
+        return "", ""
+    html = (
+        f"    <section id=\"scene-caveat\" class=\"clip{caveat_v}\" data-start=\"{_fmt_time(s4_start)}\" data-duration=\"{_fmt_time(s4_dur)}\" data-track-index=\"4\">\n"
+        "      <div class=\"scene-inner\">\n"
+        f"        <span class=\"kicker\">{caveat_head}</span>\n"
+        f"        <p class=\"scene-text\">{caveat_text}</p>\n"
+        "      </div>\n"
+        "    </section>\n"
+    )
+    tl = f"      tl.from('#scene-caveat .scene-inner', {{ opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }}, {_fmt_time(s4_start + 0.1)});\n"
+    return html, tl
+
+
+def _build_evidence_gsap(
+    s2_start: float, s3_start: float, metric_tl: str, caveat_tl: str,
+    media_tl: str, slot_v_tl: str, cap_tl: str,
+) -> str:
+    return (
         "<script>\n"
         "(function() {\n"
         "  window.__timelines = window.__timelines || {};\n"
         "  var tl = gsap.timeline({ paused: true });\n"
-        f"  tl.from('#scene-hook .scene-inner', {{ opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }}, 0.1);\n"
+        "  tl.from('#scene-hook .scene-inner', { opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }, 0.1);\n"
         f"  tl.from('#scene-metric .scene-inner', {{ opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }}, {_fmt_time(s2_start + 0.1)});\n"
         f"{metric_tl}"
         f"  tl.from('#scene-comparison .scene-inner', {{ opacity: 0, y: 40, duration: 0.7, ease: 'power2.out' }}, {_fmt_time(s3_start + 0.1)});\n"
@@ -461,15 +431,38 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         "</script>"
     )
 
-    caveat_section = caveat_html
 
-    html = (
+def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
+    is_full = variant == "full"
+    total, s1_dur, s2_start, s2_dur, s3_start, s3_dur, s4_start, s4_dur = _resolve_evidence_timings(content, is_full)
+    slots, hook, metric, comp, caveat, es = _resolve_evidence_slots(content)
+
+    narration_key = "narration" if is_full else "narration_short"
+    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
+    captions = content.get("caption_lines") or derive_captions(narration_src, total, 4 if is_full else 3)
+    cap_html, cap_tl = _caption_elements(captions, track_index=10)
+
+    hook_v = HAS_VISUAL if hook.get("visual") else ""
+    metric_v = HAS_VISUAL if metric.get("visual") else ""
+    comp_v = HAS_VISUAL if comp.get("visual") else ""
+    caveat_v = HAS_VISUAL if caveat.get("visual") else ""
+
+    metric_tl = f"      tl.from('#metric-value', {{ opacity: 0, scale: 0.82, duration: 0.8, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.5)});\n"
+    caveat_html, caveat_tl = _build_evidence_caveat(is_full, es["caveat_head"], es["caveat_text"], caveat_v, s4_start, s4_dur)
+
+    media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
+    slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
+    css = _build_evidence_css(is_full, media_css)
+    gsap = _build_evidence_gsap(s2_start, s3_start, metric_tl, caveat_tl, media_tl, slot_v_tl, cap_tl)
+    audio_src = ASSET_NARRATION_FULL if is_full else ASSET_NARRATION_REELS
+
+    return (
         "<!doctype html>\n"
         "<html lang=\"vi\">\n"
         "<head>\n"
         "  <meta charset=\"UTF-8\" />\n"
         "  <meta name=\"viewport\" content=\"width=1080, height=1920\" />\n"
-        f"  <title>{e_title} — news-evidence</title>\n"
+        f"  <title>{es['title']} — news-evidence</title>\n"
         f"  <script src=\"{GSAP_CDN}\"></script>\n"
         f"  {css}\n"
         "</head>\n"
@@ -482,36 +475,34 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         f"{slot_v_html}\n"
         f"    <section id=\"scene-hook\" class=\"clip{hook_v}\" data-start=\"0\" data-duration=\"{_fmt_time(s1_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
-        f"        <span class=\"kicker\">{e_kicker}</span>\n"
-        f"        <h1 class=\"title\">{e_title}</h1>\n"
-        f"        <p class=\"scene-text\">{e_hook_text}</p>\n"
+        f"        <span class=\"kicker\">{es['kicker']}</span>\n"
+        f"        <h1 class=\"title\">{es['title']}</h1>\n"
+        f"        <p class=\"scene-text\">{es['hook_text']}</p>\n"
         "      </div>\n"
         "    </section>\n"
         f"    <section id=\"scene-metric\" class=\"clip{metric_v}\" data-start=\"{_fmt_time(s2_start)}\" data-duration=\"{_fmt_time(s2_dur)}\" data-track-index=\"2\">\n"
         "      <div class=\"scene-inner\">\n"
         "        <div class=\"metric-card\">\n"
-        f"          <p id=\"metric-value\" class=\"metric-value\">{e_metric_value}</p>\n"
-        f"          <p class=\"metric-label\">{e_metric_desc}</p>\n"
-        f"          <div class=\"comparison-label\">{e_comp_label}</div>\n"
-        f"          <p class=\"comparison-text\">{e_comp_text}</p>\n"
+        f"          <p id=\"metric-value\" class=\"metric-value\">{es['metric_value']}</p>\n"
+        f"          <p class=\"metric-label\">{es['metric_desc']}</p>\n"
+        f"          <div class=\"comparison-label\">{es['comp_label']}</div>\n"
+        f"          <p class=\"comparison-text\">{es['comp_text']}</p>\n"
         "        </div>\n"
         "      </div>\n"
         "    </section>\n"
         f"    <section id=\"scene-comparison\" class=\"clip{comp_v}\" data-start=\"{_fmt_time(s3_start)}\" data-duration=\"{_fmt_time(s3_dur)}\" data-track-index=\"3\">\n"
         "      <div class=\"scene-inner\">\n"
-        f"        <span class=\"kicker\">{e_comp_label}</span>\n"
-        f"        <p class=\"scene-text\">{e_comp_text}</p>\n"
+        f"        <span class=\"kicker\">{es['comp_label']}</span>\n"
+        f"        <p class=\"scene-text\">{es['comp_text']}</p>\n"
         "      </div>\n"
         "    </section>\n"
-        f"{caveat_section}"
+        f"{caveat_html}"
         f"{cap_html}"
         "  </div>\n"
         f"  {gsap}\n"
         "</body>\n"
         "</html>\n"
     )
-
-    return html
 
 
 def _resolve_explainer_slots(content: dict[str, Any]) -> tuple[dict, dict, dict, dict, dict]:

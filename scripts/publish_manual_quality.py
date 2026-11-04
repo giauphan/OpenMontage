@@ -312,7 +312,6 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
 def _verify_stage_artifacts(
     project_dir: Path,
     st_name: str,
-    pipeline_type: str,
     manifest_stages_dict: dict[str, Any],
     cp_data: dict,
 ) -> None:
@@ -372,7 +371,7 @@ def _verify_single_stage_checkpoint(
             f"Release preflight failed: Stage {st_name!r} requires human approval but human_approved is false"
         )
 
-    _verify_stage_artifacts(project_dir, st_name, pipeline_type, manifest_stages_dict, cp_data)
+    _verify_stage_artifacts(project_dir, st_name, manifest_stages_dict, cp_data)
 
 
 def _verify_pipeline_stage_checkpoints(
