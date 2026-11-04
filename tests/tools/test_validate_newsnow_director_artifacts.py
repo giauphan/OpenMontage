@@ -29,6 +29,27 @@ def test_validator_accepts_valid_flat_artifact(tmp_path):
     assert helper.validate_and_promote_director_artifacts(tmp_path) is True
 
 
+def test_en_us_validator_rejects_narration_that_cannot_fit_short_contract(tmp_path):
+    """Overlong English text must trigger the director repair turn before TTS."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "script_en_US.json").write_text(json.dumps({
+        "version": "1.0",
+        "title": "Agent reliability",
+        "total_duration_seconds": 70,
+        "sections": [{
+            "id": "s1",
+            "text": "word " * 190,
+            "start_seconds": 0,
+            "end_seconds": 70,
+        }],
+    }), encoding="utf-8")
+    (artifacts / "project_locale.json").write_text(json.dumps({"locale": "en-US"}), encoding="utf-8")
+
+    assert helper.validate_and_promote_director_artifacts(tmp_path) is False
+    assert any("spoken words" in error for error in helper.LAST_VALIDATION_ERRORS)
+
+
 def test_validator_requires_both_compositions_when_requested(tmp_path):
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()

@@ -12,7 +12,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(ROOT))
 
-from scripts.repair_hyperframes_quality import patch_html, repair_missing_composition_assets
+from scripts.repair_hyperframes_quality import (
+    _patch_audio_bindings,
+    patch_html,
+    repair_missing_composition_assets,
+)
 
 PIPELINE = ROOT / "scripts" / "run_daily_news_pipeline.sh"
 
@@ -23,6 +27,21 @@ def composition(tmp_path: Path) -> tuple[Path, Path]:
     index = comp_dir / "index.html"
     index.write_text("<html></html>", encoding="utf-8")
     return comp_dir, index
+
+
+def test_existing_narration_tag_without_src_is_bound_to_materialized_audio(tmp_path: Path) -> None:
+    """A director may emit the required tag but omit src; repair must bind it."""
+    comp_dir, index = composition(tmp_path)
+    (comp_dir / "assets").mkdir()
+    html = (
+        '<body><div data-composition-id="main">'
+        '<audio id="narration" class="clip" data-start="0"></audio>'
+        '</div></body>'
+    )
+
+    patched = _patch_audio_bindings(html, index, "assets/narration.mp3")
+
+    assert '<audio id="narration" class="clip" data-start="0" src="assets/narration.mp3">' in patched
 
 
 def test_same_basename_elsewhere_is_not_copied_for_image_or_css(tmp_path: Path) -> None:

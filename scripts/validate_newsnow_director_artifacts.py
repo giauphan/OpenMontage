@@ -33,6 +33,38 @@ from scripts.repair_hyperframes_quality import (
 
 LAST_VALIDATION_ERRORS: list[str] = []
 
+EN_US_SHORT_MAX_WORDS = 175
+
+
+def _validate_en_us_short_word_budget(script_path: Path) -> bool:
+    """Reject text that cannot meet the measured 65–75 second speech contract.
+
+    This is deliberately a pre-TTS guard.  The director's declared duration is
+    metadata, while the spoken words are what determine the audio runtime.
+    """
+    try:
+        payload = json.loads(script_path.read_text(encoding="utf-8"))
+        sections = payload.get("sections", [])
+        words = re.findall(
+            r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*",
+            " ".join(
+                section.get("text", "")
+                for section in sections
+                if isinstance(section, dict) and isinstance(section.get("text"), str)
+            ),
+        )
+    except (OSError, json.JSONDecodeError, AttributeError):
+        LAST_VALIDATION_ERRORS.append("cannot measure en-US narration word budget")
+        return False
+
+    if len(words) > EN_US_SHORT_MAX_WORDS:
+        LAST_VALIDATION_ERRORS.append(
+            f"en-US narration has {len(words)} spoken words; maximum is "
+            f"{EN_US_SHORT_MAX_WORDS} for the required 65–75 second audio"
+        )
+        return False
+    return True
+
 
 def _detect_templated(project_dir: Path) -> bool:
     if (project_dir / "template_provenance.json").is_file():
@@ -621,6 +653,10 @@ def validate_and_promote_director_artifacts(
             LAST_VALIDATION_ERRORS.append("bound canonical script is missing; refusing draft fallback")
             return False
         if not _validate_bound_script_bytes(canonical_script, evidence_path):
+            return False
+
+    if locale == "en-US" and canonical_script.is_file():
+        if not _validate_en_us_short_word_budget(canonical_script):
             return False
 
     if require_compositions and _has_required_compositions(project_dir):

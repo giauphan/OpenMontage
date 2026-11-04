@@ -521,6 +521,21 @@ def _add_audio_data_start(match: re.Match) -> str:
 
 def _patch_audio_bindings(html: str, path: Path, narration_src: str) -> str:
     html = re.sub(r"(<audio\b(?=[^>]*\bid=[\"']narration[\"'])[^>]*\bsrc=)[\"'][^\"']*[\"']", rf'\1"{narration_src}"', html)
+
+    # A common director failure is emitting the narration element without a
+    # src attribute.  The element's presence must not suppress materialization:
+    # bind its source in-place so its authored timing/class attributes survive.
+    def add_missing_narration_src(match: re.Match) -> str:
+        tag = match.group(0)
+        if re.search(r"\bsrc\s*=", tag, flags=re.IGNORECASE):
+            return tag
+        return tag[:-1] + f' src="{narration_src}">'
+
+    html = re.sub(
+        r"<audio\b(?=[^>]*\bid=[\"']narration[\"'])[^>]*>",
+        add_missing_narration_src,
+        html,
+    )
     html = re.sub(r"<audio\b[^>]*\bid=[\"']narration_\d+[\"'][^>]*>\s*(?:</audio>)?\s*", "", html)
 
     has_bg = (path.parent / "assets" / MUSIC_BG_MP3).is_file()
