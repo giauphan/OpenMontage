@@ -110,6 +110,17 @@ def _caption_elements(captions: list[dict[str, Any]], track_index: int) -> tuple
     return "\n".join(html_parts), "\n".join(tl_parts)
 
 
+def _slot_has_visual(slot: dict[str, Any]) -> str:
+    return HAS_VISUAL if slot.get("visual") else ""
+
+
+def _resolve_template_captions(content: dict[str, Any], total: float, is_full: bool) -> tuple[str, list[dict[str, Any]]]:
+    key = "narration" if is_full else "narration_short"
+    src = content.get(key) or (content.get("narration") if not is_full else "")
+    caps = content.get("caption_lines") or derive_captions(src, total, 4 if is_full else 3)
+    return str(src), caps
+
+
 def _extract_slot_visuals(slots: dict[str, Any], total: float) -> tuple[str, str]:
     visual_htmls = []
     visual_tls = []
@@ -267,9 +278,7 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
     timing = _scene_timing(content, total, variant)
 
     slots, hook, stmt, ctx, tkw, es = _resolve_debate_slots(content)
-    narration_key = "narration" if is_full else "narration_short"
-    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
-    captions = content.get("caption_lines") or derive_captions(narration_src, total, 4 if is_full else 3)
+    _, captions = _resolve_template_captions(content, total, is_full)
     cap_html, cap_tl = _caption_elements(captions, track_index=10)
 
     s1_start, s1_end = timing["hook"]
@@ -277,10 +286,8 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
     s1_dur = max(0.5, s1_end - s1_start)
     s2_dur = max(0.5, s2_end - s2_start)
 
-    ctx_v = HAS_VISUAL if ctx.get("visual") else ""
-    tkw_v = HAS_VISUAL if tkw.get("visual") else ""
-    hook_v = HAS_VISUAL if hook.get("visual") else ""
-    stmt_v = HAS_VISUAL if stmt.get("visual") else ""
+    ctx_v, tkw_v = _slot_has_visual(ctx), _slot_has_visual(tkw)
+    hook_v, stmt_v = _slot_has_visual(hook), _slot_has_visual(stmt)
 
     attr_line, attr_tl, scene3_html, scene3_tl, scene4_html, scene4_tl = _resolve_debate_scenes(
         timing, es, is_full, ctx_v, tkw_v, s2_start
@@ -437,15 +444,11 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
     total, s1_dur, s2_start, s2_dur, s3_start, s3_dur, s4_start, s4_dur = _resolve_evidence_timings(content, is_full)
     slots, hook, metric, comp, caveat, es = _resolve_evidence_slots(content)
 
-    narration_key = "narration" if is_full else "narration_short"
-    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
-    captions = content.get("caption_lines") or derive_captions(narration_src, total, 4 if is_full else 3)
+    _, captions = _resolve_template_captions(content, total, is_full)
     cap_html, cap_tl = _caption_elements(captions, track_index=10)
 
-    hook_v = HAS_VISUAL if hook.get("visual") else ""
-    metric_v = HAS_VISUAL if metric.get("visual") else ""
-    comp_v = HAS_VISUAL if comp.get("visual") else ""
-    caveat_v = HAS_VISUAL if caveat.get("visual") else ""
+    hook_v, metric_v = _slot_has_visual(hook), _slot_has_visual(metric)
+    comp_v, caveat_v = _slot_has_visual(comp), _slot_has_visual(caveat)
 
     metric_tl = f"      tl.from('#metric-value', {{ opacity: 0, scale: 0.82, duration: 0.8, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.5)});\n"
     caveat_html, caveat_tl = _build_evidence_caveat(is_full, es["caveat_head"], es["caveat_text"], caveat_v, s4_start, s4_dur)
@@ -629,12 +632,8 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
     e_hook_text, e_cap_label, e_cap_text = esc(hook.get("text", "")), esc(cap.get("label", "")), esc(cap.get("text", ""))
     e_steps_text, e_lim_head, e_lim_text = esc(steps.get("text", "")), esc(lim.get("heading", "Hạn chế")), esc(lim.get("text", ""))
 
-    narration_key = "narration" if is_full else "narration_short"
-    narration_src = content.get(narration_key) or (content.get("narration") if not is_full else "")
+    narration_src, captions = _resolve_template_captions(content, total, is_full)
     narration = esc(narration_src)
-
-    max_caps = 4 if is_full else 3
-    captions = content.get("caption_lines") or derive_captions(narration_src, total, max_caps)
 
     cap_html, cap_tl = _caption_elements(captions, track_index=10)
     audio_src = ASSET_NARRATION_FULL if is_full else ASSET_NARRATION_REELS
@@ -646,8 +645,8 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
 
     media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
     slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
-    hook_v, cap_v = (HAS_VISUAL if hook.get("visual") else ""), (HAS_VISUAL if cap.get("visual") else "")
-    steps_v, lim_v = (HAS_VISUAL if steps.get("visual") else ""), (HAS_VISUAL if lim.get("visual") else "")
+    hook_v, cap_v = _slot_has_visual(hook), _slot_has_visual(cap)
+    steps_v, lim_v = _slot_has_visual(steps), _slot_has_visual(lim)
 
     css = _build_explainer_css(is_full, media_css)
 
