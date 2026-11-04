@@ -309,6 +309,31 @@ def validate_project_quality(project_path: Path, strict: bool = False) -> None:
     _run_render_quality_validator(project_path, root, strict)
 
 
+def _verify_stage_artifacts(
+    project_dir: Path,
+    st_name: str,
+    pipeline_type: str,
+    manifest_stages_dict: dict[str, Any],
+    cp_data: dict,
+) -> None:
+    from lib.checkpoint import CANONICAL_STAGE_ARTIFACTS
+
+    produced = manifest_stages_dict.get(st_name, {}).get("produces") or (
+        [CANONICAL_STAGE_ARTIFACTS[st_name]] if st_name in CANONICAL_STAGE_ARTIFACTS else []
+    )
+    for art in produced:
+        art_in_cp = isinstance(cp_data.get("artifacts"), dict) and art in cp_data["artifacts"]
+        art_on_disk = (
+            (project_dir / "artifacts" / f"{art}.json").is_file()
+            or (project_dir / "artifacts" / f"{art}_vi.json").is_file()
+            or (project_dir / f"{art}.json").is_file()
+        )
+        if not (art_in_cp or art_on_disk):
+            raise RuntimeError(
+                f"Release preflight failed: Missing required stage artifact {art!r} for stage {st_name!r}"
+            )
+
+
 def _verify_single_stage_checkpoint(
     project_dir: Path,
     st_name: str,
@@ -317,7 +342,7 @@ def _verify_single_stage_checkpoint(
     is_news: bool,
     is_interactive_production: bool,
 ) -> None:
-    from lib.checkpoint import _stage_requires_approval, validate_checkpoint, CANONICAL_STAGE_ARTIFACTS
+    from lib.checkpoint import _stage_requires_approval, validate_checkpoint
 
     cp_file = project_dir / f"checkpoint_{st_name}.json"
     if not cp_file.is_file():
@@ -347,20 +372,7 @@ def _verify_single_stage_checkpoint(
             f"Release preflight failed: Stage {st_name!r} requires human approval but human_approved is false"
         )
 
-    produced = manifest_stages_dict.get(st_name, {}).get("produces") or (
-        [CANONICAL_STAGE_ARTIFACTS[st_name]] if st_name in CANONICAL_STAGE_ARTIFACTS else []
-    )
-    for art in produced:
-        art_in_cp = isinstance(cp_data.get("artifacts"), dict) and art in cp_data["artifacts"]
-        art_on_disk = (
-            (project_dir / "artifacts" / f"{art}.json").is_file()
-            or (project_dir / "artifacts" / f"{art}_vi.json").is_file()
-            or (project_dir / f"{art}.json").is_file()
-        )
-        if not (art_in_cp or art_on_disk):
-            raise RuntimeError(
-                f"Release preflight failed: Missing required stage artifact {art!r} for stage {st_name!r}"
-            )
+    _verify_stage_artifacts(project_dir, st_name, pipeline_type, manifest_stages_dict, cp_data)
 
 
 def _verify_pipeline_stage_checkpoints(
@@ -499,6 +511,26 @@ def _resolve_media_to_check(
     return media_to_check
 
 
+def _extract_result_hashes(results: Any) -> list[str]:
+    if not isinstance(results, list):
+        return []
+    hashes = []
+    for result in results:
+        if isinstance(result, dict):
+            details = result.get("details")
+            if isinstance(details, dict) and details.get("inspected_artifact_hash"):
+                hashes.append(str(details["inspected_artifact_hash"]))
+    return hashes
+
+
+def _extract_entry_hashes(entry: dict) -> set[str]:
+    hashes = [entry.get("inspected_artifact_hash")]
+    details = entry.get("details")
+    if isinstance(details, dict):
+        hashes.extend(_extract_result_hashes(details.get("results")))
+    return {h for h in hashes if isinstance(h, str) and h}
+
+
 def _extract_inspected_hashes(val_status_file: Path, project_name: str) -> set[str]:
     if not val_status_file.is_file():
         return set()
@@ -507,19 +539,10 @@ def _extract_inspected_hashes(val_status_file: Path, project_name: str) -> set[s
             v_stat = json.load(f)
         entries = v_stat if isinstance(v_stat, list) else [v_stat]
         for entry in reversed(entries):
-            if not isinstance(entry, dict) or entry.get("project_id") not in (None, project_name):
-                continue
-            hashes = [entry.get("inspected_artifact_hash")]
-            details = entry.get("details")
-            results = details.get("results", []) if isinstance(details, dict) else []
-            if isinstance(results, list):
-                for result in results:
-                    result_details = result.get("details") if isinstance(result, dict) else None
-                    if isinstance(result_details, dict):
-                        hashes.append(result_details.get("inspected_artifact_hash"))
-            inspected = {h for h in hashes if isinstance(h, str) and h}
-            if inspected:
-                return inspected
+            if isinstance(entry, dict) and entry.get("project_id") in (None, project_name):
+                inspected = _extract_entry_hashes(entry)
+                if inspected:
+                    return inspected
     except (json.JSONDecodeError, OSError):
         pass
     return set()
@@ -561,18 +584,13 @@ def _verify_approved_media_hashes(
             )
 
 
-def _verify_approved_content_and_timing(
-    metadata: dict,
-    approval: dict,
-    platforms: list[dict] | None,
-) -> None:
+def _verify_approved_text_copy(metadata: dict, approval: dict) -> None:
     approved_title = approval.get("approved_title") or approval.get("title")
     if approved_title is not None and metadata.get("title") != approved_title:
         raise RuntimeError(
             f"Release preflight failed: Post title has been altered since approval. "
             f"Approved: {approved_title!r}, Current: {metadata.get('title')!r}"
         )
-
     approved_desc = approval.get("approved_description") or approval.get("description")
     if approved_desc is not None and metadata.get("description") != approved_desc:
         raise RuntimeError(
@@ -580,6 +598,8 @@ def _verify_approved_content_and_timing(
             f"Approved: {approved_desc!r}, Current: {metadata.get('description')!r}"
         )
 
+
+def _verify_approved_accounts(approval: dict, platforms: list[dict] | None) -> None:
     approved_accounts = approval.get("target_accounts", {})
     if not approved_accounts and approval.get("account"):
         approved_accounts = {"all": approval.get("account")}
@@ -594,6 +614,8 @@ def _verify_approved_content_and_timing(
                     f"Configured account: {acct!r}, Approved account: {target_match!r}"
                 )
 
+
+def _verify_approved_schedule_time(metadata: dict, approval: dict) -> None:
     approved_time = (
         approval.get("release_time")
         or approval.get("publish_time")
@@ -606,6 +628,16 @@ def _verify_approved_content_and_timing(
                 f"Release preflight failed: Release time mismatch. "
                 f"Approved: {approved_time!r}, Scheduled: {actual_time!r}"
             )
+
+
+def _verify_approved_content_and_timing(
+    metadata: dict,
+    approval: dict,
+    platforms: list[dict] | None,
+) -> None:
+    _verify_approved_text_copy(metadata, approval)
+    _verify_approved_accounts(approval, platforms)
+    _verify_approved_schedule_time(metadata, approval)
 
 
 def enforce_release_preflight(

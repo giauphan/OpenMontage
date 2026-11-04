@@ -229,21 +229,25 @@ def _extract_from_text(text: str) -> Optional[dict]:
     return None
 
 
+def _search_sub_val(sub_v: Any) -> Optional[dict]:
+    if isinstance(sub_v, (dict, list)):
+        return _search_cand(sub_v)
+    if isinstance(sub_v, str):
+        return _extract_from_text(sub_v)
+    return None
+
+
 def _search_cand_dict(val: dict) -> Optional[dict]:
     for k in ("text", "result", "message", "content"):
-        if k in val and isinstance(val[k], str):
-            found = _extract_from_text(val[k])
+        field = val.get(k)
+        if isinstance(field, str):
+            found = _extract_from_text(field)
             if found:
                 return found
     for sub_v in val.values():
-        if isinstance(sub_v, (dict, list)):
-            found = _search_cand(sub_v)
-            if found:
-                return found
-        elif isinstance(sub_v, str):
-            found = _extract_from_text(sub_v)
-            if found:
-                return found
+        found = _search_sub_val(sub_v)
+        if found:
+            return found
     return None
 
 
@@ -417,6 +421,84 @@ def validate_content_quality_helper(
     return results
 
 
+def _check_metadata_traversal_and_existence(
+    validator_self: Any,
+    metadata_path: Path,
+    resolved_meta: Path,
+    result_factory: Any,
+) -> Optional[list]:
+    project_dir = getattr(validator_self, "project_dir", None)
+    if project_dir is not None:
+        resolved_proj = Path(project_dir).resolve()
+        try:
+            resolved_meta.relative_to(resolved_proj)
+        except ValueError:
+            return [result_factory(
+                check_name=CHECK_NAME_METADATA_VALIDATION,
+                passed=False,
+                message=f"Path traversal detected: {metadata_path} is outside project dir {resolved_proj}",
+            )]
+    if not resolved_meta.exists():
+        return [result_factory(
+            check_name=CHECK_NAME_METADATA_VALIDATION,
+            passed=False,
+            message=f"Metadata file missing: {metadata_path}",
+        )]
+    return None
+
+
+def _run_metadata_validator_script(
+    validator_self: Any,
+    resolved_meta: Path,
+    validate_script: Path,
+    root_dir: Path,
+    result_factory: Any,
+) -> list:
+    subproc = _facade_symbol("subprocess", subprocess)
+    project_dir = getattr(validator_self, "project_dir", None)
+    proj_arg = str(Path(project_dir).resolve()) if project_dir else str(resolved_meta.parent)
+    cmd = [sys.executable, str(validate_script), proj_arg]
+    try:
+        result = subproc.run(cmd, capture_output=True, text=True, cwd=str(root_dir), timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return [result_factory(
+            check_name=CHECK_NAME_METADATA_VALIDATION,
+            passed=False,
+            message=f"Metadata validator failed to run: {exc}",
+            details={"error": type(exc).__name__},
+        )]
+    if result.returncode == 0:
+        return [result_factory(
+            check_name=CHECK_NAME_METADATA_VALIDATION,
+            passed=True,
+            message="Metadata validation passed ✓",
+            details={"stdout": result.stdout, "stderr": result.stderr},
+        )]
+    messages = [line for line in (result.stderr or result.stdout).splitlines() if line.strip()]
+    if not messages:
+        messages = [f"Metadata validator exited with {result.returncode} without diagnostics"]
+    return [
+        result_factory(
+            check_name=CHECK_NAME_METADATA_VALIDATION,
+            passed=False,
+            message=msg,
+            details={"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
+        )
+        for msg in messages
+    ]
+
+
+def _fallback_metadata_title_validation(resolved_meta: Path, result_factory: Any) -> list:
+    try:
+        data = json.loads(resolved_meta.read_text(encoding="utf-8"))
+        title = data.get("title", "")
+        has_tags = all(tag in title for tag in ("#tintuc", "#congnghe", "#ai"))
+        msg = "Metadata validation passed ✓" if has_tags else "Missing required hashtags in metadata title"
+        return [result_factory(check_name=CHECK_NAME_METADATA_VALIDATION, passed=has_tags, message=msg)]
+    except Exception as e:
+        return [result_factory(check_name=CHECK_NAME_METADATA_VALIDATION, passed=False, message=f"Invalid metadata JSON: {e}")]
+
+
 def validate_metadata_helper(
     validator_self: Any,
     metadata_path: Path,
@@ -424,94 +506,20 @@ def validate_metadata_helper(
 ) -> list:
     """Validate metadata quality."""
     resolved_meta = Path(metadata_path).resolve()
-    project_dir = getattr(validator_self, "project_dir", None)
-    if project_dir is not None:
-        resolved_proj = Path(project_dir).resolve()
-        try:
-            resolved_meta.relative_to(resolved_proj)
-        except ValueError:
-            return [
-                result_factory(
-                    check_name=CHECK_NAME_METADATA_VALIDATION,
-                    passed=False,
-                    message=f"Path traversal detected: {metadata_path} is outside project dir {resolved_proj}",
-                )
-            ]
-
-    if not resolved_meta.exists():
-        return [
-            result_factory(
-                check_name=CHECK_NAME_METADATA_VALIDATION,
-                passed=False,
-                message=f"Metadata file missing: {metadata_path}",
-            )
-        ]
+    err_result = _check_metadata_traversal_and_existence(
+        validator_self, metadata_path, resolved_meta, result_factory
+    )
+    if err_result is not None:
+        return err_result
 
     root_dir = Path(__file__).resolve().parent.parent
     validate_script = root_dir / "scripts" / "validate_publish_metadata.py"
-    subproc = _facade_symbol("subprocess", subprocess)
     if validate_script.exists():
-        proj_arg = str(Path(validator_self.project_dir).resolve()) if project_dir else str(resolved_meta.parent)
-        cmd = [sys.executable, str(validate_script), proj_arg]
-        try:
-            result = subproc.run(cmd, capture_output=True, text=True, cwd=str(root_dir), timeout=30)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return [
-                result_factory(
-                    check_name=CHECK_NAME_METADATA_VALIDATION,
-                    passed=False,
-                    message=f"Metadata validator failed to run: {exc}",
-                    details={"error": type(exc).__name__},
-                )
-            ]
-        if result.returncode == 0:
-            return [
-                result_factory(
-                    check_name=CHECK_NAME_METADATA_VALIDATION,
-                    passed=True,
-                    message="Metadata validation passed ✓",
-                    details={"stdout": result.stdout, "stderr": result.stderr},
-                )
-            ]
-        messages = [line for line in (result.stderr or result.stdout).splitlines() if line.strip()]
-        if not messages:
-            messages = [f"Metadata validator exited with {result.returncode} without diagnostics"]
-        return [
-            result_factory(
-                check_name=CHECK_NAME_METADATA_VALIDATION,
-                passed=False,
-                message=msg,
-                details={"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
-            )
-            for msg in messages
-        ]
+        return _run_metadata_validator_script(
+            validator_self, resolved_meta, validate_script, root_dir, result_factory
+        )
 
-    try:
-        data = json.loads(resolved_meta.read_text(encoding="utf-8"))
-        title = data.get("title", "")
-        if "#tintuc" in title and "#congnghe" in title and "#ai" in title:
-            return [
-                result_factory(
-                    check_name=CHECK_NAME_METADATA_VALIDATION,
-                    passed=True,
-                    message="Metadata validation passed ✓",
-                )
-            ]
-        return [
-            result_factory(
-                check_name=CHECK_NAME_METADATA_VALIDATION,
-                passed=False,
-                message="Missing required hashtags in metadata title",
-            )
-        ]
-    except Exception as e:
-        return [
-            result_factory(
-                check_name=CHECK_NAME_METADATA_VALIDATION,
-                passed=False,
-                message=f"Invalid metadata JSON: {e}",
-            )
-        ]
+    return _fallback_metadata_title_validation(resolved_meta, result_factory)
 
 
 def extract_frames_helper(video_path: Path, out_dir: Path) -> list[Path]:

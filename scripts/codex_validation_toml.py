@@ -16,11 +16,11 @@ from typing import Dict, Optional
 # Strict single-line TOML fallback validator regexes
 _TOML_INT_RE = re.compile(r"[+-]?(?:0[xob][\da-fA-F_]+|0|[1-9](?:_?\d)*)")
 _TOML_FLOAT_RE = re.compile(
-    r"[+-]?(?:(?:\d(?:_?\d)*)?\.\d(?:_?\d)*(?:[eE][+-]?\d(?:_?\d)*)?|\d+(?:_?\d)*[eE][+-]?\d(?:_?\d)*|inf|nan)",
+    r"[+-]?(?:\d+(?:_\d+)*\.\d+(?:_\d+)*(?:e[+-]?\d+(?:_\d+)*)?|\d+(?:_\d+)*e[+-]?\d+(?:_\d+)*|inf|nan)",
     re.IGNORECASE,
 )
 _TOML_DATETIME_RE = re.compile(
-    r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?",
+    r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?",
     re.IGNORECASE,
 )
 _TOML_KEY_SEG_RE = re.compile(r"[A-Za-z0-9_-]+")
@@ -162,21 +162,6 @@ def _toml_validate_scalar(v: str, line_idx: int, ctx: str):
         raise ValueError(f"Line {line_idx}: missing value {ctx}")
     if v[0] in "\"'":
         return _toml_validate_string_scalar(v, line_idx, ctx)
-    if v in ("true", "false"):
-        return v == "true"
-    if v[0] == "[":
-        return _toml_validate_array(v, line_idx, ctx)
-    if v[0] == "{":
-        return _toml_validate_inline_table(v, line_idx, ctx)
-    if _TOML_INT_RE.fullmatch(v):
-        if re.match(r"[+-]?0[xob]", v, re.I):
-            return int(v.replace("_", ""), 0)
-        return int(v.replace("_", ""))
-    if _TOML_FLOAT_RE.fullmatch(v):
-        return float(v.replace("_", ""))
-    if _TOML_DATETIME_RE.fullmatch(v):
-        return v
-    raise ValueError(f"Line {line_idx}: invalid TOML value for {ctx}: {v!r}")
     if v in ("true", "false"):
         return v == "true"
     if v[0] == "[":

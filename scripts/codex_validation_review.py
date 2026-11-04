@@ -174,48 +174,55 @@ def _resolve_script_summary_and_text(project_dir: Path) -> tuple[str, str]:
         return "Script: error reading", ""
 
 
+def _resolve_auth_file_api_key(resolved_home: str) -> Optional[str]:
+    auth_file = Path(resolved_home) / "auth.json"
+    if not auth_file.is_file():
+        return None
+    try:
+        auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+        api_key = auth_data.get("OPENAI_API_KEY")
+        if isinstance(api_key, str) and api_key.strip():
+            return api_key.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _setup_codex_env_and_cmd(agent_bin: str, env: dict[str, str]) -> list[str]:
+    try:
+        resolve_home_fn = _get_resolve_codex_home()
+        resolved_home = resolve_home_fn(env)
+        env["CODEX_HOME"] = resolved_home
+    except RuntimeError as e:
+        raise RuntimeError(f"Configured CODEX_HOME resolution failed: {e}")
+
+    if not env.get("OPENAI_API_KEY"):
+        api_key = _resolve_auth_file_api_key(resolved_home)
+        if api_key:
+            env["OPENAI_API_KEY"] = api_key
+
+    codex_model = env.get("CODEX_MODEL", "model-medium-hight")
+    return [
+        agent_bin,
+        "exec",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--json",
+        "--config",
+        f'model="{codex_model}"',
+        "-",
+    ]
+
+
+def _setup_non_codex_env_and_cmd(agent_bin: str, env: dict[str, str]) -> list[str]:
+    for var in ("CODEXCODE", "CODEX_CODE_ENTRYPOINT", "CODEX_CODE_SSE_PORT", "CODEX_SESSION_ID", "ANTHROPIC_MODEL"):
+        env.pop(var, None)
+    return [agent_bin, "-p", "--output-format", "json", "-"]
+
+
 def _setup_agent_env_and_cmd(agent_bin: str) -> tuple[list[str], dict[str, str]]:
     is_codex = "codex" in Path(agent_bin).name.lower()
     env = os.environ.copy()
-    if is_codex:
-        try:
-            resolve_home_fn = _get_resolve_codex_home()
-            resolved_home = resolve_home_fn(env)
-            env["CODEX_HOME"] = resolved_home
-        except RuntimeError as e:
-            raise RuntimeError(f"Configured CODEX_HOME resolution failed: {e}")
-
-        if not env.get("OPENAI_API_KEY"):
-            auth_file = Path(resolved_home) / "auth.json"
-            if auth_file.is_file():
-                try:
-                    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
-                    api_key = auth_data.get("OPENAI_API_KEY")
-                    if api_key and isinstance(api_key, str) and api_key.strip():
-                        env["OPENAI_API_KEY"] = api_key.strip()
-                except Exception:
-                    pass
-
-        codex_model = env.get("CODEX_MODEL", "model-medium-hight")
-        cmd = [
-            agent_bin,
-            "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--json",
-            "--config",
-            f'model="{codex_model}"',
-            "-",
-        ]
-    else:
-        for var in ("CODEXCODE", "CODEX_CODE_ENTRYPOINT", "CODEX_CODE_SSE_PORT", "CODEX_SESSION_ID", "ANTHROPIC_MODEL"):
-            env.pop(var, None)
-        cmd = [
-            agent_bin,
-            "-p",
-            "--output-format",
-            "json",
-            "-",
-        ]
+    cmd = _setup_codex_env_and_cmd(agent_bin, env) if is_codex else _setup_non_codex_env_and_cmd(agent_bin, env)
     return cmd, env
 
 
@@ -278,6 +285,54 @@ def _build_review_category_results(
     return results
 
 
+def _extract_review_frames(validator_self: Any, abs_video_path: Path, file_exists: bool, file_size: int) -> List[Path]:
+    frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-review-"))
+    if file_exists and file_size > 0:
+        try:
+            return validator_self._extract_frames(abs_video_path, frame_dir)
+        except Exception:
+            pass
+    return []
+
+
+def _resolve_review_metadata_str(metadata_path: Path) -> str:
+    abs_metadata_path = Path(metadata_path).resolve()
+    if abs_metadata_path.is_file():
+        try:
+            return abs_metadata_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    return "{}"
+
+
+def _build_narration_assets_summary(project_dir: Path) -> str:
+    narration_asset = project_dir / "assets" / "narration.mp3"
+    narration_words_js = project_dir / "hyperframes" / "assets" / "narration_words.js"
+    return (
+        f"narration.mp3: {'present (' + str(narration_asset.stat().st_size) + ' bytes)' if narration_asset.is_file() else 'absent'}"
+        + f"; narration_words.js: {'present' if narration_words_js.is_file() else 'absent'}"
+    )
+
+
+def _run_cli_and_parse_response(validator_self: Any, agent_bin: str, prompt: str) -> dict:
+    cmd, env = _setup_agent_env_and_cmd(agent_bin)
+    timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "120"))
+    root_dir = str(Path(__file__).resolve().parent.parent)
+
+    run_fn = validator_self._review_transport or _get_subprocess_run()
+    proc = run_fn(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, cwd=root_dir, env=env)
+
+    output = proc.stdout or ""
+    if "hit your limit" in output.lower() or proc.returncode != 0:
+        raise RuntimeError(f"CLI returned error or rate limit: {output[:200]}")
+
+    parse_fn = _get_parse_codex_review()
+    response_data = parse_fn(output)
+    if not isinstance(response_data, dict):
+        raise ValueError(f"Agent CLI review returned non-dictionary JSON: {output[:200]}")
+    return response_data
+
+
 def execute_cli_review_helper(
     validator_self: Any,
     agent_bin: str,
@@ -293,50 +348,26 @@ def execute_cli_review_helper(
 
     comp_path, comp_summary, comp_text = _resolve_comp_summary_and_text(validator_self.project_dir, video_path)
     if comp_path is None:
-        return [
-            result_factory(
-                check_name=CHECK_NAME_VISUAL_QUALITY,
-                passed=False,
-                message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
-                details={"error": "Missing HyperFrames HTML source"},
-            )
-        ]
+        return [result_factory(
+            check_name=CHECK_NAME_VISUAL_QUALITY,
+            passed=False,
+            message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
+            details={"error": "Missing HyperFrames HTML source"},
+        )]
 
-    frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-review-"))
-    frame_paths: List[Path] = []
-    if file_exists and file_size > 0:
-        try:
-            frame_paths = validator_self._extract_frames(abs_video_path, frame_dir)
-        except Exception:
-            frame_paths = []
-
+    frame_paths = _extract_review_frames(validator_self, abs_video_path, file_exists, file_size)
     if not frame_paths:
-        return [
-            result_factory(
-                check_name=CHECK_NAME_VISUAL_QUALITY,
-                passed=False,
-                message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
-                details={"error": "Frame extraction failed"},
-            )
-        ]
+        return [result_factory(
+            check_name=CHECK_NAME_VISUAL_QUALITY,
+            passed=False,
+            message=f"{CHECK_NAME_VISUAL_QUALITY}: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
+            details={"error": "Frame extraction failed"},
+        )]
 
     script_summary, script_full_text = _resolve_script_summary_and_text(validator_self.project_dir)
     audio_stream_summary = _get_probe_audio_streams()(abs_video_path)
-
-    narration_asset = validator_self.project_dir / "assets" / "narration.mp3"
-    narration_words_js = validator_self.project_dir / "hyperframes" / "assets" / "narration_words.js"
-    narration_assets_summary = (
-        f"narration.mp3: {'present (' + str(narration_asset.stat().st_size) + ' bytes)' if narration_asset.is_file() else 'absent'}"
-        + f"; narration_words.js: {'present' if narration_words_js.is_file() else 'absent'}"
-    )
-
-    metadata_str = "{}"
-    abs_metadata_path = Path(metadata_path).resolve()
-    if abs_metadata_path.is_file():
-        try:
-            metadata_str = abs_metadata_path.read_text(encoding="utf-8")
-        except Exception:
-            pass
+    narration_assets_summary = _build_narration_assets_summary(validator_self.project_dir)
+    metadata_str = _resolve_review_metadata_str(metadata_path)
 
     prompt = build_review_prompt(
         abs_video_path=abs_video_path,
@@ -352,30 +383,7 @@ def execute_cli_review_helper(
         frame_paths=frame_paths,
     )
 
-    cmd, env = _setup_agent_env_and_cmd(agent_bin)
-    timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "120"))
-    root_dir = str(Path(__file__).resolve().parent.parent)
-
-    run_fn = validator_self._review_transport or _get_subprocess_run()
-    proc = run_fn(
-        cmd,
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        cwd=root_dir,
-        env=env,
-    )
-
-    output = proc.stdout or ""
-    if "hit your limit" in output.lower() or proc.returncode != 0:
-        raise RuntimeError(f"CLI returned error or rate limit: {output[:200]}")
-
-    parse_fn = _get_parse_codex_review()
-    response_data = parse_fn(output)
-    if not isinstance(response_data, dict):
-        raise ValueError(f"Agent CLI review returned non-dictionary JSON: {output[:200]}")
-
+    response_data = _run_cli_and_parse_response(validator_self, agent_bin, prompt)
     artifact_hash = compute_sha256(abs_video_path)
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     reviewer_name = "offline_test_transport" if validator_self._review_transport else Path(agent_bin).name

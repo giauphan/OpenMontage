@@ -30,6 +30,9 @@ TEMPLATES_DIR = ROOT / "templates" / "news" / "packages"
 ALLOWED_PACKAGES = {"news-debate", "news-evidence", "news-explainer"}
 DEFAULT_VERSION = "1.0.0"
 GSAP_CDN = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"
+HAS_VISUAL = " has-visual"
+ASSET_NARRATION_FULL = "assets/narration.mp3"
+ASSET_NARRATION_REELS = "assets/narration_reels.mp3"
 
 
 def esc(text: Any) -> str:
@@ -218,10 +221,10 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
 
     scene3_html = ""
     scene3_tl = ""
-    ctx_v = " has-visual" if ctx.get("visual") else ""
-    tkw_v = " has-visual" if tkw.get("visual") else ""
-    hook_v = " has-visual" if hook.get("visual") else ""
-    stmt_v = " has-visual" if stmt.get("visual") else ""
+    ctx_v = HAS_VISUAL if ctx.get("visual") else ""
+    tkw_v = HAS_VISUAL if tkw.get("visual") else ""
+    hook_v = HAS_VISUAL if hook.get("visual") else ""
+    stmt_v = HAS_VISUAL if stmt.get("visual") else ""
 
     if is_full and e_ctx_text:
         s3_start, s3_dur = timing["context"]
@@ -296,7 +299,7 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         "</script>"
     )
 
-    audio_src = "assets/narration.mp3" if is_full else "assets/narration_reels.mp3"
+    audio_src = ASSET_NARRATION_FULL if is_full else ASSET_NARRATION_REELS
 
     title_tag = f"<title>{e_title} — news-debate</title>"
 
@@ -385,7 +388,7 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
 
     cap_html, cap_tl = _caption_elements(captions, track_index=10)
 
-    audio_src = "assets/narration.mp3" if is_full else "assets/narration_reels.mp3"
+    audio_src = ASSET_NARRATION_FULL if is_full else ASSET_NARRATION_REELS
 
     include_caveat = is_full and bool(e_caveat_text)
 
@@ -393,10 +396,10 @@ def _build_evidence_html(content: dict[str, Any], variant: str) -> str:
         f"      tl.from('#metric-value', {{ opacity: 0, scale: 0.82, duration: 0.8, ease: 'back.out(1.4)' }}, {_fmt_time(s2_start + 0.5)});\n"
     )
 
-    hook_v = " has-visual" if hook.get("visual") else ""
-    metric_v = " has-visual" if metric.get("visual") else ""
-    comp_v = " has-visual" if comp.get("visual") else ""
-    caveat_v = " has-visual" if caveat.get("visual") else ""
+    hook_v = HAS_VISUAL if hook.get("visual") else ""
+    metric_v = HAS_VISUAL if metric.get("visual") else ""
+    comp_v = HAS_VISUAL if comp.get("visual") else ""
+    caveat_v = HAS_VISUAL if caveat.get("visual") else ""
 
     caveat_html = ""
     caveat_tl = ""
@@ -643,7 +646,7 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
     captions = content.get("caption_lines") or derive_captions(narration_src, total, max_caps)
 
     cap_html, cap_tl = _caption_elements(captions, track_index=10)
-    audio_src = "assets/narration.mp3" if is_full else "assets/narration_reels.mp3"
+    audio_src = ASSET_NARRATION_FULL if is_full else ASSET_NARRATION_REELS
     include_lim = is_full and bool(e_lim_text)
 
     e_cta = _resolve_explainer_cta(content, e_title, e_kicker, narration)
@@ -652,8 +655,8 @@ def _build_explainer_html(content: dict[str, Any], variant: str) -> str:
 
     media_html, media_tl, media_css = build_media_layer_elements(content.get("media", []), total)
     slot_v_html, slot_v_tl = _extract_slot_visuals(slots, total)
-    hook_v, cap_v = (" has-visual" if hook.get("visual") else ""), (" has-visual" if cap.get("visual") else "")
-    steps_v, lim_v = (" has-visual" if steps.get("visual") else ""), (" has-visual" if lim.get("visual") else "")
+    hook_v, cap_v = (HAS_VISUAL if hook.get("visual") else ""), (HAS_VISUAL if cap.get("visual") else "")
+    steps_v, lim_v = (HAS_VISUAL if steps.get("visual") else ""), (HAS_VISUAL if lim.get("visual") else "")
 
     css = _build_explainer_css(is_full, media_css)
 
