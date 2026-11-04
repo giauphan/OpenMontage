@@ -10,6 +10,7 @@ from __future__ import annotations
 import html as html_mod
 import json
 import logging
+import os
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
@@ -113,7 +114,16 @@ def compose_animated_diagram_html(
         track_idx = i + 1
 
         sec_id = f"badge-{bid}"
-        date_snippet = f'        <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
+        show_top_header = os.environ.get("OPENMONTAGE_SHOW_TOP_HEADER", "0") in ("1", "true", "True")
+        header_snippet = ""
+        if show_top_header:
+            date_snippet = f'        <span class="date-badge">{html_mod.escape(formatted_date, quote=True)}</span>\n' if formatted_date else ""
+            header_snippet = (
+                f'      <div class="stage-header stage-header-overlay">\n'
+                f'{date_snippet}'
+                f'        <span class="stage-badge">Stage {i+1} of {len(beats)} // {escaped_s_func}</span>\n'
+                f'      </div>\n'
+            )
         vis_markup = ""
         if visuals_src and visuals_src.is_dir():
             aid = beat.get("asset_id") or f"beat_{i+1}"
@@ -126,29 +136,27 @@ def compose_animated_diagram_html(
                 except Exception:
                     pass
 
-        sections_html.append(
-            f'    <section id="{sec_id}" class="clip scene badge-overlay" '
-            f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
-            f'      <div class="stage-header stage-header-overlay">\n'
-            f'{date_snippet}'
-            f'        <span class="stage-badge">Stage {i+1} of {len(beats)} // {escaped_s_func}</span>\n'
-            f'      </div>\n'
-            f'{vis_markup}'
-            f'    </section>'
-        )
-
-        entry_t = _fmt_time(max(0.0, start_s))
-        overlay_tweens.append(
-            f'  tl.fromTo("#{sec_id}", '
-            f'{{ opacity: 0, y: -10 }}, '
-            f'{{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, '
-            f'{entry_t});'
-        )
-        if i < len(beats) - 1:
-            exit_t = _fmt_time(max(0.0, end_s - 0.2))
-            overlay_tweens.append(
-                f'  tl.to("#{sec_id}", {{ opacity: 0, duration: 0.2, ease: "power2.in" }}, {exit_t});'
+        if header_snippet or vis_markup:
+            sections_html.append(
+                f'    <section id="{sec_id}" class="clip scene badge-overlay" '
+                f'data-start="{_fmt_time(start_s)}" data-duration="{_fmt_time(beat_dur)}" data-track-index="{track_idx}">\n'
+                f'{header_snippet}'
+                f'{vis_markup}'
+                f'    </section>'
             )
+
+            entry_t = _fmt_time(max(0.0, start_s))
+            overlay_tweens.append(
+                f'  tl.fromTo("#{sec_id}", '
+                f'{{ opacity: 0, y: -10 }}, '
+                f'{{ opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }}, '
+                f'{entry_t});'
+            )
+            if i < len(beats) - 1:
+                exit_t = _fmt_time(max(0.0, end_s - 0.2))
+                overlay_tweens.append(
+                    f'  tl.to("#{sec_id}", {{ opacity: 0, duration: 0.2, ease: "power2.in" }}, {exit_t});'
+                )
 
     clips_block = "\n".join(sections_html)
     overlay_script = "\n".join(overlay_tweens)

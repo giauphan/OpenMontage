@@ -22,6 +22,11 @@ def test_sanitize_metrics_and_symbols_removes_trailing_periods():
     <h2>SpecPilot <span class="green">Surpasses.</span> EAGLE-2</h2>
     <h2>Joint <span class="highlight">Algorithm<br/>+ Systems.</span> Search</h2>
     <div class="flow-box">Define Search Space.</div>
+    <div class="flow-box">PATCH ISSUE.</div>
+    <div class="flow-arrow">->.</div>
+    <div class="flow-box">ALL TESTS PASS.</div>
+    <div class="flow-box">PASS / FAIL.</div>
+    <svg><text>PATCH ISSUE.</text><tspan>ALL TESTS PASS.</tspan><text>PASS / FAIL.</text></svg>
     """
     cleaned = _sanitize_metrics_and_symbols(html)
 
@@ -35,6 +40,13 @@ def test_sanitize_metrics_and_symbols_removes_trailing_periods():
     assert '<h2>SpecPilot <span class="green">Surpasses</span> EAGLE-2</h2>' in cleaned
     assert '<h2>Joint <span class="highlight">Algorithm<br/>+ Systems</span> Search</h2>' in cleaned
     assert '<div class="flow-box">Define Search Space</div>' in cleaned
+    assert '<div class="flow-box">PATCH ISSUE</div>' in cleaned
+    assert '<div class="flow-arrow">-></div>' in cleaned
+    assert '<div class="flow-box">ALL TESTS PASS</div>' in cleaned
+    assert '<div class="flow-box">PASS / FAIL</div>' in cleaned
+    assert '<text>PATCH ISSUE</text>' in cleaned
+    assert '<tspan>ALL TESTS PASS</tspan>' in cleaned
+    assert '<text>PASS / FAIL</text>' in cleaned
 
 
 def test_sanitize_emojis_converts_known_emojis_to_inline_svg():
@@ -101,3 +113,46 @@ body { margin: 0; overflow: hidden; }
     assert "↓." not in result
     assert "🔍" not in result
     assert "<svg" in result
+
+
+def test_patch_html_removes_top_header_date_and_scene_badges(tmp_path: Path):
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    for font in ("BeVietnamPro-Regular.ttf", "BeVietnamPro-Bold.ttf", "BeVietnamPro-ExtraBold.ttf"):
+        (assets_dir / font).write_bytes(b"mock font")
+
+    html_content = """<!doctype html>
+<html>
+<head>
+<style>
+body { margin: 0; overflow: hidden; }
+#stage { width: 1080px; height: 1920px; position: relative; }
+</style>
+</head>
+<body>
+<div id="stage" class="composition" data-composition-id="main" data-start="0" data-duration="60" data-width="1080" data-height="1920">
+  <section id="scene-1" class="clip scene" data-start="0" data-duration="30">
+    <div class="stage-header stage-header-overlay">
+      <span class="date-badge">Nov 2, 2026</span>
+      <span class="stage-badge">Stage 2 of 6 // SCENE 2</span>
+    </div>
+    <div class="badge">EVALUATION BIAS // <span class="date-pill">NOV 2, 2026.</span> // SCENE 2.</div>
+    <div class="card">
+      <h2>Evaluation Ground Truth</h2>
+    </div>
+  </section>
+</div>
+</body>
+</html>"""
+    index_file = tmp_path / "index.html"
+    index_file.write_text(html_content, encoding="utf-8")
+
+    patch_html(index_file, narration_duration=60.0)
+
+    result = index_file.read_text(encoding="utf-8")
+    assert "stage-header" not in result
+    assert "date-badge" not in result
+    assert "stage-badge" not in result
+    assert "date-pill" not in result
+    assert "EVALUATION BIAS" not in result
+    assert "Evaluation Ground Truth" in result

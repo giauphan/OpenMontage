@@ -343,6 +343,10 @@ def _patch_badges_and_attributions(html: str) -> str:
         r"<div\b[^>]*\bclass=[\"'][^>]*\bbadge-label\b[^>]*[\"'][^>]*>.*?</div>",
         r"<div\b[^>]*\bid=[\"']source-badge[\"'][^>]*>.*?</div>",
         r"<div\b[^>]*\bclass=[\"'][^>]*\bsource-badge\b[^>]*[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bclass=[\"'][^>]*\bstage-header\b[^>]*[\"'][^>]*>.*?</div>",
+        r"<div\b[^>]*\bclass=[\"'][^>]*\bbadge\b[^>]*[\"'][^>]*>.*?//.*?</div>",
+        r"<(?:div|span)\b[^>]*\bclass=[\"'][^>]*\b(?:date-badge|stage-badge|date-pill)\b[^>]*[\"'][^>]*>.*?</(?:div|span)>",
+        r"<section\b[^>]*\bclass=[\"'][^>]*\bbadge-overlay\b[^>]*[\"'][^>]*>\s*</section>",
     ):
         html = re.sub(pat, "", html, flags=re.IGNORECASE | re.DOTALL)
 
@@ -487,14 +491,32 @@ def _sanitize_emojis_to_vector_svg(html: str) -> str:
 def _sanitize_metrics_and_symbols(html: str) -> str:
     def _strip_period(m: re.Match) -> str:
         open_tag, body, close_tag = m.group(1), m.group(2).rstrip(), m.group(3)
-        if body.endswith("."):
+        if body.endswith(".") and not body.endswith("..."):
             body = body[:-1].rstrip()
         return f"{open_tag}{body}{close_tag}"
 
-    for cls in ("metric-value", "flow-box", "flow-arrow", "date-pill", "badge"):
+    for cls in (
+        "metric-value", "flow-box", "flow-arrow", "flow-step", "step-box",
+        "step-label", "step", "diagram-box", "diagram-node", "node", "badge",
+        "date-pill", "date-badge", "stage-badge", "kicker", "card-title",
+        "tag", "pill", "status-badge", "metric-card"
+    ):
         html = re.sub(rf'(<[a-zA-Z0-9]+\b[^>]*\bclass="[^"]*{cls}[^"]*"[^>]*>)(.*?)(</[a-zA-Z0-9]+>)', _strip_period, html, flags=re.DOTALL)
-    html = re.sub(r'([↓↑→←])\.(?=\s*<)', r'\1', html)
+
+    # Strip trailing periods from unicode and ascii arrows (e.g. ->. or →.)
+    html = re.sub(r'([↓↑→←➔➜➡➤]|--?>|==?>|<--?|<==?)\.(?=\s*<)', r'\1', html)
+    # Strip periods inside // separators (e.g. "2026. //" -> "2026 //")
+    html = re.sub(r'\.\s*(//)', r' \1', html)
     html = re.sub(r'(<h[1-6]\b[^>]*>.*?<span\b[^>]*>.*?)\.(</span>.*?)(</h[1-6]>)', r'\1\2\3', html, flags=re.DOTALL)
+
+    # Strip periods from short text/tspan nodes in SVG diagrams
+    def _strip_svg_text_period(m: re.Match) -> str:
+        open_tag, body, close_tag = m.group(1), m.group(2).rstrip(), m.group(3)
+        if body.endswith(".") and len(body) <= 50 and not body.endswith("..."):
+            body = body[:-1].rstrip()
+        return f"{open_tag}{body}{close_tag}"
+
+    html = re.sub(r'(<(?:text|tspan)\b[^>]*>)(.*?)(</(?:text|tspan)>)', _strip_svg_text_period, html, flags=re.DOTALL)
     return html
 
 
