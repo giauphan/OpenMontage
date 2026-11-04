@@ -41,17 +41,6 @@ from lib.media_integrity import verify_image_integrity, verify_video_integrity
 
 logger = logging.getLogger(__name__)
 
-
-def compute_sha256(path: Path | str) -> str:
-    p = Path(path)
-    if not p.is_file():
-        return ""
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
-    return h.hexdigest()
-
 # Try to import pipeline monitoring
 try:
     from scripts.pipeline_monitoring import log_pipeline_error, log_pipeline_success
@@ -68,604 +57,61 @@ except ImportError:
     except ImportError:
         ValidationStatusLogger = None
 
-# Quality thresholds
-MIN_DURATION = 14.0  # seconds
-MAX_BLACK_RATIO = 0.30  # max 30% black frames
-MIN_EDGE_DENSITY = 0.005  # minimum visual complexity
-MAX_STATIC_RATIO = 0.50  # max 50% static frames
-SILENCE_THRESHOLD_DB = -50.0  # dBFS
-EXPECTED_EXTRACTED_FRAMES = 3
-MIN_FRAME_BYTES = 100
-
-
-def is_network_available() -> bool:
-    """Fast non-blocking check for external network reachability."""
-    try:
-        import socket
-        socket.create_connection(("8.8.8.8", 53), timeout=0.3)
-        return True
-    except OSError:
-        return False
-
-
-def resolve_ffprobe_ffmpeg() -> tuple[str, str]:
-    ffprobe = shutil.which("ffprobe") or ""
-    ffmpeg = shutil.which("ffmpeg") or ""
-    if not ffprobe:
-        candidates = list(Path.home().glob(".local/share/uv/**/ffprobe"))
-        ffprobe = str(candidates[0]) if candidates else ""
-    if not ffmpeg:
-        candidates = list(Path.home().glob(".local/share/uv/**/ffmpeg"))
-        ffmpeg = str(candidates[0]) if candidates else ""
-    return ffprobe or "ffprobe", ffmpeg or "ffmpeg"
-
-
-def _probe_audio_streams(video_path: Path) -> str:
-    """Return a one-line summary of audio streams in *video_path* using ffprobe.
-
-    Injected into the Codex review prompt so the agent has objective evidence for
-    audio-sync scoring instead of penalising the video for absent playback data.
-
-    Example: "1 audio stream(s): codec=aac duration=28.95s channels=2 sample_rate=48000"
-    """
-    ffprobe_bin, _ = resolve_ffprobe_ffmpeg()
-    try:
-        result = subprocess.run(
-            [
-                ffprobe_bin,
-                "-v", "error",
-                "-select_streams", "a",
-                "-show_entries", "stream=codec_name,duration,channels,sample_rate",
-                "-of", "json",
-                str(video_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return "audio streams: ffprobe error"
-        data = json.loads(result.stdout or "{}")
-        streams = data.get("streams", [])
-        if not streams:
-            return "audio streams: none detected in rendered video"
-        parts = []
-        for s in streams:
-            codec = s.get("codec_name", "?")
-            dur = s.get("duration", "?")
-            channels = s.get("channels", "?")
-            rate = s.get("sample_rate", "?")
-            parts.append(f"codec={codec} duration={dur}s channels={channels} sample_rate={rate}")
-        return f"{len(streams)} audio stream(s): " + "; ".join(parts)
-    except Exception as exc:
-        return f"audio streams: probe failed ({exc})"
-
-
-
-# ---------------------------------------------------------------------------
-# Strict single-line TOML fallback validator.
-# Used only when neither tomllib nor tomli is importable. Validates the whole
-# document: table headers, key/value syntax, and every value type (string,
-# boolean, integer, float, datetime, single-line array, single-line inline
-# table). Rejects malformed syntax, duplicate keys, duplicate table headers
-# and any value it cannot fully validate (e.g. multi-line arrays) ->
-# fail-closed. Mirrors the validator embedded in scripts/init_codex_profile.sh.
-# ---------------------------------------------------------------------------
-_TOML_INT_RE = re.compile(r"[+-]?(0x[0-9a-fA-F_]+|0o[0-7_]+|0b[0-1_]+|(0|[1-9](_?[0-9])*))")
-_TOML_FLOAT_RE = re.compile(r"([+-]?(0|[1-9](_?[0-9])*)(\.[0-9](_?[0-9])*)?([eE][+-]?[0-9](_?[0-9])*)?)|([+-]?(inf|nan))")
-_TOML_DATETIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}([Tt ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?([zZ]|[+-]\d{2}:\d{2})?")
-_TOML_KEY_SEG_RE = re.compile(r"[A-Za-z0-9_-]+")
-
-
-def _toml_close_quote(s: str, q: str) -> Optional[int]:
-    i, n = 1, len(s)
-    while i < n:
-        ch = s[i]
-        if q == '"' and ch == "\\":
-            if i + 1 >= n:
-                return None
-            i += 2
-            continue
-        if ch == q:
-            return i
-        i += 1
-    return None
-
-
-def _toml_validate_basic_string_inner(inner: str) -> bool:
-    i, n = 0, len(inner)
-    while i < n:
-        ch = inner[i]
-        if ch != "\\":
-            i += 1
-            continue
-        if i + 1 >= n:
-            return False
-        esc = inner[i + 1]
-        if esc in "btnfr\"\\":
-            i += 2
-            continue
-        if esc == "u":
-            if i + 6 > n or not all(c in "0123456789abcdefABCDEF" for c in inner[i + 2:i + 6]):
-                return False
-            i += 6
-            continue
-        if esc == "U":
-            if i + 10 > n or not all(c in "0123456789abcdefABCDEF" for c in inner[i + 2:i + 10]):
-                return False
-            i += 10
-            continue
-        return False
-    return True
-
-
-def _toml_rstrip_comment(v: str) -> str:
-    in_s, q, i, n = False, None, 0, len(v)
-    while i < n:
-        ch = v[i]
-        if in_s:
-            if q == '"' and ch == "\\":
-                i += 1
-            elif ch == q:
-                in_s = False
-        else:
-            if ch == '"' or ch == "'":
-                in_s, q = True, ch
-            elif ch == "#":
-                return v[:i]
-        i += 1
-    return v
-
-
-def _toml_valid_key(k: str) -> bool:
-    if not k:
-        return False
-    if k[0] in "\"'":
-        end = _toml_close_quote(k, k[0])
-        return end is not None and end == len(k) - 1
-    parts = k.split(".")
-    if any(p == "" for p in parts):
-        return False
-    return len(parts) >= 1 and all(_TOML_KEY_SEG_RE.fullmatch(p) for p in parts)
-
-
-def _toml_split_top(inner: str):
-    elems, depth, cur, in_s, q = [], 0, "", False, None
-    for ch in inner:
-        if in_s:
-            cur += ch
-            if q == '"' and ch == "\\":
-                pass
-            elif ch == q:
-                in_s = False
-            continue
-        if ch == '"' or ch == "'":
-            in_s, q = True, ch
-            cur += ch
-        elif ch in ("[", "{"):
-            depth += 1
-            cur += ch
-        elif ch in ("]", "}"):
-            depth -= 1
-            cur += ch
-        elif ch == "," and depth == 0:
-            elems.append(cur)
-            cur = ""
-        else:
-            cur += ch
-    elems.append(cur)
-    return elems, depth
-
-
-def _toml_validate_scalar(v: str, line_idx: int, ctx: str):
-    v = v.strip()
-    if not v:
-        raise ValueError(f"Line {line_idx}: missing value {ctx}")
-    if v[0] in "\"'":
-        q = v[0]
-        end = _toml_close_quote(v, q)
-        if end is None:
-            raise ValueError(f"Line {line_idx}: unterminated string {ctx}")
-        rem = v[end + 1:].strip()
-        if rem:
-            raise ValueError(f"Line {line_idx}: unexpected trailing content after string {ctx}")
-        if q == '"' and not _toml_validate_basic_string_inner(v[1:end]):
-            raise ValueError(f"Line {line_idx}: invalid escape sequence in basic string {ctx}")
-        return v[1:end]
-    if v in ("true", "false"):
-        return v == "true"
-    if v[0] == "[":
-        return _toml_validate_array(v, line_idx, ctx)
-    if v[0] == "{":
-        return _toml_validate_inline_table(v, line_idx, ctx)
-    if _TOML_INT_RE.fullmatch(v):
-        if re.match(r"[+-]?0[xob]", v, re.I):
-            return int(v.replace("_", ""), 0)
-        return int(v.replace("_", ""))
-    if _TOML_FLOAT_RE.fullmatch(v):
-        return float(v.replace("_", ""))
-    if _TOML_DATETIME_RE.fullmatch(v):
-        return v
-    raise ValueError(f"Line {line_idx}: invalid TOML value for {ctx}: {v!r}")
-
-
-def _toml_validate_array(v: str, line_idx: int, ctx: str):
-    s = v.strip()
-    if not s.endswith("]"):
-        raise ValueError(f"Line {line_idx}: unclosed or multi-line array not supported by fallback validator {ctx}: {s!r}")
-    inner = s[1:-1].strip()
-    if inner == "":
-        return []
-    elems, depth = _toml_split_top(inner)
-    if depth != 0:
-        raise ValueError(f"Line {line_idx}: unbalanced array {ctx}")
-    if len(elems) > 1 and elems[-1].strip() == "":
-        raise ValueError(f"Line {line_idx}: trailing comma not allowed in TOML array {ctx}")
-    for e in elems:
-        _toml_validate_scalar(e, line_idx, ctx)
-    return s
-
-
-def _toml_validate_inline_table(v: str, line_idx: int, ctx: str):
-    s = v.strip()
-    if not s.endswith("}"):
-        raise ValueError(f"Line {line_idx}: unclosed or multi-line inline table not supported by fallback validator {ctx}: {s!r}")
-    inner = s[1:-1].strip()
-    if inner == "":
-        return {}
-    pairs, depth = _toml_split_top(inner)
-    if depth != 0:
-        raise ValueError(f"Line {line_idx}: unbalanced inline table {ctx}")
-    if len(pairs) > 1 and pairs[-1].strip() == "":
-        raise ValueError(f"Line {line_idx}: trailing comma not allowed in inline table {ctx}")
-    seen = set()
-    for p in pairs:
-        pp = p.strip()
-        if pp == "":
-            continue
-        if "=" not in pp:
-            raise ValueError(f"Line {line_idx}: inline table entry missing '=' {ctx}: {pp!r}")
-        k, val = pp.split("=", 1)
-        k_norm = k.strip()
-        if not _toml_valid_key(k_norm):
-            raise ValueError(f"Line {line_idx}: invalid inline table key {k_norm!r} {ctx}")
-        if k_norm in seen:
-            raise ValueError(f"Line {line_idx}: duplicate key '{k_norm}' in inline table {ctx}")
-        seen.add(k_norm)
-        _toml_validate_scalar(val, line_idx, ctx)
-    return s
-
-
-def _strict_toml_validate(content: str) -> dict:
-    """Return root-level parsed dict; raise ValueError on any malformed TOML."""
-    root_config: Dict[str, object] = {}
-    table_keysets: Dict[Optional[str], set] = {}
-    declared_tables = set()
-    current_table = None
-    for line_idx, raw in enumerate(content.splitlines(), start=1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("["):
-            if line.startswith("[["):
-                if not line.endswith("]]") or len(line) <= 4:
-                    raise ValueError(f"Line {line_idx}: malformed array-of-tables header: {raw}")
-                current_table = line[2:-2].strip()
-            else:
-                if not line.endswith("]") or len(line) <= 2:
-                    raise ValueError(f"Line {line_idx}: malformed table header: {raw}")
-                current_table = line[1:-1].strip()
-            if not _toml_valid_key(current_table):
-                raise ValueError(f"Line {line_idx}: invalid table key in header: {current_table!r}")
-            if not line.startswith("[["):
-                if current_table in declared_tables:
-                    raise ValueError(f"Line {line_idx}: duplicate table header [{current_table}]")
-                declared_tables.add(current_table)
-            table_keysets.setdefault(current_table, set())
-            continue
-        if "=" not in line:
-            raise ValueError(f"Line {line_idx}: expected key = value, got: {line!r}")
-        key_part, val_part = line.split("=", 1)
-        key = key_part.strip()
-        val = _toml_rstrip_comment(val_part).strip()
-        if not _toml_valid_key(key):
-            raise ValueError(f"Line {line_idx}: invalid key {key!r}")
-        if not val:
-            raise ValueError(f"Line {line_idx}: missing value after '=': {raw}")
-        scope = current_table
-        table_keysets.setdefault(scope, set())
-        if key in table_keysets[scope]:
-            where = "root" if scope is None else "table [" + str(scope) + "]"
-            raise ValueError(f"Line {line_idx}: duplicate key '{key}' in {where}")
-        table_keysets[scope].add(key)
-        parsed = _toml_validate_scalar(val, line_idx, "key '" + key + "'")
-        if scope is None:
-            root_config[key] = parsed
-    if "model_provider" not in root_config:
-        raise ValueError("Missing required root-level 'model_provider' in config.toml")
-    mp = root_config["model_provider"]
-    if not isinstance(mp, str) or not mp.strip():
-        raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
-    return root_config
-
-
-def parse_and_validate_config_toml(content: str) -> dict:
-    """Parse and validate config.toml ensuring well-formed TOML and valid root-level model_provider.
-    Returns parsed dictionary of root-level configuration.
-    Raises ValueError with details on syntax error or missing/invalid model_provider.
-    """
-    # 1. Try tomllib (Python 3.11+) or tomli if available for standard-compliant parsing
-    try:
-        import tomllib
-        data = tomllib.loads(content)
-        if not isinstance(data, dict):
-            raise ValueError("Parsed TOML is not a dictionary")
-        if "model_provider" not in data:
-            raise ValueError("Missing required root-level 'model_provider' in config.toml")
-        mp = data["model_provider"]
-        if not isinstance(mp, str) or not mp.strip():
-            raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
-        return data
-    except ImportError:
-        try:
-            import tomli
-            data = tomli.loads(content)
-            if not isinstance(data, dict):
-                raise ValueError("Parsed TOML is not a dictionary")
-            if "model_provider" not in data:
-                raise ValueError("Missing required root-level 'model_provider' in config.toml")
-            mp = data["model_provider"]
-            if not isinstance(mp, str) or not mp.strip():
-                raise ValueError("Invalid root-level 'model_provider' in config.toml: must be a non-empty string")
-            return data
-        except ImportError:
-            pass
-        except Exception as exc:
-            raise ValueError(f"Invalid TOML syntax: {exc}") from exc
-    except Exception as exc:
-        raise ValueError(f"Invalid TOML syntax: {exc}") from exc
-
-    # 2. No supported parser available -> strict fail-closed fallback validator.
-    return _strict_toml_validate(content)
-
-
-def _validate_profile_dir(profile_path: Path) -> None:
-    """Validate that profile_path contains valid auth.json, config.toml, and required credentials."""
-    auth_file = profile_path / "auth.json"
-    if not auth_file.is_file() or auth_file.stat().st_size == 0:
-        raise RuntimeError(f"Configured CODEX_HOME is missing or has empty auth.json: {profile_path}")
-    try:
-        data = json.loads(auth_file.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise RuntimeError(f"Configured CODEX_HOME has invalid JSON in auth.json: {profile_path}") from exc
-
-    if not isinstance(data, dict):
-        raise RuntimeError(f"Configured CODEX_HOME auth.json is not a JSON object: {profile_path}")
-
-    api_key = data.get("OPENAI_API_KEY")
-    if not api_key or not isinstance(api_key, str) or not api_key.strip():
-        raise RuntimeError(f"Configured CODEX_HOME auth.json missing or invalid OPENAI_API_KEY: {profile_path}")
-
-    config_file = profile_path / "config.toml"
-    if not config_file.is_file() or config_file.stat().st_size == 0:
-        raise RuntimeError(f"Configured CODEX_HOME is missing or has empty config.toml: {profile_path}")
-
-    try:
-        config_content = config_file.read_text(encoding="utf-8")
-    except Exception as exc:
-        raise RuntimeError(f"Configured CODEX_HOME could not read config.toml: {profile_path}") from exc
-
-    try:
-        parse_and_validate_config_toml(config_content)
-    except Exception as exc:
-        raise RuntimeError(f"Configured CODEX_HOME config.toml is invalid or missing model_provider: {profile_path} ({exc})") from exc
-
-
-def resolve_and_validate_codex_home(env: Optional[Dict[str, str]] = None) -> str:
-    """Resolve and validate the active CODEX_HOME directory.
-
-    If CODEX_HOME is explicitly set in environment:
-    - Verifies directory exists, contains valid auth.json (with non-empty OPENAI_API_KEY) and config.toml (with model_provider).
-    - Verifies directory is writable.
-    - Fails closed with RuntimeError on any defect.
-
-    If CODEX_HOME is unset:
-    - Probes standard candidate homes in order, verifying credentials and config.
-    - Fails closed if no valid, writable home is discovered.
-    - Does NOT fall back to creating /tmp/codex or copying stale credentials.
-    """
-    if env is None:
-        env = os.environ
-
-    explicit_home = env.get("CODEX_HOME")
-    if explicit_home and explicit_home.strip():
-        home_path = Path(explicit_home.strip()).resolve()
-        if not home_path.is_dir():
-            raise RuntimeError(f"Configured CODEX_HOME does not exist or is not a directory: {home_path}")
-        _validate_profile_dir(home_path)
-        try:
-            test_file = home_path / f".write_test_{os.getpid()}"
-            test_file.touch()
-            test_file.unlink()
-        except OSError as exc:
-            raise RuntimeError(f"Configured CODEX_HOME is not writable: {home_path} ({exc})")
-        return str(home_path)
-
-    candidate_homes = [
-        Path.home() / ".codex_pipeline",
-        Path("/root/.codex_pipeline"),
-        Path.home() / ".codex",
-        Path("/root/.codex"),
-        Path("/home/ubuntu/.codex"),
-    ]
-    for ch in candidate_homes:
-        try:
-            resolved_ch = ch.resolve()
-            _validate_profile_dir(resolved_ch)
-            test_file = resolved_ch / f".write_test_{os.getpid()}"
-            test_file.touch()
-            test_file.unlink()
-            return str(resolved_ch)
-        except (RuntimeError, OSError):
-            continue
-
-    raise RuntimeError(
-        "No valid Codex home with non-empty auth.json, config.toml, and write permissions found, "
-        "and CODEX_HOME is unset. Fallback to temporary credentials is disabled."
-    )
-
-
-def resolve_codex_cli() -> str:
-    """Robustly resolve Codex CLI binary path."""
-    candidates = [
-        shutil.which("codex"),
-        "/usr/local/bin/codex",
-        "/usr/bin/codex",
-        "/home/node/.npm-global/bin/codex",
-        "/root/.npm-global/bin/codex",
-    ]
-    for cand in candidates:
-        if cand and os.path.exists(cand) and os.access(cand, os.X_OK):
-            return cand
-    return ""
-
-
-
-
-
-def resolve_agent_cli() -> str:
-    """Resolve preferred agent CLI (Codex)."""
-    return resolve_codex_cli() or resolve_claude_cli()
-
-
-REVIEW_KEYS = (
-    "visual_quality",
-    "audio_sync",
-    "content_appropriateness",
-    "brand_compliance",
-    "overall_passed",
+# Re-exports from codex_validation_toml
+from scripts.codex_validation_toml import (
+    _TOML_INT_RE,
+    _TOML_FLOAT_RE,
+    _TOML_DATETIME_RE,
+    _TOML_KEY_SEG_RE,
+    _toml_close_quote,
+    _toml_validate_basic_string_inner,
+    _toml_rstrip_comment,
+    _toml_valid_key,
+    _toml_split_top,
+    _toml_validate_scalar,
+    _toml_validate_array,
+    _toml_validate_inline_table,
+    _strict_toml_validate,
+    parse_and_validate_config_toml,
+    _validate_profile_dir,
+    resolve_and_validate_codex_home,
 )
 
+# Re-exports from codex_validation_checks
+from scripts.codex_validation_checks import (
+    MIN_DURATION,
+    MAX_BLACK_RATIO,
+    MIN_EDGE_DENSITY,
+    MAX_STATIC_RATIO,
+    SILENCE_THRESHOLD_DB,
+    EXPECTED_EXTRACTED_FRAMES,
+    MIN_FRAME_BYTES,
+    REVIEW_KEYS,
+    compute_sha256,
+    is_network_available,
+    resolve_ffprobe_ffmpeg,
+    _probe_audio_streams,
+    resolve_codex_cli,
+    resolve_claude_cli,
+    resolve_agent_cli,
+    _json_values,
+    _is_review_dict,
+    _pick_review_dict,
+    parse_codex_review,
+    parse_claude_review,
+    validate_technical_contract_helper,
+    validate_content_quality_helper,
+    validate_metadata_helper,
+    extract_frames_helper,
+    autonomous_quality_review_helper,
+)
 
-def _json_values(text: str) -> list:
-    """Decode every complete JSON value in text, tolerating noise and concatenated objects."""
-    decoder = json.JSONDecoder()
-    values = []
-    idx = 0
-    length = len(text)
-    while idx < length:
-        start = -1
-        for i in range(idx, length):
-            if text[i] in "{[":
-                start = i
-                break
-        if start < 0:
-            break
-        try:
-            value, end = decoder.raw_decode(text, start)
-        except json.JSONDecodeError:
-            idx = start + 1
-            continue
-        values.append(value)
-        idx = end
-    return values
-
-
-def _is_review_dict(value) -> bool:
-    if not isinstance(value, dict):
-        return False
-    return any(key in value for key in REVIEW_KEYS)
-
-
-def _pick_review_dict(value):
-    if _is_review_dict(value):
-        return value
-    if isinstance(value, dict):
-        for candidate_key in ("review", "result", "data", "validation", "report"):
-            nested = value.get(candidate_key)
-            found = _pick_review_dict(nested)
-            if found:
-                return found
-        for nested in value.values():
-            found = _pick_review_dict(nested)
-            if found:
-                return found
-    elif isinstance(value, list):
-        for item in value:
-            found = _pick_review_dict(item)
-            if found:
-                return found
-    return None
-
-
-def parse_codex_review(response_text: str) -> dict:
-    """Parse Codex review response."""
-    candidates = _json_values(response_text)
-    for cand in candidates:
-        if isinstance(cand, dict) and cand.get("is_error") is True:
-            raise ValueError(f"Agent CLI error: {cand.get('result')}")
-        if isinstance(cand, dict) and cand.get("is_error") is False and "result" not in cand:
-            raise ValueError("result missing from output envelope")
-
-    fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
-
-    def _extract_from_text(text: str):
-        if not isinstance(text, str):
-            return None
-        for inner in _json_values(text):
-            found_inner = _pick_review_dict(inner)
-            if found_inner:
-                return found_inner
-        for match in fence_pattern.finditer(text):
-            for inner in _json_values(match.group(1)):
-                found_inner = _pick_review_dict(inner)
-                if found_inner:
-                    return found_inner
-        return None
-
-    def _search_cand(val):
-        found = _pick_review_dict(val)
-        if found:
-            return found
-        if isinstance(val, dict):
-            for k in ("text", "result", "message", "content"):
-                if k in val and isinstance(val[k], str):
-                    found = _extract_from_text(val[k])
-                    if found:
-                        return found
-            for k, sub_v in val.items():
-                if isinstance(sub_v, (dict, list)):
-                    found = _search_cand(sub_v)
-                    if found:
-                        return found
-                elif isinstance(sub_v, str):
-                    found = _extract_from_text(sub_v)
-                    if found:
-                        return found
-        elif isinstance(val, list):
-            for item in val:
-                found = _search_cand(item)
-                if found:
-                    return found
-        return None
-
-    for cand in candidates:
-        found = _search_cand(cand)
-        if found:
-            return found
-
-    # Markdown fence fallback on raw text
-    for match in fence_pattern.finditer(response_text):
-        for inner in _json_values(match.group(1)):
-            found_inner = _pick_review_dict(inner)
-            if found_inner:
-                return found_inner
-
-    raise ValueError(f"Agent CLI review invalid: {response_text!r}")
-
-
-
-
+# Re-exports from codex_validation_review
+from scripts.codex_validation_review import (
+    build_review_prompt,
+    execute_cli_review_helper,
+    codex_agent_strict_review_helper,
+)
 
 
 @dataclass
@@ -704,40 +150,12 @@ class CodexAgentValidator:
         ffmpeg_bin: Optional[str] = None,
     ) -> List[ValidationResult]:
         """Validate technical video contract (exists, duration, codecs, dimensions)."""
-        resolved_ffprobe, resolved_ffmpeg = resolve_ffprobe_ffmpeg()
-        ffprobe_use = ffprobe_bin or resolved_ffprobe
-        ffmpeg_use = ffmpeg_bin or resolved_ffmpeg
-        passed, message, details = verify_video_integrity(
-            video_path,
-            min_duration=MIN_DURATION,
-            ffprobe_bin=ffprobe_use,
-            ffmpeg_bin=ffmpeg_use,
+        return validate_technical_contract_helper(
+            video_path=video_path,
+            result_factory=ValidationResult,
+            ffprobe_bin=ffprobe_bin,
+            ffmpeg_bin=ffmpeg_bin,
         )
-        if not passed:
-            return [
-                ValidationResult(
-                    check_name="Technical Contract",
-                    passed=False,
-                    message=message,
-                    details=details,
-                )
-            ]
-
-        duration = float(details.get("duration") or 0.0)
-        return [
-            ValidationResult(
-                check_name="Duration Check",
-                passed=True,
-                message=f"Duration: {duration:.1f}s ≥ {MIN_DURATION}s ✓",
-                details={"duration": duration, "min_duration": MIN_DURATION, **details},
-            ),
-            ValidationResult(
-                check_name="Stream Integrity",
-                passed=True,
-                message="Video stream and decode integrity verified ✓",
-                details=details,
-            ),
-        ]
 
     def validate_content_quality(
         self,
@@ -745,228 +163,26 @@ class CodexAgentValidator:
         ffprobe_bin: str,
         ffmpeg_bin: str,
     ) -> List[ValidationResult]:
-        """Run deterministic strict content checks before agent review.
-
-        Results are cached by artifact SHA-256 and the explicit media binary paths.
-        Missing tools or failed probes are represented as failures, never passes.
-        """
-        artifact_hash = compute_sha256(video_path)
-        cache_key = (artifact_hash, ffprobe_bin, ffmpeg_bin)
-        is_mocked = hasattr(subprocess.run, "assert_called") or getattr(subprocess.run, "_mock_name", None) is not None
-        if not is_mocked and artifact_hash and cache_key in self._content_cache:
-            return list(self._content_cache[cache_key])
-
-        def failed(message: str, **details: object) -> List[ValidationResult]:
-            return [ValidationResult(
-                check_name="Content Quality",
-                passed=False,
-                message=message,
-                details={"inspected_artifact_hash": artifact_hash, **details},
-            )]
-
-        if not ffprobe_bin or shutil.which(ffprobe_bin) is None and not Path(ffprobe_bin).is_file():
-            results = failed("Content quality check failed: ffprobe unavailable", error="ffprobe_unavailable")
-            return results
-        if not ffmpeg_bin or shutil.which(ffmpeg_bin) is None and not Path(ffmpeg_bin).is_file():
-            results = failed("Content quality check failed: ffmpeg unavailable", error="ffmpeg_unavailable")
-            return results
-        if not artifact_hash:
-            return failed("Content quality check failed: video missing or empty", error="video_missing_or_empty")
-
-        try:
-            from scripts.validate_render_quality import probe, validate_content
-
-            media = probe(Path(video_path), ffprobe_bin)
-            streams = media.get("streams", [])
-            has_video = any(stream.get("codec_type") == "video" for stream in streams)
-            has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
-            try:
-                duration = float(media.get("format", {}).get("duration") or 0.0)
-            except (TypeError, ValueError):
-                duration = 0.0
-            if not has_video:
-                return failed("Content quality check failed: no video stream", error="video_stream_missing")
-            if not has_audio:
-                return failed("Content quality check failed: expected audio stream is missing", error="audio_stream_missing")
-            if duration <= 0:
-                return failed("Content quality check failed: invalid video duration", error="invalid_duration")
-
-            issues = validate_content(
-                Path(video_path), ffmpeg_bin, duration, has_audio, has_video, strict=True
-            )
-        except Exception as exc:
-            return failed(
-                f"Content quality check failed: {exc}",
-                error=str(exc),
-                error_type=type(exc).__name__,
-            )
-
-        if issues:
-            results = failed(
-                "Content quality validation failed",
-                issues=issues,
-                duration=duration,
-            )
-        else:
-            results = [ValidationResult(
-                check_name="Content Quality",
-                passed=True,
-                message="Content quality checks passed (audio, black frames, edge density, motion) ✓",
-                details={
-                    "duration": duration,
-                    "has_audio": has_audio,
-                    "has_video": has_video,
-                    "strict": True,
-                    "inspected_artifact_hash": artifact_hash,
-                },
-            )]
-        if artifact_hash:
-            self._content_cache[cache_key] = tuple(results)
-        return results
+        """Run deterministic strict content checks before agent review."""
+        return validate_content_quality_helper(
+            validator_self=self,
+            video_path=video_path,
+            ffprobe_bin=ffprobe_bin,
+            ffmpeg_bin=ffmpeg_bin,
+            result_factory=ValidationResult,
+        )
 
     def validate_metadata(self, metadata_path: Path) -> List[ValidationResult]:
         """Validate metadata quality."""
-        if not metadata_path.exists():
-            return [
-                ValidationResult(
-                    check_name="Metadata Validation",
-                    passed=False,
-                    message=f"Metadata file missing: {metadata_path}",
-                )
-            ]
-
-        root_dir = Path(__file__).resolve().parent.parent
-        validate_script = root_dir / "scripts" / "validate_publish_metadata.py"
-        if validate_script.exists():
-            cmd = [sys.executable, str(validate_script), str(self.project_dir)]
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(root_dir), timeout=30)
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                return [
-                    ValidationResult(
-                        check_name="Metadata Validation",
-                        passed=False,
-                        message=f"Metadata validator failed to run: {exc}",
-                        details={"error": type(exc).__name__},
-                    )
-                ]
-            if result.returncode == 0:
-                return [
-                    ValidationResult(
-                        check_name="Metadata Validation",
-                        passed=True,
-                        message="Metadata validation passed ✓",
-                        details={"stdout": result.stdout, "stderr": result.stderr},
-                    )
-                ]
-            messages = [line for line in (result.stderr or result.stdout).splitlines() if line.strip()]
-            if not messages:
-                messages = [f"Metadata validator exited with {result.returncode} without diagnostics"]
-            return [
-                ValidationResult(
-                    check_name="Metadata Validation",
-                    passed=False,
-                    message=message,
-                    details={"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
-                )
-                for message in messages
-            ]
-
-        try:
-            data = json.loads(metadata_path.read_text(encoding="utf-8"))
-            title = data.get("title", "")
-            if "#tintuc" in title and "#congnghe" in title and "#ai" in title:
-                return [
-                    ValidationResult(
-                        check_name="Metadata Validation",
-                        passed=True,
-                        message="Metadata validation passed ✓",
-                    )
-                ]
-            return [
-                ValidationResult(
-                    check_name="Metadata Validation",
-                    passed=False,
-                    message="Missing required hashtags in metadata title",
-                )
-            ]
-        except Exception as e:
-            return [
-                ValidationResult(
-                    check_name="Metadata Validation",
-                    passed=False,
-                    message=f"Invalid metadata JSON: {e}",
-                )
-            ]
+        return validate_metadata_helper(
+            validator_self=self,
+            metadata_path=metadata_path,
+            result_factory=ValidationResult,
+        )
 
     def _extract_frames(self, video_path: Path, out_dir: Path) -> List[Path]:
         """Extract representative frames for visual quality review."""
-        if not video_path.exists() or video_path.stat().st_size == 0:
-            return []
-
-        out_dir.mkdir(parents=True, exist_ok=True)
-        ffprobe_bin, ffmpeg_bin = resolve_ffprobe_ffmpeg()
-        dur_cmd = [
-            ffprobe_bin,
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(video_path),
-        ]
-
-        dur_proc = subprocess.run(dur_cmd, capture_output=True, text=True)
-        if dur_proc.returncode != 0:
-            return []
-
-
-        try:
-            duration = float(dur_proc.stdout.strip())
-        except (ValueError, TypeError):
-            return []
-
-
-
-        if duration <= 0.25:
-            return []
-
-        if duration < 1.0:
-            timestamps = [max(0.05, duration / 2)]
-        else:
-            timestamps = [
-                max(0.1, duration * 0.2),
-                duration * 0.5,
-                min(duration - 0.1, duration * 0.8),
-            ]
-
-        frame_paths = []
-        for i, ts in enumerate(timestamps):
-            out_file = out_dir / f"frame_{i}_{ts:.1f}s.jpg"
-            cmd = [
-                ffmpeg_bin,
-                "-y",
-                "-ss",
-                f"{ts:.3f}",
-                "-i",
-                str(video_path),
-                "-frames:v",
-                "1",
-                "-q:v",
-                "2",
-                str(out_file),
-            ]
-
-            proc = subprocess.run(cmd, capture_output=True)
-            if proc.returncode != 0:
-                continue
-            ok, _ = verify_image_integrity(out_file)
-            if ok:
-                frame_paths.append(out_file)
-
-
-        return frame_paths if len(frame_paths) == EXPECTED_EXTRACTED_FRAMES else []
+        return extract_frames_helper(video_path=video_path, out_dir=out_dir)
 
     def _autonomous_quality_review(
         self,
@@ -976,155 +192,14 @@ class CodexAgentValidator:
         frame_paths: Optional[List[Path]] = None,
     ) -> List[ValidationResult]:
         """Autonomous AI quality agent evaluation for visual, audio sync, content, and brand compliance."""
-        results = []
-
-        comp_path = self.project_dir / ("hyperframes_reels/index.html" if "reels" in video_path.name else "hyperframes/index.html")
-        if not comp_path.is_file():
-            comp_path = self.project_dir / "hyperframes/index.html"
-
-        if not comp_path.is_file():
-            return [
-                ValidationResult(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
-                    details={"error": "Missing HyperFrames HTML source"},
-                )
-            ]
-
-
-
-
-
-        scene_count = 0
-        comp_text = ""
-        if comp_path.is_file():
-            try:
-                comp_text = comp_path.read_text(encoding="utf-8")
-                scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
-                scene_count = len(scene_ids) or len(re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text))
-            except Exception:
-                pass
-
-        has_video = video_path.is_file() and video_path.stat().st_size > 1000
-
-        # Check for unstyled scaffold or raw template errors
-        scaffold_indicators = ["Template Scaffold", "LOREM IPSUM", "TODO: REPLACE", "UNSTYLED_CANVAS"]
-        has_scaffold = any(ind in comp_text for ind in scaffold_indicators)
-
-        artifact_hash = compute_sha256(video_path)
-        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        common_details = {
-            "reviewer": "autonomous_heuristic",
-            "review_mode": "heuristic_fallback",
-            "inspected_artifact_hash": artifact_hash,
-            "timestamp": ts,
-            "heuristic_check": True,
-        }
-
-        # 1. VISUAL QUALITY
-        if has_video and not has_scaffold:
-            scenes_desc = f"{scene_count} detected scenes" if scene_count > 0 else "smooth visual pacing"
-            notes = (
-                f"1080x1920 portrait composition with {scenes_desc}, structured HUD elements, "
-                "dynamic AI interface visualizations, and styled editorial layouts. "
-                "No raw browser page, test scaffold, or unstyled placeholder presentation detected."
-            )
-            results.append(
-                ValidationResult(
-                    check_name="Visual Quality",
-                    passed=True,
-                    message=f"Visual Quality: ✓ PASS (Heuristic) - {notes}",
-                    details={**common_details, "score": None, "notes": notes},
-                )
-            )
-        else:
-            reason = "Unstyled scaffold detected in composition" if has_scaffold else "Video render missing or corrupted"
-            results.append(
-                ValidationResult(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message=f"Visual Quality: ✗ FAIL (Heuristic) - {reason}",
-                    details={**common_details, "score": None, "notes": reason},
-                )
-            )
-
-        # 2. AUDIO SYNC & TYPOGRAPHY
-        if has_video:
-            notes = (
-                "Vietnamese narration structure aligns with the provided script sections. "
-                "No empty English placeholders or obvious typography synchronization issues detected."
-            )
-            results.append(
-                ValidationResult(
-                    check_name="Audio Sync",
-                    passed=True,
-                    message=f"Audio Sync: ✓ PASS (Heuristic) - {notes}",
-                    details={**common_details, "score": None, "notes": notes},
-                )
-            )
-        else:
-            notes = "Narration audio missing or audio track missing"
-            results.append(
-                ValidationResult(
-                    check_name="Audio Sync",
-                    passed=False,
-                    message=f"Audio Sync: ✗ FAIL (Heuristic) - {notes}",
-                    details={**common_details, "score": None, "notes": notes},
-                )
-            )
-
-        # 3. CONTENT APPROPRIATENESS
-        metadata_text = ""
-        if metadata_path.is_file():
-            try:
-                metadata_text = metadata_path.read_text(encoding="utf-8")
-            except Exception:
-                pass
-
-        content_notes = "Content verified safe, appropriate, high news relevance, and policy compliant."
-        results.append(
-            ValidationResult(
-                check_name="Content Appropriateness",
-                passed=True,
-                message=f"Content Appropriateness: ✓ PASS (Heuristic) - {content_notes}",
-                details={**common_details, "score": None, "notes": content_notes},
-            )
+        return autonomous_quality_review_helper(
+            validator_self=self,
+            video_path=video_path,
+            metadata_path=metadata_path,
+            result_factory=ValidationResult,
+            prior_results=prior_results,
+            frame_paths=frame_paths,
         )
-
-        # 4. BRAND COMPLIANCE
-        prohibited_brands = ["openmontage", "montage"]
-        brand_violation = None
-        for brand in prohibited_brands:
-            if brand in metadata_text.lower():
-                brand_violation = f"Found '{brand}' in metadata"
-                break
-            if comp_text and brand in comp_text.lower():
-                brand_violation = f"Found '{brand}' in composition HTML"
-                break
-
-        if brand_violation:
-            notes = f"Prohibited brand violation: {brand_violation}"
-            results.append(
-                ValidationResult(
-                    check_name="Brand Compliance",
-                    passed=False,
-                    message=f"Brand Compliance: ✗ FAIL (Heuristic) - {notes}",
-                    details={**common_details, "score": 0, "notes": notes},
-                )
-            )
-        else:
-            notes = "No prohibited brand names such as Montage or OpenMontage detected in visible HTML text, title, metadata content, or narration."
-            results.append(
-                ValidationResult(
-                    check_name="Brand Compliance",
-                    passed=True,
-                    message=f"Brand Compliance: ✓ PASS (Heuristic) - {notes}",
-                    details={**common_details, "score": None, "notes": notes},
-                )
-            )
-
-        return results
 
     def _execute_cli_review(
         self,
@@ -1134,256 +209,14 @@ class CodexAgentValidator:
         prior_results: Optional[List[ValidationResult]] = None,
     ) -> List[ValidationResult]:
         """Execute review via CLI binary and parse result."""
-        abs_video_path = Path(video_path).resolve()
-        frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-review-"))
-        frame_paths: List[Path] = []
-        abs_metadata_path = Path(metadata_path).resolve()
-        metadata_str = "{}"
-        if abs_metadata_path.is_file():
-            try:
-                metadata_str = abs_metadata_path.read_text(encoding="utf-8")
-            except Exception:
-                pass
-
-        file_exists = abs_video_path.is_file()
-        file_size = abs_video_path.stat().st_size if file_exists else 0
-
-        comp_path = self.project_dir / ("hyperframes_reels/index.html" if "reels" in video_path.name else "hyperframes/index.html")
-        if not comp_path.is_file():
-            comp_path = self.project_dir / "hyperframes/index.html"
-
-        if not comp_path.is_file():
-            return [
-                ValidationResult(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
-                    details={"error": "Missing HyperFrames HTML source"},
-                )
-            ]
-
-
-
-        if (self.project_dir / "artifacts" / "script_en_US.json").is_file():
-            script_path = self.project_dir / "artifacts" / "script_en_US.json"
-        elif (self.project_dir / "artifacts" / "script_vi.json").is_file():
-            script_path = self.project_dir / "artifacts" / "script_vi.json"
-        elif (self.project_dir / "artifacts" / "script.json").is_file():
-            script_path = self.project_dir / "artifacts" / "script.json"
-        else:
-            script_path = self.project_dir / "artifacts" / "script_en_US.json"
-        comp_summary = "Composition: not found"
-        comp_text = ""
-        if comp_path.is_file():
-            try:
-                comp_text = comp_path.read_text(encoding="utf-8").strip()
-                scene_ids = set(re.findall(r'\bdata-scene-id=["\']([^"\']+)["\']', comp_text))
-                scene_count = len(scene_ids) or len(re.findall(r'<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\bscene\b[^"\']*["\']', comp_text))
-                comp_summary = f"Composition File: {comp_path.name}, Detected Scenes: {scene_count}"
-            except OSError:
-                comp_text = ""
-
-        script_summary = "Script: not found"
-        script_full_text = ""
-        if script_path.is_file():
-            try:
-                script_data = json.loads(script_path.read_text(encoding="utf-8"))
-                sections = script_data.get("sections", [])
-                script_summary = f"Script Sections: {len(sections)}"
-                script_full_text = "\n".join(
-                    str(s.get("text") or s.get("text_vi") or s.get("narration") or "")
-                    for s in sections
-                ).strip()
-            except Exception:
-                pass
-
-        if file_exists and file_size > 0:
-            try:
-                frame_paths = self._extract_frames(abs_video_path, frame_dir)
-            except Exception:
-                frame_paths = []
-
-        if not frame_paths:
-            return [
-                ValidationResult(
-                    check_name="Visual Quality",
-                    passed=False,
-                    message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
-                    details={"error": "Frame extraction failed"},
-                )
-            ]
-
-        audio_stream_summary = _probe_audio_streams(abs_video_path)
-
-        narration_asset = self.project_dir / "assets" / "narration.mp3"
-        narration_words_js = self.project_dir / "hyperframes" / "assets" / "narration_words.js"
-        narration_assets_summary = (
-            f"narration.mp3: {'present (' + str(narration_asset.stat().st_size) + ' bytes)' if narration_asset.is_file() else 'absent'}"
-            + f"; narration_words.js: {'present' if narration_words_js.is_file() else 'absent'}"
+        return execute_cli_review_helper(
+            validator_self=self,
+            agent_bin=agent_bin,
+            video_path=video_path,
+            metadata_path=metadata_path,
+            result_factory=ValidationResult,
+            prior_results=prior_results,
         )
-
-        prompt = f"""
-Validate candidate video asset for OpenMontage automated publishing pipeline.
-
-Target Asset Path: {abs_video_path}
-File Exists: {file_exists}
-File Size Bytes: {file_size}
-Composition Info: {comp_summary}
-Composition Source HTML:
-{comp_text}
-Script Info: {script_summary}
-Script Text Extract (Vietnamese):
-{script_full_text}
-
-Audio Stream Evidence (from ffprobe on rendered video): {audio_stream_summary}
-Narration Assets: {narration_assets_summary}
-
-Metadata Content:
-{metadata_str}
-
-PERFORM STRICT QUALITY VALIDATION on the following criteria:
-1. VISUAL QUALITY & DIVERSITY: Reject raw web-page layouts or placeholder scaffolds.
-2. AUDIO SYNC & TYPOGRAPHY: Use the Audio Stream Evidence above to verify that an audio track exists and its duration aligns with the script. Do not fail this criterion solely because audio cannot be heard — use the stream metadata.
-3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance.
-4. BRAND COMPLIANCE: Prohibit brand names such as Montage or OpenMontage.
-
-Return a valid JSON object matching this schema:
-{{
-  "visual_quality": {{"passed": true, "score": 95, "notes": "..."}},
-  "audio_sync": {{"passed": true, "score": 95, "notes": "..."}},
-  "content_appropriateness": {{"passed": true, "score": 95, "notes": "..."}},
-  "brand_compliance": {{"passed": true, "score": 95, "notes": "..."}},
-  "overall_passed": true,
-  "summary": "..."
-}}
-"""
-        for fp in frame_paths:
-            prompt += f"\n\n[Attached image: {fp.name}] {fp}"
-
-        root_dir = str(Path(__file__).resolve().parent.parent)
-        timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "120"))
-
-        is_codex = "codex" in Path(agent_bin).name.lower()
-        env = os.environ.copy()
-        if is_codex:
-            try:
-                resolved_home = resolve_and_validate_codex_home(env)
-                env["CODEX_HOME"] = resolved_home
-            except RuntimeError as e:
-                raise RuntimeError(f"Configured CODEX_HOME resolution failed: {e}")
-
-            if not env.get("OPENAI_API_KEY"):
-                auth_file = Path(resolved_home) / "auth.json"
-                if auth_file.is_file():
-                    try:
-                        auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
-                        api_key = auth_data.get("OPENAI_API_KEY")
-                        if api_key and isinstance(api_key, str) and api_key.strip():
-                            env["OPENAI_API_KEY"] = api_key.strip()
-                    except Exception:
-                        pass
-
-        if is_codex:
-            codex_model = env.get("CODEX_MODEL", "model-medium-hight")
-            cmd = [
-                agent_bin,
-                "exec",
-                "--dangerously-bypass-approvals-and-sandbox",
-                "--json",
-                "--config",
-                f'model="{codex_model}"',
-                "-",
-            ]
-        else:
-            for var in ("CODEXCODE", "CODEX_CODE_ENTRYPOINT", "CODEX_CODE_SSE_PORT", "CODEX_SESSION_ID", "ANTHROPIC_MODEL"):
-                env.pop(var, None)
-            cmd = [
-                agent_bin,
-                "-p",
-                "--output-format",
-                "json",
-                "-",
-            ]
-
-        claude_mod = sys.modules.get("scripts.claude_agent_validation")
-        run_fn = self._review_transport or (
-            getattr(claude_mod.subprocess, "run", subprocess.run)
-            if (claude_mod and hasattr(claude_mod, "subprocess"))
-            else subprocess.run
-        )
-        proc = run_fn(
-            cmd,
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=root_dir,
-            env=env,
-        )
-
-        output = proc.stdout or ""
-        if "hit your limit" in output.lower() or proc.returncode != 0:
-            raise RuntimeError(f"CLI returned error or rate limit: {output[:200]}")
-
-        response_data = parse_codex_review(output)
-        if not isinstance(response_data, dict):
-            raise ValueError(f"Agent CLI review returned non-dictionary JSON: {output[:200]}")
-
-        artifact_hash = compute_sha256(abs_video_path)
-        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        reviewer_name = "offline_test_transport" if self._review_transport else Path(agent_bin).name
-
-        results = []
-        checks = {
-            "Visual Quality": "visual_quality",
-            "Audio Sync": "audio_sync",
-            "Content Appropriateness": "content_appropriateness",
-            "Brand Compliance": "brand_compliance",
-        }
-        for check_name, check_key in checks.items():
-            if check_key not in response_data:
-                raise ValueError(f"Agent CLI review missing mandatory category: {check_key}")
-            check_data = response_data.get(check_key, {})
-            if not isinstance(check_data, dict):
-                raise ValueError(f"Agent CLI review invalid format for category: {check_key}")
-            passed = check_data.get("passed") is True
-            score = check_data.get("score", 0)
-            notes = check_data.get("notes", "")
-            results.append(
-                ValidationResult(
-                    check_name=check_name,
-                    passed=passed,
-                    message=f"{check_name}: {'✓ PASS' if passed else '✗ FAIL'} (Score: {score}) - {notes}",
-                    details={
-                        "score": score,
-                        "notes": notes,
-                        "reviewer": reviewer_name,
-                        "review_mode": "offline_transport" if self._review_transport else "codex_cli",
-                        "test_only_transport": bool(self._review_transport),
-                        "inspected_artifact_hash": artifact_hash,
-                        "timestamp": ts,
-                    },
-                )
-            )
-
-        if response_data.get("overall_passed") is not True and all(r.passed for r in results):
-            results.append(
-                ValidationResult(
-                    check_name="Agent Review Gate",
-                    passed=False,
-                    message=str(response_data.get("summary") or "Strict review rejected asset"),
-                    details={
-                        "reviewer": reviewer_name,
-                        "review_mode": "offline_transport" if self._review_transport else "codex_cli",
-                        "test_only_transport": bool(self._review_transport),
-                        "inspected_artifact_hash": artifact_hash,
-                        "timestamp": ts,
-                    },
-                )
-            )
-
-        return results
-
 
     def codex_agent_strict_review(
         self,
@@ -1392,160 +225,13 @@ Return a valid JSON object matching this schema:
         prior_results: Optional[List[ValidationResult]] = None,
     ) -> List[ValidationResult]:
         """Codex Agent review with strict enforcement and fail-closed security."""
-        abs_video_path = Path(video_path).resolve()
-        artifact_hash = compute_sha256(abs_video_path)
-        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-        # Mock isolation: mock reviews are blocked in strict production release
-        is_mock_env = os.environ.get("CODEX_AGENT_VALIDATION_MOCK") == "1" or os.environ.get("CLAUDE_AGENT_VALIDATION_MOCK") == "1"
-        is_production = os.environ.get("PRODUCTION_RELEASE") == "1" or os.environ.get("STRICT_PRODUCTION") == "1"
-
-        if is_mock_env or self._review_transport is not None:
-            if is_production:
-                injected_transport = self._review_transport is not None
-                return [
-                    ValidationResult(
-                        check_name="Codex Agent Review Gate",
-                        passed=False,
-                        message=(
-                            "Offline test review transport strictly forbidden in production mode"
-                            if injected_transport
-                            else "Mock review strictly forbidden in production mode"
-                        ),
-                        details={
-                            "error": "test_transport_forbidden_in_production" if injected_transport else "mock_forbidden_in_production",
-                            "review_mode": "offline_transport" if injected_transport else "mock",
-                            "test_only_transport": injected_transport,
-                            "timestamp": ts,
-                            "inspected_artifact_hash": artifact_hash,
-                        },
-                    )
-                ]
-            if is_mock_env:
-                return [
-                    ValidationResult(check_name="Visual Quality", passed=True, message="Visual Quality: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                    ValidationResult(check_name="Audio Sync", passed=True, message="Audio Sync: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                    ValidationResult(check_name="Content Appropriateness", passed=True, message="Content Appropriateness: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                    ValidationResult(check_name="Brand Compliance", passed=True, message="Brand Compliance: ✓ PASS (Mocked)", details={"score": 100, "review_mode": "mock", "timestamp": ts, "inspected_artifact_hash": artifact_hash}),
-                ]
-
-        # R6/R7: Hoist missing-HTML and frame-extraction pre-checks before the
-        # CLI gate so strict-mode failures are reported even when no CLI binary
-        # is available on the host.
-        if self.strict_mode:
-            comp_path = self.project_dir / (
-                "hyperframes_reels/index.html"
-                if "reels" in Path(video_path).name
-                else "hyperframes/index.html"
-            )
-            if not comp_path.is_file():
-                comp_path = self.project_dir / "hyperframes/index.html"
-            if not comp_path.is_file():
-                return [
-                    ValidationResult(
-                        check_name="Visual Quality",
-                        passed=False,
-                        message="Visual Quality: ✗ FAIL (Score: 0) - Missing HyperFrames HTML source",
-                        details={"error": "Missing HyperFrames HTML source"},
-                    )
-                ]
-            _pre_frame_dir = Path(tempfile.mkdtemp(prefix="openmontage-pre-"))
-            try:
-                _pre_frames = self._extract_frames(abs_video_path, _pre_frame_dir)
-            except Exception:
-                _pre_frames = []
-            if not _pre_frames:
-                return [
-                    ValidationResult(
-                        check_name="Visual Quality",
-                        passed=False,
-                        message="Visual Quality: ✗ FAIL (Score: 0) - Frame extraction failed: representative frames could not be extracted",
-                        details={"error": "Frame extraction failed"},
-                    )
-                ]
-
-        # An explicitly injected offline transport is authoritative for this
-        # instance. Route it before CLI discovery so rehearsal/tests cannot
-        # accidentally touch a live agent binary or fall back to heuristics.
-        if self._review_transport is not None:
-            try:
-                return self._execute_cli_review(
-                    "offline_test_transport",
-                    video_path,
-                    metadata_path,
-                    prior_results,
-                )
-            except Exception as exc:
-                logger.error("Injected strict review transport failed: %s", exc)
-                return [
-                    ValidationResult(
-                        check_name="Codex Agent Review Gate",
-                        passed=False,
-                        message=f"Injected strict review transport failed: {exc}",
-                        details={
-                            "error": str(exc),
-                            "error_type": type(exc).__name__,
-                            "review_mode": "offline_transport",
-                            "test_only_transport": True,
-                            "reviewer": "offline_test_transport",
-                            "timestamp": ts,
-                            "inspected_artifact_hash": artifact_hash,
-                        },
-                    )
-                ]
-
-        claude_mod = sys.modules.get("scripts.claude_agent_validation")
-        if claude_mod and hasattr(claude_mod, "resolve_claude_cli"):
-            claude_fn = getattr(claude_mod, "resolve_claude_cli")
-            if getattr(claude_fn, "__name__", "") == "<lambda>":
-                claude_bin = claude_fn()
-                if not claude_bin:
-                    return [
-                        ValidationResult(
-                            check_name="CLAUDE Agent Review Gate",
-                            passed=False,
-                            message="CLAUDE Agent strict review unavailable: FileNotFoundError: claude CLI not found",
-                            details={"error": "claude CLI not found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
-                        )
-                    ]
-
-        agent_bin = resolve_agent_cli()
-        if not agent_bin:
-            if self.strict_mode:
-                return [
-                    ValidationResult(
-                        check_name="Codex Agent Review Gate",
-                        passed=False,
-                        message="Codex agent review unavailable: Agent CLI binary not found",
-                        details={"error": "agent_cli_not_found", "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
-                    )
-                ]
-            logger.info("Agent CLI not found; falling back to non-strict autonomous heuristic review")
-            return self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
-
-        attempts = max(1, getattr(self, "retry_count", 1))
-        last_exc = None
-        for attempt in range(1, attempts + 1):
-            try:
-                return self._execute_cli_review(agent_bin, video_path, metadata_path, prior_results)
-            except Exception as exc:
-                last_exc = exc
-                if attempt < attempts:
-                    logger.warning("Agent CLI review attempt %d/%d failed: %s; retrying...", attempt, attempts, exc)
-                    time.sleep(0.5)
-        exc = last_exc
-        if self.strict_mode:
-            logger.error("Strict Codex Agent review failed after %d attempts: %s", attempts, exc)
-            return [
-                ValidationResult(
-                    check_name="Codex Agent Review Gate",
-                    passed=False,
-                    message=f"Strict Codex agent review failed: {exc}",
-                    details={"error": str(exc), "review_mode": "failed", "timestamp": ts, "inspected_artifact_hash": artifact_hash},
-                )
-            ]
-        logger.info("Agent CLI review skipped (%s); applying autonomous heuristic review in non-strict mode", exc)
-        return self._autonomous_quality_review(abs_video_path, Path(metadata_path).resolve(), prior_results)
+        return codex_agent_strict_review_helper(
+            validator_self=self,
+            video_path=video_path,
+            metadata_path=metadata_path,
+            result_factory=ValidationResult,
+            prior_results=prior_results,
+        )
 
     claude_agent_strict_review = codex_agent_strict_review
 
@@ -1616,8 +302,6 @@ Return a valid JSON object matching this schema:
                 for k, v in result.details.items():
                     print(f"       └─ {k}: {v}")
         print("=" * 60)
-
-
 
 
 def main():
@@ -1774,8 +458,4 @@ if __name__ == "__main__":
 
 # Compatibility aliases
 CLAUDEAgentValidator = CodexAgentValidator
-parse_claude_review = parse_codex_review
 claude_agent_strict_review = CodexAgentValidator.codex_agent_strict_review
-
-def resolve_claude_cli() -> str:
-    return resolve_codex_cli() or ""

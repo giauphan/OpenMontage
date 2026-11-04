@@ -151,11 +151,11 @@
         const dur = Math.max(0.5, endS - startS);
         const isFinal = (idx === scenes.length - 1);
 
-        // Scene Visibility Cross-Fade
+        // Scene Visibility & Dynamic Section Momentum
         tl.set(`#${secId}`, { opacity: 1, pointerEvents: "auto" }, startS);
-        tl.fromTo(`#${secId} .stage-card`, 
-          { opacity: 0, y: 30, scale: 0.98 }, 
-          { opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" }, 
+        tl.fromTo(`#${secId} .stage-card`,
+          { opacity: 0, y: 35, scale: 0.96 },
+          { opacity: 1, y: 0, scale: 1.0, duration: 0.45, ease: "power2.out" },
           startS
         );
 
@@ -196,19 +196,27 @@
           }
         });
 
-        // CTA Banner (holds until end of scene in final beat)
+        // CTA Banner & Climax Music Arc
         if (isFinal) {
           const ctaAbsT = startS + Math.min(dur - 1.5, Math.min(5.5, dur * 0.48) + 1.0);
+          tl.to("#bgm", { volume: 0.16, duration: 0.8, ease: "power2.out" }, ctaAbsT);
           tl.fromTo(`#${secId} .flow-cta-banner`,
             { opacity: 0, y: 25, scale: 0.92 },
             { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.7)" },
             ctaAbsT
           );
+        } else if (idx === 2) {
+          // Beat 3 Controversy / Mechanism: tension build & revelation duck
+          tl.to("#bgm", { volume: 0.18, duration: 1.2, ease: "power2.in" }, startS);
+          tl.to("#bgm", { volume: 0.06, duration: 0.6, ease: "power2.out" }, startS + 2.5);
+        } else if (idx === 3) {
+          // Beat 4 Remedy: resolution
+          tl.to("#bgm", { volume: 0.13, duration: 0.8, ease: "power1.out" }, startS);
         }
 
-        // Scene Exit Fade
+        // Dynamic Scene Exit Transition
         if (!isFinal) {
-          tl.to(`#${secId}`, { opacity: 0, duration: 0.25, ease: "power2.in" }, Math.max(0, endS - 0.25));
+          tl.to(`#${secId}`, { opacity: 0, y: -24, scale: 0.96, duration: 0.28, ease: "power2.in" }, Math.max(0, endS - 0.28));
         }
       });
     };

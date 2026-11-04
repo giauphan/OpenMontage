@@ -178,7 +178,7 @@ class NarrationOrchestrator:
             "elevenlabs": "IKne3meq5aSn9XLyUdCD",
             "kokoro": "am_michael",
             "pocket18": "alba",
-            "edge": "en-US-JennyNeural",
+            "edge": "en-US-GuyNeural",
             "openai": "alloy",
         },
         "vi-VN": {

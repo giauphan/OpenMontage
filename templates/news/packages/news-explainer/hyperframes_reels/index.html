@@ -24,6 +24,7 @@
     .steps-list li::before { content: attr(data-step); position: absolute; left: 0; top: 14px; font-size: 24px; font-weight: 900; color: var(--accent); }
     .limitation-box { width: 100%; max-width: 780px; padding: 36px 44px; border: 1px solid rgba(255,255,255,.12); border-left: 4px solid var(--accent); border-radius: 12px; background: rgba(255,255,255,.03); text-align: left; }
     .limitation-box p { font-size: 28px; line-height: 1.5; color: #c8d8d4; margin: 0; }
+    .cta-banner { display: inline-flex; align-items: center; justify-content: center; margin-top: 28px; padding: 14px 32px; background: linear-gradient(135deg, rgba(6,214,160,0.2) 0%, rgba(6,214,160,0.08) 100%); border: 1.5px solid var(--accent); border-radius: 30px; font-size: 24px; font-weight: 700; color: #fff; letter-spacing: 0.02em; box-shadow: 0 8px 24px rgba(6,214,160,0.18); }
     .caption { position: absolute; bottom: 70px; left: 70px; right: 70px; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.95); text-align: center; padding: 14px 0; }
   </style>
 </head>
@@ -31,7 +32,13 @@
   <div id="root" data-composition-id="main" data-width="1080" data-height="1920" data-duration="40">
     <div class="bg-fill"></div>
     <audio id="narration" class="clip" data-start="0" data-duration="40" data-track-index="0" src="assets/narration_reels.mp3"></audio>
-    <audio id="music-bg" class="clip" data-start="0" data-duration="40" data-track-index="0" src="assets/music-bg.mp3"></audio>
+    <audio id="music-bg" class="clip" data-start="0" data-duration="40" data-track-index="1" src="assets/music-bg.mp3" data-volume="0.12" loop></audio>
+    <audio class="clip sfx" data-start="0" data-duration="0.8" data-track-index="10" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>
+    <audio class="clip sfx" data-start="9.8" data-duration="0.8" data-track-index="11" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>
+    <audio class="clip sfx" data-start="10.5" data-duration="0.3" data-track-index="12" src="assets/sfx/pop.mp3" data-volume="0.16"></audio>
+    <audio class="clip sfx" data-start="27.8" data-duration="0.8" data-track-index="13" src="assets/sfx/whoosh-short.mp3" data-volume="0.22"></audio>
+    <audio class="clip sfx" data-start="28.4" data-duration="0.3" data-track-index="14" src="assets/sfx/buzz.mp3" data-volume="0.24"></audio>
+    <audio class="clip sfx" data-start="35.0" data-duration="0.8" data-track-index="15" src="assets/sfx/chime.mp3" data-volume="0.20"></audio>
 
     <section id="scene-hook" class="clip" data-start="0" data-duration="10" data-track-index="1">
       <div class="scene-inner">
@@ -61,6 +68,9 @@
         <div class="limitation-box">
           <p>Hỗ trợ Python và JavaScript. Kết quả cần được kiểm tra trước khi triển khai.</p>
         </div>
+        <div id="cta-banner" class="cta-banner">
+          <span>Bạn nghĩ sao? Hãy bình luận bên dưới 👇</span>
+        </div>
       </div>
     </section>
 
@@ -73,10 +83,24 @@
     (function() {
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
-      tl.from('#scene-hook .scene-inner',        { opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }, 0.1);
-      tl.from('#scene-capability .scene-inner',  { opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }, 10.1);
-      tl.from('.capability-card',               { opacity: 0, scale: 0.9, duration: 0.8, ease: 'back.out(1.4)' }, 10.6);
-      tl.from('#scene-limitations .scene-inner', { opacity: 0, y: 40, duration: 0.6, ease: 'power2.out' }, 28.1);
+
+      // Dynamic Music Arc: tension swell and ducking for revelations
+      tl.to("#music-bg", { volume: 0.18, duration: 1.0, ease: "power2.in" }, 26.5);
+      tl.to("#music-bg", { volume: 0.06, duration: 0.5, ease: "power2.out" }, 28.0);
+      tl.to("#music-bg", { volume: 0.16, duration: 0.8, ease: "power2.out" }, 34.5);
+      tl.to("#music-bg", { volume: 0, duration: 1.5, ease: "power2.in" }, 38.5);
+
+      // Section Transitions: kinetic entry and exit momentum
+      tl.fromTo('#scene-hook .scene-inner', { opacity: 0, y: 35, scale: 0.96 }, { opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'power2.out' }, 0.1);
+      tl.to('#scene-hook .scene-inner', { opacity: 0, y: -24, scale: 0.96, duration: 0.28, ease: 'power2.in' }, 9.7);
+
+      tl.fromTo('#scene-capability .scene-inner', { opacity: 0, y: 35, scale: 0.96 }, { opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'power2.out' }, 10.0);
+      tl.fromTo('.capability-card', { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1.0, duration: 0.7, ease: 'back.out(1.4)' }, 10.5);
+      tl.to('#scene-capability .scene-inner', { opacity: 0, y: -24, scale: 0.96, duration: 0.28, ease: 'power2.in' }, 27.7);
+
+      tl.fromTo('#scene-limitations .scene-inner', { opacity: 0, y: 35, scale: 0.96 }, { opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'power2.out' }, 28.0);
+      tl.fromTo('#cta-banner', { opacity: 0, y: 20, scale: 0.94 }, { opacity: 1, y: 0, scale: 1.0, duration: 0.5, ease: 'back.out(1.7)' }, 29.5);
+
       tl.from('#caption-0', { opacity: 0, y: 14, duration: 0.4 }, 0.5);
       tl.from('#caption-1', { opacity: 0, y: 14, duration: 0.4 }, 10.5);
       tl.from('#caption-2', { opacity: 0, y: 14, duration: 0.4 }, 28.5);

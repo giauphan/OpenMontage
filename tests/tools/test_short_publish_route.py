@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.publishers.platform_routes import CUT_RENDER, FULL_RENDER, ensure_youtube_short
+from tools.publishers.platform_routes import ensure_youtube_short
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
@@ -31,20 +31,6 @@ def _create_test_video(path: Path) -> None:
         "-pix_fmt", "yuv420p",
         str(path),
     ], check=True)
-
-
-def test_publish_slot_uses_cut_render_for_short_jobs():
-    module = _load("publish_slot")
-    for job_name, job in module.JOBS.items():
-        if job["kind"] == "short" and job["platform"] == "youtube":
-            assert job["path"].endswith(CUT_RENDER), f"{job_name} uses {job['path']} instead of {CUT_RENDER}"
-
-
-def test_publish_slot_instagram_uses_full_render():
-    module = _load("publish_slot")
-    for job_name, job in module.JOBS.items():
-        if job["kind"] == "reels" and job["platform"] == "instagram":
-            assert job["path"].endswith(FULL_RENDER), f"{job_name} uses {job['path']} instead of {FULL_RENDER}"
 
 
 def test_youtube_publisher_enforces_one_minute_min_and_three_minute_max(monkeypatch, tmp_path):

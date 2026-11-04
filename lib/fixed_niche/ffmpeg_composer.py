@@ -122,6 +122,17 @@ def _resolve_bgm_path(project_dir: Path) -> Optional[Path]:
     return None
 
 
+def _build_dynamic_bgm_filter(render_dur: float) -> str:
+    """Build dynamic volume filter with tension arc during controversy section."""
+    fade_start = max(0.0, render_dur - 1.5)
+    return (
+        f"volume='if(lt(t,1.5),0.12*t/1.5,"
+        f"if(between(t,24,30),0.18,"
+        f"if(between(t,30,36),0.07,"
+        f"if(gte(t,{fade_start:.2f}),0.12*(1-(t-{fade_start:.2f})/1.5),0.12))))':eval=frame"
+    )
+
+
 def _execute_ffmpeg_concat(
     concat_list: Path,
     audio_path: Path,
@@ -133,10 +144,11 @@ def _execute_ffmpeg_concat(
 ) -> None:
     """Execute FFmpeg concat render and clean up list file."""
     if bgm_path and bgm_path.is_file():
+        bgm_filt = _build_dynamic_bgm_filter(render_dur)
         filter_complex = (
             f"[0:v]{vf}[vout];"
             f"[1:a]volume=1.0[narr];"
-            f"[2:a]volume=0.12[bgm];"
+            f"[2:a]{bgm_filt}[bgm];"
             f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
         )
         cmd = [
@@ -176,10 +188,11 @@ def _execute_ffmpeg_color(
     drawbox = "drawbox=x=80:y=160:w=920:h=360:color=#1e293b:t=fill,drawbox=x=80:y=600:w=920:h=680:color=#38bdf8@0.35:t=fill"
     vf_color = f"{vf},{drawbox}"
     if bgm_path and bgm_path.is_file():
+        bgm_filt = _build_dynamic_bgm_filter(render_dur)
         filter_complex = (
             f"[0:v]{vf_color}[vout];"
             f"[1:a]volume=1.0[narr];"
-            f"[2:a]volume=0.12[bgm];"
+            f"[2:a]{bgm_filt}[bgm];"
             f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
         )
         cmd = [

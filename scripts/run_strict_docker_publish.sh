@@ -11,9 +11,7 @@ mkdir -p "$ROOT/logs/heartbeat" "$ROOT/logs/strict_docker_publish"
 
 export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-# Serialize the complete strict run, including preflight and generation. Keep
-# this stable lock file on the shared ROOT filesystem and never unlink it:
-# flock releases the descriptor automatically when this process tree exits.
+# Serialize the strict run; flock releases lock descriptor when process exits.
 STRICT_RUN_LOCK="$ROOT/.strict_docker_publish.lock"
 exec 199>>"$STRICT_RUN_LOCK"
 if ! flock -n 199; then
@@ -597,9 +595,7 @@ log "claude agent strict validation completed for ${#VALIDATED_PIDS[@]} projects
 
 # ===== STAGE 6: QUEUE — current-day recovery plus next-day schedule =====
 stage 6 "queue"
-# Serialize schedule reads/writes with publish_active_projects.py and
-# clear_stale_projects.sh, which use fcntl.flock on the same lock file.
-# The lock must be released before stage 7 cleanup (which acquires it).
+# Serialize schedule reads/writes with publish_active_projects.py and clear_stale_projects.sh.
 QUEUE_LOCK="$SCHEDULE.lock"
 exec 200>"$QUEUE_LOCK"
 if ! flock -x -w "${SCHEDULE_LOCK_WAIT_SECONDS:-300}" 200; then
@@ -811,7 +807,6 @@ log "active_projects count: $ACTIVE"
 log "final state queued for current/next day (YT native, IG on cron)"
 write_state "final-state" "ok"
 
-log ""
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
 log "all stages passed; videos platform-scheduled; IG on slot cron"
 write_state "workflow" "completed"

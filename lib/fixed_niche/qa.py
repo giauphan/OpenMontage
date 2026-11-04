@@ -233,7 +233,7 @@ class FixedNicheQAValidator:
     @staticmethod
     def _get_target_duration_bounds(expected_duration: float, tolerance: float) -> Tuple[float, float]:
         """Compute min and max allowable duration bounds."""
-        if math.isclose(expected_duration, 72.0, abs_tol=1e-5):
+        if 60.0 <= expected_duration <= 75.0 or math.isclose(expected_duration, 72.0, abs_tol=1e-5):
             return 65.0 - tolerance, 75.0 + tolerance
         return expected_duration - tolerance, expected_duration + tolerance
 

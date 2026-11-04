@@ -208,7 +208,7 @@ class FixedNicheStoryboardDirector:
 
     @staticmethod
     def _compose_b6(family: str, takeaway: str) -> str:
-        cta_suffix = "Follow me for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint."
+        cta_suffix = "What do you think? Let me know below. Follow for daily AI agent engineering patterns, and star the repo for the complete defensive blueprint."
         if takeaway and len(takeaway.split()) >= 4:
             return f"Always enforce {takeaway.rstrip('.')} in code and CI. {cta_suffix}"
         family_takeaways = {
