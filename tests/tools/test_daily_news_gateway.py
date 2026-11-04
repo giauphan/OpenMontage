@@ -33,6 +33,7 @@ from tools.news.daily_news_gateway import (
 )
 from tools.news import gateway_daily_news_feed
 from tools.news import news_pipeline_cli
+from tools.news.newsnow_adapter import NewsNowAdapter
 from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
 
 
@@ -387,6 +388,38 @@ def test_refresh_feed_rejects_stale_candidates_without_replacing_cache(tmp_path,
         )
 
     assert json.loads(cache.read_text(encoding="utf-8")) == [{"id": "previous"}]
+
+
+def test_refresh_feed_omits_null_optional_gateway_fields_for_newsnow_adapter(tmp_path, monkeypatch):
+    """Catches caching a Gateway candidate that the downstream NewsNow schema rejects for null image URLs."""
+    client = DailyNewsGatewayClient()
+    cache = tmp_path / "newsnow_feed.json"
+    monkeypatch.setattr(client, "discover_candidates", lambda **_: {
+        "status": "ELIGIBLE",
+        "tier": "tier_2_automated",
+        "candidates": [{
+            "candidate_id": "fresh-1",
+            "canonical_url": "https://example.com/fresh",
+            "title": "Fresh agent release",
+            "published_at": "2026-11-04T05:00:00Z",
+            "image_url": None,
+        }],
+    })
+
+    client.refresh_feed(
+        output=cache,
+        minimum=1,
+        max_age_hours=24,
+        reference_time=datetime(2026, 11, 4, 6, tzinfo=timezone.utc),
+    )
+
+    cached = json.loads(cache.read_text(encoding="utf-8"))
+    candidates, diagnostics = NewsNowAdapter(freshness_window_hours=24).ingest_and_normalize(
+        cached, reference_time=datetime(2026, 11, 4, 6, tzinfo=timezone.utc)
+    )
+    assert "image_url" not in cached[0]
+    assert len(candidates) == 1
+    assert diagnostics == []
 
 
 def test_hybrid_discovery_mark_consumed_syncs_to_gateway(tmp_path, monkeypatch):

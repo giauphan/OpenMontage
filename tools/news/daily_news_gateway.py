@@ -363,7 +363,22 @@ class DailyNewsGatewayClient:
             item = _normalize_feed_item(candidate, url)
             item["id"] = candidate_id
             item["published_at"] = published_at.isoformat().replace("+00:00", "Z")
-            fresh_items.append(item)
+            extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
+            extra.update({
+                "gateway_candidate_id": candidate_id,
+                "canonical_url": url,
+                "discussion_url": candidate.get("discussion_url"),
+            })
+            item["extra"] = {field: value for field, value in extra.items() if value is not None}
+            raw_feed_fields = {
+                "id", "url", "title", "publisher", "author", "published_at",
+                "description", "body", "content_hash", "tags", "language", "image_url",
+                "source_feed", "extra",
+            }
+            fresh_items.append({
+                field: value for field, value in item.items()
+                if field in raw_feed_fields and value is not None
+            })
 
         if len(fresh_items) < minimum:
             raise RuntimeError(f"Gateway returned {len(fresh_items)} fresh candidates; need {minimum}")
