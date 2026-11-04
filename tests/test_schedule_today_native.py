@@ -248,3 +248,57 @@ def test_already_scheduled_projects_skip_gracefully_without_failing_news_gate(tm
         assert mock_yt_pub.execute.call_count == 0
 
 
+def test_all_platforms_already_scheduled_skips_without_failing_news_gate(tmp_path: Path, monkeypatch, capsys):
+    from scripts.schedule_today_native import main
+
+    projects_dir = tmp_path / "projects"
+    config_dir = tmp_path / "config"
+    projects_dir.mkdir(parents=True)
+    config_dir.mkdir(parents=True)
+
+    today = "2099-01-01"
+
+    # Multi-platform enabled config
+    multi_cfg = tmp_path / "platforms_multi.json"
+    multi_cfg.write_text(json.dumps({"enabled_platforms": ["youtube", "tiktok", "facebook"]}))
+    monkeypatch.setenv("OPENMONTAGE_PLATFORMS_CONFIG", str(multi_cfg))
+
+    (config_dir / "publish_schedule.json").write_text(json.dumps({
+        "timezone": "UTC",
+        "youtube": {"account": "yt-account"},
+        "active_projects": [
+            {"project_id": "cand_multi_done", "publish_date": today, "publish_time": "14:15"},
+        ]
+    }))
+
+    # cand_multi_done: status generated, no news evidence, but store says all platforms scheduled
+    cand = projects_dir / "cand_multi_done"
+    cand.mkdir()
+    (cand / "publish_metadata.json").write_text(json.dumps({
+        "id": "cand_multi_done",
+        "title": "Tin tức #tintuc",
+        "description": "Bản tin #tintuc",
+        "status": "generated",
+    }))
+
+    class DummyStore:
+        def get(self, key):
+            # All platforms return scheduled
+            return {"status": "scheduled", "scheduled_for": today, "video_url": "https://example.com/video"}
+
+    mock_yt_pub = MagicMock()
+
+    with patch("scripts.schedule_today_native.ROOT", tmp_path), \
+         patch("scripts.schedule_today_native.PublishStore", DummyStore), \
+         patch("scripts.schedule_today_native.load_config", return_value=json.loads((config_dir / "publish_schedule.json").read_text())), \
+         patch("scripts.schedule_today_native.YoutubePublisher", return_value=mock_yt_pub), \
+         patch("sys.argv", ["schedule_today_native.py", "--date", today]):
+
+        exit_code = main()
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "ALREADY SCHEDULED cand_multi_done on youtube" in captured.out
+        assert mock_yt_pub.execute.call_count == 0
+
+
+

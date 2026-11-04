@@ -288,11 +288,23 @@ def main():
             existing_claim = store.get(yt_key)
             if existing_claim and existing_claim.get("status") in ("scheduled", "published"):
                 print(f"ALREADY SCHEDULED {proj} on youtube ({kind}) for {existing_claim.get('scheduled_for', date)} ({existing_claim.get('video_url', '')})")
-                # Remaining platforms (TikTok, Facebook) still need the full gate sequence below.
-                if is_longform or (
-                    not is_platform_enabled("tiktok", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled)
-                    and not is_platform_enabled("facebook", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled)
-                ):
+                # Remaining platforms (TikTok, Facebook) still need the full gate sequence below
+                # only if they are enabled and not already scheduled/published.
+                tiktok_needed = False
+                if not is_longform and is_platform_enabled("tiktok", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
+                    tt_key = publish_key(date, topic_id, "tiktok", "video")
+                    tt_claim = store.get(tt_key) if hasattr(store, "get") else None
+                    if not (tt_claim and tt_claim.get("status") in ("scheduled", "published")):
+                        tiktok_needed = True
+
+                facebook_needed = False
+                if not is_longform and is_platform_enabled("facebook", cfg=cfg, extra_held=cli_held, extra_enabled=cli_enabled):
+                    fb_key = publish_key(date, topic_id, "facebook", "reels")
+                    fb_claim = store.get(fb_key) if hasattr(store, "get") else None
+                    if not (fb_claim and fb_claim.get("status") in ("scheduled", "published")):
+                        facebook_needed = True
+
+                if not tiktok_needed and not facebook_needed:
                     continue
                 yt_already_done = True
 
