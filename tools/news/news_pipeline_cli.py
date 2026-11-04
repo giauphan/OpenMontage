@@ -149,7 +149,6 @@ def run_fetch(args: argparse.Namespace) -> None:
     """Fetch discovery leads and write the established raw feed format."""
     gw_url = getattr(args, "url", None)
     if getattr(args, "source", "daily-news") == "muse":
-        from tools.news.daily_news_gateway import DailyNewsGatewayClient
         from tools.news.muse_chat import MuseChatClient
         from tools.news.muse_news import discover_news
 

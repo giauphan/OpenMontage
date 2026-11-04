@@ -430,6 +430,33 @@ def test_news_pipeline_cli_fetch_defaults_to_gateway(tmp_path, monkeypatch):
     assert called_url[0] is None  # Auto-resolves via TOOLCASE_GATEWAY_URL
 
 
+def test_news_pipeline_cli_strict_fetch_uses_gateway_client_without_muse_scope_leak(tmp_path, monkeypatch):
+    """Catches the daily-news branch losing its imported client to the Muse-only local import."""
+    captured = {}
+
+    def fake_refresh(self, **kwargs):
+        captured.update(kwargs)
+        return {"count": 2}
+
+    monkeypatch.setattr(DailyNewsGatewayClient, "refresh_feed", fake_refresh)
+    args = argparse.Namespace(
+        command="fetch",
+        source="daily-news",
+        url="http://127.0.0.1:20129/custom/daily-news",
+        output=str(tmp_path / "feed.json"),
+        min_items=2,
+        strict_fresh=True,
+        max_age_hours=24.0,
+        topic=["agent_tool_use"],
+    )
+
+    news_pipeline_cli.run_fetch(args)
+
+    assert captured["minimum"] == 2
+    assert captured["max_age_hours"] == 24.0
+    assert captured["topics"] == ["agent_tool_use"]
+
+
 def test_gateway_daily_news_feed_consume_candidates_delegation(monkeypatch):
     consumed = []
 
