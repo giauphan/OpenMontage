@@ -16,7 +16,7 @@ from typing import Dict, Optional
 # Strict single-line TOML fallback validator regexes
 _TOML_INT_RE = re.compile(r"[+-]?(?:0[xob][\da-fA-F_]+|0|[1-9](?:_?\d)*)")
 _TOML_FLOAT_RE = re.compile(
-    r"[+-]?(?:\d[\d_]*(?:\.[\d_]+(?:e[+-]?[\d_]+)?|e[+-]?[\d_]+)|inf|nan)",
+    r"[+-]?(?:\d[\d_]*\.\d[\d_]*|inf|nan)",
     re.IGNORECASE,
 )
 _TOML_DATETIME_RE = re.compile(

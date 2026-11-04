@@ -339,8 +339,6 @@ def _build_debate_html(content: dict[str, Any], variant: str) -> str:
         "</html>\n"
     )
 
-    return html
-
 
 def _resolve_evidence_slots(content: dict[str, Any]) -> tuple[dict, dict, dict, dict, dict, dict[str, str]]:
     slots = content.get("slots") if isinstance(content.get("slots"), dict) else {}
