@@ -246,14 +246,15 @@ if [ -n "$PROJECT_ID_OUTPUT" ]; then
   mapfile -t PROJECT_IDS <<< "$PROJECT_ID_OUTPUT"
 fi
 # PRODUCER_EXECUTION_END
-if [[ "${#PROJECT_IDS[@]}" -lt 3 ]]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least three initialized projects, got ${#PROJECT_IDS[@]}." >&2
+MIN_INITIALIZED_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
+if [[ "${#PROJECT_IDS[@]}" -lt "$MIN_INITIALIZED_COUNT" ]]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least $MIN_INITIALIZED_COUNT initialized projects, got ${#PROJECT_IDS[@]}." >&2
   exit 1
 fi
 fi
 
 SUCCESSFUL_COUNT=0
-EXPECTED_SUCCESS_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
+EXPECTED_SUCCESS_COUNT="$MIN_INITIALIZED_COUNT"
 
 for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   REHEARSAL_TERMINAL_STAGE="project:${PROJECT_ID}:directors_and_validation"
