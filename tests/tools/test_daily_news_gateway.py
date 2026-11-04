@@ -327,7 +327,7 @@ def test_refresh_feed_replaces_cache_only_with_fresh_ranked_candidates(tmp_path,
 
     def fake_urlopen(req, timeout=0):
         assert req.full_url.endswith("/api/v1/discover")
-        assert json.loads(req.data.decode("utf-8")) == {"limit": 2, "topics": ["agent_tool_use"]}
+        assert json.loads(req.data.decode("utf-8")) == {"limit": 8, "topics": ["agent_tool_use"]}
         return FakeHttpResponse({
             "status": "ELIGIBLE",
             "tier": "tier_2_automated",

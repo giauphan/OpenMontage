@@ -319,9 +319,14 @@ class DailyNewsGatewayClient:
         if not math.isfinite(max_age_hours) or max_age_hours <= 0:
             raise ValueError("max_age_hours must be a finite positive number")
 
+        # A requested quota is a minimum number of usable projects, not a
+        # request to stop discovery at that count.  Fetch a bounded surplus so
+        # downstream scope, evidence, and rendering gates can reject weak
+        # items without making a daily quota impossible to fill.
+        discovery_limit = max(minimum * 4, 4)
         response = self.discover_candidates(
             base_url=base_url,
-            limit=minimum,
+            limit=discovery_limit,
             topics=topics,
             sources=list(sources) if sources else None,
         )
