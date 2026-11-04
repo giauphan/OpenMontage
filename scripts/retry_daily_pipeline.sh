@@ -79,11 +79,6 @@ if [[ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]]; then
   exit 0
 fi
 
-if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && "$SCHEDULED_COUNT" -gt 0 ]]; then
-  log "Muse produced a scheduled project; not forcing a daily quota."
-  exit 0
-fi
-
 # 5. Requirement not met — trigger the strict pipeline.
 MISSING_COUNT=$((EXPECTED_SUCCESS_COUNT - SCHEDULED_COUNT))
 log "Next-day schedule has only $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects for $NEXT_DATE ($MISSING_COUNT needed). Triggering run_strict_docker_publish.sh..."

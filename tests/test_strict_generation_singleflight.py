@@ -126,7 +126,7 @@ def test_lock_released_after_success_and_failure(tmp_path: Path):
     # Today's native scheduling intentionally occurs before generation/validation.
 
     (scripts / "codex_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
-    succeeded = run_pipeline(tmp_path, scripts, binaries)
+    succeeded = run_pipeline(tmp_path, scripts, binaries, expected_success_count=2)
     assert succeeded.returncode == 0, succeeded.stdout + succeeded.stderr
     assert (tmp_path / "native-schedule-call").exists()
 

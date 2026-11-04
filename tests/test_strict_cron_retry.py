@@ -118,7 +118,9 @@ def occupy_today_slots(config: Path) -> list[dict[str, str]]:
     return occupied
 
 
-def run_pipeline(tmp_path: Path, scripts: Path, binaries: Path) -> subprocess.CompletedProcess[str]:
+def run_pipeline(
+    tmp_path: Path, scripts: Path, binaries: Path, expected_success_count: int = 3
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(scripts / "run_strict_docker_publish.sh")],
         cwd=tmp_path,
@@ -128,8 +130,10 @@ def run_pipeline(tmp_path: Path, scripts: Path, binaries: Path) -> subprocess.Co
             "PUBLISH_TZ": "UTC",
             "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
             "DAILY_GENERATION_RETRIES": "2",
+            "GENERATION_RETRY_DELAY_SECONDS": "0",
             "CLAUDE_VALIDATION_RETRIES": "3",
             "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+            "EXPECTED_SUCCESS_COUNT": str(expected_success_count),
         },
         capture_output=True,
         text=True,
@@ -162,7 +166,7 @@ def test_muse_no_topic_marker_prevents_retry_despite_curated_backlog(tmp_path):
     assert (tmp_path / "data/.no_eligible_topic_marker").exists()
 
 
-def test_muse_partial_schedule_does_not_force_quota(tmp_path):
+def test_muse_partial_schedule_retries_until_daily_quota_is_met(tmp_path):
     scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
     schedule_path = config / "publish_schedule.json"
@@ -174,10 +178,10 @@ def test_muse_partial_schedule_does_not_force_quota(tmp_path):
                          env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC",
                               "NEWS_DISCOVERY_PROVIDER": "muse"}, capture_output=True, text=True)
     assert res.returncode == 0
-    assert not (tmp_path / "should-not-run").exists()
+    assert (tmp_path / "should-not-run").exists()
 
 
-def test_retries_generation_and_validation_before_next_day_queue(tmp_path: Path):
+def test_partial_validation_never_queues_an_incomplete_daily_batch(tmp_path: Path):
     scripts, config, binaries = create_fixture(
         tmp_path,
         """import sys
@@ -195,19 +199,15 @@ if project == 'cand_fail' or count < 3:
     occupied_today = occupy_today_slots(config)
     result = run_pipeline(tmp_path, scripts, binaries)
 
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode != 0
     assert (tmp_path / "generation-count").read_text(encoding="utf-8") == "2"
     assert (tmp_path / "cand_fail-validation-count").read_text(encoding="utf-8") == "3"
     assert (tmp_path / "cand_pass-validation-count").read_text(encoding="utf-8") == "3"
 
-    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
     schedule = json.loads((config / "publish_schedule.json").read_text(encoding="utf-8"))
-    assert schedule["active_projects"] == occupied_today + [{
-        "project_id": "cand_pass",
-        "publish_date": tomorrow,
-        "publish_time": "01:00",
-    }]
-    assert tomorrow in (tmp_path / "native-schedule-call").read_text(encoding="utf-8")
+    assert schedule["active_projects"] == occupied_today
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    assert tomorrow not in (tmp_path / "native-schedule-call").read_text(encoding="utf-8")
 
 
 def test_all_validation_failures_leave_schedule_unchanged(tmp_path: Path):
@@ -227,7 +227,7 @@ def test_queued_project_is_available_to_slot_publisher(tmp_path: Path):
     (scripts / "codex_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
     occupied_today = occupy_today_slots(config)
 
-    result = run_pipeline(tmp_path, scripts, binaries)
+    result = run_pipeline(tmp_path, scripts, binaries, expected_success_count=2)
 
     assert result.returncode == 0, result.stdout + result.stderr
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
@@ -415,7 +415,7 @@ raise SystemExit(2)
     )
 
     occupy_today_slots(config)
-    result = run_pipeline(tmp_path, scripts, binaries)
+    result = run_pipeline(tmp_path, scripts, binaries, expected_success_count=1)
 
     assert result.returncode != 0
     # Must have only run once per candidate, breaking out immediately on exit 2
@@ -490,7 +490,7 @@ raise SystemExit(0)
     ]
     schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
 
-    result = run_pipeline(tmp_path, scripts, binaries)
+    result = run_pipeline(tmp_path, scripts, binaries, expected_success_count=2)
 
     assert result.returncode == 0, f"Expected pipeline to succeed for next day, but failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
@@ -543,7 +543,7 @@ raise SystemExit(0)
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
     (tmp_path / "today_date.txt").write_text(today, encoding="utf-8")
 
-    result = run_pipeline(tmp_path, scripts, binaries)
+    result = run_pipeline(tmp_path, scripts, binaries, expected_success_count=2)
 
     assert result.returncode == 0, f"Expected pipeline to succeed, got:\n{result.stdout}\n{result.stderr}"
 
@@ -584,7 +584,7 @@ raise SystemExit(0)
     today = datetime.now(timezone.utc).strftime("%F")
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
 
-    result = run_pipeline(tmp_path, scripts, binaries)
+    result = run_pipeline(tmp_path, scripts, binaries, expected_success_count=2)
 
     assert result.returncode == 0, f"Expected pipeline to succeed, got:\n{result.stdout}\n{result.stderr}"
 
@@ -628,7 +628,7 @@ def test_more_validated_projects_than_available_slots_queues_available_count(tmp
     schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
 
     # Pipeline generates 2 projects (cand_fail, cand_pass), but only 1 slot (03:00) is free
-    result = run_pipeline(tmp_path, scripts, binaries)
+    result = run_pipeline(tmp_path, scripts, binaries, expected_success_count=1)
 
     assert result.returncode == 0, f"Expected pipeline to succeed, got:\n{result.stdout}\n{result.stderr}"
 

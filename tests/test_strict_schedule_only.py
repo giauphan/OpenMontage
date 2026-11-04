@@ -45,7 +45,8 @@ def expected_queue_assignment(now: datetime, tzname: str, slots: list[str],
 
 
 def _run_fixture(tmp_path: Path, projects: list[str], slots: list[str],
-                 active: list[dict] | None = None, tzname: str = "Asia/Ho_Chi_Minh") -> subprocess.CompletedProcess:
+                 active: list[dict] | None = None, tzname: str = "Asia/Ho_Chi_Minh",
+                 expected_success_count: int = 3) -> subprocess.CompletedProcess:
     """Shared fixture: copy the real orchestrator, mock every external stage, run it."""
     scripts_dir = tmp_path / "scripts"
     config_dir = tmp_path / "config"
@@ -104,6 +105,7 @@ def _run_fixture(tmp_path: Path, projects: list[str], slots: list[str],
         "GENERATION_RETRY_DELAY_SECONDS": "0",
         "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",
         "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+        "EXPECTED_SUCCESS_COUNT": str(expected_success_count),
     }
     return subprocess.run(
         ["bash", str(scripts_dir / "run_strict_docker_publish.sh")],
@@ -250,7 +252,7 @@ def test_strict_run_preserves_existing_queue_entries(tmp_path: Path):
         now_local, "Asia/Ho_Chi_Minh", slots, today, next_date, set(), {"02:00"}, 1
     )
 
-    result = _run_fixture(tmp_path, ["cand_new"], slots, active)
+    result = _run_fixture(tmp_path, ["cand_new"], slots, active, expected_success_count=1)
 
     if available_assignments is None:
         assert result.returncode != 0
