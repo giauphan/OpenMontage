@@ -985,6 +985,18 @@ def test_allow_partial_daily_batch_script_contract():
     assert "proceeding with partial batch under ALLOW_PARTIAL_DAILY_BATCH=1" in strict_script
 
 
+def test_dynamic_narration_cap_and_agent_guide_contract():
+    """Verifies that run_daily_news_pipeline.sh dynamically caps narration duration
+    to prevent scene hold policy violations (>12.0s per scene) and stages AGENT_GUIDE.md."""
+    daily_script = (ROOT / "scripts" / "run_daily_news_pipeline.sh").read_text(encoding="utf-8")
+
+    assert 'cp -f "$ROOT/AGENT_GUIDE.md" "$PROJECT_DIR/AGENT_GUIDE.md"' in daily_script
+    assert 'c = n * 11.8' in daily_script
+    assert 'max_narration_cap=$(awk -v n="$num_sections"' in daily_script
+    assert 'target_dur=$(awk -v n="$num_sections"' in daily_script
+
+
+
 
 
 

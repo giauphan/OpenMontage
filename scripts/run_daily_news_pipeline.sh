@@ -280,6 +280,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
   mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
+  [ -f "$ROOT/AGENT_GUIDE.md" ] && cp -f "$ROOT/AGENT_GUIDE.md" "$PROJECT_DIR/AGENT_GUIDE.md" 2>/dev/null || true
   if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
   PROJECT_LOCALE="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$PROJECT_DIR')))" 2>/dev/null || echo "en-US")"
@@ -916,15 +917,20 @@ materialize_hyperframes_assets() {
 
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
   if [ "$is_en" -eq 1 ] && [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ]; then
-    local max_narration_cap=74.5
+    local num_sections=6
+    if [ -s "$script_json" ]; then
+      num_sections=$("$PY" -c 'import json, sys; d=json.load(open(sys.argv[1])); print(len(d.get("sections", [])) or 6)' "$script_json" 2>/dev/null || echo 6)
+    fi
+    local max_narration_cap
+    max_narration_cap=$(awk -v n="$num_sections" 'BEGIN{c = n * 11.8; if (c > 74.0) c = 74.0; if (c < 66.0) c = 66.0; printf "%.1f", c}')
     if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
       if command -v "$edge_tts_cmd" >/dev/null 2>&1 || [ -x "$edge_tts_cmd" ]; then
-        # Preserve natural speech pacing: allow conversational adjustments (up to +/-15%)
+        # Preserve natural speech pacing: allow conversational adjustments (up to +/-20%)
         local try_rates=()
         if awk -v d="$narration_duration" 'BEGIN{exit !(d < 65.0)}'; then
-          try_rates=("-3%" "-5%" "-7%" "-9%" "-11%" "-13%" "-15%")
+          try_rates=("-3%" "-5%" "-7%" "-9%" "-11%" "-13%" "-15%" "-18%")
         else
-          try_rates=("+3%" "+5%" "+7%" "+9%" "+11%" "+13%" "+15%")
+          try_rates=("+3%" "+5%" "+7%" "+9%" "+11%" "+13%" "+15%" "+18%" "+20%")
         fi
         for try_rate in "${try_rates[@]}"; do
           if "$edge_tts_cmd" --voice "$default_voice" --rate "$try_rate" --text "$(cat "$narration_text")" --write-media "$narration.rate_try.mp3" >/dev/null 2>&1; then
@@ -940,10 +946,11 @@ materialize_hyperframes_assets() {
         rm -f "$narration.rate_try.mp3"
       fi
 
-      # If edge-tts was unavailable or couldn't land in [65, 74.5]s, use ffmpeg atempo on near-fit audio
+      # If edge-tts was unavailable or couldn't land in [65, max_narration_cap]s, use ffmpeg atempo on near-fit audio
       if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
         if awk -v d="$narration_duration" 'BEGIN{exit !(d >= 50.0 && d <= 90.0)}'; then
-          local target_dur=69.0
+          local target_dur
+          target_dur=$(awk -v n="$num_sections" 'BEGIN{t = n * 11.33; if (t > 70.0) t = 70.0; if (t < 66.0) t = 66.0; printf "%.1f", t}')
           local tempo
           tempo=$(awk -v d="$narration_duration" -v t="$target_dur" 'BEGIN{printf "%.4f", d / t}')
           if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.80 && t <= 1.25)}'; then
