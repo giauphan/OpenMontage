@@ -267,3 +267,89 @@ def test_strict_run_preserves_existing_queue_entries(tmp_path: Path):
     assert ("existing_next", next_date, "02:00") in entries
     assert ("cand_new", expected_new_date, expected_new_slot) in entries
     assert len(entries) == 2
+
+
+def test_strict_run_decouples_calendar_tz_from_publish_tz(tmp_path: Path):
+    now_vn = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+    next_date_vn = (now_vn + timedelta(days=1)).strftime("%F")
+    slots = ["09:15", "14:15", "21:15"]
+
+    scripts_dir = tmp_path / "scripts"
+    config_dir = tmp_path / "config"
+    bin_dir = tmp_path / "bin"
+    for directory in (scripts_dir, config_dir, tmp_path / "projects", bin_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts_dir / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+    (config_dir / "publish_schedule.json").write_text(
+        json.dumps({
+            "timezone": "America/New_York",
+            "slots": {"publish_slots": slots},
+            "active_projects": [],
+        }),
+        encoding="utf-8",
+    )
+
+    (bin_dir / "codex").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (bin_dir / "codex").chmod(0o755)
+    for name in ("ffmpeg", "ffprobe"):
+        executable = bin_dir / name
+        executable.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        executable.chmod(0o755)
+
+    pid = "cand_vn_target"
+    pipeline = [
+        "#!/usr/bin/env bash", "set -eu", 'ROOT="$(cd "$(dirname "$0")/.." && pwd)"',
+        f'mkdir -p "$ROOT/projects/{pid}/renders"',
+        f'printf \'{{"id":"{pid}","title":"T","description":"D","yt_shorts":"renders/final_reels_vi_9x16.mp4","ig_reels":"renders/final_reels_vi_9x16.mp4","fb_video":"renders/final_full_vi_9x16.mp4"}}\' > "$ROOT/projects/{pid}/publish_metadata.json"',
+        f'echo "dummy mp4 data" > "$ROOT/projects/{pid}/renders/final_full_vi_9x16.mp4"',
+        f'echo "dummy mp4 data" > "$ROOT/projects/{pid}/renders/final_reels_vi_9x16.mp4"',
+        f'PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c \'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))\' "$ROOT/projects/{pid}"',
+        f'echo "PROJECT_ID={pid}"',
+    ]
+    (scripts_dir / "run_daily_news_pipeline.sh").write_text("\n".join(pipeline) + "\n", encoding="utf-8")
+    (scripts_dir / "run_daily_news_pipeline.sh").chmod(0o755)
+
+    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "codex_agent_validation.py"):
+        (scripts_dir / name).write_text("", encoding="utf-8")
+    (scripts_dir / "schedule_today_native.py").write_text(
+        "import sys\nfrom pathlib import Path\nwith open('platform-schedule-called.log', 'a') as f: f.write(' '.join(sys.argv) + '\\n')\nraise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    (scripts_dir / "clear_stale_projects.sh").write_text("exit 0\n", encoding="utf-8")
+    (scripts_dir / "clear_stale_projects.sh").chmod(0o755)
+    (scripts_dir / "publish_manual_video.py").write_text("exit 0\n", encoding="utf-8")
+
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "CALENDAR_TZ": "Asia/Ho_Chi_Minh",
+        "PUBLISH_TZ": "America/New_York",
+        "TARGET_TODAY_COUNT": "0",
+        "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+        "GENERATION_RETRY_DELAY_SECONDS": "0",
+        "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",
+        "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+        "EXPECTED_SUCCESS_COUNT": "1",
+    }
+    result = subprocess.run(
+        ["bash", str(scripts_dir / "run_strict_docker_publish.sh")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    schedule = json.loads((tmp_path / "config" / "publish_schedule.json").read_text(encoding="utf-8"))
+    queued = schedule["active_projects"]
+    assert len(queued) == 1
+    assert queued[0]["project_id"] == pid
+    assert queued[0]["publish_date"] == next_date_vn
+    assert queued[0]["publish_time"] == "09:15"
+
+    platform_command = (tmp_path / "platform-schedule-called.log").read_text(encoding="utf-8")
+    assert f"--date {next_date_vn}" in platform_command

@@ -37,12 +37,20 @@ if [ ! -f "$SCHEDULE" ]; then
 fi
 
 # 3. Calculate target next-day date.
-NEXT_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
-TODAY=$(TZ="$PUBLISH_TZ" date +%F)
+CALENDAR_TZ="${CALENDAR_TZ:-${PUBLISH_CALENDAR_TZ:-}}"
+if [ -z "$CALENDAR_TZ" ]; then
+  if [ "${PUBLISH_TZ:-}" = "UTC" ]; then
+    CALENDAR_TZ="UTC"
+  else
+    CALENDAR_TZ="Asia/Ho_Chi_Minh"
+  fi
+fi
+NEXT_DATE=$(TZ="$CALENDAR_TZ" date -d tomorrow +%F)
+TODAY=$(TZ="$CALENDAR_TZ" date +%F)
 
 # 3.5 Check if NO_ELIGIBLE_TOPIC was recorded for today.
 if [[ -f "$ROOT/data/.no_eligible_topic_marker" ]]; then
-  MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
+  MARKER_DATE=$(TZ="$CALENDAR_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
   if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "muse" && "$MARKER_DATE" == "$TODAY" ]]; then
     log "Muse found no eligible topics today; skipping quota-driven retries."
     exit 0
@@ -57,7 +65,7 @@ sys.exit(0 if res.is_eligible else 1)
     log "Eligible candidates available in curated/source backlog; clearing stale .no_eligible_topic_marker."
     rm -f "$ROOT/data/.no_eligible_topic_marker"
   else
-    MARKER_DATE=$(TZ="$PUBLISH_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
+    MARKER_DATE=$(TZ="$CALENDAR_TZ" date -r "$ROOT/data/.no_eligible_topic_marker" +%F 2>/dev/null || echo "")
     if [[ "$MARKER_DATE" == "$TODAY" ]]; then
       log "NO_ELIGIBLE_TOPIC was recorded for today ($TODAY) and backlog is empty. Skipping retry loop to prevent infinite retry storms."
       exit 0
@@ -72,7 +80,7 @@ SCHEDULED_COUNT=$(jq --arg d "$NEXT_DATE" '
 SCHEDULED_COUNT="${SCHEDULED_COUNT:-0}"
 [[ "$SCHEDULED_COUNT" =~ ^[0-9]+$ ]] || SCHEDULED_COUNT=0
 
-log "Schedule check for $NEXT_DATE (tomorrow in $PUBLISH_TZ): $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects scheduled."
+log "Schedule check for $NEXT_DATE (tomorrow in $CALENDAR_TZ, publish tz $PUBLISH_TZ): $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects scheduled."
 
 if [[ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]]; then
   PENDING_NATIVE="$ROOT/logs/strict_docker_publish/platform-schedule-$NEXT_DATE.pending"

@@ -402,14 +402,23 @@ SCHEDULE="$ROOT/config/publish_schedule.json"
 jq -e '.active_projects and (.active_projects | type == "array")' "$SCHEDULE" >/dev/null \
   || fail "schedule invalid"
 
-TODAY=$(TZ="$PUBLISH_TZ" date +%F)
-NEXT_DATE=$(TZ="$PUBLISH_TZ" date -d tomorrow +%F)
+CALENDAR_TZ="${CALENDAR_TZ:-${PUBLISH_CALENDAR_TZ:-}}"
+if [ -z "$CALENDAR_TZ" ]; then
+  if [ "${PUBLISH_TZ:-}" = "UTC" ]; then
+    CALENDAR_TZ="UTC"
+  else
+    CALENDAR_TZ="Asia/Ho_Chi_Minh"
+  fi
+fi
+
+TODAY=$(TZ="$CALENDAR_TZ" date +%F)
+NEXT_DATE=$(TZ="$CALENDAR_TZ" date -d tomorrow +%F)
 mapfile -t TODAY_PROJECT_IDS < <(jq -r --arg d "$TODAY" \
   '.active_projects[]? | select((.publish_date // "") == $d) | (.project_id // empty)' "$SCHEDULE")
 mapfile -t EXISTING_SCHEDULED_IDS < <(jq -r \
   '.active_projects[]? | (.project_id // empty)' "$SCHEDULE")
-log "today publish date (local $PUBLISH_TZ): $TODAY"
-log "next publish date (local $PUBLISH_TZ): $NEXT_DATE"
+log "today calendar date ($CALENDAR_TZ): $TODAY (target publish timezone: $PUBLISH_TZ)"
+log "next publish date ($CALENDAR_TZ): $NEXT_DATE"
 log "due today projects: ${TODAY_PROJECT_IDS[*]:-none}"
 log "existing scheduled projects: ${EXISTING_SCHEDULED_IDS[*]:-none}"
 write_state "prepare" "ok" "today=$TODAY next=$NEXT_DATE due=$(IFS=,; echo "${TODAY_PROJECT_IDS[*]}")"
