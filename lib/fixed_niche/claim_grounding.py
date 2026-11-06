@@ -153,7 +153,7 @@ def _strip_thousands(text: str) -> str:
 
 def _quantity_regex(q: str) -> str:
     """Build a regex pattern for a quantity with optional spacing between number and unit."""
-    m = re.match(r'^([-+]?\d+(?:\.\d+)?)\s*(.*)$', q)
+    m = re.match(r'^([-+]?\d+(?:\.\d+)*)\s*(.*)$', q)
     if m:
         num_part = m.group(1)
         unit_part = m.group(2).strip()
@@ -195,7 +195,7 @@ def verify_independent_claim(
 
     # 1. Number and unit verification: Any quantitative figures in statement must exist with their units in snapshot
     stat_quantities = re.findall(
-        r'\b\d+(?:\.\d+)?(?:\s*(?:%|(?:x|ms|sec|s|[kmb]?\s*tokens?|mb|gb|req/s|rps)\b)|[kmb]\b|\b(?![a-zA-Z]))',
+        r'\b\d+(?:\.\d+)*(?:\s*(?:%|(?:x|ms|sec|s|[kmb]?\s*tokens?|mb|gb|req/s|rps)\b)|[kmb]\b|\b(?![a-zA-Z]))',
         norm_statement,
         re.IGNORECASE,
     )

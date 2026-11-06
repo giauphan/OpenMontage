@@ -359,9 +359,9 @@ def _load_capture_files(
         cap_content = _read_capture_file_content(cap_file)
         if cap_content:
             capture_corpus_lines.append(cap_content)
-            cap_sha = hashlib.sha256(cap_content.encode("utf-8")).hexdigest()
+            cap_sha = hashlib.sha256(cap_file.read_bytes()).hexdigest()
             capture_files_map[cap_file.name] = (cap_content, cap_sha)
-            captured_source_lines.append(f"CapturedSource ({cap_file.name}): {cap_content[:4000]}")
+            captured_source_lines.append(f"CapturedSource ({cap_file.name}): {cap_content[:12000]}")
     return capture_corpus_lines, capture_files_map, captured_source_lines
 
 
@@ -426,6 +426,8 @@ def _create_ledger_claim(
     snap_file, snap_sha = _resolve_snapshot_file_and_sha(
         best_cap_file, best_cap_sha, primary_source, strict_capture_required
     )
+    cap_name = snap_file.split("/", 1)[1] if snap_file.startswith("news_source_capture/") else ""
+    excerpt_src = capture_files_map[cap_name][0] if cap_name in capture_files_map else target_corpus
     authentic_pub_date = _resolve_authentic_pub_date(primary_source, provenance_map, now_iso)
     return {
         "claim_id": f"C{idx + 1:03d}",
@@ -440,7 +442,7 @@ def _create_ledger_claim(
             "snapshot_file": snap_file,
             "snapshot_sha256": snap_sha,
         },
-        "evidence_excerpt": target_corpus[:4000],
+        "evidence_excerpt": excerpt_src[:12000],
         "script_spans": [sec_text],
         "verdict": "APPROVED" if is_verified else "REJECTED",
     }

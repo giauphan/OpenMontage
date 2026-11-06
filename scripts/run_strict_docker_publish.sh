@@ -7,6 +7,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+# File-based Python entrypoints import project packages; cron does not supply
+# the checkout root on Python's module search path.
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+# Local supervisor is optional; when unset or 0, unattended cron uses the server agent.
+export OPENMONTAGE_REQUIRE_LOCAL_AGENT="${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}"
 mkdir -p "$ROOT/logs/heartbeat" "$ROOT/logs/strict_docker_publish"
 
 export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -748,6 +753,12 @@ jq '.active_projects |= reduce .[] as $item ([]; if any(.[]; (if type == "object
 
 jq -e '.active_projects and (.active_projects | type == "array")' "$TMP_QUEUE" >/dev/null 2>&1 \
   || { rm -f "$TMP_QUEUE"; write_state "queue" "failed"; fail "queued schedule invalid"; }
+# Persist the scheduling obligation before publishing the updated queue, so an
+# interruption immediately after the queue write cannot hide pending uploads.
+if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
+  PENDING_NATIVE="$LOG_DIR/platform-schedule-$NEXT_DATE.pending"
+  : > "$PENDING_NATIVE"
+fi
 mv "$TMP_QUEUE" "$SCHEDULE"
 
 [ "${#QUEUED_PIDS[@]}" -eq "${#VALIDATED_PIDS[@]}" ] \
@@ -789,7 +800,7 @@ if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
   NEXT_PLATFORM_OK=0
   for sched_attempt in 1 2 3; do
     log "YouTube scheduling attempt $sched_attempt/3 for next day ($NEXT_DATE)"
-    if "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
+    if STRICT_REQUIRE_NATIVE_SCHEDULE=1 "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" 2>&1 | tee -a "$RUN_LOG"; then
       NEXT_PLATFORM_OK=1
       break
     fi
@@ -803,6 +814,7 @@ if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
     write_state "platform-schedule" "failed" "date=$NEXT_DATE"
     fail "next-day YouTube scheduling failed after 3 attempts; queued projects retained"
   fi
+  rm -f "$PENDING_NATIVE"
 fi
 
 if [[ "$TODAY_PLATFORM_OK" -eq 0 ]]; then

@@ -668,6 +668,53 @@ def test_retry_daily_pipeline_noop_when_satisfied(tmp_path: Path):
     assert "No retry needed" in res.stdout
 
 
+def test_full_queue_with_pending_native_schedule_retries_without_generation(tmp_path: Path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text())
+    schedule["active_projects"] = [
+        {"project_id": f"p_{i}", "publish_date": tomorrow, "publish_time": f"0{i}:00"}
+        for i in range(1, 4)
+    ]
+    schedule_path.write_text(json.dumps(schedule))
+    pending = tmp_path / "logs" / "strict_docker_publish" / f"platform-schedule-{tomorrow}.pending"
+    pending.parent.mkdir(parents=True)
+    pending.touch()
+    (scripts / "schedule_today_native.py").write_text(
+        "import sys\nfrom pathlib import Path\nPath('scheduled-date').write_text(sys.argv[2])\n"
+    )
+    write_executable(scripts / "run_strict_docker_publish.sh", "#!/usr/bin/env bash\ntouch unexpected-generation\n")
+    res = subprocess.run(["bash", str(scripts / "retry_daily_pipeline.sh")], cwd=tmp_path,
+                         env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC"},
+                         capture_output=True, text=True)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert (tmp_path / "scheduled-date").read_text() == tomorrow
+    assert not (tmp_path / "unexpected-generation").exists()
+    assert not pending.exists()
+
+
+def test_failed_native_schedule_retry_keeps_pending_marker(tmp_path: Path):
+    scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+    schedule_path = config / "publish_schedule.json"
+    schedule = json.loads(schedule_path.read_text())
+    schedule["active_projects"] = [
+        {"project_id": f"p_{i}", "publish_date": tomorrow, "publish_time": f"0{i}:00"}
+        for i in range(1, 4)
+    ]
+    schedule_path.write_text(json.dumps(schedule))
+    pending = tmp_path / "logs" / "strict_docker_publish" / f"platform-schedule-{tomorrow}.pending"
+    pending.parent.mkdir(parents=True)
+    pending.touch()
+    (scripts / "schedule_today_native.py").write_text("raise SystemExit(1)\n")
+    result = subprocess.run(["bash", str(scripts / "retry_daily_pipeline.sh")], cwd=tmp_path,
+                            env={**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}", "PUBLISH_TZ": "UTC"},
+                            capture_output=True, text=True)
+    assert result.returncode != 0
+    assert pending.exists()
+
+
 def test_retry_daily_pipeline_skips_when_lock_held(tmp_path: Path):
     scripts, config, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
     lock_file = tmp_path / ".strict_docker_publish.lock"
@@ -716,6 +763,30 @@ def test_retry_daily_pipeline_triggers_when_incomplete(tmp_path: Path):
     assert res.returncode == 0
     assert (tmp_path / "trigger.log").is_file()
     assert (tmp_path / "trigger.log").read_text(encoding="utf-8").strip() == "EXPECTED=1"
+
+
+def test_daily_news_fetch_imports_project_modules_without_pythonpath(tmp_path: Path):
+    scripts, _, binaries = create_fixture(tmp_path, "raise SystemExit(0)\n")
+    cli = tmp_path / "tools/news/news_pipeline_cli.py"
+    cli.parent.mkdir(parents=True)
+    (tmp_path / "lib/cron_import_probe.py").write_text("VALUE = 'loaded'\n")
+    cli.write_text(
+        "from lib.cron_import_probe import VALUE\n"
+        "from pathlib import Path\n"
+        "Path('fetch-import-result').write_text(VALUE)\n"
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.update({
+        "PATH": f"{binaries}:{env['PATH']}", "PUBLISH_TZ": "UTC",
+        "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1", "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+        "NEWS_DISCOVERY_PROVIDER": "daily-news", "TMP_ROOT": str(tmp_path),
+        "DAILY_GENERATION_RETRIES": "1", "GENERATION_RETRY_DELAY_SECONDS": "0",
+    })
+    result = subprocess.run(["bash", str(scripts / "run_strict_docker_publish.sh")],
+                            cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert (tmp_path / "fetch-import-result").exists(), result.stdout + result.stderr
+    assert (tmp_path / "fetch-import-result").read_text() == "loaded"
 
 
 def test_generation_accumulates_candidates_across_attempts(tmp_path: Path):
@@ -781,6 +852,125 @@ fi
     assert "cand_att1" in tomorrow_pids
     assert "cand_att2" in tomorrow_pids
     assert len(tomorrow_pids) == 2
+
+
+def test_cron_pipeline_scripts_default_local_agent_disabled():
+    strict_script = (ROOT / "scripts" / "run_strict_docker_publish.sh").read_text(encoding="utf-8")
+    daily_script = (ROOT / "scripts" / "run_daily_news_pipeline.sh").read_text(encoding="utf-8")
+
+    assert "export OPENMONTAGE_REQUIRE_LOCAL_AGENT=1" not in strict_script
+    assert "export OPENMONTAGE_REQUIRE_LOCAL_AGENT=1" not in daily_script
+    assert 'OPENMONTAGE_REQUIRE_LOCAL_AGENT="${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}"' in strict_script
+    assert 'OPENMONTAGE_REQUIRE_LOCAL_AGENT="${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}"' in daily_script
+
+
+def test_old_bug_local_agent_requirement_causes_cron_failure_and_retry_recovery(tmp_path: Path):
+    """Mocks the old bug where OPENMONTAGE_REQUIRE_LOCAL_AGENT=1 causes pipeline failure,
+    then verifies retry succeeds when OPENMONTAGE_REQUIRE_LOCAL_AGENT defaults to 0."""
+    scripts, config, projects = tmp_path / "scripts", tmp_path / "config", tmp_path / "projects"
+    binaries = tmp_path / "bin"
+    for directory in (scripts, config, projects, binaries):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts / "run_strict_docker_publish.sh")
+    shutil.copy2(ROOT / "scripts" / "retry_daily_pipeline.sh", scripts / "retry_daily_pipeline.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+
+    schedule_path = config / "publish_schedule.json"
+    schedule_path.write_text(
+        json.dumps({
+            "slots": {"publish_slots_vn": ["01:00", "02:00", "03:00"]},
+            "active_projects": [],
+        }),
+        encoding="utf-8",
+    )
+
+    for name in ("codex", "ffmpeg", "ffprobe"):
+        write_executable(binaries / name, "#!/usr/bin/env bash\nexit 0\n")
+    write_executable(binaries / "curl", "#!/usr/bin/env bash\nexit 1\n")
+
+    write_executable(
+        scripts / "run_daily_news_pipeline.sh",
+        """#!/usr/bin/env bash
+set -eu
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ "${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}" = "1" ]; then
+  echo "lib.local_agent_handoff.HandoffError: local-agent request timed out" >&2
+  exit 1
+fi
+for pid in cand_mock_fixed1 cand_mock_fixed2 cand_mock_fixed3; do
+  mkdir -p "$ROOT/projects/$pid/renders"
+  printf '{"id":"%s","title":"T","description":"D","yt_shorts":"renders/final_reels_vi_9x16.mp4","ig_reels":"renders/final_reels_vi_9x16.mp4","fb_video":"renders/final_full_vi_9x16.mp4"}' "$pid" > "$ROOT/projects/$pid/publish_metadata.json"
+  printf video > "$ROOT/projects/$pid/renders/final_full_vi_9x16.mp4"
+  printf video > "$ROOT/projects/$pid/renders/final_reels_vi_9x16.mp4"
+  printf '{"strict_quality_pass": true}' > "$ROOT/projects/$pid/validation_status.json"
+  PYTHONPATH="$ROOT/tests/fixtures:$ROOT" python3 -c 'import sys; from pathlib import Path; from news_evidence import write_reviewed_news_evidence; write_reviewed_news_evidence(Path(sys.argv[1]))' "$ROOT/projects/$pid"
+  echo "PROJECT_ID=$pid"
+done
+""",
+    )
+    (scripts / "validate_render_quality.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (scripts / "validate_publish_metadata.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (scripts / "codex_agent_validation.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (scripts / "schedule_today_native.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    (scripts / "pipeline_monitoring.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    write_executable(scripts / "clear_stale_projects.sh", "#!/usr/bin/env bash\nexit 0\n")
+
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%F")
+
+    # Step 1: Simulate the OLD BUG where OPENMONTAGE_REQUIRE_LOCAL_AGENT=1 is forced.
+    old_bug_res = subprocess.run(
+        ["bash", str(scripts / "run_strict_docker_publish.sh")],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{binaries}:{os.environ['PATH']}",
+            "PUBLISH_TZ": "UTC",
+            "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+            "DAILY_GENERATION_RETRIES": "1",
+            "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+            "OPENMONTAGE_REQUIRE_LOCAL_AGENT": "1",
+            "GENERATION_RETRY_DELAY_SECONDS": "0",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert old_bug_res.returncode != 0
+    assert "local-agent request timed out" in old_bug_res.stderr or "local-agent request timed out" in old_bug_res.stdout
+    schedule_data = json.loads(schedule_path.read_text(encoding="utf-8"))
+    assert len(schedule_data.get("active_projects", [])) == 0
+
+    # Step 2: Test the FIX with retry_daily_pipeline.sh where OPENMONTAGE_REQUIRE_LOCAL_AGENT is unset/0.
+    retry_res = subprocess.run(
+        ["bash", str(scripts / "retry_daily_pipeline.sh")],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{binaries}:{os.environ['PATH']}",
+            "PUBLISH_TZ": "UTC",
+            "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+            "DAILY_GENERATION_RETRIES": "1",
+            "EXPECTED_SUCCESS_COUNT": "3",
+            "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+            "GENERATION_RETRY_DELAY_SECONDS": "0",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert retry_res.returncode == 0, f"Retry failed:\nSTDOUT: {retry_res.stdout}\nSTDERR: {retry_res.stderr}"
+
+    updated = json.loads(schedule_path.read_text(encoding="utf-8"))
+    tomorrow_pids = [
+        p["project_id"] for p in updated.get("active_projects", [])
+        if p.get("publish_date") == tomorrow
+    ]
+    assert len(tomorrow_pids) == 3
+    assert set(tomorrow_pids) == {"cand_mock_fixed1", "cand_mock_fixed2", "cand_mock_fixed3"}
+
+
 
 
 

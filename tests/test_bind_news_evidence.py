@@ -309,5 +309,56 @@ def test_bind_news_evidence_approves_cta_opinion_section(tmp_path: Path):
     assert val_res["ok"] is True
 
 
+def test_bind_news_evidence_extracted_json_capture_hash_and_long_excerpt(tmp_path: Path, monkeypatch):
+    import hashlib
+    monkeypatch.setenv("REQUIRE_AUTHENTIC_CAPTURES", "1")
+    project_dir = tmp_path / "cand_en_us_capture_json"
+    artifacts_dir = project_dir / "artifacts"
+    capture_dir = artifacts_dir / "news_source_capture"
+    capture_dir.mkdir(parents=True)
 
+    # Simulate 4200 chars of HTML navigation header before the README content with figures
+    nav_header = ("Navigation Menu\nSign in\nProducts\n" * 130)[:4200]
+    readme_body = (
+        "\nAuto Ontology is a Python framework for semantic layers over enterprise data.\n"
+        "Inference runs through NVIDIA NIM using Nemotron 3.5 Lightning 30B for reasoning.\n"
+    )
+    cap_file = capture_dir / "834f867a45207691-test.extracted.json"
+    cap_bytes = (json.dumps({"text": nav_header + readme_body}, indent=2) + "\n").encode("utf-8")
+    cap_file.write_bytes(cap_bytes)
+    expected_file_sha = hashlib.sha256(cap_bytes).hexdigest()
+
+    script_data = {
+        "version": "1.0",
+        "title": "NVIDIA Auto Ontology",
+        "total_duration_seconds": 65.0,
+        "sections": [
+            {
+                "id": "sec-1",
+                "text": "NVIDIA Auto Ontology uses Nemotron 3.5 Lightning 30B for reasoning over enterprise data.",
+                "start_seconds": 0.0,
+                "end_seconds": 65.0,
+            }
+        ],
+    }
+    (artifacts_dir / "script_en_US.json").write_text(json.dumps(script_data, indent=2), encoding="utf-8")
+    brief_data = {
+        "version": "1.0",
+        "topic": "NVIDIA Auto Ontology",
+        "sources": [
+            {
+                "url": "https://github.com/NVIDIA/auto-ontology/blob/main/README.md",
+                "title": "NVIDIA Auto Ontology README",
+                "used_for": "Architecture and model defaults",
+            }
+        ],
+    }
+    (artifacts_dir / "research_brief.json").write_text(json.dumps(brief_data, indent=2), encoding="utf-8")
+
+    assert bind_news_evidence(project_dir) is True
+    ledger = json.loads((artifacts_dir / "claim_ledger.json").read_text(encoding="utf-8"))
+    claim = ledger["claims"][0]
+    assert claim["source"]["snapshot_file"] == "news_source_capture/834f867a45207691-test.extracted.json"
+    assert claim["source"]["snapshot_sha256"] == expected_file_sha
+    assert "3.5" in claim["evidence_excerpt"]
 

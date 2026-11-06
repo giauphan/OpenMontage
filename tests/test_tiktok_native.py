@@ -108,6 +108,24 @@ def test_existing_published_record_is_not_republished(tmp_path):
     assert pub.execute.call_count == 0 and not store.claims
 
 
+def test_failed_record_with_remote_id_requires_reconciliation(tmp_path):
+    asset = tmp_path / "v.mp4"
+    asset.touch()
+    store = FakeStore(existing={"status": "failed", "video_id": "remote-123"})
+    factory, pub = _publisher(data={"item_id": "new-id"})
+    assert _call(store, asset, publisher_factory=factory) is True
+    assert not store.claims and not pub.execute.called
+
+
+def test_failed_claim_not_owned_does_not_retry_upload(tmp_path):
+    asset = tmp_path / "v.mp4"
+    asset.touch()
+    store = FakeStore(existing={"status": "failed"}, claimed=False)
+    factory, pub = _publisher(data={"item_id": "new-id"})
+    assert _call(store, asset, publisher_factory=factory) is True
+    assert len(store.claims) == 1 and not pub.execute.called
+
+
 def test_unclaimed_duplicate_is_skipped(tmp_path):
     asset = tmp_path / "v.mp4"
     asset.touch()

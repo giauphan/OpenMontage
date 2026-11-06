@@ -185,6 +185,17 @@ def _decode_document(document: dict[str, Any]) -> dict[str, Any]:
 
 
 class PublishStore:
+    @staticmethod
+    def _is_precondition_conflict(response: Any) -> bool:
+        if response.status_code in {409, 412}:
+            return True
+        if response.status_code == 400:
+            try:
+                return response.json().get("error", {}).get("status") == "FAILED_PRECONDITION"
+            except (ValueError, TypeError, AttributeError):
+                return False
+        return False
+
     def __init__(self, collection: str = DEFAULT_COLLECTION):
         info = _load_service_account()
         credentials = Credentials.from_service_account_info(info, scopes=SCOPES)
@@ -278,16 +289,51 @@ class PublishStore:
             }
         return documents, unique_keys
 
-    def _recover_failed_claim(self, documents: dict[str, Any]) -> None:
-        for doc_key, doc_data in documents.items():
-            try:
-                self.update(doc_key, doc_data)
-            except Exception:
-                self.session.patch(
-                    self._url(doc_key),
-                    json={"fields": _fields(doc_data)},
-                    timeout=30,
-                )
+    def reclaim_failed(self, key: str, data: dict[str, Any]) -> tuple[bool, dict[str, Any] | None]:
+        """Conditionally reclaim the exact failed record; never overwrite a remote ID."""
+        response = self.session.get(self._url(key), timeout=30)
+        if response.status_code == 404:
+            return False, None
+        self._raise_for_error(response)
+        document = response.json()
+        existing = _decode_document(document)
+        version = document.get("updateTime")
+        if (existing.get("status") != "failed" or not version
+                or existing.get("video_id") or existing.get("platform_id")):
+            return False, existing
+        for field in ("date", "topic", "platform", "account", "kind", "title", "source_topic", "asset_path", "source_sha256", "visual_sha256"):
+            if field in data and existing.get(field) != data[field]:
+                return False, existing
+        update = {"status": data.get("status", "scheduling"), "updated_at": utc_now(), "retry_started_at": utc_now()}
+        if data.get("scheduled_for"):
+            update["scheduled_for"] = data["scheduled_for"]
+        mask_fields = [*update, "error", "failed_at"]
+        params = [("currentDocument.updateTime", version)] + [("updateMask.fieldPaths", field) for field in mask_fields]
+        response = self.session.patch(self._url(key), params=params, json={"fields": _fields(update)}, timeout=30)
+        if self._is_precondition_conflict(response):
+            return False, existing
+        self._raise_for_error(response)
+        return True, existing
+
+    def claim_instagram_reservation(self, key: str) -> tuple[bool, dict[str, Any] | None]:
+        """Move a queued Instagram slot to uploading with a version precondition."""
+        response = self.session.get(self._url(key), timeout=30)
+        if response.status_code == 404:
+            return False, None
+        self._raise_for_error(response)
+        document = response.json()
+        existing = _decode_document(document)
+        version = document.get("updateTime")
+        if (existing.get("status") != "scheduling" or existing.get("platform") != "instagram"
+                or not version or existing.get("video_id") or existing.get("platform_id")):
+            return False, existing
+        update = {"status": "uploading", "updated_at": utc_now(), "worker_started_at": utc_now()}
+        params = [("currentDocument.updateTime", version)] + [("updateMask.fieldPaths", field) for field in update]
+        response = self.session.patch(self._url(key), params=params, json={"fields": _fields(update)}, timeout=30)
+        if self._is_precondition_conflict(response):
+            return False, existing
+        self._raise_for_error(response)
+        return True, existing
 
     def _resolve_conflicting_claim(
         self,
@@ -304,8 +350,10 @@ class PublishStore:
             if status in {"scheduled", "published", "scheduling"}:
                 return key, False, existing
             if status == "failed":
-                self._recover_failed_claim(documents)
-                return key, True, data
+                if candidate != key:
+                    return key, False, existing
+                claimed, snapshot = self.reclaim_failed(key, data)
+                return key, claimed, snapshot or existing
             return key, False, existing
         raise RuntimeError("Firestore uniqueness claim failed without a conflicting record")
 

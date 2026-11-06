@@ -75,6 +75,24 @@ SCHEDULED_COUNT="${SCHEDULED_COUNT:-0}"
 log "Schedule check for $NEXT_DATE (tomorrow in $PUBLISH_TZ): $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects scheduled."
 
 if [[ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]]; then
+  PENDING_NATIVE="$ROOT/logs/strict_docker_publish/platform-schedule-$NEXT_DATE.pending"
+  if [ -f "$PENDING_NATIVE" ]; then
+    exec 199>>"$LOCK_FILE"
+    if ! flock -n 199; then
+      log "A strict publish pipeline run is active; deferring native scheduling retry."
+      exit 0
+    fi
+    if [ -f "$PENDING_NATIVE" ]; then
+      log "Retrying pending native scheduling for $NEXT_DATE."
+      export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+      if STRICT_REQUIRE_NATIVE_SCHEDULE=1 "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE"; then
+        rm -f "$PENDING_NATIVE"
+      else
+        log "Native scheduling retry failed; retaining pending marker."
+        exit 1
+      fi
+    fi
+  fi
   log "Next-day schedule requirement satisfied ($SCHEDULED_COUNT >= $EXPECTED_SUCCESS_COUNT). No retry needed."
   exit 0
 fi

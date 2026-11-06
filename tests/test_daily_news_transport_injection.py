@@ -56,6 +56,13 @@ def test_selector_injected_transport_unwraps_codex_json_event_stream():
     assert result["research_draft"]["title"] == "Fixture research"
 
 
+def test_selector_rejects_unknown_id_instead_of_reassigning_research():
+    selector = CodexNewsSelector(transport=lambda *args, **kwargs: _completed("{}"))
+    selection = {"selected_candidate_id": "cand_typo", "research_draft": {"title": "different story"}}
+    assert selector._validate_output(selection, [{"candidate_id": "cand_real", "title": "actual story"}]) is None
+    assert selection["selected_candidate_id"] == "cand_typo"
+
+
 def test_selector_injected_nonzero_malformed_and_timeout_fail_closed_to_existing_fallback():
     candidate = {"id": "topic-1", "title": "Fixture topic", "url": "https://example.test/a"}
     for reply in (_completed('{broken'), _completed("", returncode=7)):

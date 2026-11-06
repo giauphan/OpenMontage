@@ -347,6 +347,13 @@ def audit_project(
                     )
                     results["passed"] = False
                 snap_text = snap_bytes.decode("utf-8", errors="replace")
+                if snap_path.suffix == ".json":
+                    try:
+                        snap_obj = json.loads(snap_text)
+                        if isinstance(snap_obj, dict) and isinstance(snap_obj.get("text"), str):
+                            snap_text = snap_obj["text"]
+                    except Exception:
+                        pass
                 norm_excerpt = " ".join(excerpt.split())
                 norm_snap = " ".join(snap_text.split())
                 if norm_excerpt not in norm_snap:

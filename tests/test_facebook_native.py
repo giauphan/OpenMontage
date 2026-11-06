@@ -79,6 +79,24 @@ def test_existing_published_record_skips(tmp_path):
     assert pub.execute.called is False
 
 
+def test_failed_record_with_remote_id_requires_reconciliation(tmp_path):
+    asset = tmp_path / "v.mp4"
+    asset.touch()
+    store = FakeStore(existing={"status": "failed", "platform_id": "remote-123"})
+    factory, pub = _publisher(data={"facebook_post_id": "new-id"})
+    assert _call(store, asset, publisher_factory=factory) is True
+    assert not store.claims and not pub.execute.called
+
+
+def test_failed_claim_not_owned_does_not_retry_upload(tmp_path):
+    asset = tmp_path / "v.mp4"
+    asset.touch()
+    store = FakeStore(existing={"status": "failed"}, claimed=False)
+    factory, pub = _publisher(data={"facebook_post_id": "new-id"})
+    assert _call(store, asset, publisher_factory=factory) is True
+    assert len(store.claims) == 1 and not pub.execute.called
+
+
 def test_schedules_and_records_remote_id(tmp_path):
     asset = tmp_path / "v.mp4"
     asset.touch()

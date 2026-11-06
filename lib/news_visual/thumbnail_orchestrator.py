@@ -420,9 +420,10 @@ class ThumbnailOrchestrator:
                 error=f"Corrupt thumbnail image: {e}",
             )
 
-        # Step 4: Sync to publish_metadata.json if present
+        # Step 4: Sync to publish_metadata.json if present and not yet cryptographically locked
         meta_file = pdir / "publish_metadata.json"
-        if meta_file.is_file():
+        has_signed_approval = (pdir / "approval.json").is_file() or (pdir / "artifacts" / "approval.json").is_file()
+        if meta_file.is_file() and not has_signed_approval:
             try:
                 with meta_file.open("r", encoding="utf-8") as f:
                     meta_data = json.load(f)

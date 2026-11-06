@@ -7,6 +7,8 @@ response parsing, and strict review gates.
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
 import logging
 import os
 import re
@@ -259,7 +261,7 @@ def _build_review_category_results(
                     "score": score,
                     "notes": notes,
                     "reviewer": reviewer_name,
-                    "review_mode": "offline_transport" if is_transport else "codex_cli",
+                    "review_mode": "offline_transport" if is_transport else ("local_handoff_frames" if reviewer_name == "local-codex-handoff" else "codex_cli"),
                     "test_only_transport": is_transport,
                     "inspected_artifact_hash": artifact_hash,
                     "timestamp": ts,
@@ -275,7 +277,7 @@ def _build_review_category_results(
                 message=str(response_data.get("summary") or "Strict review rejected asset"),
                 details={
                     "reviewer": reviewer_name,
-                    "review_mode": "offline_transport" if is_transport else "codex_cli",
+                    "review_mode": "offline_transport" if is_transport else ("local_handoff_frames" if reviewer_name == "local-codex-handoff" else "codex_cli"),
                     "test_only_transport": is_transport,
                     "inspected_artifact_hash": artifact_hash,
                     "timestamp": ts,
@@ -314,7 +316,27 @@ def _build_narration_assets_summary(project_dir: Path) -> str:
     )
 
 
-def _run_cli_and_parse_response(validator_self: Any, agent_bin: str, prompt: str) -> dict:
+def _run_cli_and_parse_response(validator_self: Any, agent_bin: str, prompt: str, frame_paths: Optional[List[Path]] = None) -> dict:
+    if os.environ.get("OPENMONTAGE_REQUIRE_LOCAL_AGENT") == "1" and validator_self._review_transport is None:
+        from lib.local_agent_handoff import request_local_agent
+
+        root = Path(__file__).resolve().parent.parent
+        handoff_root = Path(os.environ.get("OPENMONTAGE_AGENT_HANDOFF_DIR") or root / "data" / "local_agent_handoff")
+        frames = []
+        for frame in frame_paths or []:
+            frame = Path(frame)
+            if frame.is_symlink() or not frame.is_file() or frame.stat().st_size > 4_000_000:
+                raise ValueError("invalid sampled review frame")
+            data = frame.read_bytes()
+            frames.append({"server_path": str(frame), "sha256": hashlib.sha256(data).hexdigest(),
+                           "content_base64": base64.b64encode(data).decode("ascii")})
+        if not frames:
+            raise ValueError("local quality review requires sampled frames")
+        prompt += ("\n\nThe video file is on the server and is not available to the local reviewer. "
+                   "Inspect the attached sampled frames and supplied probe metadata only; do not claim "
+                   "to have viewed or heard the full video, and fail any criterion lacking evidence.")
+        return request_local_agent(handoff_root, "quality_review", {"prompt": prompt, "frames": frames},
+                                   timeout_seconds=float(os.environ.get("OPENMONTAGE_AGENT_HANDOFF_TIMEOUT", "1800")))
     cmd, env = _setup_agent_env_and_cmd(agent_bin)
     timeout = int(os.environ.get("AGENT_REVIEW_TIMEOUT_SECONDS", "120"))
     root_dir = str(Path(__file__).resolve().parent.parent)
@@ -345,6 +367,7 @@ def execute_cli_review_helper(
     abs_video_path = Path(video_path).resolve()
     file_exists = abs_video_path.is_file()
     file_size = abs_video_path.stat().st_size if file_exists else 0
+    hash_before_review = compute_sha256(abs_video_path) if file_exists and file_size > 0 else None
 
     comp_path, comp_summary, comp_text = _resolve_comp_summary_and_text(validator_self.project_dir, video_path)
     if comp_path is None:
@@ -383,8 +406,10 @@ def execute_cli_review_helper(
         frame_paths=frame_paths,
     )
 
-    response_data = _run_cli_and_parse_response(validator_self, agent_bin, prompt)
+    response_data = _run_cli_and_parse_response(validator_self, agent_bin, prompt, frame_paths=frame_paths)
     artifact_hash = compute_sha256(abs_video_path)
+    if not hash_before_review or artifact_hash != hash_before_review:
+        raise ValueError("video changed during agent review")
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     reviewer_name = "offline_test_transport" if validator_self._review_transport else Path(agent_bin).name
 
@@ -567,7 +592,7 @@ def codex_agent_strict_review_helper(
     if claude_res is not None:
         return claude_res
 
-    agent_bin = _get_resolve_agent_cli()()
+    agent_bin = "local-codex-handoff" if os.environ.get("OPENMONTAGE_REQUIRE_LOCAL_AGENT") == "1" else _get_resolve_agent_cli()()
     if not agent_bin:
         if validator_self.strict_mode:
             return [

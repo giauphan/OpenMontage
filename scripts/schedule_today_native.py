@@ -125,6 +125,45 @@ def make_publish_datetime(d: date, time_str: str, tz: ZoneInfo) -> datetime:
 
 def ytv_publish_at(dt): return dt.astimezone(timezone.utc).isoformat().replace("+00:00","Z")
 
+
+def verify_native_records(store, cfg, publish_date, metadata, *, publish_time=None, extra_held=None, extra_enabled=None):
+    """Check that enabled native routes have recorded a scheduled upload or slot claim."""
+    from lib.artifact_paths import is_english_locale
+
+    topic = metadata.get("id")
+    if not isinstance(topic, str) or not topic:
+        return False
+    longform = metadata.get("format", "short") in ("longform", "long", "16:9", "16x9")
+    routes = [("youtube", "longform" if longform else "short"), ("instagram", "reels")]
+    if not longform:
+        routes.extend([("facebook", "reels"), ("tiktok", "video")])
+    is_us = is_english_locale(metadata.get("locale") or "vi-VN") or metadata.get("audience") == "us"
+    for platform, kind in routes:
+        if not is_platform_enabled(platform, cfg=cfg, extra_held=extra_held, extra_enabled=extra_enabled):
+            continue
+        if platform == "instagram" and is_us and os.environ.get("ENABLE_US_INSTAGRAM") != "1" and "instagram" not in (extra_enabled or []):
+            continue
+        record = store.get(publish_key(publish_date, topic, platform, kind))
+        if not isinstance(record, dict):
+            print(f"INCOMPLETE {topic}: missing {platform}/{kind} record")
+            return False
+        status = record.get("status")
+        if publish_time and status in ("scheduling", "scheduled"):
+            try:
+                actual = datetime.fromisoformat(record["scheduled_for"].replace("Z", "+00:00"))
+                expected = make_publish_datetime(date.fromisoformat(publish_date), publish_time, ZoneInfo(cfg["timezone"]))
+                if actual.tzinfo is None or actual != expected:
+                    raise ValueError("schedule does not match queued slot")
+            except (KeyError, TypeError, ValueError) as exc:
+                print(f"INCOMPLETE {topic}: {platform}/{kind} scheduled time invalid ({exc})")
+                return False
+        if platform == "instagram" and status == "scheduling" and record.get("scheduled_for"):
+            continue  # Instagram is dispatched by the slot cron.
+        if status not in ("scheduled", "published") or not (record.get("video_id") or record.get("platform_id")):
+            print(f"INCOMPLETE {topic}: {platform}/{kind} status {status!r} lacks confirmed remote ID")
+            return False
+    return True
+
 def _template_provenance_gate(project_dir) -> tuple[bool, str | None, str | None, list[str]]:
     """Fail-closed gate for templated projects: bind the claim to template provenance.
 
@@ -252,7 +291,10 @@ def main():
             continue
         previous = publish_at
         if publish_at <= now + timedelta(minutes=20):
-            print(f"SKIPPED {proj}: slot cutoff passed ({publish_at.isoformat()}); retaining without failure")
+            if os.environ.get("STRICT_REQUIRE_NATIVE_SCHEDULE") == "1":
+                print(f"SKIPPED {proj}: slot cutoff passed ({publish_at.isoformat()}); verifying existing records")
+            else:
+                print(f"SKIPPED {proj}: slot cutoff passed ({publish_at.isoformat()}); retaining without failure")
             continue
         project_dir = ROOT / "projects" / proj
         meta_path = project_dir / "publish_metadata.json"
@@ -547,6 +589,13 @@ def main():
         fb_asset = project_dir / fb_rel if fb_rel else None
         if not fb_asset or not fb_asset.is_file():
             fb_asset = project_dir / yt_rel if yt_rel else None
+        elif (
+            fb_asset.stat().st_size > 45_000_000
+            and yt_rel
+            and (project_dir / yt_rel).is_file()
+            and (project_dir / yt_rel).stat().st_size < fb_asset.stat().st_size
+        ):
+            fb_asset = project_dir / yt_rel
 
         fb_target_id = (
             os.environ.get("FB_PAGE_ID")
@@ -577,6 +626,16 @@ def main():
                 failed = True
 
         time.sleep(1)
+    if os.environ.get("STRICT_REQUIRE_NATIVE_SCHEDULE") == "1":
+        for q in queue:
+            metadata_path = ROOT / "projects" / q["project_id"] / "publish_metadata.json"
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if not verify_native_records(store, cfg, date, metadata, publish_time=q["publish_time"], extra_held=cli_held, extra_enabled=cli_enabled):
+                    failed = True
+            except Exception as exc:
+                print(f"INCOMPLETE {q['project_id']}: cannot verify platform records ({exc})")
+                failed = True
     if failed:
         sys.exit(1)
     return 0

@@ -374,21 +374,19 @@ def _handle_unclaimed_reservation(
     has_remote_id = bool(existing and (existing.get("video_id") or existing.get("platform_id")))
 
     if retry_failed and existing_status == "failed":
-        if has_remote_id:
-            print(f"[RETRY CHECK] Existing record {key} already has remote ID; skipping duplicate upload")
-            results["platforms"][f"{platform}/{kind}"] = {"status": "skipped", "reason": "existing_remote_id", "existing_record": existing}
-            return False
-        k = publish_key(today, metadata_id, platform, kind)
-        now_iso = datetime.now(timezone.utc).isoformat()
-        store.update(k, {"status": "uploading", "error": None, "retry_started_at": now_iso, "updated_at": now_iso})
-        return True
+        print(f"[RETRY CHECK] Failed record {key} was not reclaimed; upload held")
+        results["platforms"][f"{platform}/{kind}"] = {"status": "skipped", "reason": "claim_not_recovered", "existing_record": existing}
+        results["errors"].append(f"{platform}/{kind} claim not recovered for {metadata_id}")
+        return False
 
-    if existing_status == "scheduling" and not has_remote_id:
-        print(f"[RESERVATION RESUME] Found queued reservation for {key} without remote ID; resuming upload.")
-        k = publish_key(today, metadata_id, platform, kind)
-        now_iso = datetime.now(timezone.utc).isoformat()
-        store.update(k, {"status": "uploading", "error": None, "worker_started_at": now_iso, "updated_at": now_iso})
-        return True
+    if platform == "instagram" and existing_status == "scheduling" and not has_remote_id:
+        claimed, _ = store.claim_instagram_reservation(key)
+        if claimed:
+            print(f"[RESERVATION RESUME] Claimed Instagram reservation {key} for upload.")
+            return True
+        results["platforms"][f"{platform}/{kind}"] = {"status": "skipped", "reason": "reservation_not_claimed", "existing_record": existing}
+        results["errors"].append(f"{platform}/{kind} reservation not claimed for {metadata_id}")
+        return False
 
     results["platforms"][f"{platform}/{kind}"] = {"status": "skipped", "reason": "duplicate", "existing_record": existing}
     return False

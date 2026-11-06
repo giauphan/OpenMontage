@@ -9,6 +9,22 @@ import pytest
 from tests.test_publish_manual_video import _setup_valid_pipeline_project
 
 
+def test_instagram_reservation_requires_exclusive_claim_before_upload():
+    from scripts.publish_manual_video import _handle_unclaimed_reservation
+
+    store = MagicMock()
+    store.claim_instagram_reservation.return_value = (False, {"status": "uploading"})
+    results = {"platforms": {}, "errors": []}
+    resumed = _handle_unclaimed_reservation(
+        store, "key", "2099-01-01", "topic", "instagram", "reels",
+        {"status": "scheduling", "platform": "instagram"}, False, results,
+    )
+    assert resumed is False
+    assert results["errors"]
+    store.update.assert_not_called()
+    store.claim_instagram_reservation.assert_called_once_with("key")
+
+
 @pytest.fixture(autouse=True)
 def clean_publish_env(monkeypatch):
     """Ensure tests run isolated from ambient platform hold/enable environment."""
@@ -148,6 +164,9 @@ def test_resumable_instagram_reservation(tmp_path: Path, monkeypatch):
             self.published = []
         def claim(self, **kwargs):
             return "ig_key", False, {"status": "scheduling"}
+        def claim_instagram_reservation(self, key):
+            self.updated.append((key, {"status": "uploading"}))
+            return True, {"status": "scheduling"}
         def update(self, key, fields):
             self.updated.append((key, fields))
             return fields

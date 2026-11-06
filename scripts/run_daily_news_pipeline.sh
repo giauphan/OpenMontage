@@ -73,6 +73,8 @@ fi
 
 export PATH="/app/node_modules/.bin:$ROOT/node_modules/.bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 export PYTHONPATH="$ROOT"
+# Local supervisor is optional; when unset or 0, unattended cron uses the server agent.
+export OPENMONTAGE_REQUIRE_LOCAL_AGENT="${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}"
 export PUBLISH_TZ="${PUBLISH_TZ:-America/New_York}"
 # Templated news path: when 1, projects must carry a template selection +
 # typed content instance and compositions are materialized deterministically
@@ -370,6 +372,10 @@ run_directors() {
   fi
   local prompt="${1:-$PROMPT_STR}"
   local session_id="${2:-}"
+  if [ "${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}" = "1" ]; then
+    "$PY" -m scripts.local_director_handoff --project "$PROJECT_DIR" --prompt "$prompt" --system "$DIRECTOR_SYSTEM_NOTE"
+    return $?
+  fi
   local resume_flag=""
   if [ -n "$session_id" ] && [ "$session_id" != "?" ] && [ "$session_id" != "null" ]; then
     resume_flag="--resume $session_id"
