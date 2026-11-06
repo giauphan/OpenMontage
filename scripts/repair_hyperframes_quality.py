@@ -18,6 +18,7 @@ from urllib.parse import unquote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.narration_text import _FORBIDDEN_PATTERN as _MALFORMED_TEXT_PATTERN
+from scripts.repair_hyperframes_gsap import repair_gsap_timeline
 
 NARRATION_TAG = (
     '<audio id="narration" src="assets/narration.mp3" '
@@ -642,6 +643,7 @@ def patch_html(path: Path, narration_duration: float = 0.0, **_kwargs: object) -
         html = html.replace("../assets/", "assets/")
     html = repair_missing_composition_assets(path, html)
     html = _ensure_gsap_script(html)
+    html = repair_gsap_timeline(html, path, narration_duration)
 
     path.write_text(html, encoding="utf-8")
 
