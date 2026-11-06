@@ -101,4 +101,5 @@ fi
 MISSING_COUNT=$((EXPECTED_SUCCESS_COUNT - SCHEDULED_COUNT))
 log "Next-day schedule has only $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects for $NEXT_DATE ($MISSING_COUNT needed). Triggering run_strict_docker_publish.sh..."
 export EXPECTED_SUCCESS_COUNT="$MISSING_COUNT"
+export ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-1}"
 exec "$ROOT/scripts/run_strict_docker_publish.sh"

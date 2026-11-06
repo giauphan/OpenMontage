@@ -254,9 +254,18 @@ if [ -n "$PROJECT_ID_OUTPUT" ]; then
 fi
 # PRODUCER_EXECUTION_END
 MIN_INITIALIZED_COUNT="${EXPECTED_SUCCESS_COUNT:-5}"
-if [[ "${#PROJECT_IDS[@]}" -lt "$MIN_INITIALIZED_COUNT" ]]; then
-  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least $MIN_INITIALIZED_COUNT initialized projects, got ${#PROJECT_IDS[@]}." >&2
+ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-0}"
+if [[ "${#PROJECT_IDS[@]}" -lt 1 ]]; then
+  echo "[$(date -u +%FT%TZ)] ERROR: Expected at least 1 initialized project, got 0." >&2
   exit 1
+fi
+if [[ "${#PROJECT_IDS[@]}" -lt "$MIN_INITIALIZED_COUNT" ]]; then
+  if [[ "$ALLOW_PARTIAL_DAILY_BATCH" -eq 1 ]]; then
+    echo "[$(date -u +%FT%TZ)] WARNING: Initialized ${#PROJECT_IDS[@]}/$MIN_INITIALIZED_COUNT projects; proceeding with partial batch under ALLOW_PARTIAL_DAILY_BATCH=1." >&2
+  else
+    echo "[$(date -u +%FT%TZ)] ERROR: Expected at least $MIN_INITIALIZED_COUNT initialized projects, got ${#PROJECT_IDS[@]}." >&2
+    exit 1
+  fi
 fi
 fi
 

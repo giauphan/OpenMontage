@@ -971,6 +971,21 @@ done
     assert set(tomorrow_pids) == {"cand_mock_fixed1", "cand_mock_fixed2", "cand_mock_fixed3"}
 
 
+def test_allow_partial_daily_batch_script_contract():
+    """Verifies that run_strict_docker_publish.sh and run_daily_news_pipeline.sh
+    support ALLOW_PARTIAL_DAILY_BATCH to prevent discarding validated projects."""
+    strict_script = (ROOT / "scripts" / "run_strict_docker_publish.sh").read_text(encoding="utf-8")
+    daily_script = (ROOT / "scripts" / "run_daily_news_pipeline.sh").read_text(encoding="utf-8")
+    retry_script = (ROOT / "scripts" / "retry_daily_pipeline.sh").read_text(encoding="utf-8")
+
+    assert 'ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-0}"' in strict_script
+    assert 'ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-0}"' in daily_script
+    assert 'export ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-1}"' in retry_script
+    assert "refusing partial daily batch" in strict_script
+    assert "proceeding with partial batch under ALLOW_PARTIAL_DAILY_BATCH=1" in strict_script
+
+
+
 
 
 

@@ -620,11 +620,18 @@ done
   fail "claude validation failed for all projects (see $CLAUDE_LOG)"
 }
 TARGET_VALIDATED_COUNT="${TARGET_SUCCESS_COUNT:-${EXPECTED_SUCCESS_COUNT:-3}}"
+ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-0}"
 if [ "${#VALIDATED_PIDS[@]}" -lt "$TARGET_VALIDATED_COUNT" ]; then
-  write_state "claude-validate" "failed" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}") target=$TARGET_VALIDATED_COUNT"
-  fail "strict validation achieved only ${#VALIDATED_PIDS[@]}/$TARGET_VALIDATED_COUNT projects; refusing partial daily batch (see $CLAUDE_LOG)"
+  if [ "$ALLOW_PARTIAL_DAILY_BATCH" -eq 1 ] && [ "${#VALIDATED_PIDS[@]}" -gt 0 ]; then
+    log "WARNING: strict validation achieved ${#VALIDATED_PIDS[@]}/$TARGET_VALIDATED_COUNT projects; proceeding with partial batch under ALLOW_PARTIAL_DAILY_BATCH=1"
+    write_state "claude-validate" "warning" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}") target=$TARGET_VALIDATED_COUNT partial=1"
+  else
+    write_state "claude-validate" "failed" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}") target=$TARGET_VALIDATED_COUNT"
+    fail "strict validation achieved only ${#VALIDATED_PIDS[@]}/$TARGET_VALIDATED_COUNT projects; refusing partial daily batch (see $CLAUDE_LOG)"
+  fi
+else
+  write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 fi
-write_state "claude-validate" "ok" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}")"
 log "claude agent strict validation completed for ${#VALIDATED_PIDS[@]} projects: ${VALIDATED_PIDS[*]}"
 
 # ===== STAGE 6: QUEUE — current-day recovery plus next-day schedule =====
