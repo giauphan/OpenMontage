@@ -102,4 +102,6 @@ MISSING_COUNT=$((EXPECTED_SUCCESS_COUNT - SCHEDULED_COUNT))
 log "Next-day schedule has only $SCHEDULED_COUNT/$EXPECTED_SUCCESS_COUNT projects for $NEXT_DATE ($MISSING_COUNT needed). Triggering run_strict_docker_publish.sh..."
 export EXPECTED_SUCCESS_COUNT="$MISSING_COUNT"
 export ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-1}"
+# Ensure retry pipeline prioritizes tomorrow's missing quota rather than allocating to today
+export TARGET_TODAY_COUNT="${TARGET_TODAY_COUNT:-0}"
 exec "$ROOT/scripts/run_strict_docker_publish.sh"
