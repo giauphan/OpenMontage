@@ -88,6 +88,14 @@ def test_topic_002_trending_without_developer_payoff_rejected():
     assert verdict.status == OutcomeStatus.OFF_NICHE
 
 
+def test_hardware_memory_is_not_agent_memory():
+    gate = FixedNicheScopeGate()
+    hardware = {"id": "hardware", "title": "Is oxide eDRAM the answer to AI's increasing memory demands?"}
+    agent = {"id": "agent", "title": "How coding agents use memory across sessions"}
+    assert gate.evaluate_candidate(hardware).status == OutcomeStatus.OFF_NICHE
+    assert gate.evaluate_candidate(agent).status == OutcomeStatus.ELIGIBLE
+
+
 def test_topic_003_zero_eligible_returns_no_eligible_topic_without_side_effects(tmp_path: Path):
     """TOPIC-003: zero eligible stories -> NO_ELIGIBLE_TOPIC, zero queue mutation."""
     gate = FixedNicheScopeGate()

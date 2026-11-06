@@ -224,6 +224,7 @@ def _run_codex_agent_validator(project_path: Path, root: Path) -> None:
         raise RuntimeError("STRICT QUALITY GATE UNAVAILABLE: Codex agent validator required")
 
     env = dict(os.environ)
+    env["OPENMONTAGE_REQUIRE_LOCAL_AGENT"] = "1"
     ffprobe, ffmpeg = _resolve_media_binaries()
     if ffprobe:
         env["PATH"] = str(Path(ffprobe).parent) + ":" + env.get("PATH", "")

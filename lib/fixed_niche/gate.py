@@ -67,7 +67,7 @@ class FixedNicheScopeGate:
         # AI art / image / video generation
         (re.compile(r"\b(midjourney|sora|runway|flux|kling|dall-?e|pika|luma|video\s+gen|text-to-image|image\s+gen|photorealistic|wallpaper|suno|udio|music\s+gen)\b", re.I), "ai_art_image_video_generation"),
         # General hardware & GPU
-        (re.compile(r"\b(rtx\s+\d+|geforce|radeon|gaming\s+benchmark|quantum\s+computing|solid-state\s+quantum|smartphone|iphone\s+\d*|ipad|tablet|macbook|apple\s+watch|smartwatch|airpods|samsung\s+galaxy|camera\s+review|battery\s+life)\b", re.I), "general_tech_hardware"),
+        (re.compile(r"\b(rtx\s+\d+|geforce|radeon|gaming\s+benchmark|quantum\s+computing|solid-state\s+quantum|smartphone|iphone\s+\d*|ipad|tablet|macbook|apple\s+watch|smartwatch|airpods|samsung\s+galaxy|camera\s+review|battery\s+life|e?dram|hbm\d*|semiconductor)\b", re.I), "general_tech_hardware"),
         # Crypto & finance
         (re.compile(r"\b(crypto|bitcoin|solana|ethereum|meme\s+coin|passive\s+income|side\s+hustle|make\s+money|arbitrage|trading\s+bot)\b", re.I), "crypto_trading"),
         # Politics

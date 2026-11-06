@@ -121,6 +121,15 @@ class CodexNewsSelector:
         }
 
     def _run_codex(self, prompt: str) -> Optional[Dict[str, Any]]:
+        if os.environ.get("OPENMONTAGE_REQUIRE_LOCAL_AGENT") == "1":
+            from lib.local_agent_handoff import request_local_agent
+
+            default_root = Path(__file__).resolve().parents[1] / "data" / "local_agent_handoff"
+            handoff_root = Path(os.environ.get("OPENMONTAGE_AGENT_HANDOFF_DIR") or default_root)
+            return request_local_agent(
+                handoff_root, "news_selection", {"prompt": prompt},
+                timeout_seconds=float(os.environ.get("OPENMONTAGE_AGENT_HANDOFF_TIMEOUT", "1800")),
+            )
         env = os.environ.copy()
         if "CODEX_HOME" not in env:
             try:
@@ -293,9 +302,9 @@ class CodexNewsSelector:
             return None
         sel_id = data.get("selected_candidate_id")
         valid_ids = {c.get("id") or c.get("candidate_id") for c in candidates}
-        if sel_id not in valid_ids and valid_ids:
-            # Fallback to first valid candidate id if hallucinated
-            data["selected_candidate_id"] = next(iter(valid_ids))
+        if not isinstance(sel_id, str) or not sel_id or sel_id not in valid_ids:
+            logger.warning("Agent selected an ID outside the candidate pool; rejecting research")
+            return None
         if not isinstance(data.get("research_draft"), dict):
             return None
         return data

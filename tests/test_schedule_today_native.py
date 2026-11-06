@@ -156,6 +156,69 @@ def test_passed_slot_cutoff_is_skipped_gracefully_without_exit_failure(tmp_path:
         assert mock_yt_pub.execute.call_count == 0
 
 
+def test_strict_native_schedule_reports_missed_cutoff_as_incomplete(tmp_path, monkeypatch):
+    from scripts.schedule_today_native import main
+
+    cfg = {"timezone": "UTC", "youtube": {"account": "yt"}, "active_projects": [
+        {"project_id": "late", "publish_date": "2000-01-01", "publish_time": "00:01"}
+    ]}
+    monkeypatch.setenv("STRICT_REQUIRE_NATIVE_SCHEDULE", "1")
+    with patch("scripts.schedule_today_native.ROOT", tmp_path), \
+         patch("scripts.schedule_today_native.PublishStore", MagicMock()), \
+         patch("scripts.schedule_today_native.load_config", return_value=cfg), \
+         patch("sys.argv", ["schedule_today_native.py", "--date", "2000-01-01"]):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    assert exc.value.code == 1
+
+
+def test_strict_native_schedule_accepts_already_published_past_slot(tmp_path, monkeypatch):
+    from scripts.schedule_today_native import main
+    cfg = {"timezone": "UTC", "youtube": {"account": "yt"}, "active_projects": [
+        {"project_id": "done", "publish_date": "2000-01-01", "publish_time": "00:01"}
+    ]}
+    project = tmp_path / "projects/done"
+    project.mkdir(parents=True)
+    (project / "publish_metadata.json").write_text(json.dumps({"id": "done", "format": "short", "locale": "vi-VN"}))
+    store = MagicMock()
+    store.get.return_value = {"status": "published", "video_id": "remote-id"}
+    monkeypatch.setenv("STRICT_REQUIRE_NATIVE_SCHEDULE", "1")
+    monkeypatch.setenv("ENABLED_PLATFORMS", "youtube")
+    with patch("scripts.schedule_today_native.ROOT", tmp_path), \
+         patch("scripts.schedule_today_native.PublishStore", return_value=store), \
+         patch("scripts.schedule_today_native.load_config", return_value=cfg), \
+         patch("sys.argv", ["schedule_today_native.py", "--date", "2000-01-01"]):
+        assert main() == 0
+
+
+def test_native_schedule_verification_rejects_unresolved_platform_claim(monkeypatch):
+    from scripts.schedule_today_native import verify_native_records
+    from tools.publish_store import publish_key
+
+    monkeypatch.setenv("ENABLED_PLATFORMS", "youtube,facebook")
+    cfg = {"enabled_platforms": ["youtube", "facebook"]}
+    meta = {"id": "cand_1", "format": "short", "locale": "vi-VN"}
+    records = {
+        publish_key("2099-01-01", "cand_1", "youtube", "short"): {"status": "scheduled", "video_id": "yt-1"},
+        publish_key("2099-01-01", "cand_1", "facebook", "reels"): {"status": "scheduling"},
+    }
+    store = MagicMock()
+    store.get.side_effect = records.get
+    assert not verify_native_records(store, cfg, "2099-01-01", meta)
+    records[publish_key("2099-01-01", "cand_1", "facebook", "reels")] = {"status": "scheduled", "video_id": "fb-1"}
+    assert verify_native_records(store, cfg, "2099-01-01", meta)
+
+
+def test_native_schedule_verification_rejects_wrong_slot(monkeypatch):
+    from scripts.schedule_today_native import verify_native_records
+    monkeypatch.setenv("ENABLED_PLATFORMS", "youtube")
+    cfg = {"timezone": "UTC", "enabled_platforms": ["youtube"]}
+    meta = {"id": "cand_1", "format": "short", "locale": "vi-VN"}
+    store = MagicMock()
+    store.get.return_value = {"status": "scheduled", "video_id": "yt-1", "scheduled_for": "2099-01-01T10:00:00+00:00"}
+    assert not verify_native_records(store, cfg, "2099-01-01", meta, publish_time="09:00")
+
+
 def test_publish_config_respects_openmontage_env_vars(tmp_path: Path, monkeypatch):
     from scripts import publish_config
     custom_cfg = tmp_path / "custom_schedule.json"

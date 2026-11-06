@@ -56,13 +56,11 @@ def publish_facebook_native(
         print(f"ALREADY PUBLISHED {topic_id} on facebook ({existing.get('video_url', '')})")
         return False
 
-    claimed = False
-    if existing and existing.get("status") == "failed":
-        claimed = True
-        if hasattr(store, "update"):
-            store.update(key, {"status": "scheduling", "error": None})
-    else:
-        key, claimed, _ = store.claim(
+    if existing and existing.get("status") == "failed" and (existing.get("video_id") or existing.get("platform_id")):
+        print(f"FAILED CLAIM {topic_id} on facebook has a remote ID; reconciliation required")
+        return True
+
+    key, claimed, _ = store.claim(
             date=date,
             topic=topic_id,
             platform="facebook",
@@ -74,10 +72,10 @@ def publish_facebook_native(
             scheduled_for=scheduled_for,
             content_hash=content_hash,
             template_id=template_id,
-        )
+    )
     if not claimed:
         print(f"SKIP: Facebook {date} {topic_id} (already claimed)")
-        return False
+        return bool(existing and existing.get("status") == "failed")
 
     if publisher_factory is None:
         from tools.publishers.facebook_publisher import FacebookPublisher as publisher_factory
