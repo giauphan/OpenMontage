@@ -38,22 +38,26 @@
     {
       "project_id": "cand_5d5d7a78e2ebe746",
       "publish_date": "2026-11-01",
-      "publish_time": "21:15"
+      "publish_time": "21:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_615b4837d93d24d8",
       "publish_date": "2026-11-02",
-      "publish_time": "14:15"
+      "publish_time": "14:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_655c58d61811a789",
       "publish_date": "2026-11-03",
-      "publish_time": "14:15"
+      "publish_time": "14:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_7afa70e5ef1f8ee5",
       "publish_date": "2026-11-01",
-      "publish_time": "09:15"
+      "publish_time": "09:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_7d9acfe4bef468f1",
@@ -63,12 +67,14 @@
     {
       "project_id": "cand_817f98fef236a8f0",
       "publish_date": "2026-10-30",
-      "publish_time": "14:15"
+      "publish_time": "14:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_83ee0bf3a6e6cd6a",
       "publish_date": "2026-11-03",
-      "publish_time": "19:15"
+      "publish_time": "19:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_a7e88d0582d65dc9",
@@ -78,17 +84,20 @@
     {
       "project_id": "cand_cb8b8d2e01e7b129",
       "publish_date": "2026-11-03",
-      "publish_time": "09:15"
+      "publish_time": "09:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_context_loss_requirements",
       "publish_date": "2026-11-02",
-      "publish_time": "21:15"
+      "publish_time": "21:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_d46933a8204eabc8",
       "publish_date": "2026-10-30",
-      "publish_time": "21:15"
+      "publish_time": "21:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_e0d407f53099af7f",
@@ -98,12 +107,14 @@
     {
       "project_id": "cand_hermetic_regression_gates",
       "publish_date": "2026-11-04",
-      "publish_time": "21:15"
+      "publish_time": "21:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_mcp_circuit_breakers_oct31",
       "publish_date": "2026-11-02",
-      "publish_time": "09:15"
+      "publish_time": "09:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_mcp_tool_filtering",
@@ -113,32 +124,47 @@
     {
       "project_id": "cand_prompt_caching_break_session",
       "publish_date": "2026-11-04",
-      "publish_time": "09:15"
+      "publish_time": "09:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_subagent_worktree_isolation",
       "publish_date": "2026-11-05",
-      "publish_time": "09:15"
+      "publish_time": "09:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_swe_bench_eval",
       "publish_date": "2026-11-04",
-      "publish_time": "14:15"
+      "publish_time": "14:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_631ec1baf6216d12",
       "publish_date": "2026-11-05",
-      "publish_time": "14:15"
+      "publish_time": "14:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_4b373fe7a8eaa9ad",
       "publish_date": "2026-11-05",
-      "publish_time": "21:15"
+      "publish_time": "21:15",
+      "alert": "platform_publish_retry_needed"
     },
     {
       "project_id": "cand_e4fd3b4ed293542b",
       "publish_date": "2026-11-07",
       "publish_time": "09:15"
+    },
+    {
+      "project_id": "cand_b9721fff7d3fe459",
+      "publish_date": "2026-11-06",
+      "publish_time": "19:15"
+    },
+    {
+      "project_id": "cand_d981d4d24433be61",
+      "publish_date": "2026-11-06",
+      "publish_time": "21:15"
     }
   ]
 }
