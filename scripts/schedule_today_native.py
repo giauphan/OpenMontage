@@ -151,7 +151,7 @@ def verify_native_records(store, cfg, publish_date, metadata, *, publish_time=No
         if publish_time and status in ("scheduling", "scheduled"):
             try:
                 actual = datetime.fromisoformat(record["scheduled_for"].replace("Z", "+00:00"))
-                expected = make_publish_datetime(date.fromisoformat(publish_date), publish_time, ZoneInfo(cfg["timezone"]))
+                expected = make_publish_datetime(date.fromisoformat(publish_date), publish_time, publish_timezone(cfg))
                 if actual.tzinfo is None or actual != expected:
                     raise ValueError("schedule does not match queued slot")
             except (KeyError, TypeError, ValueError) as exc:
@@ -259,7 +259,7 @@ def main():
         cli_enabled = None
 
     cfg = load_config()
-    tz = ZoneInfo(cfg["timezone"])
+    tz = publish_timezone(cfg)
     yt_account = cfg["youtube"]["account"]
     today = (datetime.strptime(args.date,"%Y-%m-%d").date() if args.date else datetime.now(tz).date())
     date = today.isoformat()

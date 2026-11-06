@@ -278,7 +278,10 @@ def yt_slot_times(cfg: dict[str, Any]) -> list[dt_time]:
 
 
 def publish_timezone(cfg: dict[str, Any]) -> ZoneInfo:
-    return ZoneInfo(cfg.get("timezone", "Asia/Ho_Chi_Minh"))
+    env_tz = os.environ.get("PUBLISH_TZ")
+    if env_tz:
+        return ZoneInfo(env_tz)
+    return ZoneInfo(cfg.get("timezone", "America/New_York"))
 
 
 def next_publish_date(cfg: dict[str, Any], now: datetime | None = None) -> date:
@@ -288,10 +291,15 @@ def next_publish_date(cfg: dict[str, Any], now: datetime | None = None) -> date:
 
 
 def publish_slots(cfg: dict[str, Any]) -> list[dt_time]:
-    """Three daily Vietnam slots, shared by generation and publishing."""
-    values = cfg.get("slots", {}).get("publish_slots_vn")
-    if values is None:
-        values = cfg.get("slots", {}).get("yt_slots_wib", ["09:15", "14:15", "21:15"])
+    """Daily publish slots, shared by generation and publishing."""
+    slots_obj = cfg.get("slots", {})
+    values = (
+        slots_obj.get("publish_slots")
+        or slots_obj.get("publish_slots_us")
+        or slots_obj.get("publish_slots_vn")
+        or slots_obj.get("yt_slots_wib")
+        or ["09:15", "14:15", "21:15"]
+    )
     return [_parse_hhmm(value) for value in values]
 
 
@@ -313,10 +321,6 @@ def publish_timezone_for_locale(locale: str | None, cfg: dict[str, Any] | None =
             cfg = load_config()
         except Exception:
             cfg = {}
-    from lib.artifact_paths import is_english_locale
-    if locale and is_english_locale(locale):
-        us_tz = cfg.get("us", {}).get("timezone") or "America/New_York"
-        return ZoneInfo(us_tz)
     return publish_timezone(cfg)
 
 
@@ -327,15 +331,15 @@ def publish_slots_for_locale(locale: str | None, cfg: dict[str, Any] | None = No
             cfg = load_config()
         except Exception:
             cfg = {}
-    from lib.artifact_paths import is_english_locale
-    if locale and is_english_locale(locale):
-        values = (
-            cfg.get("slots", {}).get("publish_slots_us")
-            or cfg.get("us", {}).get("publish_slots")
-            or ["09:00", "13:00", "18:00"]
-        )
-        return [_parse_hhmm(v) for v in values]
-    return publish_slots(cfg)
+    slots_obj = cfg.get("slots", {})
+    values = (
+        slots_obj.get("publish_slots")
+        or slots_obj.get("publish_slots_us")
+        or cfg.get("us", {}).get("publish_slots")
+        or slots_obj.get("publish_slots_vn")
+        or ["09:15", "14:15", "21:15"]
+    )
+    return [_parse_hhmm(v) for v in values]
 
 
 def validate_slot_spacing(slot_times: list[dt_time], min_hours: float = 2.0) -> bool:

@@ -155,7 +155,8 @@ mkdir -p "$LOG_DIR"
 RUN_LOG="$LOG_DIR/run_${RUN_TS}.log"
 STATE_FILE="$LOG_DIR/state_${RUN_TS}.json"
 
-PUBLISH_TZ="${PUBLISH_TZ:-Asia/Ho_Chi_Minh}"
+SCHEDULE="${SCHEDULE:-$ROOT/config/publish_schedule.json}"
+PUBLISH_TZ="${PUBLISH_TZ:-$(jq -r '.timezone // "America/New_York"' "$SCHEDULE" 2>/dev/null || echo "America/New_York")}"
 # Use Gateway's documented model catalog instead of stale local profile aliases.
 CODEX_MODEL="${CODEX_MODEL:-model-medium-hight}"
 export CODEX_MODEL
@@ -649,13 +650,8 @@ QUEUED_PIDS=()
 TODAY_QUEUED_PIDS=()
 NEXT_QUEUED_PIDS=()
 
-if [ "${PUBLISH_LOCALE:-}" = "en-US" ] || [ "${is_en:-0}" -eq 1 ] || [ "${PUBLISH_TZ:-}" = "America/New_York" ]; then
-  TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_us // .slots.publish_slots_us // ["09:00", "13:00", "18:00"]' "$SCHEDULE")
-  NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots_us // ["09:00", "13:00", "18:00"]' "$SCHEDULE")
-else
-  TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots_vn // .slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
-  NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
-fi
+TODAY_SLOTS_JSON=$(jq -c '.slots.today_publish_slots // .slots.publish_slots // .slots.today_publish_slots_us // .slots.publish_slots_us // .slots.today_publish_slots_vn // .slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
+NEXT_SLOTS_JSON=$(jq -c '.slots.publish_slots // .slots.publish_slots_us // .slots.publish_slots_vn // ["09:15", "14:15", "21:15"]' "$SCHEDULE")
 mapfile -t TODAY_CANDIDATE_SLOTS < <(jq -r '.[]' <<< "$TODAY_SLOTS_JSON")
 mapfile -t NEXT_CANDIDATE_SLOTS < <(jq -r '.[]' <<< "$NEXT_SLOTS_JSON")
 
