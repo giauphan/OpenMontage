@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timezone": "Asia/Ho_Chi_Minh",
+  "timezone": "America/New_York",
   "meta": {
     "page_id": "1350199744835777",
     "ig_account_id": "17841434265610775"
@@ -23,14 +23,14 @@
       "21:15"
     ],
     "publish_slots_us": [
-      "09:00",
-      "13:00",
-      "18:00"
+      "09:15",
+      "14:15",
+      "21:15"
     ],
     "today_publish_slots_us": [
-      "09:00",
-      "13:00",
-      "18:00"
+      "09:15",
+      "14:15",
+      "21:15"
     ],
     "fb_slots_wib": [
       "12:00",
@@ -46,9 +46,9 @@
   "us": {
     "timezone": "America/New_York",
     "publish_slots": [
-      "09:00",
-      "13:00",
-      "18:00"
+      "09:15",
+      "14:15",
+      "21:15"
     ],
     "min_spacing_hours": 2,
     "enabled_platforms": [
