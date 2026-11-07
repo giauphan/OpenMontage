@@ -353,3 +353,112 @@ def test_strict_run_decouples_calendar_tz_from_publish_tz(tmp_path: Path):
 
     platform_command = (tmp_path / "platform-schedule-called.log").read_text(encoding="utf-8")
     assert f"--date {next_date_vn}" in platform_command
+
+
+def test_strict_run_recovers_unqueued_validated_projects(tmp_path: Path):
+    now_vn = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+    next_date_vn = (now_vn + timedelta(days=1)).strftime("%F")
+    slots = ["09:15", "14:15", "21:15"]
+
+    scripts_dir = tmp_path / "scripts"
+    config_dir = tmp_path / "config"
+    bin_dir = tmp_path / "bin"
+    projects_dir = tmp_path / "projects"
+    for directory in (scripts_dir, config_dir, projects_dir, bin_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(ROOT / "scripts" / "run_strict_docker_publish.sh", scripts_dir / "run_strict_docker_publish.sh")
+    for relative in ("lib/news_evidence.py", "lib/news_release_gate.py", "tests/fixtures/news_evidence.py"):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+    (config_dir / "publish_schedule.json").write_text(
+        json.dumps({
+            "timezone": "America/New_York",
+            "slots": {"publish_slots": slots},
+            "active_projects": [],
+        }),
+        encoding="utf-8",
+    )
+
+    (bin_dir / "codex").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (bin_dir / "codex").chmod(0o755)
+    for name in ("ffmpeg", "ffprobe"):
+        executable = bin_dir / name
+        executable.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        executable.chmod(0o755)
+
+    # Pre-create an unqueued validated project from an interrupted/prior run
+    rec_pid = "cand_pre_validated_01"
+    rec_dir = projects_dir / rec_pid
+    rec_dir.mkdir(parents=True)
+    renders_dir = rec_dir / "renders"
+    renders_dir.mkdir(parents=True)
+    (renders_dir / "final_full_vi_9x16.mp4").write_text("dummy", encoding="utf-8")
+    (renders_dir / "final_reels_vi_9x16.mp4").write_text("dummy", encoding="utf-8")
+    (rec_dir / "publish_metadata.json").write_text(
+        json.dumps({
+            "id": rec_pid,
+            "title": "T",
+            "description": "D",
+            "yt_shorts": "renders/final_reels_vi_9x16.mp4",
+            "tiktok": "renders/final_reels_vi_9x16.mp4",
+            "fb_video": "renders/final_full_vi_9x16.mp4",
+            "ig_reels": "renders/final_reels_vi_9x16.mp4",
+        }),
+        encoding="utf-8",
+    )
+    (rec_dir / "validation_status.json").write_text(
+        json.dumps([{"strict_quality_pass": True}]),
+        encoding="utf-8",
+    )
+    # Write valid reviewed news evidence
+    from tests.fixtures.news_evidence import write_reviewed_news_evidence
+    write_reviewed_news_evidence(rec_dir)
+
+    # Generation pipeline should NOT be needed since target is 1 and recovered count is 1
+    (scripts_dir / "run_daily_news_pipeline.sh").write_text(
+        "#!/usr/bin/env bash\necho 'ERROR: should not be called' >&2\nexit 1\n",
+        encoding="utf-8",
+    )
+    (scripts_dir / "run_daily_news_pipeline.sh").chmod(0o755)
+
+    for name in ("validate_render_quality.py", "validate_publish_metadata.py", "codex_agent_validation.py"):
+        (scripts_dir / name).write_text("", encoding="utf-8")
+    (scripts_dir / "schedule_today_native.py").write_text(
+        "import sys\nwith open('platform-schedule-called.log', 'a') as f: f.write(' '.join(sys.argv) + '\\n')\nraise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    (scripts_dir / "clear_stale_projects.sh").write_text("exit 0\n", encoding="utf-8")
+    (scripts_dir / "clear_stale_projects.sh").chmod(0o755)
+    (scripts_dir / "publish_manual_video.py").write_text("exit 0\n", encoding="utf-8")
+
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "CALENDAR_TZ": "Asia/Ho_Chi_Minh",
+        "PUBLISH_TZ": "America/New_York",
+        "TARGET_TODAY_COUNT": "0",
+        "STRICT_PUBLISH_SKIP_DOCKER_CHECK": "1",
+        "GENERATION_RETRY_DELAY_SECONDS": "0",
+        "PLATFORM_SCHEDULE_RETRY_DELAY_SECONDS": "0",
+        "NEWS_MAX_SOURCE_AGE_HOURS": "24",
+        "EXPECTED_SUCCESS_COUNT": "1",
+    }
+    result = subprocess.run(
+        ["bash", str(scripts_dir / "run_strict_docker_publish.sh")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    schedule = json.loads((tmp_path / "config" / "publish_schedule.json").read_text(encoding="utf-8"))
+    queued = schedule["active_projects"]
+    assert len(queued) == 1
+    assert queued[0]["project_id"] == rec_pid
+    assert queued[0]["publish_date"] == next_date_vn
+    assert queued[0]["publish_time"] == "09:15"
+
+    platform_command = (tmp_path / "platform-schedule-called.log").read_text(encoding="utf-8")
+    assert f"--date {next_date_vn}" in platform_command

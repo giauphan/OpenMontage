@@ -445,25 +445,43 @@ fi
 GENERATE_STAGE="generate"
 stage 3 "$GENERATE_STAGE"
 export OPENMONTAGE_PYTHON="$PY"
+export ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-0}"
 PROJECT_IDS=()
 GENERATION_ATTEMPT=0
 GEN_STATUS=1
-if [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
+
+# Scan for unqueued projects that already passed strict quality validation
+RECOVERED_PROJECT_IDS=()
+for pdir in "$ROOT"/projects/cand_*; do
+  [ -d "$pdir" ] || continue
+  pid="$(basename "$pdir")"
+  if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
+    continue
+  fi
+  if [ -f "$pdir/validation_status.json" ] && [ -f "$pdir/publish_metadata.json" ]; then
+    is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$pdir/validation_status.json" 2>/dev/null || echo false)
+    if [ "$is_valid" = "true" ]; then
+      log "recovered unqueued validated project from prior run: $pid"
+      RECOVERED_PROJECT_IDS+=("$pid")
+    fi
+  fi
+done
+
+if [ "${#RECOVERED_PROJECT_IDS[@]}" -ge "$TARGET_SUCCESS_COUNT" ]; then
+  log "found ${#RECOVERED_PROJECT_IDS[@]} unqueued validated project(s) satisfying target count ($TARGET_SUCCESS_COUNT); skipping generation"
+  PROJECT_IDS=("${RECOVERED_PROJECT_IDS[@]:0:$TARGET_SUCCESS_COUNT}")
+  GEN_STATUS=0
+elif [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
   GENERATE_LOG="${STRICT_PUBLISH_GENERATE_LOG:-$(ls -t "$LOG_DIR"/generate_*.log | head -1)}"
   [ -f "$GENERATE_LOG" ] || fail "STRICT_PUBLISH_SKIP_GENERATE=1 but no generation log exists"
-  mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
+  mapfile -t NEW_PIDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
+  PROJECT_IDS=("${RECOVERED_PROJECT_IDS[@]}" "${NEW_PIDS[@]}")
+  PROJECT_IDS=($(printf "%s\n" "${PROJECT_IDS[@]}" | awk '!seen[$0]++'))
   GEN_STATUS=0
-  log "STRICT_PUBLISH_SKIP_GENERATE=1: reusing projects from $GENERATE_LOG"
+  log "STRICT_PUBLISH_SKIP_GENERATE=1: reusing projects from $GENERATE_LOG (total ${#PROJECT_IDS[@]})"
 else
+  PROJECT_IDS=("${RECOVERED_PROJECT_IDS[@]}")
   while [ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]; do
-    GENERATION_ATTEMPT=$((GENERATION_ATTEMPT + 1))
-    GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}_attempt${GENERATION_ATTEMPT}.log"
-    log "generation attempt $GENERATION_ATTEMPT/$GENERATION_RETRIES"
-    set +e
-    bash "$ROOT/scripts/run_daily_news_pipeline.sh" 199>&- 2>&1 | tee "$GENERATE_LOG"
-    GEN_STATUS="${PIPESTATUS[0]}"
-    set -e
-    mapfile -t PROJECT_IDS < <(grep -h 'PROJECT_ID=' "$LOG_DIR/generate_${RUN_TS}_attempt"*.log | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
     VALID_COUNT=0
     for pid in "${PROJECT_IDS[@]}"; do
       if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
@@ -476,25 +494,56 @@ else
         fi
       fi
     done
-    if [[ "$GEN_STATUS" -eq 0 && "${#PROJECT_IDS[@]}" -eq 0 ]] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
-      log "No eligible topics were found; ending this run without generation retries or queue changes."
-      write_state "$GENERATE_STAGE" "no_eligible_topic"
-      write_state "workflow" "completed" "no_eligible_topic"
-      write_heartbeat "completed"
-      exit 0
+    if [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; then
+      log "already have $VALID_COUNT validated project(s) satisfying target ($TARGET_SUCCESS_COUNT); generation complete"
+      GEN_STATUS=0
+      break
     fi
-    if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; } && [ "${#PROJECT_IDS[@]}" -gt 0 ]; then
+    REMAINING_NEEDED=$((TARGET_SUCCESS_COUNT - VALID_COUNT))
+    export EXPECTED_SUCCESS_COUNT="$REMAINING_NEEDED"
+
+    GENERATION_ATTEMPT=$((GENERATION_ATTEMPT + 1))
+    GENERATE_LOG="$LOG_DIR/generate_${RUN_TS}_attempt${GENERATION_ATTEMPT}.log"
+    log "generation attempt $GENERATION_ATTEMPT/$GENERATION_RETRIES (requesting $REMAINING_NEEDED project(s))"
+    set +e
+    bash "$ROOT/scripts/run_daily_news_pipeline.sh" 199>&- 2>&1 | tee "$GENERATE_LOG"
+    GEN_STATUS="${PIPESTATUS[0]}"
+    set -e
+    mapfile -t ATTEMPT_PIDS < <(grep -h 'PROJECT_ID=' "$LOG_DIR/generate_${RUN_TS}_attempt"*.log | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
+    PROJECT_IDS=("${RECOVERED_PROJECT_IDS[@]}" "${ATTEMPT_PIDS[@]}")
+    PROJECT_IDS=($(printf "%s\n" "${PROJECT_IDS[@]}" | awk '!seen[$0]++'))
+    VALID_COUNT=0
+    for pid in "${PROJECT_IDS[@]}"; do
+      if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
+        continue
+      fi
+      if [[ -d "$ROOT/projects/$pid" && -f "$ROOT/projects/$pid/validation_status.json" ]]; then
+        is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$ROOT/projects/$pid/validation_status.json" 2>/dev/null || echo false)
+        if [[ "$is_valid" == "true" ]]; then
+          VALID_COUNT=$((VALID_COUNT + 1))
+        fi
+      fi
+    done
+    if [[ "$GEN_STATUS" -eq 0 && "${#ATTEMPT_PIDS[@]}" -eq 0 ]] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
+      if [ "$VALID_COUNT" -eq 0 ]; then
+        log "No eligible topics were found; ending this run without generation retries or queue changes."
+        write_state "$GENERATE_STAGE" "no_eligible_topic"
+        write_state "workflow" "completed" "no_eligible_topic"
+        write_heartbeat "completed"
+        exit 0
+      else
+        log "No further eligible topics found; proceeding with $VALID_COUNT existing validated project(s)"
+        GEN_STATUS=0
+        break
+      fi
+    fi
+    if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; } && [ "$VALID_COUNT" -gt 0 ]; then
       log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT validated project(s) (target: $TARGET_SUCCESS_COUNT, exit=$GEN_STATUS)"
       GEN_STATUS=0
       break
     fi
     log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT/$TARGET_SUCCESS_COUNT validated project(s) (exit=$GEN_STATUS projects=${#PROJECT_IDS[@]})"
     if [ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]; then
-      if [ "$VALID_COUNT" -gt 0 ] && [ "$VALID_COUNT" -lt "$TARGET_SUCCESS_COUNT" ]; then
-        REMAINING_NEEDED=$((TARGET_SUCCESS_COUNT - VALID_COUNT))
-        export EXPECTED_SUCCESS_COUNT="$REMAINING_NEEDED"
-        log "generation attempt $GENERATION_ATTEMPT obtained $VALID_COUNT validated project(s); requesting $REMAINING_NEEDED more for attempt $((GENERATION_ATTEMPT + 1))"
-      fi
       if [ "$GENERATION_RETRY_DELAY_SECONDS" -gt 0 ]; then
         log "pausing ${GENERATION_RETRY_DELAY_SECONDS}s before generation retry attempt $((GENERATION_ATTEMPT + 1))..."
         sleep "$GENERATION_RETRY_DELAY_SECONDS"
