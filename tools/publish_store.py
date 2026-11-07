@@ -1,14 +1,6 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import json
-import os
-import re
-import shutil
-import subprocess
-import unicodedata
-from datetime import datetime, timedelta, timezone
+import logging
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -16,175 +8,34 @@ from urllib.parse import quote
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2.service_account import Credentials
 
+from tools.storage.datastore_transport import (
+    _decode_document,
+    _env_value,
+    _fields,
+    _from_firestore_value,
+    _load_service_account,
+    _to_firestore_value,
+)
+from tools.system_media_utils import (
+    _ffmpeg,
+    existing_record_summary,
+    file_sha256,
+    media_fingerprint,
+    normalize_identity,
+    publish_key,
+    uniqueness_key,
+    utc_now,
+)
+
+logger = logging.getLogger(__name__)
+
 SCOPES = ["https://www.googleapis.com/auth/datastore"]
 DEFAULT_COLLECTION = "openmontage_publish_state"
 
 
-def _ffmpeg() -> str:
-    path = shutil.which("ffmpeg")
-    if path:
-        return path
-    candidates = list(Path.home().glob(".local/share/uv/**/ffmpeg"))
-    return str(candidates[0]) if candidates else "ffmpeg"
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def publish_key(date: str, topic: str, platform: str, kind: str) -> str:
-    raw = f"{date}_{platform}_{topic}_{kind}"
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("_")
-
-
-def normalize_identity(value: str) -> str:
-    value = re.sub(r"(?i)#\s*(shorts?|reels?)\b", " ", value)
-    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    value = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-    return re.sub(r"\b(shorts?|reels?)$", "", value).strip()
-
-
-def file_sha256(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def media_fingerprint(path: str | Path) -> str:
-    result = subprocess.run(
-        [
-            _ffmpeg(),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(path),
-            "-t",
-            "60",
-            "-vf",
-            "fps=1,scale=160:90:force_original_aspect_ratio=decrease,pad=160:90:(ow-iw)/2:(oh-ih)/2:black,format=gray",
-            "-f",
-            "rawvideo",
-            "-",
-        ],
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-    return hashlib.sha256(result.stdout).hexdigest()
-
-
-def uniqueness_key(platform: str, account: str, kind: str, identity_type: str, value: str) -> str:
-    normalized = normalize_identity(value) if identity_type in {"topic", "title"} else value.lower()
-    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-    raw = f"unique_{platform}_{account}_{kind}_{identity_type}_{digest}"
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("_")
-
-
-def existing_record_summary(record: dict[str, Any] | None) -> str:
-    if not record:
-        return "missing"
-    parts = [str(record.get("status") or "recorded")]
-    value = record.get("video_url") or record.get("video_id") or record.get("platform_id")
-    if value:
-        parts.append(str(value))
-    return " ".join(parts)
-
-
-def _env_value(name: str) -> str | None:
-    value = os.environ.get(name)
-    if value:
-        return value
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-    if not env_path.exists():
-        return None
-    for raw in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, val = line.split("=", 1)
-        if key.strip() != name:
-            continue
-        val = val.strip()
-        if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
-            val = val[1:-1]
-        return val
-    return None
-
-
-def _load_service_account() -> dict[str, Any]:
-    value = _env_value("FIREBASE_SERVICE_ACCOUNT")
-    if not value:
-        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT is missing in .env; add it or provide requested Firebase config.")
-
-    text = value.strip()
-    if text.startswith("file://"):
-        text = text[7:]
-
-    path = Path(text).expanduser()
-    if path.is_file():
-        info = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        try:
-            info = json.loads(text)
-        except json.JSONDecodeError:
-            padding = "=" * (-len(text) % 4)
-            try:
-                info = json.loads(base64.b64decode(text + padding).decode("utf-8"))
-            except Exception as exc:
-                raise RuntimeError(
-                    "FIREBASE_SERVICE_ACCOUNT must be service account JSON, base64 JSON, or a JSON file path."
-                ) from exc
-
-    if not info.get("project_id"):
-        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT has no project_id; provide valid Firebase service account config.")
-    return info
-
-
-def _to_firestore_value(value: Any) -> dict[str, Any]:
-    if isinstance(value, bool):
-        return {"booleanValue": value}
-    if isinstance(value, int) and not isinstance(value, bool):
-        return {"integerValue": str(value)}
-    if isinstance(value, float):
-        return {"doubleValue": value}
-    if isinstance(value, dict):
-        return {"mapValue": {"fields": {k: _to_firestore_value(v) for k, v in value.items() if v is not None}}}
-    if isinstance(value, list):
-        return {"arrayValue": {"values": [_to_firestore_value(v) for v in value]}}
-    return {"stringValue": str(value)}
-
-
-def _from_firestore_value(value: dict[str, Any]) -> Any:
-    if "stringValue" in value:
-        return value["stringValue"]
-    if "booleanValue" in value:
-        return value["booleanValue"]
-    if "integerValue" in value:
-        return int(value["integerValue"])
-    if "doubleValue" in value:
-        return value["doubleValue"]
-    if "mapValue" in value:
-        return {k: _from_firestore_value(v) for k, v in value.get("mapValue", {}).get("fields", {}).items()}
-    if "arrayValue" in value:
-        return [_from_firestore_value(v) for v in value.get("arrayValue", {}).get("values", [])]
-    if "timestampValue" in value:
-        return value["timestampValue"]
-    if "nullValue" in value:
-        return None
-    return None
-
-
-def _fields(data: dict[str, Any]) -> dict[str, Any]:
-    return {k: _to_firestore_value(v) for k, v in data.items() if v is not None}
-
-
-def _decode_document(document: dict[str, Any]) -> dict[str, Any]:
-    return {k: _from_firestore_value(v) for k, v in document.get("fields", {}).items()}
-
-
 class PublishStore:
+    """Manages persistent publish state, duplicate protection, and locks in Google Datastore."""
+
     @staticmethod
     def _is_precondition_conflict(response: Any) -> bool:
         if response.status_code in {409, 412}:
@@ -487,3 +338,26 @@ class PublishStore:
         except Exception:
             message = response.text
         raise RuntimeError(f"Firestore publish state error {response.status_code}: {message}")
+
+
+__all__ = [
+    "PublishStore",
+    "SCOPES",
+    "DEFAULT_COLLECTION",
+    "_ffmpeg",
+    "utc_now",
+    "publish_key",
+    "normalize_identity",
+    "file_sha256",
+    "media_fingerprint",
+    "uniqueness_key",
+    "existing_record_summary",
+    "_env_value",
+    "_load_service_account",
+    "_to_firestore_value",
+    "_from_firestore_value",
+    "_fields",
+    "_decode_document",
+    "AuthorizedSession",
+    "Credentials",
+]
