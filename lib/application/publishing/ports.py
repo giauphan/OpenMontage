@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Optional, Protocol, runtime_checkable
 
 from lib.domain.publishing.entities import (
     PlatformType,
@@ -10,6 +10,7 @@ from lib.domain.publishing.entities import (
 )
 
 
+@runtime_checkable
 class SocialPublisherPort(Protocol):
     """Outbound port for publishing video content to social platforms."""
 
@@ -27,6 +28,7 @@ class SocialPublisherPort(Protocol):
         ...
 
 
+@runtime_checkable
 class PublishStorePort(Protocol):
     """Outbound port for persisting publish states, locks, and history."""
 
