@@ -52,6 +52,8 @@ def test_schedule_today_native_prevents_duplicate_uploads_and_avoids_facebook(tm
     cand_dir.mkdir()
     write_reviewed_news_evidence(cand_dir)
     monkeypatch.setenv("NEWS_MAX_SOURCE_AGE_HOURS", "24")
+    monkeypatch.delenv("HOLD_PLATFORMS", raising=False)
+    monkeypatch.delenv("HOLD_IG", raising=False)
     (cand_dir / "publish_metadata.json").write_text(json.dumps({
         "id": "cand_A",
         "title": "Tin tức công nghệ #tintuc #congnghe #ai",
