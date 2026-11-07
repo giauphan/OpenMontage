@@ -253,7 +253,7 @@ def scheduled_projects_for_slot(
             print(f"WARNING: skipping {project_id or '<unknown>'}: missing publish metadata")
             continue
 
-        if item.get("fatal_error") or item.get("status") in ("auth_blocked", "failed", "validation_rejected"):
+        if item.get("fatal_error") or item.get("status") in ("auth_blocked", "failed", "validation_rejected", "published", "archived"):
             print(f"INFO: skipping {project_id}: marked {item.get('status')} / fatal_error (operator intervention needed)")
             continue
 
