@@ -156,6 +156,42 @@ def test_construct_upload_body():
     assert body_vi["snippet"]["defaultAudioLanguage"] == "vi-VN"
 
 
+def test_canonicalize_youtube_publish_at_avoids_vietnam_timezone():
+    from tools.publishers.youtube_publisher import canonicalize_youtube_publish_at
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    # 1. VN timezone input (+07:00) must be converted to pure UTC '...Z' without '+07:00'
+    res_vn = canonicalize_youtube_publish_at("2026-11-08T09:15:00+07:00")
+    assert res_vn == "2026-11-08T02:15:00Z"
+    assert "+07:00" not in res_vn
+    assert "+0700" not in res_vn
+
+    # 2. US Eastern timezone input (-05:00) must be converted to pure UTC '...Z'
+    res_us = canonicalize_youtube_publish_at("2026-11-08T09:15:00-05:00")
+    assert res_us == "2026-11-08T14:15:00Z"
+    assert "-05:00" not in res_us
+
+    # 3. Datetime object in VN timezone
+    vn_dt = datetime(2026, 11, 8, 9, 15, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+    res_dt = canonicalize_youtube_publish_at(vn_dt)
+    assert res_dt == "2026-11-08T02:15:00Z"
+
+    # 4. _construct_upload_body must strictly normalize VN input to UTC Z
+    body = _construct_upload_body(
+        inputs={},
+        title="Test",
+        description="Desc",
+        tags=[],
+        category_id="28",
+        privacy_status="private",
+        publish_at="2026-11-08T09:15:00+07:00",
+        locale="en-US",
+    )
+    assert body["status"]["publishAt"] == "2026-11-08T02:15:00Z"
+    assert "+07:00" not in body["status"]["publishAt"]
+
+
 def test_upload_thumbnail_if_present(tmp_path):
     mock_youtube = MagicMock()
     thumb = tmp_path / "thumb.jpg"

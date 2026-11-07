@@ -45,13 +45,15 @@ def build_youtube_payload(
         payload_meta["id"] = payload_meta.get("project_id", "news_video")
     rel = compose_release_metadata(payload_meta)
     yt = rel.youtube_payload
+    from tools.publishers.youtube_publisher import canonicalize_youtube_publish_at
+    canonical_publish_at = canonicalize_youtube_publish_at(publish_at)
     payload = {
         "video_path": str(video_path),
         "title": yt["title"],
         "description": yt["description"],
         "tags": yt["tags"],
-        "privacy_status": "private" if publish_at else "unlisted",
-        "publish_at": publish_at,
+        "privacy_status": "private" if canonical_publish_at else "unlisted",
+        "publish_at": canonical_publish_at,
         "category_id": "28",
         "format": payload_meta.get("format", "short"),
         "locale": payload_meta.get("locale") or os.environ.get("OPENMONTAGE_LOCALE") or "en-US",

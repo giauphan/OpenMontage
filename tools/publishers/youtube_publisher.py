@@ -122,6 +122,46 @@ def _verify_authenticated_channel(youtube: Any, expected_channel_id: str) -> Too
     return None
 
 
+def canonicalize_youtube_publish_at(publish_at: str | datetime | None) -> str | None:
+    """Canonicalize publish_at strictly to ISO 8601 UTC ('YYYY-MM-DDTHH:MM:SSZ').
+
+    Guarantees no local or Vietnam timezone (+07:00 / ICT) ever leaks into the
+    YouTube Data API status.publishAt payload.
+    """
+    if not publish_at:
+        return None
+    if isinstance(publish_at, datetime):
+        dt = publish_at
+        if dt.tzinfo is None:
+            from scripts.publish_config import load_config, publish_timezone
+            try:
+                cfg_tz = publish_timezone(load_config())
+            except Exception:
+                cfg_tz = timezone.utc
+            dt = dt.replace(tzinfo=cfg_tz)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if isinstance(publish_at, str):
+        val = publish_at.strip()
+        if not val:
+            return None
+        # Disallow raw +07:00 / local offsets in output and normalize all offsets to UTC Z
+        try:
+            clean_str = val.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(clean_str)
+            if dt.tzinfo is None:
+                from scripts.publish_config import load_config, publish_timezone
+                try:
+                    cfg_tz = publish_timezone(load_config())
+                except Exception:
+                    cfg_tz = timezone.utc
+                dt = dt.replace(tzinfo=cfg_tz)
+            return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            return val
+    return str(publish_at)
+
+
 def _construct_upload_body(
     inputs: dict[str, Any],
     title: str,
@@ -155,8 +195,9 @@ def _construct_upload_body(
     if inputs.get("contains_synthetic_media") or inputs.get("has_synthetic_media"):
         body["status"]["containsSyntheticMedia"] = True
 
-    if publish_at:
-        body["status"]["publishAt"] = publish_at
+    canonical_publish_at = canonicalize_youtube_publish_at(publish_at)
+    if canonical_publish_at:
+        body["status"]["publishAt"] = canonical_publish_at
     return body
 
 

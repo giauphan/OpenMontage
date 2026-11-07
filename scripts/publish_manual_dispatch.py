@@ -108,13 +108,15 @@ def build_youtube_payload(
     fmt = payload_meta.get("format", "short")
     is_long = fmt in ("longform", "long", "16:9", "16x9", "full")
     title = payload_meta.get("title", yt["title"]) if is_long else yt["title"]
+    from tools.publishers.youtube_publisher import canonicalize_youtube_publish_at
+    canonical_publish_at = canonicalize_youtube_publish_at(publish_at)
     payload = {
         "video_path": str(video_path),
         "title": title,
         "description": yt["description"],
         "tags": yt["tags"],
-        "privacy_status": "private" if publish_at else "unlisted",
-        "publish_at": publish_at,
+        "privacy_status": "private" if canonical_publish_at else "unlisted",
+        "publish_at": canonical_publish_at,
         "category_id": "28",
         "format": fmt,
         "locale": payload_meta.get("locale") or os.environ.get("OPENMONTAGE_LOCALE") or "en-US",
