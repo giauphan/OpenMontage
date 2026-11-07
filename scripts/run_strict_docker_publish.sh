@@ -452,12 +452,45 @@ GEN_STATUS=1
 
 # Scan for unqueued projects that already passed strict quality validation
 RECOVERED_PROJECT_IDS=()
+NOW_EPOCH="${STRICT_PUBLISH_NOW_EPOCH:-$(date +%s)}"
 for pdir in "$ROOT"/projects/cand_*; do
   [ -d "$pdir" ] || continue
   pid="$(basename "$pdir")"
   if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
     continue
   fi
+  # 1. Must not already be published
+  if [ -f "$pdir/events.jsonl" ]; then
+    if grep -q '"tool": "[^"]*_publisher"' "$pdir/events.jsonl" 2>/dev/null && grep -q '"success": true' "$pdir/events.jsonl" 2>/dev/null; then
+      continue
+    fi
+  fi
+  # 2. Must have valid signed approval within last 24h (86400s)
+  app_file="$pdir/approval.json"
+  [ -f "$app_file" ] || app_file="$pdir/artifacts/approval.json"
+  if [ -f "$app_file" ]; then
+    is_approved=$(jq -r '(.approved == true or .status == "approved") // false' "$app_file" 2>/dev/null || echo false)
+    [ "$is_approved" = "true" ] || continue
+    app_ts=$(jq -r '.timestamp // empty' "$app_file" 2>/dev/null || echo "")
+    if [ -n "$app_ts" ]; then
+      app_epoch=$(date -d "$app_ts" +%s 2>/dev/null || echo 0)
+      app_age=$((NOW_EPOCH - app_epoch))
+      if [ "$app_epoch" -le 0 ] || [ "$app_age" -lt 0 ] || [ "$app_age" -gt 86400 ]; then
+        continue
+      fi
+    else
+      continue
+    fi
+  else
+    continue
+  fi
+  # 3. Must have non-empty renders
+  has_render=0
+  if [ -s "$pdir/renders/final_short_en_US_9x16.mp4" ] || [ -s "$pdir/renders/final_long_en_US_16x9.mp4" ] || [ -s "$pdir/renders/final_full_vi_9x16.mp4" ]; then
+    has_render=1
+  fi
+  [ "$has_render" -eq 1 ] || continue
+  # 4. Must pass strict validation and have metadata
   if [ -f "$pdir/validation_status.json" ] && [ -f "$pdir/publish_metadata.json" ]; then
     is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$pdir/validation_status.json" 2>/dev/null || echo false)
     if [ "$is_valid" = "true" ]; then
