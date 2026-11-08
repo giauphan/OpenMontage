@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -345,6 +346,7 @@ __all__ = [
     "SCOPES",
     "DEFAULT_COLLECTION",
     "_ffmpeg",
+    "shutil",
     "utc_now",
     "publish_key",
     "normalize_identity",
