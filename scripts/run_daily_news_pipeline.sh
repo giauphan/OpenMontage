@@ -1325,11 +1325,15 @@ if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
 fi
 
-# Ensure title contains required hashtags
+# Ensure title contains required hashtags (#tintuc #congnghe #ai for vi-VN; optional for en-US)
 if [ "$is_en" -eq 1 ]; then
-  if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
-    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
-    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+    if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+      BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+      TITLE="${BASE_TITLE:0:80} #ai #tech"
+    fi
+  else
+    TITLE=$(echo "$TITLE" | sed 's/ #ai #tech//' | sed 's/ #ai//' | sed 's/ #tech//')
   fi
 else
   if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
@@ -1459,11 +1463,15 @@ if [ -z "$TITLE" ]; then
   TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
 fi
 
-# Ensure title contains required hashtags (#ai #tech for en-US; #tintuc #congnghe #ai for vi-VN)
+# Ensure title contains required hashtags (#tintuc #congnghe #ai for vi-VN; clean title for en-US unless forced)
 if [ "$is_en" -eq 1 ]; then
-  if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
-    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
-    TITLE="${BASE_TITLE:0:80} #ai #tech"
+  if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+    if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+      BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+      TITLE="${BASE_TITLE:0:80} #ai #tech"
+    fi
+  else
+    TITLE=$(echo "$TITLE" | sed 's/ #ai #tech//' | sed 's/ #ai//' | sed 's/ #tech//')
   fi
 else
   if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then
@@ -1473,10 +1481,13 @@ else
 fi
 # Safeguard: ensure it fits within 100 chars for YT Shorts
 if [ ${#TITLE} -gt 100 ]; then
-  # Strip any existing suffix and truncate base title to 80 chars, then append required hashtags
   if [ "$is_en" -eq 1 ]; then
-    BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
-    TITLE="${BASE_TITLE:0:80} #ai #tech"
+    if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+      BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+      TITLE="${BASE_TITLE:0:80} #ai #tech"
+    else
+      TITLE="${TITLE:0:95}"
+    fi
   else
     BASE_TITLE=$(echo "$TITLE" | sed 's/ #tintuc.*//' | sed 's/ #congnghe.*//' | sed 's/ #ai.*//')
     TITLE="${BASE_TITLE:0:80} #tintuc #congnghe #ai"

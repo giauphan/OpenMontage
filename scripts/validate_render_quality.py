@@ -47,7 +47,7 @@ MAX_BLACK_RATIO = 0.30
 # Minimum edge density required for text/graphics presence (strict mode only).
 MIN_EDGE_DENSITY = 0.005
 # Maximum allowed ratio of low-motion/static frames (strict mode only).
-MAX_STATIC_RATIO = 0.95
+MAX_STATIC_RATIO = 0.85
 
 
 def _safe_executable(binary_name: str, candidate: str | None = None) -> str:
@@ -339,6 +339,14 @@ def validate_content(
             errors.append(
                 f"{path}: audio is effectively silent (mean volume {mean_db:.1f} dB <= {SILENCE_MEAN_DB:.1f} dB)"
             )
+        if strict:
+            from lib.audio.audio_qa import measure_audio_levels
+            levels = measure_audio_levels(path, ffmpeg_bin=ffmpeg)
+            max_vol = levels.get("max_volume")
+            if max_vol is not None and max_vol > -0.05:
+                errors.append(
+                    f"{path}: audio peak volume ({max_vol:.2f} dBFS) exceeds -0.05 dBFS (harsh digital clipping detected)"
+                )
     if has_video and duration > 0:
         black_seconds = measure_black_seconds(path, ffmpeg, strict=strict)
         if black_seconds is None:

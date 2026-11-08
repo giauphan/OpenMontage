@@ -283,9 +283,13 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
   fi
   if [ "$is_en" -eq 1 ]; then
-    if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
-      BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
-      TITLE="${BASE_TITLE:0:80} #ai #tech"
+    if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+      if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
+        BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
+        TITLE="${BASE_TITLE:0:80} #ai #tech"
+      fi
+    else
+      TITLE=$(echo "$TITLE" | sed 's/ #ai #tech//' | sed 's/ #ai//' | sed 's/ #tech//')
     fi
   else
     if [[ "$TITLE" != *"#tintuc"* || "$TITLE" != *"#congnghe"* || "$TITLE" != *"#ai"* ]]; then

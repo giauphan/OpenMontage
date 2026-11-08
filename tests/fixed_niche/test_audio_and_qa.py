@@ -357,3 +357,42 @@ def test_qa_visual_plan_and_frame_samples_auditing(tmp_path: Path):
     assert any(f["category"] == "FRAME_QUALITY" and "Missing frame sample" in f["message"] for f in findings)
 
 
+def test_qa_one_fps_slideshow_blocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """QA audit strictly blocks 1 fps static slideshow fallback in production."""
+    monkeypatch.setenv("STRICT_PRODUCTION", "1")
+    validator = FixedNicheQAValidator()
+    project_dir = tmp_path / "project_1fps"
+    renders = project_dir / "renders"
+    renders.mkdir(parents=True)
+
+    # ffprobe with 1/1 frame rate (1 fps)
+    probe_data = {
+        "format": {"duration": "72.0"},
+        "streams": [{"codec_type": "video", "r_frame_rate": "1/1", "width": 1080, "height": 1920}],
+    }
+    (renders / "ffprobe.json").write_text(json.dumps(probe_data))
+
+    findings = validator._audit_duration(project_dir)
+    assert any(f["category"] == "RENDERER_QUALITY" and "static slideshow fallback is disallowed" in f["message"] for f in findings)
+
+
+def test_qa_renderer_fallback_blocked(tmp_path: Path):
+    """QA audit strictly blocks when render_manifest.json notes fallback occurred."""
+    validator = FixedNicheQAValidator()
+    project_dir = tmp_path / "project_fb"
+    renders = project_dir / "renders"
+    renders.mkdir(parents=True)
+
+    manifest_data = {
+        "renderer_requested": "hyperframes",
+        "renderer_actual": "ffmpeg_fallback",
+        "fallback_occurred": True,
+        "fallback_reason": "HyperFrames exited with code 1",
+    }
+    (renders / "render_manifest.json").write_text(json.dumps(manifest_data))
+
+    findings = validator._audit_duration(project_dir)
+    assert any(f["category"] == "RENDERER_FALLBACK" and "fell back to static FFmpeg" in f["message"] for f in findings)
+
+
+

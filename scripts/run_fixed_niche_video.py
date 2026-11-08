@@ -528,13 +528,19 @@ class FixedNicheVideoRunner:
         app_status = "APPROVED_FOR_PRIVATE_CANARY" if qa_pass else "QA_FAILED"
         val_status_code = "VIDEO_READY_FOR_PRIVATE_REVIEW" if qa_pass else "QA_FAILED"
         timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        m_file = self.project_dir / "renders" / "render_manifest.json"
+        manifest = json.loads(m_file.read_text(encoding="utf-8")) if m_file.is_file() else {}
+        renderer_used = manifest.get("renderer_actual", "unknown")
+        fallback_occurred = bool(manifest.get("fallback_occurred", False))
+
+        audit_trail = {
+            "status": app_status, "audio_sha256": audio_sha, "video_sha256": video_sha,
+            "target_aspect": "9:16", "duration": actual_dur, "target_duration": target_dur,
+            "policy_sha256": self.policy.policy_sha256, "strict_quality_pass": qa_pass,
+            "renderer_used": renderer_used, "fallback_occurred": fallback_occurred,
+        }
         if qa_pass:
             from lib.qa_signing import sign_approval_record
-            audit_trail = {
-                "status": app_status, "audio_sha256": audio_sha, "video_sha256": video_sha,
-                "target_aspect": "9:16", "duration": actual_dur, "target_duration": target_dur,
-                "policy_sha256": self.policy.policy_sha256, "strict_quality_pass": True,
-            }
             app_record = sign_approval_record(
                 project_id=self.candidate_id, media_sha256=video_sha, claim_ledger_sha256=ledger_sha,
                 timestamp_iso=timestamp, reviewer="independent_qa_supervisor", format_type="short",
@@ -543,17 +549,16 @@ class FixedNicheVideoRunner:
             app_record.update(audit_trail)
         else:
             app_record = {
-                "approved": False, "status": app_status, "claim_ledger_sha256": ledger_sha,
-                "audio_sha256": audio_sha, "video_sha256": video_sha, "target_aspect": "9:16",
-                "duration": actual_dur, "target_duration": target_dur,
-                "policy_sha256": self.policy.policy_sha256, "timestamp": timestamp,
+                "approved": False, "claim_ledger_sha256": ledger_sha, "timestamp": timestamp,
+                **audit_trail,
             }
         (self.project_dir / "approval.json").write_text(json.dumps(app_record, indent=2), encoding="utf-8")
         val_status = {
             "project_id": self.candidate_id, "status": "PASS" if qa_pass else "QA_FAILED",
             "review_status": val_status_code, "strict_quality_pass": qa_pass,
             "rendered_mp4": str(output_mp4), "duration": actual_dur, "target_duration": target_dur,
-            "policy_sha256": self.policy.policy_sha256,
+            "policy_sha256": self.policy.policy_sha256, "renderer_used": renderer_used,
+            "fallback_occurred": fallback_occurred,
         }
         (self.project_dir / "validation_status.json").write_text(json.dumps(val_status, indent=2), encoding="utf-8")
         return val_status_code
@@ -642,122 +647,24 @@ class FixedNicheVideoRunner:
         }
 
 
-def _configure_cli_environment(args: argparse.Namespace) -> None:
-    """Set global environment variables based on CLI flags."""
-    os.environ["AI_VISUAL_ENABLED"] = "1" if args.enable_ai_visuals else "0"
-    os.environ["OPENMONTAGE_VISUAL_STYLE"] = args.visual_style
-    if args.visual_style == "animated_agent_diagram_v1" and args.enable_diagram_animation:
-        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "1"
-    else:
-        os.environ["ANIMATED_AGENT_DIAGRAM_V1_ENABLED"] = "0"
+from lib.fixed_niche.cli_support import (
+    configure_cli_environment as _configure_cli_environment,
+    validate_safe_path as _validate_safe_path_impl,
+    load_yaml_candidates as _load_yaml_candidates,
+    load_cli_candidates_pool as _load_cli_candidates_pool_impl,
+    apply_topic_overrides as _apply_topic_overrides,
+    auto_select_topic as _auto_select_topic,
+    resolve_cli_topic_and_candidate as _resolve_cli_topic_and_candidate,
+    build_cli_parser as _build_cli_parser,
+)
 
 
 def _validate_safe_path(path: Path | str) -> Path:
-    """Validate path against traversal attacks (CWE-22 / CWE-73)."""
-    import tempfile
-    p = Path(path).expanduser().resolve()
-    allowed = (ROOT.resolve(), Path.home().resolve(), Path.cwd().resolve(), Path(tempfile.gettempdir()).resolve())
-    if not any(p.is_relative_to(root) for root in allowed if root != Path(root.anchor)):
-        raise ValueError(f"Path traversal detected or path outside allowed root: {path}")
-    if not p.is_file():
-        raise FileNotFoundError(f"Candidate file does not exist: {path}")
-    if p.is_relative_to(Path(tempfile.gettempdir()).resolve()) and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
-        raise PermissionError(f"Candidate file in temp directory must be owned by current user: {path}")
-    return p
-
-
-def _load_yaml_candidates(file_path: Path) -> List[Dict[str, Any]]:
-    """Safely load candidate dictionaries from a YAML file."""
-    try:
-        import yaml
-        raw_data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
-        if isinstance(raw_data, dict):
-            return raw_data.get("positive_cases", [])
-        return raw_data if isinstance(raw_data, list) else []
-    except Exception as e:
-        logger.warning("Failed to load candidates from %s: %s", file_path, e)
-        return []
+    return _validate_safe_path_impl(path, ROOT)
 
 
 def _load_cli_candidates_pool(args: argparse.Namespace) -> List[Dict[str, Any]]:
-    """Load candidates from specified file, test fixtures, or production source adapter."""
-    if args.candidates_file:
-        candidates = _load_yaml_candidates(_validate_safe_path(args.candidates_file))
-        if not candidates:
-            raise ValueError(f"No candidates could be loaded from specified --candidates-file: {args.candidates_file}")
-        return candidates
-    if args.use_test_fixtures:
-        candidates = _load_yaml_candidates(_validate_safe_path(ROOT / "tests/fixtures/fixed_niche_cases.yaml"))
-        if not candidates:
-            raise ValueError("No candidates could be loaded from test fixtures")
-        return candidates
-    return FixedNicheSourceAdapter().discover_production_candidates()
-
-
-def _apply_topic_overrides(topic: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
-    """Apply explicit CLI argument overrides to topic metadata."""
-    res = dict(topic)
-    res.update({k: getattr(args, k) for k in ("title", "topic_family", "canonical_url") if getattr(args, k, None)})
-    return res
-
-
-def _auto_select_topic(
-    candidates_pool: List[Dict[str, Any]], gate: FixedNicheScopeGate, args: argparse.Namespace
-) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
-    """Auto-select the highest ranked eligible candidate from pool."""
-    eligible = [c for c in candidates_pool if gate.evaluate_candidate(c).is_eligible]
-    if not eligible:
-        return None, None
-    from lib.fixed_niche.ranker import FixedNicheTopicScorer
-    ranked = FixedNicheTopicScorer().rank_candidates([(c, gate.evaluate_candidate(c)) for c in eligible])
-    top_cand = ranked[0] if ranked else eligible[0]
-    cid = top_cand.get("id") or top_cand.get("candidate_id") or "cand_selected"
-    topic = _apply_topic_overrides(top_cand, args)
-    topic["candidate_id"] = cid
-    return cid, topic
-
-
-def _resolve_cli_topic_and_candidate(
-    args: argparse.Namespace, candidates_pool: List[Dict[str, Any]], gate: FixedNicheScopeGate
-) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
-    """Resolve target candidate ID and topic dictionary according to auto-select/explicit args."""
-    cid = args.candidate_id
-    if cid:
-        matched = next((c for c in candidates_pool if c.get("candidate_id") == cid or c.get("id") == cid), None)
-        if matched:
-            t = _apply_topic_overrides(matched, args)
-            t["candidate_id"] = cid
-            return cid, t
-    if args.auto_select or not cid:
-        return _auto_select_topic(candidates_pool, gate, args)
-    fallback = _apply_topic_overrides({
-        "candidate_id": cid, "title": "Why coding agents lose project requirements between sessions",
-        "topic_family": "context_memory", "canonical_url": "https://docs.anthropic.com/claude/context-window",
-    }, args)
-    fallback["candidate_id"] = cid
-    return cid, fallback
-
-
-def _build_cli_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Fixed Niche Video Production CLI")
-    parser.add_argument("--candidate-id", default=None, help="Candidate ID to produce")
-    parser.add_argument("--auto-select", action="store_true", default=False, help="Auto-discover in-scope candidate")
-    parser.add_argument("--candidates-file", default=None, help="Path to YAML/JSON candidates pool file")
-    parser.add_argument("--use-test-fixtures", action="store_true", default=False, help="Allow loading test fixtures")
-    parser.add_argument("--renderer", choices=["auto", "hyperframes", "ffmpeg"], default="auto", help="Renderer")
-    parser.add_argument("--project-dir", help="Custom project output directory")
-    parser.add_argument("--format", default="short", choices=["short", "shorts"], help="Video format")
-    for flag in ("--title", "--topic-family", "--canonical-url", "--provider", "--voice"):
-        parser.add_argument(flag, default=None)
-    parser.add_argument("--speed", type=float, default=1.0, help="Speech speed multiplier")
-    parser.add_argument("--dry-run", action="store_true", help="Stage project without media rendering")
-    parser.add_argument("--burn-captions", action="store_true", default=False, help="Burn subtitles into video")
-    parser.add_argument("--enable-ai-visuals", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--visual-style", default=os.environ.get("OPENMONTAGE_VISUAL_STYLE", "progressive_svg"), choices=["progressive_svg", "animated_agent_diagram_v1", "legacy"])
-    parser.add_argument("--enable-diagram-animation", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--require-latest-news", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--max-age-days", type=int, default=7)
-    return parser
+    return _load_cli_candidates_pool_impl(args, ROOT)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

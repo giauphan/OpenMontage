@@ -4,12 +4,14 @@ Extracts composition rendering pipeline to preserve Clean Architecture module si
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
 import shutil
 import subprocess
-from typing import Optional
+import time
+from typing import Any, Dict, Optional
 
 from lib.audio.narration_orchestrator import MediaCpuLock, probe_audio_duration
 from lib.fixed_niche.hyperframes_composer import (
@@ -84,6 +86,33 @@ def _select_renderer(renderer: str, project_dir: Path, composition_name: str) ->
     return "hyperframes" if has_hf else "ffmpeg"
 
 
+def _record_render_manifest(
+    renders_dir: Path,
+    renderer_requested: str,
+    renderer_actual: str,
+    fallback_occurred: bool,
+    fallback_reason: Optional[str],
+    output_mp4: Path,
+    target_fps: int = 30,
+) -> Dict[str, Any]:
+    """Persist structured render telemetry to renders/render_manifest.json."""
+    manifest = {
+        "renderer_requested": renderer_requested,
+        "renderer_actual": renderer_actual,
+        "fallback_occurred": fallback_occurred,
+        "fallback_reason": fallback_reason,
+        "target_fps": target_fps,
+        "output_mp4": str(output_mp4),
+        "rendered_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    manifest_path = renders_dir / "render_manifest.json"
+    try:
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    except OSError as e:
+        logger.warning(f"Failed to write render_manifest.json: {e}")
+    return manifest
+
+
 def _render_hyperframes(
     project_dir: Path,
     composition_name: str,
@@ -93,6 +122,7 @@ def _render_hyperframes(
     render_dur: float,
     width: int,
     height: int,
+    allow_fallback: bool = True,
 ) -> Path:
     comp_dir = project_dir / composition_name
     if not (comp_dir / "index.html").is_file():
@@ -102,16 +132,42 @@ def _render_hyperframes(
         comp_audio.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(audio_path, comp_audio)
     ass_path = project_dir / "artifacts" / "captions.ass"
+    renders_dir = output_mp4.parent
     try:
-        return render_hyperframes_composition(
+        res = render_hyperframes_composition(
             comp_dir=comp_dir,
             output_mp4=output_mp4,
             burn_captions=burn_captions,
             ass_path=ass_path if burn_captions else None,
         )
+        _record_render_manifest(
+            renders_dir=renders_dir,
+            renderer_requested="hyperframes",
+            renderer_actual="hyperframes",
+            fallback_occurred=False,
+            fallback_reason=None,
+            output_mp4=output_mp4,
+            target_fps=30,
+        )
+        return res
     except Exception as hf_err:
+        if not allow_fallback:
+            logger.error(f"HyperFrames render failed ({hf_err}) and renderer fallback is disallowed.")
+            _record_render_manifest(
+                renders_dir=renders_dir,
+                renderer_requested="hyperframes",
+                renderer_actual="failed",
+                fallback_occurred=True,
+                fallback_reason=str(hf_err),
+                output_mp4=output_mp4,
+                target_fps=30,
+            )
+            raise RuntimeError(
+                f"HyperFrames rendering failed: {hf_err}. Static slideshow fallback is forbidden in strict production mode."
+            ) from hf_err
+
         logger.warning(f"HyperFrames render encountered issue ({hf_err}), falling back to FFmpeg composition")
-        return render_ffmpeg_composition(
+        res = render_ffmpeg_composition(
             project_dir=project_dir,
             output_mp4=output_mp4,
             render_dur=render_dur,
@@ -119,6 +175,16 @@ def _render_hyperframes(
             height=height,
             burn_captions=burn_captions,
         )
+        _record_render_manifest(
+            renders_dir=renders_dir,
+            renderer_requested="hyperframes",
+            renderer_actual="ffmpeg_fallback",
+            fallback_occurred=True,
+            fallback_reason=str(hf_err),
+            output_mp4=output_mp4,
+            target_fps=1,
+        )
+        return res
 
 
 def render_project_composition(
@@ -129,6 +195,7 @@ def render_project_composition(
     allow_synthetic_audio: bool = False,
     burn_captions: bool = False,
     renderer: str = "auto",
+    allow_fallback: Optional[bool] = None,
 ) -> Path:
     """Render a dynamic project composition via HyperFrames or FFmpeg.
 
@@ -140,6 +207,10 @@ def render_project_composition(
     out_mp4 = _resolve_output_mp4(project_dir, composition_name, output_mp4)
     width, height = _resolve_dimensions(composition_name, out_mp4)
 
+    if allow_fallback is None:
+        env_fallback = os.environ.get("OPENMONTAGE_ALLOW_RENDERER_FALLBACK", "").lower()
+        allow_fallback = env_fallback not in ("0", "false", "no")
+
     with MediaCpuLock(timeout_seconds=300.0):
         audio_path = project_dir / "assets" / "narration.mp3"
         render_dur = _prepare_narration(audio_path, duration_seconds, allow_synthetic_audio)
@@ -149,8 +220,9 @@ def render_project_composition(
             return _render_hyperframes(
                 project_dir, composition_name, out_mp4, burn_captions,
                 audio_path, render_dur, width, height,
+                allow_fallback=allow_fallback,
             )
-        return render_ffmpeg_composition(
+        res = render_ffmpeg_composition(
             project_dir=project_dir,
             output_mp4=out_mp4,
             render_dur=render_dur,
@@ -158,3 +230,13 @@ def render_project_composition(
             height=height,
             burn_captions=burn_captions,
         )
+        _record_render_manifest(
+            renders_dir=renders_dir,
+            renderer_requested="ffmpeg",
+            renderer_actual="ffmpeg",
+            fallback_occurred=False,
+            fallback_reason=None,
+            output_mp4=out_mp4,
+            target_fps=1,
+        )
+        return res

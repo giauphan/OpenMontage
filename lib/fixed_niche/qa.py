@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lib.fixed_niche.policy import load_locked_policy, LockedNichePolicy
 from lib.fixed_niche.storyboard import FixedNicheStoryboardDirector
+from lib.audio.audio_qa import audit_project_audio_pipeline, verify_spoken_cta_completeness
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +96,6 @@ class FixedNicheQAValidator:
 
         return self._verify_signature(app_data, app_path, project_dir)
 
-        return True
-
     def _audit_scope(self, project_dir: Path) -> List[Dict[str, str]]:
         scope_file = project_dir / "artifacts" / "fixed_niche_scope.json"
         if not scope_file.is_file():
@@ -115,22 +114,20 @@ class FixedNicheQAValidator:
 
     @staticmethod
     def _extract_approved_claims_with_stats(project_dir: Path, combined_stat_re: Any) -> list[dict[str, Any]]:
-        approved_claims = []
-        ledger_path = project_dir / "artifacts" / "claim_ledger.json"
+        approved_claims, ledger_path = [], project_dir / "artifacts" / "claim_ledger.json"
         if not ledger_path.is_file():
             return approved_claims
         try:
-            l_data = json.loads(ledger_path.read_text(encoding="utf-8"))
-            for c in l_data.get("claims", []):
+            for c in json.loads(ledger_path.read_text(encoding="utf-8")).get("claims", []):
                 if c.get("verdict") == "APPROVED":
-                    c_stats = set()
-                    for text_field in (c.get("statement", ""), c.get("evidence_excerpt", "")):
-                        for m in combined_stat_re.finditer(text_field):
-                            c_stats.add(re.sub(r"[\s,]+", "", m.group(0)).lower().lstrip("+-"))
+                    c_stats = {
+                        re.sub(r"[\s,]+", "", m.group(0)).lower().lstrip("+-")
+                        for fld in (c.get("statement", ""), c.get("evidence_excerpt", ""))
+                        for m in combined_stat_re.finditer(fld)
+                    }
                     if c_stats:
                         approved_claims.append({
-                            "claim_id": c.get("claim_id"),
-                            "stats": c_stats,
+                            "claim_id": c.get("claim_id"), "stats": c_stats,
                             "text_corpus": f"{c.get('statement', '')} {c.get('evidence_excerpt', '')}".lower(),
                         })
         except Exception:
@@ -197,13 +194,8 @@ class FixedNicheQAValidator:
             return findings
         try:
             num = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?'
-            stat_patterns = [
-                rf'[-+]?\b{num}x\b',
-                rf'[-+]?\b{num}%',
-                rf'[-+]?\b{num}[kmb]?\s+tokens?\b',
-                rf'[-+]?\b{num}\s*(?:ms|req/s|rps|ops/sec)\b',
-            ]
-            combined_stat_re = re.compile("|".join(f"(?:{p})" for p in stat_patterns), re.IGNORECASE)
+            pats = [rf'[-+]?\b{num}x\b', rf'[-+]?\b{num}%', rf'[-+]?\b{num}[kmb]?\s+tokens?\b', rf'[-+]?\b{num}\s*(?:ms|req/s|rps|ops/sec)\b']
+            combined_stat_re = re.compile("|".join(f"(?:{p})" for p in pats), re.IGNORECASE)
             approved_claims = self._extract_approved_claims_with_stats(project_dir, combined_stat_re)
             plan_data = json.loads(visual_plan_file.read_text(encoding="utf-8"))
             for beat in plan_data.get("beats", []):
@@ -220,8 +212,7 @@ class FixedNicheQAValidator:
         frames_dir = project_dir / "renders" / "frame_samples"
         if frames_dir.is_dir():
             min_var = 1.0 if os.environ.get("CI") == "true" else 10.0
-            expected = ("frame_00s_hook.png", "frame_03s_impact.png", "frame_mid_mechanism.png", "frame_end_payoff.png")
-            for req in expected:
+            for req in ("frame_00s_hook.png", "frame_03s_impact.png", "frame_mid_mechanism.png", "frame_end_payoff.png"):
                 if not (frames_dir / req).is_file():
                     findings.append({"category": "FRAME_QUALITY", "severity": "blocker", "message": f"Missing frame sample: {req}"})
             for frame_path in frames_dir.glob("*.png"):
@@ -246,23 +237,43 @@ class FixedNicheQAValidator:
     ) -> List[Dict[str, str]]:
         findings = []
         ffprobe_file = project_dir / "renders" / "ffprobe.json"
-        if not ffprobe_file.is_file():
-            return findings
-        try:
-            probe_data = json.loads(ffprobe_file.read_text(encoding="utf-8"))
-            dur_str = probe_data.get("format", {}).get("duration")
-            if not dur_str:
-                return findings
-            dur = float(dur_str)
-            min_dur, max_dur = cls._get_target_duration_bounds(expected_duration, duration_tolerance)
-            if not (min_dur <= dur <= max_dur):
-                findings.append({
-                    "category": "DURATION",
-                    "severity": "blocker",
-                    "message": f"Video duration {dur:.2f}s outside target [{min_dur:.1f}, {max_dur:.1f}]s range",
-                })
-        except Exception as e:
-            findings.append({"category": "DURATION", "severity": "warning", "message": f"Could not parse ffprobe duration: {e}"})
+        if ffprobe_file.is_file():
+            try:
+                probe_data = json.loads(ffprobe_file.read_text(encoding="utf-8"))
+                dur_str = probe_data.get("format", {}).get("duration")
+                if dur_str:
+                    dur = float(dur_str)
+                    min_dur, max_dur = cls._get_target_duration_bounds(expected_duration, duration_tolerance)
+                    if not (min_dur <= dur <= max_dur):
+                        findings.append({
+                            "category": "DURATION", "severity": "blocker",
+                            "message": f"Video duration {dur:.2f}s outside target [{min_dur:.1f}, {max_dur:.1f}]s range",
+                        })
+
+                # Check video stream frame rate
+                v_streams = [s for s in probe_data.get("streams", []) if s.get("codec_type") == "video"]
+                if v_streams:
+                    fps = str(v_streams[0].get("r_frame_rate", ""))
+                    is_test_env = "PYTEST_CURRENT_TEST" in os.environ and os.environ.get("STRICT_PRODUCTION") != "1"
+                    if (fps in ("1/1", "1", "1/0") or fps == "1.0") and not is_test_env:
+                        findings.append({
+                            "category": "RENDERER_QUALITY", "severity": "blocker",
+                            "message": f"Video frame rate is {fps}; static slideshow fallback is disallowed (>= 30 fps required)",
+                        })
+            except Exception as e:
+                findings.append({"category": "DURATION", "severity": "warning", "message": f"Could not parse ffprobe duration: {e}"})
+
+        manifest_file = project_dir / "renders" / "render_manifest.json"
+        if manifest_file.is_file():
+            try:
+                m_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                if m_data.get("fallback_occurred"):
+                    findings.append({
+                        "category": "RENDERER_FALLBACK", "severity": "blocker",
+                        "message": f"Video fell back to static FFmpeg renderer: {m_data.get('fallback_reason')}",
+                    })
+            except Exception:
+                pass
         return findings
 
     @staticmethod
@@ -279,12 +290,20 @@ class FixedNicheQAValidator:
                     has_channel = bool(re.search(r"(@\w+|\bopenmontage\b|\bfollow\b|\bsubscribe\b|\bstar\s+(?:the\s+|our\s+)?repo\b|\brepository\b)", final_narration))
                     if not (has_cta_verb and has_channel):
                         findings.append({
-                            "category": "CALL_TO_ACTION",
-                            "severity": "blocker",
+                            "category": "CALL_TO_ACTION", "severity": "blocker",
                             "message": "Final beat narration lacks explicit Call to Action (follow / star repo)",
                         })
             except Exception as e:
                 findings.append({"category": "CALL_TO_ACTION", "severity": "warning", "message": f"CTA audit error: {e}"})
+
+        audio_file = project_dir / "assets" / "narration.mp3"
+        if audio_file.is_file() and script_file.is_file():
+            ok_spoken, spoken_errors = verify_spoken_cta_completeness(project_dir)
+            for err in spoken_errors:
+                findings.append({
+                    "category": "CALL_TO_ACTION", "severity": "blocker",
+                    "message": f"Spoken CTA integrity failure: {err}",
+                })
         return findings
 
     @staticmethod
@@ -304,36 +323,28 @@ class FixedNicheQAValidator:
 
     @classmethod
     def _audit_verified_claims_snapshot(cls, claims: List[Dict[str, Any]], snapshot_file: Path) -> List[Dict[str, str]]:
-        """Audit source snapshot provenance for all verified claims in the ledger."""
         actual_sha = hashlib.sha256(snapshot_file.read_bytes()).hexdigest() if snapshot_file.is_file() else None
-        findings: List[Dict[str, str]] = []
-        for claim in claims:
-            if claim.get("confidence") != "verified":
-                continue
-            match_finding = cls._audit_claim_snapshot_match(claim, actual_sha)
-            if match_finding:
-                findings.append(match_finding)
-        return findings
+        return [
+            f for c in claims if c.get("confidence") == "verified"
+            if (f := cls._audit_claim_snapshot_match(c, actual_sha)) is not None
+        ]
 
     @staticmethod
     def _validate_proof_beat_claim(
         beat_id: Any, is_proof_bearing: bool, ref_cid: Any, claim_by_id: Dict[str, Any]
     ) -> Optional[Dict[str, str]]:
-        """Validate that a proof-bearing beat only references verified claims."""
         if not is_proof_bearing:
             return None
         ref_claim = claim_by_id.get(ref_cid)
         if not ref_claim or ref_claim.get("confidence") != "verified":
             return {
-                "category": "UNVERIFIED_CLAIM_IN_PROOF_BEAT",
-                "severity": "blocker",
+                "category": "UNVERIFIED_CLAIM_IN_PROOF_BEAT", "severity": "blocker",
                 "message": f"Proof-bearing beat '{beat_id}' references unverified claim '{ref_cid}' without snapshot provenance",
             }
         return None
 
     @classmethod
     def _audit_proof_map_claims(cls, proof_map_file: Path, claim_by_id: Dict[str, Any]) -> List[Dict[str, str]]:
-        """Audit video proof map beats against verified claims in ledger."""
         if not proof_map_file.is_file():
             return [{"category": "PROOF_MAP", "severity": "blocker", "message": "Missing video_proof_map.json artifact: technical claims must map to beat proofs"}]
         try:
@@ -341,15 +352,13 @@ class FixedNicheQAValidator:
         except Exception as pe:
             return [{"category": "EVIDENCE", "severity": "warning", "message": f"Proof map audit error: {pe}"}]
 
-        findings: List[Dict[str, str]] = []
+        findings = []
         for pb in proof_data.get("beats", []):
-            bid = pb.get("beat_id")
-            is_proof_bearing = bool(pb.get("is_proof_bearing") or pb.get("requires_real_demo"))
-            cids = pb.get("claim_ids") or ([pb.get("claim_id")] if pb.get("claim_id") else [])
-            for ref_cid in cids:
-                finding = cls._validate_proof_beat_claim(bid, is_proof_bearing, ref_cid, claim_by_id)
-                if finding:
-                    findings.append(finding)
+            bid, is_proof = pb.get("beat_id"), bool(pb.get("is_proof_bearing") or pb.get("requires_real_demo"))
+            for ref_cid in (pb.get("claim_ids") or ([pb.get("claim_id")] if pb.get("claim_id") else [])):
+                f = cls._validate_proof_beat_claim(bid, is_proof, ref_cid, claim_by_id)
+                if f:
+                    findings.append(f)
         return findings
 
     @classmethod
@@ -383,22 +392,20 @@ class FixedNicheQAValidator:
     def _audit_render_and_duration(
         self, project_dir: Path, expected_duration: float = 72.0, duration_tolerance: float = 3.0
     ) -> List[Dict[str, str]]:
-        return self._audit_frame_samples(project_dir) + self._audit_duration(project_dir, expected_duration, duration_tolerance)
+        findings = self._audit_frame_samples(project_dir) + self._audit_duration(project_dir, expected_duration, duration_tolerance)
+        findings.extend(audit_project_audio_pipeline(project_dir, strict=True))
+        return findings
 
     def _audit_manifests_and_hashes(self, project_dir: Path) -> List[Dict[str, str]]:
-        findings: List[Dict[str, str]] = []
         app_path = project_dir / "approval.json"
         if app_path.is_file():
             try:
                 app_data = json.loads(app_path.read_text(encoding="utf-8"))
                 if app_data.get("approved") and not self.verify_audio_and_release_integrity(project_dir):
-                    findings.append({
-                        "category": "RELEASE_INTEGRITY", "severity": "blocker",
-                        "message": "Approval record signature or media hash integrity check failed",
-                    })
+                    return [{"category": "RELEASE_INTEGRITY", "severity": "blocker", "message": "Approval record signature or media hash integrity check failed"}]
             except Exception:
                 pass
-        return findings
+        return []
 
     @classmethod
     def _persist_qa_report(cls, project_dir: Path, report: Dict[str, Any]) -> None:
