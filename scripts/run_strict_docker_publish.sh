@@ -442,6 +442,50 @@ else
   write_state "today-batch" "ok" "none"
 fi
 
+# Check if NEXT_DATE already has its target quota satisfied in schedule and on disk
+mapfile -t NEXT_PROJECT_IDS < <(jq -r --arg d "$NEXT_DATE" \
+  '.active_projects[]? | select((.publish_date // "") == $d) | (.project_id // empty)' "$SCHEDULE")
+
+NEXT_VALID_COUNT=0
+for pid in "${NEXT_PROJECT_IDS[@]}"; do
+  pdir="$ROOT/projects/$pid"
+  if [[ -d "$pdir" ]]; then
+    has_render=0
+    if [[ -s "$pdir/renders/final_short_en_US_9x16.mp4" || -s "$pdir/renders/final_long_en_US_16x9.mp4" || -s "$pdir/renders/final_full_vi_9x16.mp4" ]]; then
+      has_render=1
+    fi
+    if [[ "$has_render" -eq 1 && -f "$pdir/publish_metadata.json" ]]; then
+      NEXT_VALID_COUNT=$((NEXT_VALID_COUNT + 1))
+    fi
+  fi
+done
+
+TARGET_TODAY_ALLOCATION="${TARGET_TODAY_COUNT:-3}"
+CURRENT_TODAY_COUNT=$(jq -r --arg d "$TODAY" '[.active_projects[]? | select(type == "object" and (.publish_date // "") == $d)] | length' "$SCHEDULE" 2>/dev/null || echo "${#TODAY_PROJECT_IDS[@]}")
+
+if [[ "$NEXT_VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" && ( "$TARGET_TODAY_ALLOCATION" -eq 0 || "$CURRENT_TODAY_COUNT" -ge "$TARGET_TODAY_ALLOCATION" ) ]]; then
+  log "next publish date ($NEXT_DATE) already has $NEXT_VALID_COUNT queued and validated project(s) satisfying target count ($TARGET_SUCCESS_COUNT); skipping next-day generation"
+  write_state "generate" "ok" "already_satisfied projects=$(IFS=,; echo "${NEXT_PROJECT_IDS[*]}")"
+
+  # Ensure native platform scheduling is confirmed for NEXT_DATE
+  log "verifying native platform scheduling for next-day projects ($NEXT_DATE)"
+  if STRICT_REQUIRE_NATIVE_SCHEDULE=1 "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE" >> "$RUN_LOG" 2>&1; then
+    write_state "platform-schedule" "ok" "already_scheduled date=$NEXT_DATE"
+  else
+    log "WARNING: native scheduling verification failed for some next-day projects"
+    write_state "platform-schedule" "warning" "date=$NEXT_DATE"
+  fi
+
+  write_state "workflow" "completed" "already_satisfied"
+  write_heartbeat "completed"
+  log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED (ALL SLOTS ALREADY SATISFIED) ====="
+  exit 0
+elif [[ "$NEXT_VALID_COUNT" -gt 0 && "$NEXT_VALID_COUNT" -lt "$TARGET_SUCCESS_COUNT" ]]; then
+  REMAINING_NEEDED_NEXT=$((TARGET_SUCCESS_COUNT - NEXT_VALID_COUNT))
+  log "next publish date ($NEXT_DATE) already has $NEXT_VALID_COUNT project(s); adjusting target generation count to $REMAINING_NEEDED_NEXT"
+  TARGET_SUCCESS_COUNT="$REMAINING_NEEDED_NEXT"
+fi
+
 # ===== STAGE 3: GENERATE — produce next-day video and assets =====
 GENERATE_STAGE="generate"
 stage 3 "$GENERATE_STAGE"
