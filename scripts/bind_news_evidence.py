@@ -100,6 +100,12 @@ def _normalize_script_sections(script_data: dict[str, Any]) -> bool:
         if sid is None or (isinstance(sid, str) and not sid.strip()) or isinstance(sid, bool):
             sec["id"] = f"sec_{idx}"
             modified = True
+        delivery_cues = sec.get("delivery_cues")
+        if isinstance(delivery_cues, dict):
+            pace = delivery_cues.get("pace")
+            if pace and pace not in {"slow", "measured", "conversational", "brisk", "fast", "energetic", "technical", "custom"}:
+                delivery_cues["pace"] = "custom"
+                modified = True
     return modified
 
 

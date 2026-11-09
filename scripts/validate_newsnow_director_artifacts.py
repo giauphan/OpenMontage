@@ -135,7 +135,7 @@ def _normalize_script_payload(payload: Any, locale: str = "vi-VN") -> Optional[D
             if "provider_notes" in vp and isinstance(vp["provider_notes"], dict):
                 vp["provider_notes"] = {k: str(v) for k, v in vp["provider_notes"].items()}
 
-        valid_paces = {"slow", "measured", "conversational", "brisk", "fast", "custom"}
+        valid_paces = {"slow", "measured", "conversational", "brisk", "fast", "energetic", "technical", "custom"}
         valid_enhancement_types = {"overlay", "broll", "diagram", "stat_card", "code_snippet", "animation"}
         valid_sec_keys = {"id", "label", "text", "start_seconds", "end_seconds", "speaker_directions",
                           "delivery_cues", "enhancement_cues", "pronunciation_guides", "source_ref"}

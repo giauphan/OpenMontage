@@ -49,7 +49,7 @@
             "properties": {
               "pace": {
                 "type": "string",
-                "enum": ["slow", "measured", "conversational", "brisk", "fast", "custom"]
+                "enum": ["slow", "measured", "conversational", "brisk", "fast", "energetic", "technical", "custom"]
               },
               "energy": { "type": "string" },
               "emphasis_words": {
