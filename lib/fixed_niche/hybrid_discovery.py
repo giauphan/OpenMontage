@@ -1,13 +1,8 @@
 """Hybrid Tiered Content Discovery for Practical AI Agent Engineering niche.
-
 Implements Option C: Hybrid Tiered Strategy (JEV Decision gen-dec-1793437184-00c5T6T0SyrjS1th0LsX):
 1. Tier 1 (Priority): Curated candidate backlog queue (data/daily_candidates.json).
-   - High editorial signal, verified primary docs, zero wasted render cycles.
 2. Tier 2 (Fallback): Automated live feed (data/newsnow_feed.json / scraper).
-   - Autonomous execution when curated backlog is empty or exhausted.
 3. Tier 3 (Fail-Closed): NO_ELIGIBLE_TOPIC if neither tier yields in-scope evidence.
-
-Target module size: < 450 lines. Clean Architecture & DDD compliant.
 """
 from __future__ import annotations
 
@@ -160,12 +155,16 @@ class HybridCandidateDiscovery:
             if not p_dir.is_dir():
                 continue
             for p in p_dir.iterdir():
-                if not p.is_dir():
+                if not p.is_dir() or p.is_symlink():
                     continue
-                has_renders = (p / "renders").is_dir() and any((p / "renders").glob("*.mp4"))
-                is_validated = (p / "validation_status.json").is_file()
-                if has_renders or is_validated:
+                if p.name.startswith("cand_") or (p / "renders").is_dir() or (p / "validation_status.json").is_file():
                     used.add(p.name)
+        rec_dir = self.root_dir / "projects" / "_failed_generation_recovered"
+        if rec_dir.is_dir() and not rec_dir.is_symlink():
+            for rec in rec_dir.iterdir():
+                if rec.is_dir() and not rec.is_symlink():
+                    m = re.match(r"^([A-Za-z0-9_-]+?)_\d{8}T\d{6}Z_", rec.name)
+                    used.add(m.group(1) if m else rec.name)
         return used
 
     def _get_consumed_project_ids(self) -> Set[str]:

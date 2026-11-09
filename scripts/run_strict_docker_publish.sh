@@ -330,6 +330,7 @@ cleanup_failed_generation() {
         mkdir -p "$FAILED_GENERATION_RECOVERY_ROOT"
         mv "$dir" "$FAILED_GENERATION_RECOVERY_ROOT/$pid"
         log "quarantined failed-generation project: $pid -> $FAILED_GENERATION_RECOVERY_ROOT/$pid"
+        "$PY" -c "import sys; from lib.news_failure_quarantine import _mark_project_consumed; from pathlib import Path; _mark_project_consumed(Path('$ROOT'), '$pid')" 2>/dev/null || true
       fi
     done
   done < <(

@@ -196,6 +196,26 @@ def test_existing_rendered_project_is_deduplicated(discovery_env):
     assert res.candidates[0]["candidate_id"] == "cand_curated_02"
 
 
+def test_quarantined_failed_project_is_deduplicated(discovery_env):
+    """If candidate ID exists in projects/_failed_generation_recovered/, it is deduplicated."""
+    rec_dir = discovery_env["root"] / "projects" / "_failed_generation_recovered" / "cand_curated_01_20261109T000512Z_abcdef123456"
+    rec_dir.mkdir(parents=True, exist_ok=True)
+    (rec_dir / "failure_reason.txt").write_text("grounding failure")
+
+    discovery = HybridCandidateDiscovery(
+        curated_path=discovery_env["curated_file"],
+        feed_path=discovery_env["feed_file"],
+        root_dir=discovery_env["root"],
+    )
+
+    used_ids = discovery.get_used_project_ids()
+    assert "cand_curated_01" in used_ids
+
+    res = discovery.discover_candidates(count=1)
+    assert res.is_eligible is True
+    assert res.candidates[0]["candidate_id"] == "cand_curated_02"
+
+
 def test_require_latest_news_active_by_default(discovery_env):
     """HybridCandidateDiscovery must activate require_latest_news=True by default."""
     discovery = HybridCandidateDiscovery(

@@ -203,10 +203,27 @@ def _collect_directory_project_ids(p_dir: Path) -> Set[str]:
 
 
 def _collect_used_project_ids() -> Set[str]:
-    """Collect project IDs that are already scheduled or completed."""
+    """Collect project IDs that are already scheduled, completed, quarantined, or consumed."""
     used_ids = _collect_scheduled_ids()
     for p_dir in (Path("projects"), Path("projects_news")):
+        if p_dir.is_dir() and not p_dir.is_symlink():
+            for p in p_dir.iterdir():
+                if p.is_dir() and not p.is_symlink() and p.name.startswith("cand_"):
+                    used_ids.add(p.name)
         used_ids.update(_collect_directory_project_ids(p_dir))
+    rec_dir = Path("projects") / "_failed_generation_recovered"
+    if rec_dir.is_dir() and not rec_dir.is_symlink():
+        for rec in rec_dir.iterdir():
+            if rec.is_dir() and not rec.is_symlink():
+                m = re.match(r"^([A-Za-z0-9_-]+?)_\d{8}T\d{6}Z_", rec.name)
+                used_ids.add(m.group(1) if m else rec.name)
+    consumed_tracker = Path("data/consumed_candidates.json")
+    if consumed_tracker.is_file() and not consumed_tracker.is_symlink():
+        try:
+            c_data = json.loads(consumed_tracker.read_text(encoding="utf-8"))
+            used_ids.update(str(cid) for cid in c_data.get("consumed_ids", []))
+        except Exception:
+            pass
     history = Path("data/muse_consumed")
     if history.is_dir() and not history.is_symlink():
         used_ids.update(p.name for p in history.iterdir() if re.fullmatch(r"cand_[0-9a-f]{16}", p.name) and p.is_file() and not p.is_symlink())
@@ -230,20 +247,21 @@ def _mark_muse_used(candidate_id: str) -> None:
     os.close(fd)
 
 
+NO_ELIGIBLE_MARKER_PATH = Path("data/.no_eligible_topic_marker")
+
+
 def _record_no_eligible_marker() -> None:
-    marker_file = Path("data/.no_eligible_topic_marker")
     try:
-        marker_file.parent.mkdir(parents=True, exist_ok=True)
-        marker_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+        NO_ELIGIBLE_MARKER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        NO_ELIGIBLE_MARKER_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     except OSError:
         pass
 
 
 def _clear_no_eligible_marker() -> None:
-    marker_file = Path("data/.no_eligible_topic_marker")
-    if marker_file.is_file():
+    if NO_ELIGIBLE_MARKER_PATH.is_file():
         try:
-            marker_file.unlink()
+            NO_ELIGIBLE_MARKER_PATH.unlink()
         except OSError:
             pass
 

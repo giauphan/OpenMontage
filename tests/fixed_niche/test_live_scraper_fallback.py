@@ -42,9 +42,8 @@ def test_produce_falls_back_to_curated_when_live_feed_off_niche(tmp_path: Path, 
     feed_file = tmp_path / "newsnow_feed.json"
     feed_file.write_text(json.dumps(off_niche_feed))
 
-    marker_file = Path("data/.no_eligible_topic_marker")
-    if marker_file.is_file():
-        marker_file.unlink()
+    marker_file = tmp_path / "data" / ".no_eligible_topic_marker"
+    monkeypatch.setattr("tools.news.news_pipeline_cli.NO_ELIGIBLE_MARKER_PATH", marker_file)
 
     monkeypatch.setenv("MIN_PRODUCE_COUNT", "1")
 

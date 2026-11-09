@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -116,7 +117,31 @@ def quarantine(projects_dir: Path, project_id: str, reason: str) -> Path:
     (destination / "failure_reason.txt").write_text(reason.rstrip() + "\n", encoding="utf-8")
     # Moving into a newly-created, unique destination cannot replace existing data.
     os.rename(source, destination / "project")
+    _mark_project_consumed(projects.parent, project_id)
     return destination
+
+
+def _mark_project_consumed(root: Path, project_id: str) -> None:
+    """Record project ID as consumed so downstream retry attempts do not re-select it."""
+    tracker = root / "data" / "consumed_candidates.json"
+    try:
+        consumed_ids: list[str] = []
+        if tracker.is_file() and not tracker.is_symlink():
+            data = json.loads(tracker.read_text(encoding="utf-8"))
+            consumed_ids = [str(x) for x in data.get("consumed_ids", []) if isinstance(x, str)]
+        if project_id not in consumed_ids:
+            consumed_ids.append(project_id)
+            tracker.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "version": "1.0",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "consumed_ids": consumed_ids,
+            }
+            tmp = tracker.with_suffix(f".tmp_{uuid.uuid4().hex}")
+            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            tmp.replace(tracker)
+    except Exception:
+        pass
 
 
 def main() -> int:
