@@ -412,8 +412,8 @@ if [ -z "$CALENDAR_TZ" ]; then
   fi
 fi
 
-TODAY=$(TZ="$CALENDAR_TZ" date +%F)
-NEXT_DATE=$(TZ="$CALENDAR_TZ" date -d tomorrow +%F)
+TODAY="${TODAY:-$(TZ="$CALENDAR_TZ" date +%F)}"
+NEXT_DATE="${NEXT_DATE:-$(TZ="$CALENDAR_TZ" date -d tomorrow +%F)}"
 mapfile -t TODAY_PROJECT_IDS < <(jq -r --arg d "$TODAY" \
   '.active_projects[]? | select((.publish_date // "") == $d) | (.project_id // empty)' "$SCHEDULE")
 mapfile -t EXISTING_SCHEDULED_IDS < <(jq -r \
