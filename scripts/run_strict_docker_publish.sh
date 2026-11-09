@@ -371,7 +371,7 @@ if [[ "${NEWS_DISCOVERY_PROVIDER:-muse}" == "daily-news" ]]; then
     --max-age-hours "$NEWS_MAX_SOURCE_AGE_HOURS"
   )
   while IFS= read -r topic_family; do
-    [ -n "$topic_family" ] && FRESH_NEWS_ARGS+=(--topic "$topic_family")
+    [[ -n "$topic_family" ]] && FRESH_NEWS_ARGS+=(--topic "$topic_family")
   done < <("$PY" - "$ROOT/config/niches/us-ai-agent-engineering.locked.yaml" <<'PY'
 import sys
 from pathlib import Path
@@ -399,13 +399,13 @@ write_state "preflight" "ok"
 # ===== STAGE 1: PREPARE — isolate due-today batch from next-day generation =====
 stage 1 "prepare"
 SCHEDULE="$ROOT/config/publish_schedule.json"
-[ -f "$SCHEDULE" ] || fail "publish schedule missing: $SCHEDULE"
+[[ -f "$SCHEDULE" ]] || fail "publish schedule missing: $SCHEDULE"
 jq -e '.active_projects and (.active_projects | type == "array")' "$SCHEDULE" >/dev/null \
   || fail "schedule invalid"
 
 CALENDAR_TZ="${CALENDAR_TZ:-${PUBLISH_CALENDAR_TZ:-}}"
-if [ -z "$CALENDAR_TZ" ]; then
-  if [ "${PUBLISH_TZ:-}" = "UTC" ]; then
+if [[ -z "$CALENDAR_TZ" ]]; then
+  if [[ "${PUBLISH_TZ:-}" == "UTC" ]]; then
     CALENDAR_TZ="UTC"
   else
     CALENDAR_TZ="${PUBLISH_TZ:-America/New_York}"
@@ -455,28 +455,28 @@ GEN_STATUS=1
 RECOVERED_PROJECT_IDS=()
 NOW_EPOCH="${STRICT_PUBLISH_NOW_EPOCH:-$(date +%s)}"
 for pdir in "$ROOT"/projects/cand_*; do
-  [ -d "$pdir" ] || continue
+  [[ -d "$pdir" ]] || continue
   pid="$(basename "$pdir")"
   if [[ " ${EXISTING_SCHEDULED_IDS[*]} " =~ " ${pid} " ]]; then
     continue
   fi
   # 1. Must not already be published
-  if [ -f "$pdir/events.jsonl" ]; then
+  if [[ -f "$pdir/events.jsonl" ]]; then
     if grep -q '"tool": "[^"]*_publisher"' "$pdir/events.jsonl" 2>/dev/null && grep -q '"success": true' "$pdir/events.jsonl" 2>/dev/null; then
       continue
     fi
   fi
   # 2. Must have valid signed approval within last 24h (86400s)
   app_file="$pdir/approval.json"
-  [ -f "$app_file" ] || app_file="$pdir/artifacts/approval.json"
-  if [ -f "$app_file" ]; then
+  [[ -f "$app_file" ]] || app_file="$pdir/artifacts/approval.json"
+  if [[ -f "$app_file" ]]; then
     is_approved=$(jq -r '(.approved == true or .status == "approved") // false' "$app_file" 2>/dev/null || echo false)
-    [ "$is_approved" = "true" ] || continue
+    [[ "$is_approved" == "true" ]] || continue
     app_ts=$(jq -r '.timestamp // empty' "$app_file" 2>/dev/null || echo "")
-    if [ -n "$app_ts" ]; then
+    if [[ -n "$app_ts" ]]; then
       app_epoch=$(date -d "$app_ts" +%s 2>/dev/null || echo 0)
       app_age=$((NOW_EPOCH - app_epoch))
-      if [ "$app_epoch" -le 0 ] || [ "$app_age" -lt 0 ] || [ "$app_age" -gt 86400 ]; then
+      if [[ "$app_epoch" -le 0 || "$app_age" -lt 0 || "$app_age" -gt 86400 ]]; then
         continue
       fi
     else
@@ -487,27 +487,27 @@ for pdir in "$ROOT"/projects/cand_*; do
   fi
   # 3. Must have non-empty renders
   has_render=0
-  if [ -s "$pdir/renders/final_short_en_US_9x16.mp4" ] || [ -s "$pdir/renders/final_long_en_US_16x9.mp4" ] || [ -s "$pdir/renders/final_full_vi_9x16.mp4" ]; then
+  if [[ -s "$pdir/renders/final_short_en_US_9x16.mp4" || -s "$pdir/renders/final_long_en_US_16x9.mp4" || -s "$pdir/renders/final_full_vi_9x16.mp4" ]]; then
     has_render=1
   fi
-  [ "$has_render" -eq 1 ] || continue
+  [[ "$has_render" -eq 1 ]] || continue
   # 4. Must pass strict validation and have metadata
-  if [ -f "$pdir/validation_status.json" ] && [ -f "$pdir/publish_metadata.json" ]; then
+  if [[ -f "$pdir/validation_status.json" && -f "$pdir/publish_metadata.json" ]]; then
     is_valid=$(jq -r 'if type == "array" then .[-1].strict_quality_pass else .strict_quality_pass end // false' "$pdir/validation_status.json" 2>/dev/null || echo false)
-    if [ "$is_valid" = "true" ]; then
+    if [[ "$is_valid" == "true" ]]; then
       log "recovered unqueued validated project from prior run: $pid"
       RECOVERED_PROJECT_IDS+=("$pid")
     fi
   fi
 done
 
-if [ "${#RECOVERED_PROJECT_IDS[@]}" -ge "$TARGET_SUCCESS_COUNT" ]; then
+if [[ "${#RECOVERED_PROJECT_IDS[@]}" -ge "$TARGET_SUCCESS_COUNT" ]]; then
   log "found ${#RECOVERED_PROJECT_IDS[@]} unqueued validated project(s) satisfying target count ($TARGET_SUCCESS_COUNT); skipping generation"
   PROJECT_IDS=("${RECOVERED_PROJECT_IDS[@]:0:$TARGET_SUCCESS_COUNT}")
   GEN_STATUS=0
-elif [ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" = "1" ]; then
+elif [[ "${STRICT_PUBLISH_SKIP_GENERATE:-0}" == "1" ]]; then
   GENERATE_LOG="${STRICT_PUBLISH_GENERATE_LOG:-$(ls -t "$LOG_DIR"/generate_*.log | head -1)}"
-  [ -f "$GENERATE_LOG" ] || fail "STRICT_PUBLISH_SKIP_GENERATE=1 but no generation log exists"
+  [[ -f "$GENERATE_LOG" ]] || fail "STRICT_PUBLISH_SKIP_GENERATE=1 but no generation log exists"
   mapfile -t NEW_PIDS < <(grep -h 'PROJECT_ID=' "$GENERATE_LOG" | sed -n 's/.*PROJECT_ID=\([A-Za-z0-9_-]*\).*/\1/p' | awk '!seen[$0]++')
   PROJECT_IDS=("${RECOVERED_PROJECT_IDS[@]}" "${NEW_PIDS[@]}")
   PROJECT_IDS=($(printf "%s\n" "${PROJECT_IDS[@]}" | awk '!seen[$0]++'))
@@ -559,7 +559,7 @@ else
       fi
     done
     if [[ "$GEN_STATUS" -eq 0 && "${#ATTEMPT_PIDS[@]}" -eq 0 ]] && grep -qx 'STATUS=NO_ELIGIBLE_TOPIC' "$GENERATE_LOG"; then
-      if [ "$VALID_COUNT" -eq 0 ]; then
+      if [[ "$VALID_COUNT" -eq 0 ]]; then
         log "No eligible topics were found; ending this run without generation retries or queue changes."
         write_state "$GENERATE_STAGE" "no_eligible_topic"
         write_state "workflow" "completed" "no_eligible_topic"
@@ -571,14 +571,14 @@ else
         break
       fi
     fi
-    if { [ "$GEN_STATUS" -eq 0 ] || [ "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ]; } && [ "$VALID_COUNT" -gt 0 ]; then
+    if [[ ( "$GEN_STATUS" -eq 0 || "$VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" ) && "$VALID_COUNT" -gt 0 ]]; then
       log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT validated project(s) (target: $TARGET_SUCCESS_COUNT, exit=$GEN_STATUS)"
       GEN_STATUS=0
       break
     fi
     log "generation attempt $GENERATION_ATTEMPT completed with $VALID_COUNT/$TARGET_SUCCESS_COUNT validated project(s) (exit=$GEN_STATUS projects=${#PROJECT_IDS[@]})"
-    if [ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]; then
-      if [ "$GENERATION_RETRY_DELAY_SECONDS" -gt 0 ]; then
+    if [[ "$GENERATION_ATTEMPT" -lt "$GENERATION_RETRIES" ]]; then
+      if [[ "$GENERATION_RETRY_DELAY_SECONDS" -gt 0 ]]; then
         log "pausing ${GENERATION_RETRY_DELAY_SECONDS}s before generation retry attempt $((GENERATION_ATTEMPT + 1))..."
         sleep "$GENERATION_RETRY_DELAY_SECONDS"
       fi
@@ -642,7 +642,7 @@ for PID in "${PROJECT_IDS[@]}"; do
   # 4b. publish_metadata.json exists + valid JSON + has required fields.
   META="$PDIR/publish_metadata.json"
   [ -f "$META" ] || { log "FAIL $PID: publish_metadata.json missing"; continue; }
-  jq -e '.id and .title and .description and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
+  jq -e '.id and .title and (.description | type == "string" and length > 0) and .yt_shorts and .ig_reels and .fb_video' "$META" >/dev/null 2>&1 \
     || { log "FAIL $PID: publish_metadata.json invalid/missing fields"; continue; }
   # 4c. Render files exist and non-empty.
   RENDER_OK=0
@@ -708,14 +708,14 @@ for PID in "${VERIFY_OK_PIDS[@]}"; do
   fi
 done
 
-[ "${#VALIDATED_PIDS[@]}" -gt 0 ] || {
+[[ "${#VALIDATED_PIDS[@]}" -gt 0 ]] || {
   write_state "claude-validate" "failed"
   fail "claude validation failed for all projects (see $CLAUDE_LOG)"
 }
 TARGET_VALIDATED_COUNT="${TARGET_SUCCESS_COUNT:-${EXPECTED_SUCCESS_COUNT:-3}}"
 ALLOW_PARTIAL_DAILY_BATCH="${ALLOW_PARTIAL_DAILY_BATCH:-0}"
-if [ "${#VALIDATED_PIDS[@]}" -lt "$TARGET_VALIDATED_COUNT" ]; then
-  if [ "$ALLOW_PARTIAL_DAILY_BATCH" -eq 1 ] && [ "${#VALIDATED_PIDS[@]}" -gt 0 ]; then
+if [[ "${#VALIDATED_PIDS[@]}" -lt "$TARGET_VALIDATED_COUNT" ]]; then
+  if [[ "$ALLOW_PARTIAL_DAILY_BATCH" -eq 1 && "${#VALIDATED_PIDS[@]}" -gt 0 ]]; then
     log "WARNING: strict validation achieved ${#VALIDATED_PIDS[@]}/$TARGET_VALIDATED_COUNT projects; proceeding with partial batch under ALLOW_PARTIAL_DAILY_BATCH=1"
     write_state "claude-validate" "warning" "validated=$(IFS=,; echo "${VALIDATED_PIDS[*]}") target=$TARGET_VALIDATED_COUNT partial=1"
   else
@@ -851,13 +851,13 @@ jq -e '.active_projects and (.active_projects | type == "array")' "$TMP_QUEUE" >
   || { rm -f "$TMP_QUEUE"; write_state "queue" "failed"; fail "queued schedule invalid"; }
 # Persist the scheduling obligation before publishing the updated queue, so an
 # interruption immediately after the queue write cannot hide pending uploads.
-if [ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]; then
+if [[ "${#NEXT_QUEUED_PIDS[@]}" -gt 0 ]]; then
   PENDING_NATIVE="$LOG_DIR/platform-schedule-$NEXT_DATE.pending"
   : > "$PENDING_NATIVE"
 fi
 mv "$TMP_QUEUE" "$SCHEDULE"
 
-[ "${#QUEUED_PIDS[@]}" -eq "${#VALIDATED_PIDS[@]}" ] \
+[[ "${#QUEUED_PIDS[@]}" -eq "${#VALIDATED_PIDS[@]}" ]] \
   || { write_state "queue" "partial"; fail "queued ${#QUEUED_PIDS[@]}/${#VALIDATED_PIDS[@]} validated projects"; }
 
 for PID in "${VALIDATED_PIDS[@]}"; do

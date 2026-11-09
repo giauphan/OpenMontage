@@ -111,7 +111,9 @@ def validate_metadata(metadata_path: Path, locale: str | None = None) -> tuple[b
 
     # Validate description
     description = metadata.get("description", "")
-    if description:
+    if not description:
+        errors.append("description field is missing or empty")
+    else:
         errors.extend(validate_text_field("description", description))
         if not is_en:
             errors.extend(validate_hashtags("description", description, REQUIRED_HASHTAGS))

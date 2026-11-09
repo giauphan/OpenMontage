@@ -1348,10 +1348,18 @@ if [ ! -s "$PROJECT_DIR/$PUB_FULL_PATH" ] && [ -s "$PROJECT_DIR/$REELS_RENDER_PA
   PUB_FULL_PATH="$REELS_RENDER_PATH"
 fi
 if [ -s "$PROJECT_DIR/$REELS_RENDER_PATH" ] && [ -s "$PROJECT_DIR/$PUB_FULL_PATH" ]; then
+  desc_fallback="${TITLE:-Latest AI technology and engineering breakdown}: what changed and why it matters for AI engineers."$'\n\n'"#ai #tech #shorts"
+  if [ "$is_en" -ne 1 ]; then
+    desc_fallback="${TITLE:-Điểm tin công nghệ AI mới nhất.}"$'\n\n'"#tintuc #congnghe #giaoduc #hoctap #ai #vietnam"
+  fi
+  script_desc="$(if [ -n "$script_json" ] && [ -s "$script_json" ]; then jq -r '.description // empty' "$script_json" 2>/dev/null || echo ""; fi)"
+  if [ -z "$script_desc" ]; then
+    script_desc="$desc_fallback"
+  fi
   jq -n \
   --arg id "$PROJECT_ID" \
   --arg title "$TITLE" \
-  --arg desc "$(if [ -n "$script_json" ] && [ -s "$script_json" ]; then jq -r '.description // ""' "$script_json" 2>/dev/null || echo ""; fi)" \
+  --arg desc "$script_desc" \
   --arg yt_shorts "$REELS_RENDER_PATH" \
   --arg tiktok "$PUB_FULL_PATH" \
   --arg fb_video "$PUB_FULL_PATH" \
