@@ -324,14 +324,32 @@ def verify_approval_record(
                     pass
             media_candidates = []
             if rel_media:
-                media_candidates.append(p_dir / rel_media)
+                rel_p = Path(rel_media)
+                if not any(part == ".." for part in rel_p.parts) and not rel_p.is_absolute():
+                    resolved_cand = (p_dir / rel_p).resolve()
+                    try:
+                        resolved_cand.relative_to(p_dir.resolve())
+                        media_candidates.append(resolved_cand)
+                    except ValueError:
+                        pass
             media_candidates.extend([
                 p_dir / "renders" / "final_short_en_US_9x16.mp4",
                 p_dir / "renders" / "final_long_en_US_16x9.mp4",
                 p_dir / "renders" / "final_full_vi_9x16.mp4",
                 p_dir / "renders" / "final_render.mp4",
             ])
-            media_path = next((m for m in media_candidates if m.is_file()), None)
+            media_path = None
+            for m in media_candidates:
+                if m.is_symlink():
+                    continue
+                m_res = m.resolve()
+                try:
+                    m_res.relative_to(p_dir.resolve())
+                    if m_res.is_file():
+                        media_path = m_res
+                        break
+                except ValueError:
+                    continue
             if not media_path:
                 return False, "Disk verification failed: media file missing"
             h_m = hashlib.sha256()

@@ -20,9 +20,15 @@ def _hash(data: Any) -> str:
     return sha256_of_dict(data)
 
 def _file_hash(path: Path) -> str:
+    path_obj = Path(path)
+    if any(part == ".." for part in path_obj.parts):
+        raise ValueError(f"Path traversal detected in file path: {path}")
+    resolved = path_obj.resolve()
+    if not resolved.is_file():
+        raise ValueError(f"File not found or invalid: {path}")
     import hashlib
     digest = hashlib.sha256()
-    with path.open("rb") as f:
+    with resolved.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
@@ -401,6 +407,14 @@ class MultishotSession:
                 raise ValueError("Outcome is missing a media file_path")
 
             path = Path(outcome["file_path"])
+            if any(part == ".." for part in path.parts):
+                raise ValueError("Outcome file_path contains path traversal")
+            resolved = (path if path.is_absolute() else self.project_dir / path).resolve()
+            try:
+                resolved.relative_to(self.project_dir.resolve())
+            except ValueError:
+                raise ValueError("Outcome file_path outside project directory")
+            path = resolved
             if not path.exists():
                 raise ValueError(f"Media file not found at {path}")
 
@@ -473,6 +487,14 @@ class MultishotSession:
                  if not s.get("media_result") or not s["media_result"].get("file_path"):
                       raise ValueError("Missing media for acceptance")
                  path = Path(s["media_result"]["file_path"])
+                 if any(part == ".." for part in path.parts):
+                     raise ValueError("Media file_path contains path traversal")
+                 resolved = (path if path.is_absolute() else self.project_dir / path).resolve()
+                 try:
+                     resolved.relative_to(self.project_dir.resolve())
+                 except ValueError:
+                     raise ValueError("Media file_path outside project directory")
+                 path = resolved
                  if not path.exists():
                       raise ValueError("Media file lost before acceptance")
                  if _file_hash(path) != s["media_result"]["content_hash"]:

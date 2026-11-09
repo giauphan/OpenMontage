@@ -20,7 +20,7 @@ log() { echo "[$(date -u +%FT%TZ)] [RETRY_RUNNER] $*"; }
 
 # 1. Non-blocking check on primary pipeline lock.
 # If a pipeline run is currently in progress, do not interfere.
-if [ -f "$LOCK_FILE" ]; then
+if [[ -f "$LOCK_FILE" ]]; then
   exec 199>>"$LOCK_FILE"
   if ! flock -n 199; then
     log "A strict publish pipeline run is currently active (lock held). Skipping retry check."
@@ -31,15 +31,15 @@ if [ -f "$LOCK_FILE" ]; then
 fi
 
 # 2. Check publish schedule integrity.
-if [ ! -f "$SCHEDULE" ]; then
+if [[ ! -f "$SCHEDULE" ]]; then
   log "WARNING: publish schedule missing at $SCHEDULE. Triggering pipeline."
   exec "$ROOT/scripts/run_strict_docker_publish.sh"
 fi
 
 # 3. Calculate target next-day date.
 CALENDAR_TZ="${CALENDAR_TZ:-${PUBLISH_CALENDAR_TZ:-}}"
-if [ -z "$CALENDAR_TZ" ]; then
-  if [ "${PUBLISH_TZ:-}" = "UTC" ]; then
+if [[ -z "$CALENDAR_TZ" ]]; then
+  if [[ "${PUBLISH_TZ:-}" == "UTC" ]]; then
     CALENDAR_TZ="UTC"
   else
     CALENDAR_TZ="${PUBLISH_TZ:-America/New_York}"
@@ -84,13 +84,13 @@ log "Schedule check for $NEXT_DATE (tomorrow in $CALENDAR_TZ, publish tz $PUBLIS
 
 if [[ "$SCHEDULED_COUNT" -ge "$EXPECTED_SUCCESS_COUNT" ]]; then
   PENDING_NATIVE="$ROOT/logs/strict_docker_publish/platform-schedule-$NEXT_DATE.pending"
-  if [ -f "$PENDING_NATIVE" ]; then
+  if [[ -f "$PENDING_NATIVE" ]]; then
     exec 199>>"$LOCK_FILE"
     if ! flock -n 199; then
       log "A strict publish pipeline run is active; deferring native scheduling retry."
       exit 0
     fi
-    if [ -f "$PENDING_NATIVE" ]; then
+    if [[ -f "$PENDING_NATIVE" ]]; then
       log "Retrying pending native scheduling for $NEXT_DATE."
       export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
       if STRICT_REQUIRE_NATIVE_SCHEDULE=1 "$PY" "$ROOT/scripts/schedule_today_native.py" --date "$NEXT_DATE"; then

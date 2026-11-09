@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -31,10 +32,13 @@ REELS_MAX_SECONDS = 60.0
 
 
 def duration(path: Path, ffprobe: str) -> float | None:
-    if not path.is_file() or path.stat().st_size == 0:
+    path_obj = Path(path)
+    resolved = path_obj.resolve()
+    if not resolved.is_file() or resolved.stat().st_size == 0 or str(resolved).startswith("-"):
         return None
+    ffprobe_cmd = shutil.which(ffprobe) or ffprobe
     result = subprocess.run(
-        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        [ffprobe_cmd, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", "--", str(resolved)],
         check=False,
         capture_output=True,
         text=True,
@@ -49,11 +53,16 @@ def duration(path: Path, ffprobe: str) -> float | None:
 
 
 def stream_info(path: Path, ffprobe: str, selector: str) -> str:
-    if not path.is_file():
+    path_obj = Path(path)
+    resolved = path_obj.resolve()
+    if not resolved.is_file() or str(resolved).startswith("-"):
         return "MISSING"
+    if not selector or selector.startswith("-") or any(c in selector for c in "\n\r\t;|&$><`\"'\\"):
+        return "INVALID_SELECTOR"
+    ffprobe_cmd = shutil.which(ffprobe) or ffprobe
     result = subprocess.run(
-        [ffprobe, "-v", "error", "-select_streams", selector,
-         "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", str(path)],
+        [ffprobe_cmd, "-v", "error", "-select_streams", selector,
+         "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", "--", str(resolved)],
         check=False,
         capture_output=True,
         text=True,

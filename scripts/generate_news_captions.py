@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -32,9 +33,8 @@ def _resolve_asr_cache_dir(cache_dir: Path | str | None = None) -> Path:
         default_dir.mkdir(parents=True, exist_ok=True)
         return default_dir
     except (OSError, PermissionError):
-        fallback_dir = Path("/tmp/openmontage_cache/asr")
-        fallback_dir.mkdir(parents=True, exist_ok=True)
-        return fallback_dir
+        from lib.audio.narration_orchestrator import _safe_user_tmp_dir
+        return _safe_user_tmp_dir("asr")
 
 
 def check_asr_cache(cache_key: str, cache_dir: Path | str | None = None) -> dict | None:

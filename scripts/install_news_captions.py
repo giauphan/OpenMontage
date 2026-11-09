@@ -182,18 +182,47 @@ def _cue_groups(words: list[dict]) -> list[dict]:
     ]
 
 
-def install_captions(composition_path: Path, audio_path: Path, timings_path: Path) -> int:
-    composition_path = Path(composition_path)
-    audio_path = Path(audio_path)
-    timings_path = Path(timings_path)
-    source = composition_path.read_text(encoding="utf-8")
-    timings = json.loads(timings_path.read_text(encoding="utf-8"))
+def install_captions(
+    composition_path: Path,
+    audio_path: Path,
+    timings_path: Path,
+    *,
+    allowed_root: Path | None = None,
+) -> int:
+    raw_comp = Path(composition_path)
+    raw_audio = Path(audio_path)
+    raw_timings = Path(timings_path)
+
+    for p in (raw_comp, raw_audio, raw_timings):
+        if p.is_symlink():
+            raise ValueError(f"Symlink detected in argument: {p}")
+
+    comp_resolved = raw_comp.resolve()
+    audio_resolved = raw_audio.resolve()
+    timings_resolved = raw_timings.resolve()
+
+    if allowed_root is not None:
+        root_resolved = Path(allowed_root).resolve()
+        for p in (comp_resolved, audio_resolved, timings_resolved):
+            try:
+                p.relative_to(root_resolved)
+            except ValueError as exc:
+                raise ValueError(f"Path escapes allowed root {root_resolved}: {p}") from exc
+
+    if not comp_resolved.is_file():
+        raise ValueError(f"Composition file not found: {comp_resolved}")
+    if not audio_resolved.is_file():
+        raise ValueError(f"Audio file not found: {audio_resolved}")
+    if not timings_resolved.is_file():
+        raise ValueError(f"Timings file not found: {timings_resolved}")
+    source = comp_resolved.read_text(encoding="utf-8")
+    timings = json.loads(timings_resolved.read_text(encoding="utf-8"))
 
     if not isinstance(timings, dict) or timings.get("timing_source") != "asr":
         raise ValueError("caption timings must declare timing_source='asr'")
     if timings.get("timing_verified") is not False:
         raise ValueError("caption timing verification must remain unasserted")
-    audio_hash = hashlib.sha256(audio_path.read_bytes()).hexdigest()
+    audio_hash = hashlib.sha256(audio_resolved.read_bytes()).hexdigest()
     if timings.get("audio_sha256") != audio_hash:
         raise ValueError("caption timing audio_sha256 does not match composition audio")
     words = timings.get("word_timestamps")
@@ -269,7 +298,7 @@ def install_captions(composition_path: Path, audio_path: Path, timings_path: Pat
     else:
         insertion = "\n" + managed_block + "\n"
         updated = composition_base[:closing_offset] + insertion + composition_base[closing_offset:]
-    composition_path.write_text(updated, encoding="utf-8")
+    comp_resolved.write_text(updated, encoding="utf-8")
     return len(groups)
 
 
@@ -278,9 +307,10 @@ def main(argv=None) -> int:
     parser.add_argument("composition", type=Path)
     parser.add_argument("audio", type=Path)
     parser.add_argument("timings", type=Path)
+    parser.add_argument("--allowed-root", type=Path, default=None, help="Optional boundary root directory")
     args = parser.parse_args(argv)
     try:
-        count = install_captions(args.composition, args.audio, args.timings)
+        count = install_captions(args.composition, args.audio, args.timings, allowed_root=args.allowed_root)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"Caption installation failed: {exc}", file=sys.stderr)
         return 1

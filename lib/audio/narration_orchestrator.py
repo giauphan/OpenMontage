@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -75,6 +76,25 @@ def safe_write_narration_text(target_path: Path, text: str) -> bool:
     return True
 
 
+def _safe_user_tmp_dir(subname: str) -> Path:
+    uid = os.getuid() if hasattr(os, "getuid") else os.environ.get("USERNAME", "user")
+    user_root = Path(tempfile.gettempdir()) / f"openmontage_cache_{uid}"
+    user_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if hasattr(os, "getuid"):
+        st = user_root.lstat()
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or (st.st_mode & 0o077):
+            try:
+                user_root.chmod(0o700)
+                st = user_root.lstat()
+            except OSError:
+                pass
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or (st.st_mode & 0o077):
+                raise PermissionError(f"Unsafe cache directory: {user_root}")
+    target = user_root / subname
+    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return target
+
+
 def _resolve_default_cache_dir() -> Path:
     env_cache = os.environ.get("OPENMONTAGE_CACHE_DIR")
     if env_cache:
@@ -86,9 +106,7 @@ def _resolve_default_cache_dir() -> Path:
         repo_cache.mkdir(parents=True, exist_ok=True)
         return repo_cache
     except OSError:
-        tmp_cache = Path("/tmp/openmontage_cache/narration")
-        tmp_cache.mkdir(parents=True, exist_ok=True)
-        return tmp_cache
+        return _safe_user_tmp_dir("narration")
 
 
 def _resolve_default_lock_path() -> Path:
@@ -102,7 +120,7 @@ def _resolve_default_lock_path() -> Path:
             pass
         return repo_lock
     except OSError:
-        return Path("/tmp/openmontage_media_cpu.lock")
+        return _safe_user_tmp_dir("locks") / "media_cpu.lock"
 
 
 class MediaCpuLock:
@@ -127,11 +145,11 @@ class MediaCpuLock:
 
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR, 0o666)
+            fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         except OSError:
             # Fallback to tmp lock if lock_path is on a read-only filesystem
-            self.lock_path = Path("/tmp/openmontage_media_cpu.lock")
-            fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR, 0o666)
+            self.lock_path = _safe_user_tmp_dir("locks") / "media_cpu.lock"
+            fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
 
         start = time.time()
         while True:
@@ -201,8 +219,7 @@ class NarrationOrchestrator:
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
-            self.cache_dir = Path("/tmp/openmontage_cache/narration")
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.cache_dir = _safe_user_tmp_dir("narration")
         self.lock = MediaCpuLock(lock_path)
         self.max_retries = max_retries
 

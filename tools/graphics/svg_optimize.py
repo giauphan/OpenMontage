@@ -40,8 +40,20 @@ def optimize_svg_text(svg_content: str) -> str:
 
 def optimize_svg_file(input_path: Path | str, output_path: Path | str | None = None) -> Path:
     """Optimize an SVG file on disk."""
-    src = Path(input_path).resolve()
-    dst = Path(output_path).resolve() if output_path else src
+    inp_obj = Path(input_path)
+    if any(part == ".." for part in inp_obj.parts):
+        raise ValueError(f"Path traversal detected in input_path: {input_path}")
+    src = inp_obj.resolve()
+    if not src.is_file():
+        raise FileNotFoundError(f"Input SVG file not found: {input_path}")
+
+    if output_path:
+        out_obj = Path(output_path)
+        if any(part == ".." for part in out_obj.parts):
+            raise ValueError(f"Path traversal detected in output_path: {output_path}")
+        dst = out_obj.resolve()
+    else:
+        dst = src
 
     text = src.read_text(encoding="utf-8")
     opt = optimize_svg_text(text)
@@ -52,5 +64,8 @@ def optimize_svg_file(input_path: Path | str, output_path: Path | str | None = N
     except ET.ParseError as exc:
         raise ValueError(f"Optimized SVG failed XML validation: {exc}") from exc
 
+    unresolved_dst = Path(output_path) if output_path else inp_obj
+    if unresolved_dst.is_symlink():
+        raise ValueError(f"Refusing to write to symlink: {unresolved_dst}")
     dst.write_text(opt, encoding="utf-8")
     return dst

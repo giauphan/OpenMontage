@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -337,8 +338,9 @@ def stage_4_scene_graphics(project_dir: Path, format_type: str = "short") -> dic
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
-        target_dir = Path("/tmp/scene_graphics") / format_type
-        target_dir.mkdir(parents=True, exist_ok=True)
+        from lib.audio.narration_orchestrator import _safe_user_tmp_dir
+        target_dir = _safe_user_tmp_dir("scene_graphics") / format_type
+        target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     pngs = list(target_dir.glob("*.png"))
     if not pngs:

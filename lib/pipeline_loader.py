@@ -56,9 +56,15 @@ def load_pipeline(name: str, defs_dir: Optional[Path] = None) -> dict[str, Any]:
     Returns:
         Validated pipeline manifest dict.
     """
-    defs_dir = defs_dir or PIPELINE_DEFS_DIR
-    path = defs_dir / f"{name}.yaml"
-    if not path.exists():
+    defs_dir = (defs_dir or PIPELINE_DEFS_DIR).resolve()
+    if any(part == ".." for part in Path(name).parts) or "/" in str(name) or "\\" in str(name):
+        raise ValueError(f"Invalid pipeline name: {name}")
+    path = (defs_dir / f"{name}.yaml").resolve()
+    try:
+        path.relative_to(defs_dir)
+    except ValueError:
+        raise ValueError(f"Pipeline path traverses outside definitions directory: {name}")
+    if not path.is_file():
         raise FileNotFoundError(f"Pipeline manifest not found: {path}")
 
     with open(path, encoding="utf-8") as f:

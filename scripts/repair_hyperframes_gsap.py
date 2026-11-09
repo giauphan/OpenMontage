@@ -19,11 +19,13 @@ def _fix_tl_to_signature(match: re.Match) -> str:
     target = match.group(1)
     vars1 = match.group(2).strip()
     vars2 = match.group(3).strip()
-    pos = match.group(4) or ""
+    pos_arg = match.group(4)
+    pos = f", {pos_arg.strip()}" if pos_arg else ""
     # Strip scale: 1.035 from entrance tween so it doesn't conflict with full-scene drift
     combined = vars1.rstrip(" }") + ", " + vars2.lstrip(" {")
-    combined = re.sub(r",?\s*scale:\s*1\.035", "", combined)
-    combined = re.sub(r",?\s*y:\s*-8", "", combined)
+    combined = re.sub(r"(?:,\s*)?\bscale\s*:\s*1\.035\b", "", combined)
+    combined = re.sub(r"(?:,\s*)?\by\s*:\s*-8\b", "", combined)
+    combined = re.sub(r"^\s*,\s*", "", combined)
     return f"tl.to({target}, {{{combined}}}{pos})"
 
 
@@ -74,7 +76,7 @@ def repair_gsap_timeline(html: str, path: Path, narration_duration: float = 0.0)
             return m.group(0)
 
         # 1. Merge malformed tl.to(target, {vars1}, {vars2}, pos) calls
-        pattern = r"tl\.to\s*\(\s*([\x27\x22][^\x27\x22]+[\x27\x22]|\w+)\s*,\s*\{([^{}]+)\}\s*,\s*\{([^{}]+)\}(\s*,\s*[^)]+)?\)"
+        pattern = r"tl\.to\s*\(\s*([\x27\x22][^\x27\x22]+[\x27\x22]|\w+)\s*,\s*\{([^{}]+)\}\s*,\s*\{([^{}]+)\}(?:,\s*((?:[^,()]|\([^()]*\))+))?\s*\)"
         script_body = re.sub(pattern, _fix_tl_to_signature, script_body)
 
         # 2. Identify scenes in the HTML

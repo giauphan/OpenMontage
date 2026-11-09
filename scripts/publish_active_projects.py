@@ -100,9 +100,16 @@ def _record_retry(project_id: str, err_text: str) -> None:
                     item["status"] = "failed"
                     item["alert"] = "max_retries_exceeded"
                     print(f"⚠️ Project {project_id} reached max retries ({retries}); marked failed.")
-            temp_cfg = CONFIG.with_suffix(".json.tmp")
+            cfg = CONFIG.resolve()
+            temp_cfg = cfg.with_suffix(".json.tmp").resolve()
+            try:
+                temp_cfg.relative_to(ROOT.resolve())
+            except ValueError:
+                raise ValueError(f"Temporary config path outside root: {temp_cfg}")
+            if temp_cfg.parent != cfg.parent:
+                raise ValueError("Temporary config parent directory mismatch")
             temp_cfg.write_text(json.dumps(sched, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            temp_cfg.replace(CONFIG)
+            temp_cfg.replace(cfg)
         except Exception as err:
             print(f"WARNING: failed to update retry count for {project_id}: {err}")
 
@@ -417,9 +424,16 @@ def main() -> int:
                                         item["alert"] = "quality_gate_rejected"
                                     else:
                                         item["alert"] = "platform_publish_retry_needed"
-                            temp_cfg = CONFIG.with_suffix(".json.tmp")
+                            cfg = CONFIG.resolve()
+                            temp_cfg = cfg.with_suffix(".json.tmp").resolve()
+                            try:
+                                temp_cfg.relative_to(ROOT.resolve())
+                            except ValueError:
+                                raise ValueError(f"Temporary config path outside root: {temp_cfg}")
+                            if temp_cfg.parent != cfg.parent:
+                                raise ValueError("Temporary config parent directory mismatch")
                             temp_cfg.write_text(json.dumps(sched, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                            temp_cfg.replace(CONFIG)
+                            temp_cfg.replace(cfg)
                         except Exception as err:
                             print(f"WARNING: failed to update status for rejected {project_id}: {err}")
         elif result.returncode:

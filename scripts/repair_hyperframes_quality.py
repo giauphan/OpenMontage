@@ -508,7 +508,13 @@ def _sanitize_metrics_and_symbols(html: str) -> str:
     html = re.sub(r'([↓↑→←➔➜➡➤]|--?>|==?>|<--?|<==?)\.(?=\s*<)', r'\1', html)
     # Strip periods inside // separators (e.g. "2026. //" -> "2026 //")
     html = re.sub(r'\.\s*(//)', r' \1', html)
-    html = re.sub(r'(<h[1-6]\b[^>]*>.*?<span\b[^>]*>.*?)\.(</span>.*?)(</h[1-6]>)', r'\1\2\3', html, flags=re.DOTALL)
+
+    def _strip_heading_span_period(h_match: re.Match) -> str:
+        text = h_match.group(0)
+        text = re.sub(r'(?<!\.)\.(?=</span>(?:\s+[A-Za-z0-9]|(?:\s*</[^>]+>)*\s*$))', '', text)
+        return re.sub(r'(?<!\.)\.(?=(?:\s*</[^>]+>)*\s*$)', '', text)
+
+    html = re.sub(r'<h[1-6]\b[^>]*>[\s\S]*?</h[1-6]>', _strip_heading_span_period, html)
 
     # Strip periods from short text/tspan nodes in SVG diagrams
     def _strip_svg_text_period(m: re.Match) -> str:

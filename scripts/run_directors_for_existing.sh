@@ -129,13 +129,11 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     local project_root="$1"
     local narration="$project_root/assets/narration.mp3"
     local reels_narration="$project_root/assets/narration_reels.mp3"
-    local locale
     locale="$(python3 -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$project_root')))" 2>/dev/null || echo "en-US")"
-    local is_en=1
+    is_en=1
     if [ "$locale" = "vi-VN" ]; then is_en=0; fi
 
     local narration_text
-    local script_json
     local default_voice
     if [ "$is_en" -eq 1 ]; then
       narration_text="$project_root/artifacts/narration_en_US_text.txt"
@@ -279,11 +277,11 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
   if [ -z "$TITLE" ]; then
     TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
   fi
-  if [ -z "$TITLE" ]; then
+  if [[ -z "$TITLE" ]]; then
     TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
   fi
-  if [ "$is_en" -eq 1 ]; then
-    if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+  if [[ "$is_en" -eq 1 ]]; then
+    if [[ "${FORCE_EN_TITLE_HASHTAGS:-0}" == "1" ]]; then
       if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
         BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
         TITLE="${BASE_TITLE:0:80} #ai #tech"

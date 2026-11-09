@@ -130,13 +130,17 @@ MAX_SCENE_HOLD_TOLERANCE = 12.05
 
 
 def _probe_video_duration(mp4_path: Path) -> float:
+    p = Path(mp4_path).resolve()
+    if not p.is_file() or str(p).startswith("-"):
+        return 0.0
     try:
         res = subprocess.run(
             [
                 "ffprobe", "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
-                str(mp4_path),
+                "--",
+                str(p),
             ],
             capture_output=True,
             text=True,
@@ -149,12 +153,15 @@ def _probe_video_duration(mp4_path: Path) -> float:
 
 def _sample_upper_frame_gray(mp4_path: Path, timestamp_s: float) -> Optional[bytes]:
     """Sample upper 80% of the video frame (excluding bottom 20% caption rail) at 160x160 gray."""
+    p = Path(mp4_path).resolve()
+    if not p.is_file() or str(p).startswith("-"):
+        return None
     try:
         res = subprocess.run(
             [
                 "ffmpeg", "-v", "error",
                 "-ss", f"{max(0.0, timestamp_s):.3f}",
-                "-i", str(mp4_path),
+                "-i", str(p),
                 "-vf", "crop=iw:trunc(ih*0.80/2)*2:0:0,scale=160:160",
                 "-frames:v", "1",
                 "-f", "rawvideo",
@@ -419,6 +426,22 @@ def run_news_visual_qa(
     findings: List[Dict[str, Any]] = []
     failure_categories: List[str] = []
 
+    if any(part == ".." for part in Path(project_dir).parts):
+        findings.append({
+            "severity": "blocker",
+            "category": "INVALID_PROJECT_DIR",
+            "message": f"Path traversal in project directory: {project_dir}",
+        })
+        failure_categories.append("INVALID_PROJECT_DIR")
+        return QualityReport(
+            passed=False,
+            mode=mode,
+            findings=findings,
+            failure_categories=failure_categories,
+            summary=f"Path traversal detected in project directory: {project_dir}",
+        )
+    project_dir = Path(project_dir).resolve()
+
     missing_required_asset_count = 0
     unapproved_factual_visual_count = 0
     caption_overlap_blockers = 0
@@ -428,9 +451,16 @@ def run_news_visual_qa(
     # 1. Visual Plan Check
     plan_path = None
     for cand in (project_dir / "artifacts" / "news_visual_plan.json", project_dir / "news_visual_plan.json"):
-        if cand.is_file():
-            plan_path = cand
-            break
+        if cand.is_symlink():
+            continue
+        cand_res = cand.resolve()
+        try:
+            cand_res.relative_to(project_dir)
+            if cand_res.is_file():
+                plan_path = cand_res
+                break
+        except ValueError:
+            continue
 
     plan_data: Optional[Dict[str, Any]] = None
     if plan_path:
@@ -466,9 +496,16 @@ def run_news_visual_qa(
         project_dir / "artifacts" / "news_evidence.json",
         project_dir / "news_evidence.json",
     ):
-        if cand.is_file():
-            evidence_path = cand
-            break
+        if cand.is_symlink():
+            continue
+        cand_res = cand.resolve()
+        try:
+            cand_res.relative_to(project_dir)
+            if cand_res.is_file():
+                evidence_path = cand_res
+                break
+        except ValueError:
+            continue
 
     approved_claim_ids = set()
     if evidence_path and evidence_path.is_file():
@@ -515,9 +552,16 @@ def run_news_visual_qa(
     # 3. Check Asset Resolution
     manifest_path = None
     for cand in (project_dir / "assets" / "visuals" / "manifest.json", project_dir / "artifacts" / "news_visual_assets.json"):
-        if cand.is_file():
-            manifest_path = cand
-            break
+        if cand.is_symlink():
+            continue
+        cand_res = cand.resolve()
+        try:
+            cand_res.relative_to(project_dir)
+            if cand_res.is_file():
+                manifest_path = cand_res
+                break
+        except ValueError:
+            continue
 
     staged_assets = {}
     if manifest_path and manifest_path.is_file():
@@ -549,30 +593,51 @@ def run_news_visual_qa(
                 asset_info = staged_assets[aid]
                 local_path = asset_info.get("file") or asset_info.get("local_path") or asset_info.get("path")
                 if local_path:
-                    full_p = project_dir / local_path
-                    if not full_p.is_file():
-                        missing_required_asset_count += 1
+                    local_p = Path(local_path)
+                    if any(part == ".." for part in local_p.parts) or local_p.is_absolute():
                         findings.append({
                             "severity": "blocker" if mode == "strict" else "warning",
                             "category": "ASSET_UNRESOLVED",
-                            "message": f"Staged asset '{aid}' file not found on disk at {local_path}",
+                            "message": f"Asset '{aid}' has invalid traversal path {local_path}",
                             "beat_id": bid,
                             "asset_id": aid,
                         })
                         if "ASSET_UNRESOLVED" not in failure_categories:
                             failure_categories.append("ASSET_UNRESOLVED")
-                    elif asset_info.get("sha256") and asset_info.get("sha256") != "dummy":
-                        actual_sha = hashlib.sha256(full_p.read_bytes()).hexdigest()
-                        if actual_sha != asset_info["sha256"]:
+                    else:
+                        raw_asset_p = project_dir / local_p
+                        if raw_asset_p.is_symlink():
+                            is_safe_asset = False
+                        else:
+                            full_p = raw_asset_p.resolve()
+                            try:
+                                full_p.relative_to(project_dir)
+                                is_safe_asset = full_p.is_file()
+                            except ValueError:
+                                is_safe_asset = False
+                        if not is_safe_asset:
+                            missing_required_asset_count += 1
                             findings.append({
                                 "severity": "blocker" if mode == "strict" else "warning",
-                                "category": "ASSET_TAMPERED",
-                                "message": f"Asset '{aid}' hash mismatch (tampered or corrupt): expected {asset_info['sha256']}, got {actual_sha}",
+                                "category": "ASSET_UNRESOLVED",
+                                "message": f"Staged asset '{aid}' file not found on disk at {local_path}",
                                 "beat_id": bid,
                                 "asset_id": aid,
                             })
-                            if "ASSET_TAMPERED" not in failure_categories:
-                                failure_categories.append("ASSET_TAMPERED")
+                            if "ASSET_UNRESOLVED" not in failure_categories:
+                                failure_categories.append("ASSET_UNRESOLVED")
+                        elif asset_info.get("sha256") and asset_info.get("sha256") != "dummy":
+                            actual_sha = hashlib.sha256(full_p.read_bytes()).hexdigest()
+                            if actual_sha != asset_info["sha256"]:
+                                findings.append({
+                                    "severity": "blocker" if mode == "strict" else "warning",
+                                    "category": "ASSET_TAMPERED",
+                                    "message": f"Asset '{aid}' hash mismatch (tampered or corrupt): expected {asset_info['sha256']}, got {actual_sha}",
+                                    "beat_id": bid,
+                                    "asset_id": aid,
+                                })
+                                if "ASSET_TAMPERED" not in failure_categories:
+                                    failure_categories.append("ASSET_TAMPERED")
 
                     # Check proof vs AI generation boundary (A07: No fake proof)
                     is_ai_asset = asset_info.get("ai_generated") is True or asset_info.get("kind") == "illustration"

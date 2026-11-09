@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Any, List, Optional
 import yaml
 import jsonschema
@@ -99,10 +100,21 @@ def load_locked_policy(
     # Security: Path traversal protection
     repo_root = Path(__file__).resolve().parents[2]
     try:
+        if any(part == ".." for part in path.parts):
+            raise PolicyValidationError(f"Path traversal detected in policy path: {path}")
         resolved_path = path.resolve()
-        # Allow paths within repo or test fixtures in /tmp
+        # Allow paths within repo or test fixtures in temp directory owned by the current user
         is_in_repo = resolved_path.is_relative_to(repo_root)
-        is_in_tmp = str(resolved_path).startswith("/tmp") or str(resolved_path).startswith(os.path.realpath("/tmp"))
+        tmp_dir = Path(tempfile.gettempdir()).resolve()
+        is_in_tmp = (
+            resolved_path.is_relative_to(tmp_dir)
+            and not path.is_symlink()
+            and (
+                bool(os.environ.get("PYTEST_CURRENT_TEST"))
+                or bool(os.environ.get("OPENMONTAGE_REHEARSAL"))
+                or (resolved_path.exists() and resolved_path.stat().st_uid == os.getuid())
+            )
+        )
         if not (is_in_repo or is_in_tmp):
             raise PolicyValidationError(f"Policy path outside allowed directory: {path}")
     except (ValueError, RuntimeError) as e:

@@ -74,7 +74,7 @@ class DeterministicHookEvaluator(HookEvaluatorPort):
         # Scroll-stopping clickbait dumps sensational metrics ("cuts by 60%", "40% in 3 turns", "10x") -> High specificity (20-25)
         # High-trust weak hook buries exact metrics, focusing on conceptual mechanisms -> Target 11-15
         # Ineffective weak hook is completely empty / devoid of concepts -> Low specificity (0-8)
-        has_sensational_metric = bool(re.search(r"\b\d+%\b|\bcuts?\s+.*\s+by\s+\d+\b|\b\d+x\b", lower))
+        has_sensational_metric = bool(re.search(r"\b\d+%\b|\bcuts?\s+(?:\S+\s+){0,6}by\s+\d+\b|\b\d+x\b", lower))
         has_jargon_concept = any(j in lower for j in self.INSIDER_JARGON)
 
         if has_sensational_metric:
@@ -144,7 +144,7 @@ class DeterministicHookEvaluator(HookEvaluatorPort):
         # Rule 1: Lead with context, not conflict
         has_context_starter = any(lower.startswith(cs) for cs in self.CONTEXT_STARTERS)
         has_aggressive_conflict = bool(
-            re.search(r"^(your|why your|the reason your)\s+.*\s+(is\s+(?:\w+\s+)?breaking|breaks|fails|is broken|is ruined|destroys)", lower)
+            re.search(r"^(your|why your|the reason your)\s+(?:\S+\s+){0,8}(is\s+(?:\w+\s+)?breaking|breaks|fails|is broken|is ruined|destroys)", lower)
         )
         lead_with_context = (has_context_starter or not has_aggressive_conflict) and not lower.startswith("stop ")
 
@@ -157,7 +157,7 @@ class DeterministicHookEvaluator(HookEvaluatorPort):
         state_obvious = no_sensational_surprise
 
         # Rule 4: Bury specificity (no percentages or benchmark numbers dumped in first sentence)
-        no_raw_benchmark_dump = not bool(re.search(r"\b\d+%\b|\bcuts?\s+.*\s+by\s+\d+\b|\b\d+x\b", lower))
+        no_raw_benchmark_dump = not bool(re.search(r"\b\d+%\b|\bcuts?\s+(?:\S+\s+){0,6}by\s+\d+\b|\b\d+x\b", lower))
         bury_spec = no_raw_benchmark_dump
 
         # Rule 5: No time pressure (no FOMO or artificial urgency)

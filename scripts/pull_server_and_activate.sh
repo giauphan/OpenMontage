@@ -48,13 +48,13 @@ EOF
   esac
 done
 
-if [ ! -f "$SSH_CONFIG" ]; then
+if [[ ! -f "$SSH_CONFIG" ]]; then
   echo "ERROR: SSH config not found at $SSH_CONFIG" >&2
   exit 1
 fi
 
 SSH_CMD="ssh -F $SSH_CONFIG"
-if [ -f "$SSH_KEY" ]; then
+if [[ -f "$SSH_KEY" ]]; then
   SSH_CMD="$SSH_CMD -i $SSH_KEY"
 fi
 
@@ -70,7 +70,7 @@ echo ""
 echo "[Step 1/5] Testing SSH connectivity to $REMOTE_HOST..."
 $SSH_CMD "$REMOTE_HOST" "echo '[SSH OK] Connected to \$(hostname) as \$(whoami)'"
 
-if [ "$CHECK_ONLY" -eq 1 ]; then
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
   echo ""
   echo "[Check-Only Mode] Skipping git pull."
 else
@@ -102,7 +102,7 @@ $SSH_CMD "$REMOTE_HOST" "
   docker compose ps
 "
 
-if [ "$RESTART_CONTAINERS" -eq 1 ]; then
+if [[ "$RESTART_CONTAINERS" -eq 1 ]]; then
   echo "Restarting openmontage_worker and openmontage_scheduler containers..."
   $SSH_CMD "$REMOTE_HOST" "
     set -euo pipefail

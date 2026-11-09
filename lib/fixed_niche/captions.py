@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -268,14 +270,16 @@ def build_and_align_captions(
     if audio_path and audio_path.is_file():
         try:
             from tools.analysis.transcriber import Transcriber
+            from lib.audio.narration_orchestrator import _safe_user_tmp_dir
             transcriber = Transcriber()
-            # Run transcriber with output_dir in /tmp to ensure sandboxed filesystem writability
+            # Run transcriber with output_dir in safe private temp directory to ensure sandboxed filesystem writability
+            asr_tmp = _safe_user_tmp_dir("asr")
             res = transcriber.execute({
                 "input_path": str(audio_path.resolve()),
                 "model_size": "base",
                 "language": "en",
                 "local_files_only": True,
-                "output_dir": "/tmp",
+                "output_dir": str(asr_tmp),
             })
             if hasattr(res, "data") and res.data and res.data.get("word_timestamps"):
                 raw_words = res.data["word_timestamps"]

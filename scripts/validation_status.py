@@ -167,12 +167,21 @@ def main():
         
         # Read details if provided
         details = {}
-        if args.details and Path(args.details).exists():
-            with open(args.details, 'r', encoding='utf-8') as f:
-                try:
-                    details = json.load(f)
-                except:
-                    details = {}
+        if args.details:
+            details_obj = Path(args.details)
+            if any(part == ".." for part in details_obj.parts):
+                print(f"Error: Path traversal in --details: {args.details}", file=sys.stderr)
+                return 1
+            if details_obj.is_symlink() or any(p.is_symlink() for p in details_obj.parents):
+                print(f"Error: Symlink detected in --details: {args.details}", file=sys.stderr)
+                return 1
+            details_path = details_obj.resolve()
+            if details_path.is_file():
+                with open(details_path, 'r', encoding='utf-8') as f:
+                    try:
+                        details = json.load(f)
+                    except Exception:
+                        details = {}
         
         # Log the result
         logger.log_validation_result(

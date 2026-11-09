@@ -8,6 +8,7 @@ All text elements are strictly wrapped within their bounding boxes with
 guaranteed margins to prevent text overflow bugs.
 """
 import os
+import tempfile
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
@@ -536,5 +537,7 @@ def generate_longform_graphics(output_dir: Path):
 
 
 if __name__ == "__main__":
-    generate_short_graphics(Path("/tmp/scene_graphics/short"))
-    generate_longform_graphics(Path("/tmp/scene_graphics/long"))
+    from lib.audio.narration_orchestrator import _safe_user_tmp_dir
+    tmp_base = _safe_user_tmp_dir("scene_graphics")
+    generate_short_graphics(tmp_base / "short")
+    generate_longform_graphics(tmp_base / "long")

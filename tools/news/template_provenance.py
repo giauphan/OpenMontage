@@ -60,6 +60,12 @@ def _sha256(text: str) -> str:
 
 
 def _sha256_file(path: Path) -> str:
+    orig = Path(path)
+    if orig.is_symlink():
+        raise FileNotFoundError(f"invalid file path: {orig}")
+    path = orig.resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"invalid file path: {path}")
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while chunk := f.read(65536):
@@ -231,7 +237,20 @@ def verify_project_provenance(
             expected_hash = entry.get("sha256")
             if not asset_rel:
                 continue
-            asset_path = Path(project_dir) / asset_rel
+            if any(part == ".." for part in Path(asset_rel).parts) or Path(asset_rel).is_absolute():
+                reasons.append(f"visual asset {asset_rel} has invalid path traversal")
+                continue
+            proj_resolved = Path(project_dir).resolve()
+            raw_asset = proj_resolved / asset_rel
+            if raw_asset.is_symlink():
+                reasons.append(f"visual asset {asset_rel} is a symlink")
+                continue
+            asset_path = raw_asset.resolve()
+            try:
+                asset_path.relative_to(proj_resolved)
+            except ValueError:
+                reasons.append(f"visual asset {asset_rel} outside project directory")
+                continue
             if not asset_path.is_file():
                 reasons.append(f"visual asset {asset_rel} missing")
             else:
@@ -243,7 +262,9 @@ def verify_project_provenance(
         if visuals_dir.is_dir():
             recorded_paths = {entry.get("path") for entry in recorded_visuals if entry.get("path")}
             for p in sorted(visuals_dir.rglob("*")):
-                if p.is_file():
+                if p.is_symlink():
+                    reasons.append(f"symlink found in visual assets: {p.relative_to(project_dir)}")
+                elif p.is_file():
                     rel = str(p.relative_to(project_dir))
                     if rel not in recorded_paths:
                         reasons.append(f"untracked visual asset found on disk: {rel}")
@@ -255,7 +276,9 @@ def verify_project_provenance(
             vp = Path(project_dir) / cand
             if vp.is_file():
                 vp_found = True
-                if _sha256_file(vp) != recorded_vp_hash:
+                if vp.is_symlink():
+                    reasons.append(f"visual plan {cand} is a symlink")
+                elif _sha256_file(vp) != recorded_vp_hash:
                     reasons.append(f"visual plan {cand} hash mismatch (tampered or stale)")
                 break
         if not vp_found:
@@ -268,7 +291,9 @@ def verify_project_provenance(
             vmp = Path(project_dir) / cand
             if vmp.is_file():
                 vmp_found = True
-                if _sha256_file(vmp) != recorded_vmp_hash:
+                if vmp.is_symlink():
+                    reasons.append(f"visual manifest {cand} is a symlink")
+                elif _sha256_file(vmp) != recorded_vmp_hash:
                     reasons.append(f"visual manifest {cand} hash mismatch (tampered or stale)")
                 break
         if not vmp_found:
@@ -306,7 +331,7 @@ def record_provenance(
     visual_assets: list[dict[str, str]] = []
     if visuals_dir.is_dir():
         for p in sorted(visuals_dir.rglob("*")):
-            if p.is_file():
+            if p.is_file() and not p.is_symlink():
                 rel = str(p.relative_to(project_dir))
                 visual_assets.append({
                     "path": rel,
@@ -316,14 +341,14 @@ def record_provenance(
     visual_plan_sha256: str | None = None
     for cand in ("artifacts/news_visual_plan.json", "news_visual_plan.json"):
         vp = Path(project_dir) / cand
-        if vp.is_file():
+        if vp.is_file() and not vp.is_symlink():
             visual_plan_sha256 = _sha256_file(vp)
             break
 
     visual_assets_manifest_sha256: str | None = None
     for cand in ("assets/visuals/manifest.json", "artifacts/news_visual_assets.json"):
         vmp = Path(project_dir) / cand
-        if vmp.is_file():
+        if vmp.is_file() and not vmp.is_symlink():
             visual_assets_manifest_sha256 = _sha256_file(vmp)
             break
 

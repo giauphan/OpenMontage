@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -109,8 +110,14 @@ def format_srt(cues):
 
 
 def get_audio_duration(audio_path):
-    result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                             "-of", "csv=p=0", str(audio_path)], capture_output=True, text=True, timeout=30, check=False)
+    p = Path(audio_path).resolve()
+    if any(part == ".." for part in Path(audio_path).parts):
+        raise ValueError("Invalid audio path with path traversal")
+    if not p.is_file() or str(p).startswith("-"):
+        raise ValueError("Audio file does not exist or is invalid")
+    ffprobe_bin = shutil.which("ffprobe") or "ffprobe"
+    result = subprocess.run([ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
+                             "-of", "csv=p=0", "--", str(p)], capture_output=True, text=True, timeout=30, check=False)
     if result.returncode != 0:
         raise ValueError("ffprobe could not determine audio duration")
     try:
@@ -161,6 +168,11 @@ def main(argv=None):
         max_words = args.max_words if args.max_words is not None else (args.legacy_max_words if args.legacy_max_words is not None else 3)
         _validate_limits(max_words, 4.0)
         output_json = args.output_json or args.legacy_output_json
+        for p in (args.text_path, args.audio_path, args.output_srt, args.transcript_json):
+            if p is not None and any(part == ".." for part in Path(p).parts):
+                raise ValueError(f"Path traversal detected in argument: {p}")
+        if output_json and any(part == ".." for part in Path(output_json).parts):
+            raise ValueError(f"Path traversal detected in output_json: {output_json}")
         input_paths = [args.text_path, args.audio_path]
         if args.transcript_json:
             input_paths.append(args.transcript_json)

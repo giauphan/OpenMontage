@@ -27,6 +27,10 @@ def test_sanitize_metrics_and_symbols_removes_trailing_periods():
     <div class="flow-box">ALL TESTS PASS.</div>
     <div class="flow-box">PASS / FAIL.</div>
     <svg><text>PATCH ISSUE.</text><tspan>ALL TESTS PASS.</tspan><text>PASS / FAIL.</text></svg>
+    <h1><span>v1.</span><span>2</span></h1>
+    <h1><span>Wait...</span></h1>
+    <h1>Title...</h1>
+    <h1>Header.</h1>
     """
     cleaned = _sanitize_metrics_and_symbols(html)
 
@@ -39,6 +43,10 @@ def test_sanitize_metrics_and_symbols_removes_trailing_periods():
     assert '<div class="badge">AI AGENT // SCENE 1</div>' in cleaned
     assert '<h2>SpecPilot <span class="green">Surpasses</span> EAGLE-2</h2>' in cleaned
     assert '<h2>Joint <span class="highlight">Algorithm<br/>+ Systems</span> Search</h2>' in cleaned
+    assert '<h1><span>v1.</span><span>2</span></h1>' in cleaned
+    assert '<h1><span>Wait...</span></h1>' in cleaned
+    assert '<h1>Title...</h1>' in cleaned
+    assert '<h1>Header</h1>' in cleaned
     assert '<div class="flow-box">Define Search Space</div>' in cleaned
     assert '<div class="flow-box">PATCH ISSUE</div>' in cleaned
     assert '<div class="flow-arrow">-></div>' in cleaned

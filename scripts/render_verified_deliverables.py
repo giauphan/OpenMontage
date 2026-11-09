@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -31,9 +32,10 @@ if not LONG_PROJECT.is_dir() and (ROOT / "artifacts/us-migration/production_deli
     LONG_PROJECT = ROOT / "artifacts/us-migration/production_deliverables/us_ai_longform_02"
 MUSIC_BG = ROOT / "artifacts/us-migration/canaries/canary-short-en-us-01/assets/music-bg.mp3"
 
-TMP_DIR = Path("/tmp/render_verified")
-TMP_DIR.mkdir(parents=True, exist_ok=True)
-GRAPHICS_DIR = Path("/tmp/scene_graphics")
+from lib.audio.narration_orchestrator import _safe_user_tmp_dir
+
+TMP_DIR = _safe_user_tmp_dir("render_verified")
+GRAPHICS_DIR = _safe_user_tmp_dir("scene_graphics")
 
 
 def run(cmd: str):

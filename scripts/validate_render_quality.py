@@ -481,12 +481,23 @@ def main() -> int:
         )
     allow_repair = not getattr(args, "no_auto_repair", False) and not os.environ.get("OPENMONTAGE_NO_AUTO_REPAIR")
     if allow_repair and errors and any("stale relative to narration" in e or "differs from narration" in e for e in errors):
-        fix_script = Path(__file__).resolve().parent / "fix_narration_timing.py"
-        if fix_script.is_file():
+        fix_script = (Path(__file__).resolve().parent / "fix_narration_timing.py").resolve()
+        proj_dir = Path(args.project_dir).resolve()
+        if (
+            fix_script.is_file()
+            and not str(proj_dir).startswith("-")
+            and not any(part == ".." for part in Path(args.project_dir).parts)
+        ):
             print("Auto-repairing narration timing and re-rendering...", file=sys.stderr)
-            fix_cmd = [sys.executable, str(fix_script), str(args.project_dir), "--tolerance", str(args.tolerance)]
+            fix_cmd = [
+                sys.executable,
+                str(fix_script),
+                "--tolerance",
+                str(float(args.tolerance)),
+            ]
             if args.render == "reels":
                 fix_cmd.append("--reels-only")
+            fix_cmd.extend(["--", str(proj_dir)])
             env = dict(os.environ, OPENMONTAGE_NO_AUTO_REPAIR="1")
             repair_proc = subprocess.run(fix_cmd, capture_output=True, text=True, env=env)
             if repair_proc.returncode == 0:

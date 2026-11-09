@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -91,8 +92,16 @@ class PocketLocalTTS(BaseTool):
 
         voice_id = inputs.get("voice_id", "alba")
         model_variant = inputs.get("model_variant", "english_18m_2026-10")
-        output_path = Path(inputs.get("output_path", "/tmp/pocket_out.mp3")).resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        from lib.audio.narration_orchestrator import _safe_user_tmp_dir
+        default_out = str(_safe_user_tmp_dir("tts") / "pocket_out.mp3")
+        raw_out = inputs.get("output_path") or default_out
+        raw_path = Path(raw_out)
+        if any(part == ".." for part in raw_path.parts):
+            return ToolResult(success=False, error="Path traversal detected in output_path")
+        if raw_path.is_symlink():
+            return ToolResult(success=False, error="Refusing to write to symlink")
+        output_path = raw_path.resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
         success, duration, err = self._synthesize_pocket(text, voice_id, model_variant, output_path)
         if not success:

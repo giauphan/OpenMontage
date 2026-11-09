@@ -93,15 +93,23 @@ def hyperframes_command() -> list[str]:
 def synth(voice, text, out: Path, rate: str | None = None, locale: str = "en-US", provider: str | None = None):
     if not voice:
         return 1, "--voice: voice identifier is required"
+    if not re.fullmatch(r'[a-zA-Z0-9_][a-zA-Z0-9_\-]*', str(voice)):
+        return 1, f"invalid voice identifier: {voice}"
+    out_path = Path(out).resolve()
+    if str(out_path).startswith("-") or any(part == ".." for part in Path(out).parts):
+        return 1, f"invalid output path: {out}"
+    if rate and not re.match(r'^[+-]?\d+%$', str(rate)):
+        return 1, f"invalid rate format: {rate}"
     clean_text = prepare_narration(text) if locale.startswith("vi") else text
 
     # If explicit edge provider or standard Neural voice without explicit non-edge provider,
     # invoke edge-tts directly via subprocess for backward compatibility.
     is_edge_voice = (provider == "edge") or (not provider and ("Neural" in str(voice) or str(voice).startswith("en-US-") or str(voice).startswith("vi-VN-")))
     if is_edge_voice:
-        args = ["edge-tts", "--voice", voice, "--text", clean_text, "--write-media", str(out)]
+        edge_bin = shutil.which("edge-tts") or "edge-tts"
+        args = [edge_bin, "--voice", str(voice), "--text", str(clean_text), "--write-media", str(out_path)]
         if rate:
-            args += ["--rate", rate]
+            args += ["--rate", str(rate)]
         r = subprocess.run(args, capture_output=True, text=True)
         return r.returncode, (r.stderr or "")[-400:]
 

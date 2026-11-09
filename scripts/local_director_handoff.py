@@ -22,25 +22,61 @@ MAX_FILE_BYTES = 4_000_000
 
 
 def run_director_handoff(project: Path, handoff_root: Path, prompt: str, system: str, *, timeout_seconds: float) -> None:
-    project = Path(project)
-    if project.is_symlink() or not project.is_dir():
+    raw_project = Path(project)
+    if any(part == ".." for part in raw_project.parts) or raw_project.is_symlink():
         raise HandoffError("invalid project directory")
-    research = project / "artifacts" / "research_brief.json"
-    if research.parent.is_symlink() or research.is_symlink() or not research.is_file() or research.stat().st_size > MAX_FILE_BYTES:
+    project = raw_project.resolve()
+    if not project.is_dir() or project.is_symlink():
+        raise HandoffError("invalid project directory")
+    raw_research = project / "artifacts" / "research_brief.json"
+    if raw_research.is_symlink() or raw_research.parent.is_symlink():
+        raise HandoffError("invalid research brief")
+    research = raw_research.resolve()
+    try:
+        research.relative_to(project)
+    except ValueError as exc:
+        raise HandoffError("invalid research brief path") from exc
+    if not research.is_file() or research.stat().st_size > MAX_FILE_BYTES:
         raise HandoffError("invalid research brief")
     previous = {}
     for relative in sorted(ALLOWED_OUTPUTS):
-        path = project / relative
-        if not path.is_symlink() and not path.parent.is_symlink() and path.is_file() and path.stat().st_size <= MAX_FILE_BYTES:
+        rel_p = Path(relative)
+        if any(part == ".." for part in rel_p.parts) or rel_p.is_absolute():
+            continue
+        raw_path = project / rel_p
+        if raw_path.is_symlink() or raw_path.parent.is_symlink():
+            continue
+        path = raw_path.resolve()
+        try:
+            path.relative_to(project)
+        except ValueError:
+            continue
+        if path.is_file() and path.stat().st_size <= MAX_FILE_BYTES:
             previous[relative] = path.read_text(encoding="utf-8")
     captured_text = []
-    capture_dir = project / "artifacts" / "news_source_capture"
-    if capture_dir.is_dir() and not capture_dir.is_symlink():
+    raw_capture_dir = project / "artifacts" / "news_source_capture"
+    if raw_capture_dir.is_symlink() or raw_capture_dir.parent.is_symlink():
+        has_valid_capture_dir = False
+    else:
+        capture_dir = raw_capture_dir.resolve()
+        try:
+            capture_dir.relative_to(project)
+            has_valid_capture_dir = capture_dir.is_dir()
+        except ValueError:
+            has_valid_capture_dir = False
+    if has_valid_capture_dir:
         for path in sorted(capture_dir.glob("*.extracted.json"))[:5]:
-            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_FILE_BYTES:
+            if path.is_symlink():
+                continue
+            p_res = path.resolve()
+            try:
+                p_res.relative_to(capture_dir)
+            except ValueError:
+                continue
+            if not p_res.is_file() or p_res.stat().st_size > MAX_FILE_BYTES:
                 continue
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
+                data = json.loads(p_res.read_text(encoding="utf-8"))
                 if isinstance(data, dict) and isinstance(data.get("text"), str):
                     captured_text.append(data["text"][:20000])
             except (OSError, ValueError):
@@ -55,8 +91,10 @@ def run_director_handoff(project: Path, handoff_root: Path, prompt: str, system:
     for relative, value in files.items():
         if relative not in ALLOWED_OUTPUTS or not isinstance(value, str) or not value.strip() or len(value.encode("utf-8")) > MAX_FILE_BYTES:
             raise HandoffError("director response contains an invalid artifact")
+        if any(part == ".." for part in Path(relative).parts) or Path(relative).is_absolute():
+            raise HandoffError("director response contains an invalid artifact")
 
-    project_fd = os.open(project, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    project_fd = os.open(str(project), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         for relative, value in files.items():
             directory, name = relative.split("/", 1)
@@ -92,9 +130,13 @@ def main() -> int:
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--system", required=True)
     args = parser.parse_args()
+    raw_proj = Path(args.project)
+    if any(part == ".." for part in raw_proj.parts) or raw_proj.is_symlink():
+        print("error: invalid project path", file=sys.stderr)
+        return 1
     root = Path(__file__).resolve().parents[1]
     try:
-        run_director_handoff(Path(args.project), Path(os.environ.get("OPENMONTAGE_AGENT_HANDOFF_DIR") or root / "data" / "local_agent_handoff"),
+        run_director_handoff(raw_proj, Path(os.environ.get("OPENMONTAGE_AGENT_HANDOFF_DIR") or root / "data" / "local_agent_handoff"),
                              args.prompt, args.system, timeout_seconds=float(os.environ.get("OPENMONTAGE_AGENT_HANDOFF_TIMEOUT", "1800")))
     except (HandoffError, OSError, ValueError) as exc:
         print(f"local director handoff failed: {exc}", file=sys.stderr)

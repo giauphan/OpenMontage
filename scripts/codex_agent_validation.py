@@ -318,13 +318,37 @@ def main():
     )
 
     args = parser.parse_args()
+
+    raw_project_dir = Path(args.project_dir)
+    if any(part == ".." for part in raw_project_dir.parts) or raw_project_dir.is_symlink():
+        print(f"Error: Invalid or symlinked project_dir: {args.project_dir}")
+        sys.exit(2)
+    project_dir = raw_project_dir.resolve()
+    if not project_dir.is_dir():
+        print(f"Error: Project directory not found: {project_dir}")
+        sys.exit(2)
+
     if args.test_review_reply is not None:
         if os.environ.get("OPENMONTAGE_REHEARSAL") != "1":
             parser.error("--test-review-reply is only allowed in rehearsal mode")
-        project_root = Path(args.project_dir)
-        project_marker = project_root / ".openmontage-test-only"
-        release_marker = project_root / "OFFLINE_REHEARSAL_TEST_ONLY.json"
-        if not project_marker.is_file() or not release_marker.is_file() or release_marker.is_symlink():
+        raw_reply = Path(args.test_review_reply)
+        if any(part == ".." for part in raw_reply.parts) or raw_reply.is_symlink():
+            parser.error("test-review-reply is a symlink or has path traversal")
+        reply_path = raw_reply.resolve()
+        if not reply_path.is_file():
+            parser.error("test-review-reply file not found")
+        project_marker_raw = project_dir / ".openmontage-test-only"
+        release_marker_raw = project_dir / "OFFLINE_REHEARSAL_TEST_ONLY.json"
+        if project_marker_raw.is_symlink() or release_marker_raw.is_symlink():
+            parser.error("test-only markers must not be symlinks")
+        project_marker = project_marker_raw.resolve()
+        release_marker = release_marker_raw.resolve()
+        try:
+            project_marker.relative_to(project_dir)
+            release_marker.relative_to(project_dir)
+        except ValueError:
+            parser.error("test-only marker traverses outside project directory")
+        if not project_marker.is_file() or not release_marker.is_file():
             parser.error("test reviewer transport requires both test-only markers, including the canonical release-blocking marker")
         try:
             marker_data = json.loads(release_marker.read_text(encoding="utf-8"))
@@ -333,7 +357,7 @@ def main():
         if marker_data != {"test_only": True, "purpose": "daily-news-rehearsal"}:
             parser.error("canonical test-only marker contents are invalid")
         try:
-            reply_text = args.test_review_reply.read_text(encoding="utf-8")
+            reply_text = reply_path.read_text(encoding="utf-8")
             json.loads(reply_text)
         except (OSError, ValueError) as exc:
             parser.error(f"invalid frozen reviewer reply: {exc}")
@@ -346,28 +370,31 @@ def main():
     if args.strict is None:
         args.strict = True
 
-    project_dir = Path(args.project_dir)
-    if not project_dir.exists():
-        print(f"Error: Project directory not found: {project_dir}")
-        sys.exit(2)
-
     from lib.artifact_paths import resolve_project_locale, is_english_locale, resolve_render_paths
     locale = resolve_project_locale(project_dir)
     if is_english_locale(locale):
         fmt = None
-        meta_file = project_dir / "publish_metadata.json"
-        if meta_file.is_file():
+        raw_meta = project_dir / "publish_metadata.json"
+        if not raw_meta.is_symlink():
+            meta_file = raw_meta.resolve()
             try:
-                meta_data = json.loads(meta_file.read_text(encoding="utf-8"))
-                fmt = meta_data.get("format")
+                meta_file.relative_to(project_dir)
+                if meta_file.is_file():
+                    meta_data = json.loads(meta_file.read_text(encoding="utf-8"))
+                    fmt = meta_data.get("format")
             except Exception:
                 pass
-        if not fmt and (project_dir / "project.json").is_file():
-            try:
-                pcfg = json.loads((project_dir / "project.json").read_text(encoding="utf-8"))
-                fmt = pcfg.get("format")
-            except Exception:
-                pass
+        if not fmt:
+            raw_pcfg = project_dir / "project.json"
+            if not raw_pcfg.is_symlink():
+                pcfg_file = raw_pcfg.resolve()
+                try:
+                    pcfg_file.relative_to(project_dir)
+                    if pcfg_file.is_file():
+                        pcfg = json.loads(pcfg_file.read_text(encoding="utf-8"))
+                        fmt = pcfg.get("format")
+                except Exception:
+                    pass
 
         full_path, reels_path = resolve_render_paths(project_dir, locale=locale)
         if fmt in ("short", "shorts", "reels", "9x16"):

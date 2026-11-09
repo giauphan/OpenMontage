@@ -94,9 +94,26 @@ def deactivate_project(
     enabled_platforms: set[str] | list[str] | str | None = None,
 ) -> bool:
     """Safely deactivate published project from schedule and delete its media directory."""
+    if any(part == ".." for part in Path(project_id).parts) or "/" in str(project_id) or "\\" in str(project_id):
+        print(f"❌ Safety check failed: Invalid project_id: {project_id}", file=sys.stderr)
+        return False
     pap = _pap()
-    root = getattr(pap, "ROOT", DEFAULT_ROOT)
-    config = getattr(pap, "CONFIG", DEFAULT_CONFIG)
+    root = Path(getattr(pap, "ROOT", DEFAULT_ROOT)).resolve()
+    config = Path(getattr(pap, "CONFIG", DEFAULT_CONFIG)).resolve()
+    try:
+        config.relative_to(root)
+    except ValueError:
+        print(f"❌ Safety check failed: Config path {config} is not within root {root}", file=sys.stderr)
+        return False
+    temp_config = config.with_suffix(".json.tmp").resolve()
+    try:
+        temp_config.relative_to(root)
+    except ValueError:
+        print(f"❌ Safety check failed: Temp config path {temp_config} is not within root {root}", file=sys.stderr)
+        return False
+    if temp_config.parent != config.parent:
+        print("❌ Safety check failed: Temp config parent directory mismatch", file=sys.stderr)
+        return False
     locked_schedule = getattr(pap, "locked_schedule")
     tombstone_writer = getattr(pap, "write_audit_tombstone", write_audit_tombstone)
 
@@ -280,7 +297,6 @@ def deactivate_project(
                         item for item in active_projects
                         if (item.get("project_id") if isinstance(item, dict) else item) != project_id
                     ]
-                    temp_config = config.with_suffix(".json.tmp")
                     temp_config.write_text(
                         json.dumps(schedule, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8",
