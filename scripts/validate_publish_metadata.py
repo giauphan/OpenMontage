@@ -41,7 +41,7 @@ def validate_text_field(field_name: str, value: str) -> list[str]:
             errors.append(f"{field_name} contains shell command syntax: {pattern}")
 
     # Check for unexpanded placeholders
-    if re.search(r"\{\{.*?\}\}|\$\w+", value):
+    if re.search(r"\{\{.*?\}\}|\$[a-zA-Z_]\w*", value):
         errors.append(f"{field_name} contains unexpanded placeholder")
 
     return errors
