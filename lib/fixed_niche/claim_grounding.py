@@ -274,6 +274,23 @@ def verify_independent_claim(
 
         if best_score >= min_matches:
             grounding_sentence = best_sent
+        elif stmt_metrics:
+            for sent in sentences:
+                if _has_contradiction(statement, sent):
+                    had_contradiction = True
+                    continue
+                norm_sent = _strip_thousands(sent)
+                if stat_quantities and not any(
+                    re.search(_quantity_regex(q), norm_sent, re.IGNORECASE)
+                    for q in stat_quantities
+                ):
+                    continue
+                matches = sum(1 for w in words if _matches_text(w, sent))
+                if matches >= min_matches and matches > best_score:
+                    best_score = matches
+                    best_sent = sent
+            if best_score >= min_matches:
+                grounding_sentence = best_sent
 
     if not grounding_sentence or grounding_sentence not in snap_str:
         rejection_reason = (
