@@ -139,9 +139,10 @@ class HybridCandidateDiscovery:
             return set()
         try:
             data = json.loads(sched_file.read_text(encoding="utf-8"))
+            active_and_archived = data.get("active_projects", []) + data.get("archived_projects", [])
             return {
                 str(item["project_id"])
-                for item in data.get("active_projects", [])
+                for item in active_and_archived
                 if isinstance(item, dict) and item.get("project_id")
             }
         except Exception as e:

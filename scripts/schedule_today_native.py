@@ -491,9 +491,9 @@ def main():
                 print(f"SHADOW/DRY-RUN: Simulated YouTube {kind} schedule for {proj} at {scheduled_for} (no store mutations, no network upload)")
                 payload = build_youtube_payload(topic_meta, video_path=str(asset_path), publish_at=ytv_publish_at(publish_at))
             else:
-                yt_key = None; yt_claimed = False
+                yt_key = None; yt_claimed = False; yt_existing = None
                 if yt_rel and (project_dir / yt_rel).is_file():
-                    yt_key, yt_claimed,_ = store.claim(
+                    yt_key, yt_claimed, yt_existing = store.claim(
                         date=date,
                         topic=topic_meta["id"],
                         platform="youtube",
@@ -530,6 +530,10 @@ def main():
                             else:
                                 store.mark_failed(yt_key, str(e))
                                 failed = True
+                else:
+                    status_desc = yt_existing.get("status") if isinstance(yt_existing, dict) else "unknown"
+                    vid_desc = yt_existing.get("video_id") or yt_existing.get("video_url") if isinstance(yt_existing, dict) else ""
+                    print(f"⚠️ YouTube claim skipped for {proj} (already claimed/published: status={status_desc} id={vid_desc})")
 
         # Schedule Instagram Reels
         if yt_already_done:

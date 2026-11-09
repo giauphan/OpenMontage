@@ -287,6 +287,11 @@ def deactivate_project(
                     )
                     temp_config.replace(config)
                     print(f"✓ Deactivated published project: {project_id}")
+                    try:
+                        from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
+                        HybridCandidateDiscovery(root_dir=root).mark_candidate_consumed(project_id)
+                    except Exception:
+                        pass
             except Exception as exc:
                 print(f"❌ Failed to update schedule queue for {project_id}: {exc}", file=sys.stderr)
                 return False

@@ -841,6 +841,7 @@ for PID in "${VALIDATED_PIDS[@]}"; do
      "$TMP_QUEUE" > "$TMP_QUEUE.new" && mv "$TMP_QUEUE.new" "$TMP_QUEUE"
   log "queued $PID for $DATE slot $SLOT"
   QUEUED_PIDS+=("$PID")
+  "$PY" -c "from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery; HybridCandidateDiscovery().mark_candidate_consumed('$PID')" 2>/dev/null || true
 done
 
 # Deduplicate active_projects by project_id to enforce strict queue idempotency preserving order
