@@ -46,7 +46,13 @@ def _resolve_hyperframes_bin() -> Path:
 BROWSER_PATH = _resolve_browser_path()
 HYPERFRAMES_BIN = _resolve_hyperframes_bin()
 
-_CAN_RENDER = HYPERFRAMES_BIN.is_file() and BROWSER_PATH.is_file()
+def _can_render_hyperframes() -> bool:
+    if os.environ.get("OPENMONTAGE_RENDERER") == "ffmpeg":
+        return False
+    return HYPERFRAMES_BIN.is_file() and BROWSER_PATH.is_file()
+
+
+_CAN_RENDER = _can_render_hyperframes()
 _PRE_RENDERED_SAMPLE = Path("/tmp/test_explainer_render/out.mp4").is_file()
 
 
