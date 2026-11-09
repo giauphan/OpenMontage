@@ -280,19 +280,19 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
   fi
   mkdir -p "$PROJECT_DIR/artifacts" "$PROJECT_DIR/hyperframes" "$PROJECT_DIR/hyperframes_reels"
-  [ -f "$ROOT/AGENT_GUIDE.md" ] && cp -f "$ROOT/AGENT_GUIDE.md" "$PROJECT_DIR/AGENT_GUIDE.md" 2>/dev/null || true
-  if [ -z "$REHEARSAL_MANIFEST" ]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
+  [[ -f "$ROOT/AGENT_GUIDE.md" ]] && cp -f "$ROOT/AGENT_GUIDE.md" "$PROJECT_DIR/AGENT_GUIDE.md" 2>/dev/null || true
+  if [[ -z "$REHEARSAL_MANIFEST" ]]; then chmod -R 777 "$PROJECT_DIR" 2>/dev/null || true; fi
   echo "[$(date -u +%FT%TZ)] PROJECT_ID=$PROJECT_ID"
   PROJECT_LOCALE="$("$PY" -c "import sys; from pathlib import Path; from lib.artifact_paths import resolve_project_locale; print(resolve_project_locale(Path('$PROJECT_DIR')))" 2>/dev/null || echo "en-US")"
   locale="$PROJECT_LOCALE"
   is_en=1
-  if [ "$PROJECT_LOCALE" = "vi-VN" ]; then is_en=0; fi
-  if [ "$is_en" -eq 1 ]; then
+  if [[ "$PROJECT_LOCALE" == "vi-VN" ]]; then is_en=0; fi
+  if [[ "$is_en" -eq 1 ]]; then
     script_json="$PROJECT_DIR/artifacts/script_en_US.json"
   else
     script_json="$PROJECT_DIR/artifacts/script_vi.json"
   fi
-  if [ ! -s "$script_json" ] && [ -s "$PROJECT_DIR/artifacts/script.json" ]; then
+  if [[ ! -s "$script_json" && -s "$PROJECT_DIR/artifacts/script.json" ]]; then
     script_json="$PROJECT_DIR/artifacts/script.json"
   fi
 
@@ -323,12 +323,12 @@ render_director_prompt() {
   fi
   printf '%s\n' "$result"
 }
-if [ -n "$REHEARSAL_MANIFEST" ]; then
+if [[ -n "$REHEARSAL_MANIFEST" ]]; then
   PROMPT_STR=""
   DIRECTOR_SYSTEM_NOTE=""
 else
-  if [ "$NEWS_TEMPLATE_MODE" = "1" ]; then
-    if [ "$is_en" -eq 1 ]; then
+  if [[ "$NEWS_TEMPLATE_MODE" == "1" ]]; then
+    if [[ "$is_en" -eq 1 ]]; then
       PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_templated_generate_en_US.prompt.md")" || {
         echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US templated director generation prompt" >> "$DIRECTORS_LOG"
         exit 1
@@ -348,7 +348,7 @@ else
       }
     fi
   else
-    if [ "$is_en" -eq 1 ]; then
+    if [[ "$is_en" -eq 1 ]]; then
       PROMPT_STR="$(render_director_prompt "$PROMPT_DIR/director_generate_en_US.prompt.md")" || {
         echo "[$(date -u +%FT%TZ)] ERROR: missing/invalid en-US director generation prompt" >> "$DIRECTORS_LOG"
         exit 1
@@ -382,7 +382,7 @@ run_directors() {
   fi
   local prompt="${1:-$PROMPT_STR}"
   local session_id="${2:-}"
-  if [ "${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}" = "1" ]; then
+  if [[ "${OPENMONTAGE_REQUIRE_LOCAL_AGENT:-0}" == "1" ]]; then
     "$PY" -m scripts.local_director_handoff --project "$PROJECT_DIR" --prompt "$prompt" --system "$DIRECTOR_SYSTEM_NOTE"
     return $?
   fi
@@ -452,11 +452,11 @@ run_directors() {
 }
 
 DIRECTOR_ARTIFACT_FALLBACK=0
-if [ -n "$REHEARSAL_MANIFEST" ]; then
+if [[ -n "$REHEARSAL_MANIFEST" ]]; then
   cp "$PROJECT_DIR/artifacts/director_reply.json" "$DIRECTORS_JSON"
   DIRECTOR_EXIT=0
   DIRECTOR_ARTIFACT_FALLBACK=1
-elif [ "${SKIP_DIRECTORS:-0}" = "1" ] && [ -s "$PROJECT_DIR/hyperframes/index.html" ] && [ -s "$PROJECT_DIR/hyperframes_reels/index.html" ]; then
+elif [[ "${SKIP_DIRECTORS:-0}" == "1" && -s "$PROJECT_DIR/hyperframes/index.html" && -s "$PROJECT_DIR/hyperframes_reels/index.html" ]]; then
   echo '{"session_id":"skipped","is_error":false,"num_turns":0,"total_cost_usd":0}' > "$DIRECTORS_JSON"
   DIRECTOR_EXIT=0
   DIRECTOR_ARTIFACT_FALLBACK=1
@@ -575,7 +575,7 @@ DIRECTOR_ATTEMPT=1
 validate_current_director_artifacts() {
   local output status
   local cutoff_ns="${DIRECTOR_SESSION_START_NS:-${DIRECTOR_ATTEMPT_START_NS:-0}}"
-  if [ "$cutoff_ns" -gt 0 ] 2>/dev/null; then
+  if [[ "$cutoff_ns" -gt 0 ]] 2>/dev/null; then
     if "$PY" -c 'import pathlib,sys
 root = pathlib.Path(sys.argv[1]); cutoff = int(sys.argv[2])
 scripts = [root / "artifacts" / name for name in ("script_en_US.json", "script_vi.json", "script.json")]
@@ -916,7 +916,7 @@ materialize_hyperframes_assets() {
   fi
 
   narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
-  if [ "$is_en" -eq 1 ] && [ -z "$REHEARSAL_MANIFEST" ] && [ -s "$narration_text" ]; then
+  if [[ "$is_en" -eq 1 && -z "$REHEARSAL_MANIFEST" && -s "$narration_text" ]]; then
     local num_sections=6
     if [ -s "$script_json" ]; then
       num_sections=$("$PY" -c 'import json, sys; d=json.load(open(sys.argv[1])); print(len(d.get("sections", [])) or 6)' "$script_json" 2>/dev/null || echo 6)
@@ -928,7 +928,7 @@ materialize_hyperframes_assets() {
         # Preserve natural speech pacing: allow conversational adjustments (up to +/-20%)
         local try_rates=()
         if awk -v d="$narration_duration" 'BEGIN{exit !(d < 65.0)}'; then
-          try_rates=("-3%" "-5%" "-7%" "-9%" "-11%" "-13%" "-15%" "-18%")
+          try_rates=("-3%" "-5%" "-7%" "-9%" "-11%" "-13%" "-15%" "-18%" "-20%" "-22%" "-25%")
         else
           try_rates=("+3%" "+5%" "+7%" "+9%" "+11%" "+13%" "+15%" "+18%" "+20%")
         fi
@@ -948,12 +948,12 @@ materialize_hyperframes_assets() {
 
       # If edge-tts was unavailable or couldn't land in [65, max_narration_cap]s, use ffmpeg atempo on near-fit audio
       if ! awk -v d="$narration_duration" -v cap="$max_narration_cap" 'BEGIN{exit !(d >= 65.0 && d <= cap)}'; then
-        if awk -v d="$narration_duration" 'BEGIN{exit !(d >= 50.0 && d <= 90.0)}'; then
+        if awk -v d="$narration_duration" 'BEGIN{exit !(d >= 45.0 && d <= 90.0)}'; then
           local target_dur
           target_dur=$(awk -v n="$num_sections" 'BEGIN{t = n * 11.33; if (t > 70.0) t = 70.0; if (t < 66.0) t = 66.0; printf "%.1f", t}')
           local tempo
           tempo=$(awk -v d="$narration_duration" -v t="$target_dur" 'BEGIN{printf "%.4f", d / t}')
-          if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.80 && t <= 1.25)}'; then
+          if awk -v t="$tempo" 'BEGIN{exit !(t >= 0.65 && t <= 1.35)}'; then
             if "$FFMPEG_BIN" -hide_banner -loglevel error -y -i "$narration" -filter:a "atempo=$tempo" -vn "$narration.tempo_adj.mp3" >/dev/null 2>&1; then
               mv "$narration.tempo_adj.mp3" "$narration"
               narration_duration=$("$FFPROBE_BIN" -v error -show_entries format=duration -of csv=p=0 "$narration" 2>/dev/null || echo 0)
@@ -1326,8 +1326,8 @@ if [ -z "$TITLE" ]; then
 fi
 
 # Ensure title contains required hashtags (#tintuc #congnghe #ai for vi-VN; optional for en-US)
-if [ "$is_en" -eq 1 ]; then
-  if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+if [[ "$is_en" -eq 1 ]]; then
+  if [[ "${FORCE_EN_TITLE_HASHTAGS:-0}" == "1" ]]; then
     if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
       BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
       TITLE="${BASE_TITLE:0:80} #ai #tech"
@@ -1446,26 +1446,26 @@ if [ $VALIDATION_PASSED -eq 0 ]; then
   continue
 fi
 
-if [ "${FEED_STALE:-0}" -eq 1 ]; then
+if [[ "${FEED_STALE:-0}" -eq 1 ]]; then
   echo "[$(date -u +%FT%TZ)] NOTICE: Render completed using STALE feed data."
 fi
 
 # Step 4: Create publish_metadata.json
-if [ "$is_en" -eq 1 ]; then
+if [[ "$is_en" -eq 1 ]]; then
   TITLE=$(jq -r '.title // empty' artifacts/script_en_US.json 2>/dev/null || echo "")
 else
   TITLE=$(jq -r '.title // empty' artifacts/script_vi.json 2>/dev/null || echo "")
 fi
-if [ -z "$TITLE" ]; then
+if [[ -z "$TITLE" ]]; then
   TITLE=$(jq -r '.concept_options[0].title // empty' artifacts/proposal_packet.json 2>/dev/null || echo "")
 fi
-if [ -z "$TITLE" ]; then
+if [[ -z "$TITLE" ]]; then
   TITLE=$(jq -r '.topic // .title // "News Video"' artifacts/research_brief.json 2>/dev/null || echo "News Video")
 fi
 
 # Ensure title contains required hashtags (#tintuc #congnghe #ai for vi-VN; clean title for en-US unless forced)
-if [ "$is_en" -eq 1 ]; then
-  if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+if [[ "$is_en" -eq 1 ]]; then
+  if [[ "${FORCE_EN_TITLE_HASHTAGS:-0}" == "1" ]]; then
     if [[ "$TITLE" != *"#ai"* || "$TITLE" != *"#tech"* ]]; then
       BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
       TITLE="${BASE_TITLE:0:80} #ai #tech"
@@ -1480,9 +1480,9 @@ else
   fi
 fi
 # Safeguard: ensure it fits within 100 chars for YT Shorts
-if [ ${#TITLE} -gt 100 ]; then
-  if [ "$is_en" -eq 1 ]; then
-    if [ "${FORCE_EN_TITLE_HASHTAGS:-0}" = "1" ]; then
+if [[ ${#TITLE} -gt 100 ]]; then
+  if [[ "$is_en" -eq 1 ]]; then
+    if [[ "${FORCE_EN_TITLE_HASHTAGS:-0}" == "1" ]]; then
       BASE_TITLE=$(echo "$TITLE" | sed 's/ #ai.*//' | sed 's/ #tech.*//')
       TITLE="${BASE_TITLE:0:80} #ai #tech"
     else

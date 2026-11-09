@@ -33,6 +33,7 @@ from scripts.repair_hyperframes_quality import (
 
 LAST_VALIDATION_ERRORS: list[str] = []
 
+EN_US_SHORT_MIN_WORDS = 135
 EN_US_SHORT_MAX_WORDS = 175
 
 
@@ -57,6 +58,12 @@ def _validate_en_us_short_word_budget(script_path: Path) -> bool:
         LAST_VALIDATION_ERRORS.append("cannot measure en-US narration word budget")
         return False
 
+    if len(words) < EN_US_SHORT_MIN_WORDS:
+        LAST_VALIDATION_ERRORS.append(
+            f"en-US narration has only {len(words)} spoken words; minimum is "
+            f"{EN_US_SHORT_MIN_WORDS} for the required 65–75 second audio"
+        )
+        return False
     if len(words) > EN_US_SHORT_MAX_WORDS:
         LAST_VALIDATION_ERRORS.append(
             f"en-US narration has {len(words)} spoken words; maximum is "
