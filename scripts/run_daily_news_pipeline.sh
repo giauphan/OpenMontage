@@ -1140,9 +1140,9 @@ if 'OPENMONTAGE_CONTINUOUS_MOTION' not in text:
         idx = 0
         while t < dur:
             step_dur = min(3.0, max(0.5, dur - t))
-            sc = 1.035 if (idx % 2 == 0) else 1.0
-            dy = -10 if (idx % 2 == 0) else 0
-            steps.append(f'{tl_var}.to(\".scene-content, .card, .metric, svg, img, h1, h2, .scene > div\", {{ scale: {sc}, y: {dy}, duration: {step_dur:.2f}, ease: \"sine.inOut\" }}, {t:.2f});')
+            sc = 1.016 if (idx % 2 == 0) else 1.0
+            dy = -6 if (idx % 2 == 0) else 0
+            steps.append(f'{tl_var}.to(\".card, .stage-card, .metric-card, .diagram, .svg-container\", {{ scale: {sc}, y: {dy}, duration: {step_dur:.2f}, ease: \"sine.inOut\" }}, {t:.2f});')
             t += 3.0
             idx += 1
         motion_block = '    // OPENMONTAGE_CONTINUOUS_MOTION\n    ' + '\n    '.join(steps) + '\n    '

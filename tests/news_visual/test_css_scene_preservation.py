@@ -92,3 +92,25 @@ body { margin: 0; overflow: hidden; }
     assert "justify-content: center" not in repaired_html
     assert "align-items: center" not in repaired_html
 
+
+def test_t03_normalize_mobile_readable_css_stage_card():
+    """Verify that .stage-card is upscaled, h1/metrics use correct floors, and token boundaries prevent false matches."""
+    from scripts.repair_hyperframes_quality import _normalize_mobile_readable_css
+
+    html = """<style>
+.stage-card { font-size: 16px; color: #fff; }
+.badge { font-size: 12px; }
+.card-tag { font-size: 14px; }
+h1 { font-size: 24px; }
+.metric { font-size: 20px; }
+.geometric-card { font-size: 18px; }
+</style>"""
+    normalized = _normalize_mobile_readable_css(html)
+    assert ".stage-card { font-size: 28px; color: #fff; }" in normalized
+    assert ".badge { font-size: 12px; }" in normalized
+    assert ".card-tag { font-size: 14px; }" in normalized
+    assert "h1 { font-size: 50px; }" in normalized
+    assert ".metric { font-size: 54px; }" in normalized
+    assert ".geometric-card { font-size: 28px; }" in normalized
+
+

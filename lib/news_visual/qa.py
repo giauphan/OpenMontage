@@ -245,6 +245,20 @@ def _check_html_scene_hold_limits(
                     errors.append(
                         f"{variant_name}: final HTML scene held for {final_hold:.2f}s (from {last_start:.2f}s to {stage_dur:.2f}s, >{MAX_SCENE_HOLD_SECONDS:.1f}s max)"
                     )
+        elif scene_count >= 2 and stage_dur > 0:
+            gsap_last_starts: List[float] = []
+            for m in re.finditer(rf'["\']#scene-{scene_count}["\'][^\n;]*?,\s*([0-9]+(?:\.[0-9]+)?)\s*\)', html_text):
+                try:
+                    gsap_last_starts.append(float(m.group(1)))
+                except ValueError:
+                    pass
+            if gsap_last_starts:
+                last_gsap_start = min(gsap_last_starts)
+                final_hold = stage_dur - last_gsap_start
+                if final_hold > MAX_SCENE_HOLD_TOLERANCE:
+                    errors.append(
+                        f"{variant_name}: final HTML scene (#scene-{scene_count}) starts at {last_gsap_start:.2f}s and holds for {final_hold:.2f}s until {stage_dur:.2f}s (>{MAX_SCENE_HOLD_SECONDS:.1f}s max policy)"
+                    )
 
     return errors
 

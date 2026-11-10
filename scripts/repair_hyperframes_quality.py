@@ -396,6 +396,58 @@ def _ensure_font_css_variables(html: str, path: Path) -> str:
     raise ValueError(f"{path}: missing style element for font bindings")
 
 
+_EXCLUDE_SELECTOR_RE = re.compile(
+    r"(?<![\w-])(?:[.#])?(?:[\w-]*-)?(?:badge|tag|pill|kicker|source|credit|caption|om-asr)(?![\w-])"
+)
+_H1_SELECTOR_RE = re.compile(r"(?<![\w-])(?:h1|headline|title-large)(?![\w-])")
+_H2_SELECTOR_RE = re.compile(r"(?<![\w-])(?:h2|subheadline|section-header)(?![\w-])")
+_H3_SELECTOR_RE = re.compile(r"(?<![\w-])(?:card-title|h3)(?![\w-])")
+_METRIC_SELECTOR_RE = re.compile(r"(?<![\w-])(?:metric-value|metric)(?![\w-])")
+
+
+def _normalize_mobile_readable_css(html: str) -> str:
+    """Upscale tiny desktop CSS font-sizes (< 26px) in scene/card/flow rules and SVG text."""
+    def _upscale_css_block(style_m: re.Match) -> str:
+        style_text = style_m.group(0)
+        def _fix_rule(rule_m: re.Match) -> str:
+            selector = rule_m.group(1)
+            body = rule_m.group(2)
+            sel_low = selector.lower()
+            if _EXCLUDE_SELECTOR_RE.search(sel_low):
+                return rule_m.group(0)
+            def _bump_font(fm: re.Match) -> str:
+                px = float(fm.group(1))
+                if _H1_SELECTOR_RE.search(sel_low):
+                    return f"font-size: {max(int(px), 50)}px"
+                if _H2_SELECTOR_RE.search(sel_low):
+                    return f"font-size: {max(int(px), 38)}px"
+                if _H3_SELECTOR_RE.search(sel_low):
+                    return f"font-size: {max(int(px), 32)}px"
+                if _METRIC_SELECTOR_RE.search(sel_low):
+                    if "label" not in sel_low:
+                        return f"font-size: {max(int(px), 54)}px"
+                if px < 28:
+                    return "font-size: 28px"
+                return fm.group(0)
+            new_body = re.sub(r"font-size\s*:\s*([0-9.]+)px", _bump_font, body)
+            if "scene-content" in sel_low:
+                new_body = re.sub(r"overflow\s*:\s*hidden", "overflow: visible", new_body)
+            return f"{selector}{{{new_body}}}"
+        return re.sub(r"([^{}@]+)\{([^{}]+)\}", _fix_rule, style_text)
+
+    html = re.sub(r"<style\b[^>]*>[\s\S]*?</style>", _upscale_css_block, html, flags=re.IGNORECASE)
+
+    # Upscale tiny SVG text font-size="11..16" to readable sizes
+    def _bump_svg_font(m: re.Match) -> str:
+        val = int(m.group(1))
+        if val < 18:
+            return f'font-size="{max(18, val + 6)}"'
+        return m.group(0)
+
+    html = re.sub(r'\bfont-size=["\']([0-9]+)["\']', _bump_svg_font, html)
+    return html
+
+
 def _build_visual_enhancement_css(html: str) -> str:
     visual_mode = os.environ.get("NEWS_VISUAL_MODE", "0") in ("1", "true", "True")
     if visual_mode:
@@ -409,7 +461,8 @@ def _build_visual_enhancement_css(html: str) -> str:
 /* Visual Quality Enhancement (Context-Aware Visual Mode) */
 #stage {{ font-family: 'BeVietnamPro', sans-serif; }}
 {scene_css}
-.scene img, .scene video, .scene .svg-container svg, .scene .diagram svg, .scene-media {{ max-width: 100%; max-height: 480px; height: auto; object-fit: contain; z-index: 1; }}
+.scene-content {{ overflow: visible !important; padding-left: 12px; padding-right: 12px; box-sizing: border-box; }}
+.scene img, .scene video, .scene .svg-container svg, .scene .diagram svg, .scene-media {{ max-width: 100%; max-height: 520px; height: auto; object-fit: contain; z-index: 1; }}
 .card-title svg, .badge svg, .icon svg, svg[width="26"], svg[width="28"] {{ width: 28px !important; height: 28px !important; min-width: 28px !important; min-height: 28px !important; max-width: 28px !important; max-height: 28px !important; flex-shrink: 0 !important; display: inline-block !important; }}
 .card-default {{ background: rgba(30, 41, 59, 0.82); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 28px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18); backdrop-filter: blur(14px); box-sizing: border-box; width: 960px; max-width: 90vw; margin: 16px auto; padding: 32px 40px; }}
 h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {{ color: #ffffff; font-weight: 800; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9); }}
@@ -423,6 +476,7 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
 #stage {{ background: radial-gradient(circle at 50% 25%, #1e1b4b 0%, #0f172a 70%, #030712 100%); font-family: 'BeVietnamPro', sans-serif !important; }}
 .scene:not([class*="scene-"]):not([style*="background"]) {{ background: transparent; }}
 .scene {{ display: flex !important; flex-direction: column !important; justify-content: center !important; align-items: center !important; padding: 80px 48px 300px 48px !important; box-sizing: border-box !important; }}
+.scene-content {{ overflow: visible !important; padding-left: 12px !important; padding-right: 12px !important; box-sizing: border-box !important; }}
 .scene > div:not(.om-asr-caption):not([class*="diagram"]):not([class*="visual"]), .card, .container, [class*="card"], [class*="container"], [class*="box"], [class*="plate"] {{ background: rgba(30, 41, 59, 0.82) !important; border: 1px solid rgba(56, 189, 248, 0.4) !important; border-radius: 28px !important; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.18) !important; backdrop-filter: blur(14px) !important; box-sizing: border-box !important; width: 960px !important; max-width: 90vw !important; margin: 16px auto !important; padding: 32px 40px !important; }}
 h1, h2, h3, h4, .title, .title-large, .section-header, .headline, [class*="title"], [class*="header"] {{ color: #ffffff !important; font-weight: 800 !important; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9) !important; }}
 p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class*="highlight"]) {{ color: #f8fafc !important; font-weight: 500 !important; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important; }}
@@ -434,6 +488,7 @@ p, .body-text, .description, .subtitle, .footer-text, [class*="text"]:not([class
 def _patch_typography_and_css(html: str, path: Path) -> str:
     html = _ensure_font_face_declaration(html)
     html = _ensure_font_css_variables(html, path)
+    html = _normalize_mobile_readable_css(html)
 
     if "overflow-wrap: break-word" not in html:
         html = html.replace(
