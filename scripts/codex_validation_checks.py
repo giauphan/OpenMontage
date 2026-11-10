@@ -559,7 +559,7 @@ def extract_frames_helper(video_path: Path, out_dir: Path) -> list[Path]:
     else:
         timestamps = [
             max(0.1, duration * 0.2),
-            duration * 0.5,
+            duration * 0.44,
             min(duration - 0.1, duration * 0.8),
         ]
 

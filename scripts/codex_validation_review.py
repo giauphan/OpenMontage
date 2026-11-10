@@ -114,7 +114,7 @@ PERFORM STRICT QUALITY VALIDATION on the following criteria:
 1. VISUAL QUALITY & DIVERSITY: Reject raw web-page layouts or placeholder scaffolds.
 2. AUDIO SYNC & TYPOGRAPHY: Use the Audio Stream Evidence above to verify that an audio track exists and its duration aligns with the script. Do not fail this criterion solely because audio cannot be heard — use the stream metadata.
 3. CONTENT APPROPRIATENESS: Ensure news content is safe and high relevance.
-4. BRAND COMPLIANCE: Prohibit brand names such as Montage or OpenMontage.
+4. BRAND COMPLIANCE: Prohibit VISIBLE on-screen or spoken brand names such as Montage or OpenMontage. Internal HTML comments or CSS markers (such as `<!-- OPENMONTAGE_ASR_CAPTIONS_BEGIN -->`, `<!-- OPENMONTAGE_ASR_CAPTIONS_END -->`, `// OPENMONTAGE_CONTINUOUS_MOTION`, or `om-asr-caption`) are invisible pipeline markers and MUST NOT fail brand compliance.
 
 Return a valid JSON object matching this schema:
 {{
