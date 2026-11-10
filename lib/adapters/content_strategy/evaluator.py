@@ -13,10 +13,48 @@ from lib.domain.content_strategy.entities import (
 )
 
 
-_SENSATIONAL_METRIC_RE = re.compile(r"\b\d+%\b|\b\d+x\b|\bcuts?\b(?:\s+[\w-]+){0,6}?\s+by\s+\d+\b")
-_AGGRESSIVE_CONFLICT_RE = re.compile(
-    r"^(?:why\s+your|the\s+reason\s+your|your)\s+[^.!?\n]{0,40}?\b(is\s+(?:\w+\s+)?breaking|breaks|fails|is\s+broken|is\s+ruined|destroys)\b"
+_PERCENT_OR_X_RE = re.compile(r"\b\d+(?:%|x\b)")
+_CUTS_BY_RE = re.compile(r"\bcuts?\b(?:\s+[\w-]+){0,6}?\s+by\s+\d+\b")
+
+
+def _has_sensational_metric(text: str) -> bool:
+    return bool(_PERCENT_OR_X_RE.search(text) or _CUTS_BY_RE.search(text))
+
+
+class _SensationalMetricMatcher:
+    @staticmethod
+    def search(text: str) -> bool | None:
+        if _has_sensational_metric(text):
+            return True
+        return None
+
+
+_SENSATIONAL_METRIC_RE = _SensationalMetricMatcher()
+
+_CONFLICT_START_RE = re.compile(r"^(?:why\s+your|the\s+reason\s+your|your)\b")
+_CONFLICT_VERB_RE = re.compile(
+    r"\b(?:is\s+(?:\w+\s+)?breaking|breaks|fails|is\s+broken|is\s+ruined|destroys)\b"
 )
+
+
+def _has_aggressive_conflict(text: str) -> bool:
+    m = _CONFLICT_START_RE.match(text)
+    if not m:
+        return False
+    remainder = text[m.end():m.end() + 60]
+    first_clause = re.split(r"[.!?\n]", remainder, maxsplit=1)[0]
+    return bool(_CONFLICT_VERB_RE.search(first_clause))
+
+
+class _AggressiveConflictMatcher:
+    @staticmethod
+    def search(text: str) -> bool | None:
+        if _has_aggressive_conflict(text):
+            return True
+        return None
+
+
+_AGGRESSIVE_CONFLICT_RE = _AggressiveConflictMatcher()
 
 
 class DeterministicHookEvaluator(HookEvaluatorPort):
@@ -80,7 +118,7 @@ class DeterministicHookEvaluator(HookEvaluatorPort):
         # Scroll-stopping clickbait dumps sensational metrics ("cuts by 60%", "40% in 3 turns", "10x") -> High specificity (20-25)
         # High-trust weak hook buries exact metrics, focusing on conceptual mechanisms -> Target 11-15
         # Ineffective weak hook is completely empty / devoid of concepts -> Low specificity (0-8)
-        has_sensational_metric = bool(_SENSATIONAL_METRIC_RE.search(lower))
+        has_sensational_metric = _has_sensational_metric(lower)
         has_jargon_concept = any(j in lower for j in self.INSIDER_JARGON)
 
         if has_sensational_metric:
@@ -149,7 +187,7 @@ class DeterministicHookEvaluator(HookEvaluatorPort):
 
         # Rule 1: Lead with context, not conflict
         has_context_starter = any(lower.startswith(cs) for cs in self.CONTEXT_STARTERS)
-        has_aggressive_conflict = bool(_AGGRESSIVE_CONFLICT_RE.search(lower))
+        has_aggressive_conflict = _has_aggressive_conflict(lower)
         lead_with_context = (has_context_starter or not has_aggressive_conflict) and not lower.startswith("stop ")
 
         # Rule 2: Neutral language
@@ -161,7 +199,7 @@ class DeterministicHookEvaluator(HookEvaluatorPort):
         state_obvious = no_sensational_surprise
 
         # Rule 4: Bury specificity (no percentages or benchmark numbers dumped in first sentence)
-        no_raw_benchmark_dump = not bool(_SENSATIONAL_METRIC_RE.search(lower))
+        no_raw_benchmark_dump = not _has_sensational_metric(lower)
         bury_spec = no_raw_benchmark_dump
 
         # Rule 5: No time pressure (no FOMO or artificial urgency)

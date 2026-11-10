@@ -91,3 +91,28 @@ def test_skip_when_drift_already_present(tmp_path: Path):
     fixed = repair_gsap_timeline(html, file_path, narration_duration=11.5)
     # Count occurrences of fromTo('#scene-1'
     assert fixed.count("fromTo('#scene-1'") == 1
+
+
+def test_fix_malformed_tl_to_complex_selectors(tmp_path: Path):
+    html = """
+    <html>
+    <body>
+      <div id="stage"><div id="scene-1" class="scene"></div></div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.to('#scene-1 .card', { opacity: 1 }, { duration: 0.5, ease: 'power2.out' }, 2);
+        tl.to(".a, .b", { x: 100 }, { duration: 1.0 });
+        tl.to(cardEl, { y: 50 }, { duration: 0.8 });
+        window.__timelines['main'] = tl;
+      </script>
+    </body>
+    </html>
+    """
+    file_path = tmp_path / "hyperframes" / "index.html"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text(html, encoding="utf-8")
+
+    fixed = repair_gsap_timeline(html, file_path, narration_duration=10.0)
+    assert "tl.to('#scene-1 .card', {opacity: 1, duration: 0.5, ease: 'power2.out'}, 2)" in fixed
+    assert 'tl.to(".a, .b", {x: 100, duration: 1.0})' in fixed
+    assert "tl.to(cardEl, {y: 50, duration: 0.8})" in fixed

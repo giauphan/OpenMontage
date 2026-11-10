@@ -9,9 +9,13 @@ import html
 from html.parser import HTMLParser
 import json
 import math
+import os
 from pathlib import Path
 import re
+import shutil
 import sys
+import tempfile
+import uuid
 
 
 VOID_TAGS = {
@@ -183,25 +187,51 @@ def _cue_groups(words: list[dict]) -> list[dict]:
 
 
 def _validate_install_paths(
-    composition_path: Path,
-    audio_path: Path,
-    timings_path: Path,
-    allowed_root: Path | None,
+    composition_path: Path | str,
+    audio_path: Path | str,
+    timings_path: Path | str,
+    allowed_root: Path | str | None,
 ) -> tuple[Path, Path, Path]:
-    raw_comp = Path(composition_path)
-    raw_audio = Path(audio_path)
-    raw_timings = Path(timings_path)
+    raw_comp_str = str(composition_path)
+    raw_audio_str = str(audio_path)
+    raw_timings_str = str(timings_path)
 
-    for p in (raw_comp, raw_audio, raw_timings):
+    for p_str, p in (
+        (raw_comp_str, Path(raw_comp_str)),
+        (raw_audio_str, Path(raw_audio_str)),
+        (raw_timings_str, Path(raw_timings_str)),
+    ):
+        if "\x00" in p_str or any(part == ".." for part in p.parts):
+            raise ValueError(f"Path traversal detected in argument: {p_str}")
         if p.is_symlink():
-            raise ValueError(f"Symlink detected in argument: {p}")
+            raise ValueError(f"Symlink detected in argument: {p_str}")
 
-    comp_resolved = raw_comp.resolve()
-    audio_resolved = raw_audio.resolve()
-    timings_resolved = raw_timings.resolve()
+    comp_resolved = Path(os.path.realpath(raw_comp_str))
+    audio_resolved = Path(os.path.realpath(raw_audio_str))
+    timings_resolved = Path(os.path.realpath(raw_timings_str))
+
+    repo_root = Path(os.path.realpath(str(Path(__file__).resolve().parents[1])))
+    cwd_dir = Path.cwd().resolve()
+    tmp_dir = Path(os.path.realpath(tempfile.gettempdir()))
+    allowed_roots = (
+        repo_root,
+        *([cwd_dir] if cwd_dir != Path(cwd_dir.anchor) else []),
+        tmp_dir,
+        *([Path(os.path.realpath(str(allowed_root)))] if allowed_root is not None else []),
+    )
+
+    for p_name, res in (("composition", comp_resolved), ("audio", audio_resolved), ("timings", timings_resolved)):
+        res_str = str(res)
+        if not any(
+            res.is_relative_to(root)
+            and os.path.commonpath([res_str, str(root)]) == str(root)
+            and (res_str == str(root) or res_str.startswith(str(root) + os.sep))
+            for root in allowed_roots
+        ):
+            raise ValueError(f"{p_name} path outside allowed roots: {res}")
 
     if allowed_root is not None:
-        root_resolved = Path(allowed_root).resolve()
+        root_resolved = Path(os.path.realpath(str(allowed_root)))
         for p in (comp_resolved, audio_resolved, timings_resolved):
             try:
                 p.relative_to(root_resolved)
@@ -302,18 +332,22 @@ def _build_caption_block(
 
 
 def install_captions(
-    composition_path: Path,
-    audio_path: Path,
-    timings_path: Path,
+    composition_path: Path | str,
+    audio_path: Path | str,
+    timings_path: Path | str,
     *,
-    allowed_root: Path | None = None,
+    allowed_root: Path | str | None = None,
 ) -> int:
     comp_resolved, audio_resolved, timings_resolved = _validate_install_paths(
         composition_path, audio_path, timings_path, allowed_root
     )
-    source = comp_resolved.read_text(encoding="utf-8")
-    timings = json.loads(timings_resolved.read_text(encoding="utf-8"))
-    words = _validate_timings_payload(timings, audio_resolved.read_bytes())
+    with open(comp_resolved, "r", encoding="utf-8") as f:
+        source = f.read()
+    with open(timings_resolved, "r", encoding="utf-8") as f:
+        timings = json.load(f)
+    with open(audio_resolved, "rb") as f:
+        audio_bytes = f.read()
+    words = _validate_timings_payload(timings, audio_bytes)
 
     composition_base, managed_span = _remove_managed_block(source)
     parser = CompositionParser(composition_base)
@@ -332,16 +366,32 @@ def install_captions(
     else:
         insertion = "\n" + managed_block + "\n"
         updated = composition_base[:closing_offset] + insertion + composition_base[closing_offset:]
-    comp_resolved.write_text(updated, encoding="utf-8")
+
+    comp_parent = comp_resolved.parent
+    tmp_comp = comp_parent / f"{comp_resolved.name}.tmp.{uuid.uuid4().hex}"
+    try:
+        with open(tmp_comp, "w", encoding="utf-8") as out_fh:
+            out_fh.write(updated)
+        try:
+            shutil.copymode(comp_resolved, tmp_comp)
+        except OSError:
+            pass
+        os.replace(tmp_comp, comp_resolved)
+    finally:
+        if tmp_comp.exists():
+            try:
+                tmp_comp.unlink()
+            except OSError:
+                pass
     return len(groups)
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("composition", type=Path)
-    parser.add_argument("audio", type=Path)
-    parser.add_argument("timings", type=Path)
-    parser.add_argument("--allowed-root", type=Path, default=None, help="Optional boundary root directory")
+    parser.add_argument("composition", type=str)
+    parser.add_argument("audio", type=str)
+    parser.add_argument("timings", type=str)
+    parser.add_argument("--allowed-root", type=str, default=None, help="Optional boundary root directory")
     args = parser.parse_args(argv)
     try:
         count = install_captions(args.composition, args.audio, args.timings, allowed_root=args.allowed_root)

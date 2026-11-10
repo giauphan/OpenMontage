@@ -76,7 +76,7 @@ def repair_gsap_timeline(html: str, path: Path, narration_duration: float = 0.0)
             return m.group(0)
 
         # 1. Merge malformed tl.to(target, {vars1}, {vars2}, pos) calls
-        pattern = r"tl\.to\s*\(\s*([\x27\x22][^\x27\x22]+[\x27\x22]|\w+)\s*,\s*\{([^{}]+)\}\s*,\s*\{([^{}]+)\}(?:\s*,\s*([^\n;()]+(?:\([^()]*\)[^\n;()]*)*))?\s*\)"
+        pattern = r"tl\.to\s*\(\s*(\"[^\"\n]+\"|'[^'\n]+'|[A-Za-z_$][\w$]*)\s*,\s*\{([^{}]+)\}\s*,\s*\{([^{}]+)\}(?:,\s*([^)\n;]+))?\s*\)"
         script_body = re.sub(pattern, _fix_tl_to_signature, script_body)
 
         # 2. Identify scenes in the HTML

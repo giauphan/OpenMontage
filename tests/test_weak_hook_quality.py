@@ -150,6 +150,20 @@ def test_negative_overblown_benchmark_specificity(use_case: EvaluateWeakHookUseC
     assert res.is_approved is False
 
 
+def test_percentage_metric_detection(use_case: EvaluateWeakHookUseCase):
+    """Confirm percentages followed by whitespace or punctuation trigger sensational metric detection."""
+    hook = "40% in 3 turns: our memory pipeline benchmark results."
+    res = use_case.execute(hook, platform=ContextPlatform.TECHNICAL_DEEP_DIVE)
+
+    assert res.rules.bury_specificity is False
+    assert res.spectrum.specificity == 22.0
+
+    hook2 = "Latency dropped 60%. Here is the architectural analysis."
+    res2 = use_case.execute(hook2, platform=ContextPlatform.TECHNICAL_DEEP_DIVE)
+    assert res2.rules.bury_specificity is False
+    assert res2.spectrum.specificity == 22.0
+
+
 def test_template_generator_and_orchestration(
     generator: TemplateWeakHookGenerator,
     evaluator: DeterministicHookEvaluator,

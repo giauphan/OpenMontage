@@ -159,6 +159,9 @@ def test_install_news_captions_guards(tmp_path):
     outside = tmp_path / "outside.html"
     outside.write_text("dummy")
 
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        install_captions(root / ".." / "outside.html", tmp_path / "audio.mp3", tmp_path / "timings.json")
+
     with pytest.raises(ValueError, match="Path escapes allowed root"):
         install_captions(outside, tmp_path / "audio.mp3", tmp_path / "timings.json", allowed_root=root)
 

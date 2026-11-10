@@ -396,9 +396,23 @@ def _ensure_font_css_variables(html: str, path: Path) -> str:
     raise ValueError(f"{path}: missing style element for font bindings")
 
 
-_EXCLUDE_SELECTOR_RE = re.compile(
-    r"(?<![-\w])(?:[.#])?(?:[a-z0-9]+-)?(?:badge|tag|pill|kicker|source|credit|caption|om-asr)(?![-\w])"
-)
+_EXCLUDED_TOKENS = frozenset({"badge", "tag", "pill", "kicker", "source", "credit", "caption", "om-asr"})
+
+
+def _is_excluded_selector(sel_low: str) -> bool:
+    for token in re.findall(r"[a-z0-9-]+", sel_low):
+        if token in _EXCLUDED_TOKENS or token.rsplit("-", 1)[-1] in _EXCLUDED_TOKENS:
+            return True
+    return False
+
+
+class _ExcludeSelectorMatcher:
+    @staticmethod
+    def search(sel_low: str) -> bool:
+        return _is_excluded_selector(sel_low)
+
+
+_EXCLUDE_SELECTOR_RE = _ExcludeSelectorMatcher()
 _H1_SELECTOR_RE = re.compile(r"(?<![\w-])(?:h1|headline|title-large)(?![\w-])")
 _H2_SELECTOR_RE = re.compile(r"(?<![\w-])(?:h2|subheadline|section-header)(?![\w-])")
 _H3_SELECTOR_RE = re.compile(r"(?<![\w-])(?:card-title|h3)(?![\w-])")
@@ -413,23 +427,29 @@ def _bump_font_px(px: float, sel_low: str, fallback_match: str) -> str:
     if _H3_SELECTOR_RE.search(sel_low):
         return f"font-size: {max(int(px), 32)}px"
     if _METRIC_SELECTOR_RE.search(sel_low):
-        return f"font-size: {max(int(px), 54)}px" if "label" not in sel_low else ("font-size: 28px" if px < 28 else fallback_match)
-    return "font-size: 28px" if px < 28 else fallback_match
+        if "label" not in sel_low:
+            return f"font-size: {max(int(px), 54)}px"
+        if px < 28:
+            return "font-size: 28px"
+        return fallback_match
+    if px < 28:
+        return "font-size: 28px"
+    return fallback_match
 
 
 def _fix_css_rule(rule_m: re.Match) -> str:
-    selector, body = rule_m.group(1), rule_m.group(2)
+    selector, space, body = rule_m.group(1), rule_m.group(2), rule_m.group(3)
     sel_low = selector.lower()
-    if _EXCLUDE_SELECTOR_RE.search(sel_low):
+    if _is_excluded_selector(sel_low):
         return rule_m.group(0)
     new_body = re.sub(r"font-size\s*:\s*([\d.]+)px", lambda fm: _bump_font_px(float(fm.group(1)), sel_low, fm.group(0)), body)
     if "scene-content" in sel_low:
         new_body = re.sub(r"overflow\s*:\s*hidden", "overflow: visible", new_body)
-    return f"{selector}{{{new_body}}}"
+    return f"{selector}{space}{{{new_body}}}"
 
 
 def _upscale_css_block(style_m: re.Match) -> str:
-    return re.sub(r"([^{}@\r\n]+)\{([^}]+)\}", _fix_css_rule, style_m.group(0))
+    return re.sub(r"([^{}@\r\n]+?)(\s*)\{([^}]+)\}", _fix_css_rule, style_m.group(0))
 
 
 def _bump_svg_font(m: re.Match) -> str:
@@ -555,13 +575,13 @@ def _sanitize_metrics_and_symbols(html: str) -> str:
         html = re.sub(rf'(<[a-zA-Z0-9]+\b[^>]*\bclass="[^"]*{cls}[^"]*"[^>]*>)(.*?)(</[a-zA-Z0-9]+>)', _strip_period, html, flags=re.DOTALL)
 
     # Strip trailing periods from unicode and ascii arrows (e.g. ->. or →.)
-    html = re.sub(r'([↓↑→←➔➜➡➤]|--?>|==?>|<--?|<==?)\.(?=\s*<)', r'\1', html)
+    html = re.sub(r'([↓↑→←➔➜➡➤]|(?:-{1,2}>)|(?:={1,2}>)|(?:<-{1,2})|(?:<={1,2}))\.(?=\s*<)', r'\1', html)
     # Strip periods inside // separators (e.g. "2026. //" -> "2026 //")
     html = re.sub(r'\.\s*(//)', r' \1', html)
 
     def _strip_heading_span_period(h_match: re.Match) -> str:
         text = h_match.group(0)
-        text = re.sub(r'(?<!\.)\.(?=</span>(?:\s*\w|\s*$))', '', text)
+        text = re.sub(r'(?<!\.)\.(?=</span>\s*(?:\w|$))', '', text)
         return re.sub(r'(?<!\.)\.(?=(?:\s*</[^>]+>)*\s*$)', '', text)
 
     html = re.sub(r'<h[1-6]\b[^>]*>[\s\S]*?</h[1-6]>', _strip_heading_span_period, html)

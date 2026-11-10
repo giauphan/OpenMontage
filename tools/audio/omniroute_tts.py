@@ -55,6 +55,22 @@ def _probe_and_commit_audio(tmp_out: Path, output_path: Path) -> tuple[float | N
     return round(duration, 3), None
 
 
+def _send_tts_request(
+    endpoint: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+) -> tuple[bytes | None, str | None]:
+    import requests
+
+    resp = requests.post(endpoint, json=payload, headers=headers, timeout=45)
+    if resp.status_code != 200:
+        return None, f"OmniRoute TTS request failed with HTTP {resp.status_code}: {resp.text[:300]}"
+    audio_bytes = resp.content
+    if not audio_bytes or len(audio_bytes) < 10:
+        return None, f"OmniRoute returned empty or invalid audio payload ({len(audio_bytes)} bytes)"
+    return audio_bytes, None
+
+
 class OmniRouteTTS(BaseTool):
     name = "omniroute_tts"
     version = "0.1.0"
@@ -139,19 +155,9 @@ class OmniRouteTTS(BaseTool):
 
         tmp_out = output_path.with_suffix(".tmp.mp3")
         try:
-            resp = requests.post(endpoint, json=payload, headers=headers, timeout=45)
-            if resp.status_code != 200:
-                return ToolResult(
-                    success=False,
-                    error=f"OmniRoute TTS request failed with HTTP {resp.status_code}: {resp.text[:300]}"
-                )
-
-            audio_bytes = resp.content
-            if not audio_bytes or len(audio_bytes) < 10:
-                return ToolResult(
-                    success=False,
-                    error=f"OmniRoute returned empty or invalid audio payload ({len(audio_bytes)} bytes)"
-                )
+            audio_bytes, req_err = _send_tts_request(endpoint, payload, headers)
+            if req_err or audio_bytes is None:
+                return ToolResult(success=False, error=req_err or "OmniRoute TTS request failed")
 
             tmp_out.write_bytes(audio_bytes)
             duration, probe_err = _probe_and_commit_audio(tmp_out, output_path)
@@ -166,7 +172,7 @@ class OmniRouteTTS(BaseTool):
                     "provider": self.provider,
                     "model": model_id,
                     "voice": voice_id,
-                }
+                },
             )
         except Exception as e:
             if tmp_out.exists():
