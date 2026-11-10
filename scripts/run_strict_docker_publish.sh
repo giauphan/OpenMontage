@@ -408,7 +408,7 @@ if [[ -z "$CALENDAR_TZ" ]]; then
   if [[ "${PUBLISH_TZ:-}" == "UTC" ]]; then
     CALENDAR_TZ="UTC"
   else
-    CALENDAR_TZ="${PUBLISH_TZ:-America/New_York}"
+    CALENDAR_TZ="Asia/Ho_Chi_Minh"
   fi
 fi
 

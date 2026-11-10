@@ -19,6 +19,9 @@ NEWS_MAX_SOURCE_AGE_HOURS=24
 CODEX_MODEL=model-medium-hight
 # Context-aware visual enrichment pipeline
 NEWS_VISUAL_MODE=1
+# Operational calendar timezone (Vietnam UTC+7) vs publishing slot timezone (US Eastern)
+CALENDAR_TZ=Asia/Ho_Chi_Minh
+PUBLISH_TZ=America/New_York
 
 # Key rotation procedure:
 # When updating OPENAI_API_KEY or other credentials:
