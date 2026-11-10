@@ -9,7 +9,7 @@ from __future__ import annotations
 import copy
 import json
 import os
-import random
+import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -293,4 +293,4 @@ class ComfyUIClient:
     @staticmethod
     def random_seed() -> int:
         """Return a random seed suitable for ComfyUI noise nodes."""
-        return random.randint(0, 2**32 - 1)
+        return secrets.randbelow(2**32)

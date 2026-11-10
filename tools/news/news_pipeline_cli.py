@@ -31,12 +31,9 @@ logger = logging.getLogger(__name__)
 
 def run_ingest(args: argparse.Namespace) -> None:
     """Ingest, normalize, and score raw news."""
-    input_path = Path(args.input)
-    if not input_path.exists():
-        logger.error(f"Input file not found: {input_path}")
-        sys.exit(1)
+    input_path = _validate_safe_input_path(args.input)
 
-    with input_path.open("r", encoding="utf-8") as f:
+    with open(input_path, "r", encoding="utf-8") as f:
         raw_items = json.load(f)
 
     if not isinstance(raw_items, list):
@@ -47,15 +44,14 @@ def run_ingest(args: argparse.Namespace) -> None:
     candidates, diagnostics = adapter.ingest_and_normalize(raw_items)
     logger.info(f"Normalized {len(candidates)} candidates from {len(raw_items)} raw items. Errors: {len(diagnostics)}")
 
-
     scorer = NewsCandidateScorer()
     ranked = scorer.rank_candidates(candidates, limit=args.limit)
 
-    out_path = Path(args.output)
-    with out_path.open("w", encoding="utf-8") as f:
+    out_path = _validate_safe_output_path(args.output)
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(ranked, f, indent=2)
 
-    logger.info(f"Wrote {len(ranked)} ranked candidates to {out_path}")
+    logger.info("Wrote %d ranked candidates to %s", len(ranked), _sanitize_log_val(out_path))
 
 
 def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]) -> str:
@@ -121,28 +117,31 @@ def _sanitize_log_val(val: Any) -> str:
     return clean[:120]
 
 
-def _validate_safe_input_path(path: Path | str) -> Path:
+def _validate_safe_input_path(path: Path | str, *, must_exist: bool = True) -> Path:
     """Validate path against traversal attacks (CWE-22 / CWE-73)."""
     import tempfile
-    p = Path(path).expanduser().resolve()
-    repo_root = Path(__file__).resolve().parents[2]
-    home_dir = Path.home().resolve()
-    cwd_dir = Path.cwd().resolve()
+    raw_obj = Path(path)
+    if any(part == ".." for part in raw_obj.parts) or raw_obj.is_symlink():
+        logger.error("Path traversal or symlink detected: %s", _sanitize_log_val(path))
+        sys.exit(1)
+    p = raw_obj.expanduser().resolve()
+    repo_root, home_dir, cwd_dir = Path(__file__).resolve().parents[2], Path.home().resolve(), Path.cwd().resolve()
     tmp_dir = Path(tempfile.gettempdir()).resolve()
-    is_in_repo = p.is_relative_to(repo_root)
-    is_in_home = p.is_relative_to(home_dir)
-    is_in_cwd = cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)
     is_in_tmp = p.is_relative_to(tmp_dir)
-    if not (is_in_repo or is_in_home or is_in_cwd or is_in_tmp):
+    if not (p.is_relative_to(repo_root) or p.is_relative_to(home_dir) or (cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)) or is_in_tmp):
         logger.error("Path traversal detected or path outside allowed root: %s", _sanitize_log_val(path))
         sys.exit(1)
-    if not p.is_file():
+    if must_exist and not p.is_file():
         logger.error("Input file not found: %s", _sanitize_log_val(path))
         sys.exit(1)
-    if is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
+    if must_exist and is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
         logger.error("Input file in temp directory must be owned by current user: %s", _sanitize_log_val(path))
         sys.exit(1)
     return p
+
+
+def _validate_safe_output_path(path: Path | str) -> Path:
+    return _validate_safe_input_path(path, must_exist=False)
 
 
 def run_fetch(args: argparse.Namespace) -> None:

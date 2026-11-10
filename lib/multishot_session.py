@@ -1,4 +1,7 @@
 import copy
+import hashlib
+import os
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List
@@ -19,16 +22,54 @@ from lib.multishot_media import validate_shot_clip, probe_clip
 def _hash(data: Any) -> str:
     return sha256_of_dict(data)
 
+
+def _sanitize_media_path(
+    raw_path: Path | str,
+    base_dir: Path | None = None,
+    *,
+    outside_error: str = "Path outside allowed directory",
+) -> Path:
+    raw = str(raw_path)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts):
+        raise ValueError(f"Path traversal detected in file path: {raw_path}")
+    if base_dir is not None:
+        base_abs = os.path.realpath(str(base_dir))
+        cand_abs = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(base_abs, raw))
+        base_p = Path(base_abs)
+        cand_p = Path(cand_abs)
+        if (
+            not cand_p.is_relative_to(base_p)
+            or os.path.commonpath([cand_abs, base_abs]) != base_abs
+            or not (cand_abs == base_abs or cand_abs.startswith(base_abs + os.sep))
+        ):
+            raise ValueError(outside_error)
+        return cand_p
+
+    cand_abs = os.path.realpath(raw)
+    cand_p = Path(cand_abs)
+    allowed_roots = (
+        Path(os.path.realpath(str(Path(__file__).resolve().parents[1]))),
+        Path(os.path.realpath(str(Path.home()))),
+        Path(os.path.realpath(str(Path.cwd()))),
+        Path(os.path.realpath(tempfile.gettempdir())),
+    )
+    if not any(
+        cand_p.is_relative_to(root)
+        and os.path.commonpath([cand_abs, str(root)]) == str(root)
+        and (cand_abs == str(root) or cand_abs.startswith(str(root) + os.sep))
+        for root in allowed_roots
+    ):
+        raise ValueError(f"Path traversal detected in file path: {raw_path}")
+    return cand_p
+
+
 def _file_hash(path: Path) -> str:
-    path_obj = Path(path)
-    if any(part == ".." for part in path_obj.parts):
-        raise ValueError(f"Path traversal detected in file path: {path}")
-    resolved = path_obj.resolve()
-    if not resolved.is_file():
+    safe_path = _sanitize_media_path(path)
+    if not safe_path.is_file():
         raise ValueError(f"File not found or invalid: {path}")
-    import hashlib
     digest = hashlib.sha256()
-    with resolved.open("rb") as f:
+    with open(safe_path, "rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
@@ -406,16 +447,12 @@ class MultishotSession:
             if not outcome.get("file_path"):
                 raise ValueError("Outcome is missing a media file_path")
 
-            path = Path(outcome["file_path"])
-            if any(part == ".." for part in path.parts):
-                raise ValueError("Outcome file_path contains path traversal")
-            resolved = (path if path.is_absolute() else self.project_dir / path).resolve()
-            try:
-                resolved.relative_to(self.project_dir.resolve())
-            except ValueError:
-                raise ValueError("Outcome file_path outside project directory")
-            path = resolved
-            if not path.exists():
+            path = _sanitize_media_path(
+                outcome["file_path"],
+                base_dir=self.project_dir,
+                outside_error="Outcome file_path outside project directory",
+            )
+            if not path.is_file():
                 raise ValueError(f"Media file not found at {path}")
 
             actual_checksum = _file_hash(path)
@@ -486,16 +523,12 @@ class MultishotSession:
                  # Revalidate current media to avoid accepting changed/missing files
                  if not s.get("media_result") or not s["media_result"].get("file_path"):
                       raise ValueError("Missing media for acceptance")
-                 path = Path(s["media_result"]["file_path"])
-                 if any(part == ".." for part in path.parts):
-                     raise ValueError("Media file_path contains path traversal")
-                 resolved = (path if path.is_absolute() else self.project_dir / path).resolve()
-                 try:
-                     resolved.relative_to(self.project_dir.resolve())
-                 except ValueError:
-                     raise ValueError("Media file_path outside project directory")
-                 path = resolved
-                 if not path.exists():
+                 path = _sanitize_media_path(
+                     s["media_result"]["file_path"],
+                     base_dir=self.project_dir,
+                     outside_error="Media file_path outside project directory",
+                 )
+                 if not path.is_file():
                       raise ValueError("Media file lost before acceptance")
                  if _file_hash(path) != s["media_result"]["content_hash"]:
                       raise ValueError("Media file altered since generation")

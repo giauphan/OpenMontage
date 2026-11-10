@@ -147,6 +147,30 @@ def _atomic_outputs(outputs):
                 temp.unlink()
 
 
+def _validate_safe_cli_path(raw_path: Path | str, *, must_exist: bool = True) -> Path:
+    raw = str(raw_path)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts):
+        raise ValueError(f"Path traversal detected in argument: {raw_path}")
+    if p_obj.is_symlink():
+        raise ValueError(f"Symlink not allowed in argument: {raw_path}")
+    abs_p = Path(os.path.realpath(raw))
+    repo_root = Path(os.path.realpath(str(Path(__file__).resolve().parents[1])))
+    home_dir = Path(os.path.realpath(str(Path.home())))
+    cwd_dir = Path(os.path.realpath(str(Path.cwd())))
+    tmp_dir = Path(os.path.realpath(tempfile.gettempdir()))
+    allowed_roots = (repo_root, home_dir, cwd_dir, tmp_dir)
+    if not any(
+        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        for root in allowed_roots
+    ):
+        raise ValueError(f"Path traversal detected in argument: {raw_path}")
+    resolved = abs_p
+    if must_exist and not resolved.is_file():
+        raise ValueError(f"Input file does not exist: {raw_path}")
+    return resolved
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("text_path", type=Path)
@@ -167,28 +191,36 @@ def main(argv=None):
     try:
         max_words = args.max_words if args.max_words is not None else (args.legacy_max_words if args.legacy_max_words is not None else 3)
         _validate_limits(max_words, 4.0)
-        output_json = args.output_json or args.legacy_output_json
-        for p in (args.text_path, args.audio_path, args.output_srt, args.transcript_json):
-            if p is not None and any(part == ".." for part in Path(p).parts):
-                raise ValueError(f"Path traversal detected in argument: {p}")
-        if output_json and any(part == ".." for part in Path(output_json).parts):
-            raise ValueError(f"Path traversal detected in output_json: {output_json}")
-        input_paths = [args.text_path, args.audio_path]
-        if args.transcript_json:
-            input_paths.append(args.transcript_json)
-        output_paths = [args.output_srt] + ([Path(output_json), Path(output_json).parent / "narration_words.js"] if output_json else [])
-        input_resolved = {path.resolve() for path in input_paths}
-        if any(path.resolve() in input_resolved for path in output_paths) or len({path.resolve() for path in output_paths}) != len(output_paths):
+        raw_output_json = args.output_json or args.legacy_output_json
+        text_path = _validate_safe_cli_path(args.text_path, must_exist=True)
+        audio_path = _validate_safe_cli_path(args.audio_path, must_exist=True)
+        output_srt = _validate_safe_cli_path(args.output_srt, must_exist=False)
+        transcript_path = _validate_safe_cli_path(args.transcript_json, must_exist=True) if args.transcript_json else None
+        output_json_path = _validate_safe_cli_path(raw_output_json, must_exist=False) if raw_output_json else None
+        words_js_path = (
+            _validate_safe_cli_path(output_json_path.parent / "narration_words.js", must_exist=False)
+            if output_json_path
+            else None
+        )
+        input_paths = [text_path, audio_path]
+        if transcript_path:
+            input_paths.append(transcript_path)
+        output_paths = [output_srt] + ([output_json_path, words_js_path] if output_json_path and words_js_path else [])
+        input_resolved = set(input_paths)
+        if any(path in input_resolved for path in output_paths) or len(set(output_paths)) != len(output_paths):
             raise ValueError("output paths must be distinct from each other and all input paths")
-        if args.require_aligned and not args.transcript_json:
+        if args.require_aligned and not transcript_path:
             raise ValueError("--require-aligned requires --transcript-json")
-        text = args.text_path.read_text(encoding="utf-8").strip()
+        with open(text_path, "r", encoding="utf-8") as tf:
+            text = tf.read().strip()
         if not text:
             raise ValueError("Empty text file")
-        audio_hash = hashlib.sha256(args.audio_path.read_bytes()).hexdigest()
-        duration = get_audio_duration(args.audio_path)
-        if args.transcript_json:
-            transcript = json.loads(args.transcript_json.read_text(encoding="utf-8"))
+        with open(audio_path, "rb") as af:
+            audio_hash = hashlib.sha256(af.read()).hexdigest()
+        duration = get_audio_duration(audio_path)
+        if transcript_path:
+            with open(transcript_path, "r", encoding="utf-8") as trf:
+                transcript = json.load(trf)
             cues, timestamps = aligned_subtitles(transcript, audio_hash, duration, max_words)
             timing_source = "asr"
         else:
@@ -201,10 +233,10 @@ def main(argv=None):
                     normalize_words(text) == normalize_words(" ".join(word["word"] for word in timestamps))),
                 "script_comparison_available": not args.no_script_comparison,
                 "timing_source": timing_source, "timing_verified": False}
-        outputs = [(args.output_srt, format_srt(cues))]
-        if output_json:
-            outputs.extend([(output_json, json.dumps(data, indent=2, ensure_ascii=False)),
-                            (Path(output_json).parent / "narration_words.js",
+        outputs = [(output_srt, format_srt(cues))]
+        if output_json_path and words_js_path:
+            outputs.extend([(output_json_path, json.dumps(data, indent=2, ensure_ascii=False)),
+                            (words_js_path,
                              f"window.__narrationWords = {json.dumps(timestamps, ensure_ascii=False)};\n")])
         _atomic_outputs(outputs)
         print(f"Generated {len(cues)} subtitle cues ({timing_source})")

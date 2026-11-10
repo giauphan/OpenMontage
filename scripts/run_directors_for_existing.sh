@@ -49,7 +49,10 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
     echo "[$(date -u +%FT%TZ)] ERROR: projects/$PROJECT_ID does not exist"
     exit 1
   fi
-  chmod -R 777 "projects/$PROJECT_ID" 2>/dev/null || true
+  if [ "$(id -u)" -eq 0 ] && id node >/dev/null 2>&1; then
+    chown -R node:node "projects/$PROJECT_ID" 2>/dev/null || true
+  fi
+  chmod -R u+rwX,go+rX "projects/$PROJECT_ID" 2>/dev/null || true
 
   # Step 2.5: Directors
   if [ "${SKIP_DIRECTORS:-0}" = "1" ]; then
@@ -122,7 +125,7 @@ for PROJECT_ID in "${PROJECT_IDS[@]}"; do
 
   # Step 3: Render
   cd "$ROOT/projects/$PROJECT_ID"
-  chmod -R 777 . 2>/dev/null || true
+  chmod -R u+rwX,go+rX . 2>/dev/null || true
   mkdir -p renders
 
   materialize_hyperframes_assets() {

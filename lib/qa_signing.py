@@ -322,34 +322,41 @@ def verify_approval_record(
                             break
                 except Exception:
                     pass
-            media_candidates = []
-            if rel_media:
+            media_candidates: list[Path] = []
+            root_abs = os.path.realpath(str(p_dir))
+            root_p = Path(root_abs)
+            if isinstance(rel_media, str) and rel_media and "\x00" not in rel_media:
                 rel_p = Path(rel_media)
                 if not any(part == ".." for part in rel_p.parts) and not rel_p.is_absolute():
-                    resolved_cand = (p_dir / rel_p).resolve()
-                    try:
-                        resolved_cand.relative_to(p_dir.resolve())
-                        media_candidates.append(resolved_cand)
-                    except ValueError:
-                        pass
+                    cand_abs = os.path.realpath(os.path.join(root_abs, str(rel_p)))
+                    cand_p = Path(cand_abs)
+                    if (
+                        cand_abs.startswith(root_abs + os.sep)
+                        and os.path.commonpath([cand_abs, root_abs]) == root_abs
+                        and cand_p.is_relative_to(root_p)
+                    ):
+                        media_candidates.append(cand_p)
             media_candidates.extend([
-                p_dir / "renders" / "final_short_en_US_9x16.mp4",
-                p_dir / "renders" / "final_long_en_US_16x9.mp4",
-                p_dir / "renders" / "final_full_vi_9x16.mp4",
-                p_dir / "renders" / "final_render.mp4",
+                root_p / "renders" / "final_short_en_US_9x16.mp4",
+                root_p / "renders" / "final_long_en_US_16x9.mp4",
+                root_p / "renders" / "final_full_vi_9x16.mp4",
+                root_p / "renders" / "final_render.mp4",
             ])
             media_path = None
             for m in media_candidates:
                 if m.is_symlink():
                     continue
-                m_res = m.resolve()
-                try:
-                    m_res.relative_to(p_dir.resolve())
-                    if m_res.is_file():
-                        media_path = m_res
-                        break
-                except ValueError:
+                m_abs = os.path.realpath(str(m))
+                m_p = Path(m_abs)
+                if (
+                    not m_abs.startswith(root_abs + os.sep)
+                    or os.path.commonpath([m_abs, root_abs]) != root_abs
+                    or not m_p.is_relative_to(root_p)
+                ):
                     continue
+                if m_p.is_file():
+                    media_path = m_p
+                    break
             if not media_path:
                 return False, "Disk verification failed: media file missing"
             h_m = hashlib.sha256()

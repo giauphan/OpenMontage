@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import tempfile
 import unicodedata
 from pathlib import Path
 
@@ -134,8 +136,8 @@ _IPA_TERMS: dict[str, str] = {
 # characters, the byte-order mark, and the Unicode replacement character.
 _FORBIDDEN_PATTERN = re.compile(
     "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f"
-    "​-‏‪-‮⁠-⁤⁦-⁩"
-    "﻿�]"
+    "\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069"
+    "\ufeff\ufffd]"
 )
 
 _ACRONYM_PATTERN = re.compile(r"\b(?:[A-Z][A-Z0-9]{0,5}|[A-Z]\d[A-Z]?\d?)\b")
@@ -284,8 +286,8 @@ def _load_lexicon() -> list[tuple[str, str]]:
 def normalize_text(text: str) -> str:
     """NFC-normalise, fold whitespace, and reject unrenderable characters."""
     normalized = unicodedata.normalize("NFC", text)
-    normalized = re.sub(r"[\t\r\n]+", " ", normalized)
-    normalized = normalized.replace(" ", " ")
+    normalized = re.sub(r"[\t\r\n \x0b\x0c]+", " ", normalized)
+    normalized = normalized.replace("\u00a0", " ")
     forbidden = sorted(set(_FORBIDDEN_PATTERN.findall(normalized)))
     if forbidden:
         codes = ", ".join(f"U+{ord(ch):04X}" for ch in forbidden)
@@ -321,11 +323,11 @@ def localize_pronunciation(text: str, lexicon: list[tuple[str, str]] | None = No
 
     def replace(match: re.Match[str]) -> str:
         protected.append(spoken_by_lower[match.group(0).lower()])
-        return f"{len(protected) - 1}"
+        return f"\ue000{len(protected) - 1}\ue001"
 
     localized = combined.sub(replace, text)
     localized = _ACRONYM_PATTERN.sub(_spell_acronym, localized)
-    return re.sub(r"(\d+)", lambda m: protected[int(m.group(1))], localized)
+    return re.sub(r"\ue000(\d+)\ue001", lambda m: protected[int(m.group(1))], localized)
 
 
 def prepare_narration_ssml(text: str, ipa_lexicon: list[tuple[str, str]] | None = None) -> str:
@@ -359,7 +361,7 @@ def prepare_narration_ssml(text: str, ipa_lexicon: list[tuple[str, str]] | None 
         original = match.group(0)
         ipa = ipa_by_lower[original.lower()]
         protected.append(f'<phoneme alphabet="ipa" ph="{ipa}">{original}</phoneme>')
-        return f"{len(protected) - 1}"
+        return f"\ue000{len(protected) - 1}\ue001"
 
     # Apply SSML phoneme tags as protected replacements
     ssml_text = combined.sub(replace_with_phoneme, normalized)
@@ -368,7 +370,7 @@ def prepare_narration_ssml(text: str, ipa_lexicon: list[tuple[str, str]] | None 
     ssml_text = _ACRONYM_PATTERN.sub(_spell_acronym, ssml_text)
 
     # Restore the protected SSML phoneme tags
-    ssml_text = re.sub(r"(\d+)", lambda m: protected[int(m.group(1))], ssml_text)
+    ssml_text = re.sub(r"\ue000(\d+)\ue001", lambda m: protected[int(m.group(1))], ssml_text)
 
     return f'<speak>{re.sub(r" {2,}", " ", ssml_text).strip()}</speak>'
 
@@ -403,23 +405,53 @@ def validate_display_text(text: str) -> list[str]:
     return check_vietnamese_prose(text)
 
 
+def _validate_safe_cli_path(raw_path: Path | str, *, must_exist: bool) -> Path:
+    raw = str(raw_path)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts):
+        raise ValueError(f"Path traversal detected in path: {raw_path}")
+    if p_obj.is_symlink():
+        raise ValueError(f"Symlink not permitted: {raw_path}")
+    abs_p = Path(os.path.realpath(raw))
+    repo_root = Path(os.path.realpath(str(Path(__file__).resolve().parents[1])))
+    home_dir = Path(os.path.realpath(str(Path.home())))
+    cwd_dir = Path(os.path.realpath(str(Path.cwd())))
+    tmp_dir = Path(os.path.realpath(tempfile.gettempdir()))
+    allowed_roots = (repo_root, home_dir, cwd_dir, tmp_dir)
+    if not any(
+        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        for root in allowed_roots
+    ):
+        raise ValueError(f"Path outside allowed roots: {raw_path}")
+    resolved = abs_p
+    if must_exist and not resolved.is_file():
+        raise ValueError(f"Input file not found: {raw_path}")
+    return resolved
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare Vietnamese narration text for TTS")
     parser.add_argument("--in-file", type=Path, help="Read source text from this file instead of stdin")
     parser.add_argument("--out-file", type=Path, help="Write prepared text here instead of stdout")
     args = parser.parse_args(argv)
 
-    source = args.in_file.read_text(encoding="utf-8") if args.in_file else sys.stdin.read()
     try:
+        if args.in_file:
+            in_path = _validate_safe_cli_path(args.in_file, must_exist=True)
+            with open(in_path, "r", encoding="utf-8") as in_fh:
+                source = in_fh.read()
+        else:
+            source = sys.stdin.read()
         prepared = prepare_narration(source)
-    except ValueError as exc:
+        if args.out_file:
+            out_path = _validate_safe_cli_path(args.out_file, must_exist=False)
+            with open(out_path, "w", encoding="utf-8") as out_fh:
+                out_fh.write(prepared + "\n")
+        else:
+            sys.stdout.write(prepared + "\n")
+    except (ValueError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-
-    if args.out_file:
-        args.out_file.write_text(prepared + "\n", encoding="utf-8")
-    else:
-        sys.stdout.write(prepared + "\n")
     return 0
 
 

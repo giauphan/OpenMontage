@@ -7,7 +7,9 @@ Deterministic scoring.
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -115,6 +117,32 @@ def get_template_for_topic(topic_text: str, catalog: dict | None = None) -> str 
     return select_template(brief, catalog=catalog).get("template_id")
 
 
+def _validate_safe_brief_path(raw_path: Path | str) -> Path:
+    raw = str(raw_path)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts):
+        raise ValueError(f"Path traversal detected in brief path: {raw_path}")
+    if p_obj.is_symlink():
+        raise ValueError(f"Symlink not permitted for brief path: {raw_path}")
+    abs_p = Path(os.path.realpath(raw))
+    cwd_dir = Path.cwd().resolve()
+    allowed_roots = (
+        Path(os.path.realpath(str(ROOT))),
+        Path(os.path.realpath(str(Path.home()))),
+        *([cwd_dir] if cwd_dir != Path(cwd_dir.anchor) else []),
+        Path(os.path.realpath(tempfile.gettempdir())),
+    )
+    if not any(
+        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        for root in allowed_roots
+    ):
+        raise ValueError(f"Brief path outside allowed roots: {raw_path}")
+    resolved = abs_p
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Brief file not found: {raw_path}")
+    return resolved
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -122,5 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--brief", type=Path, required=True)
     args = parser.parse_args()
 
-    brief = json.loads(args.brief.read_text(encoding="utf-8"))
+    safe_brief = _validate_safe_brief_path(args.brief)
+    with open(safe_brief, "r", encoding="utf-8") as bf:
+        brief = json.load(bf)
     print(json.dumps(select_template(brief), indent=2, ensure_ascii=False))

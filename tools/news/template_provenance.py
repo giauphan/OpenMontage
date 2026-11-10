@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -314,6 +316,28 @@ def verify_project_provenance(
     }
 
 
+def _validate_safe_project_dir(project_dir: Path | str) -> Path:
+    raw = str(project_dir)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts):
+        raise ValueError(f"Path traversal detected in project_dir: {project_dir}")
+    if p_obj.is_symlink():
+        raise ValueError(f"Symlink not permitted for project_dir: {project_dir}")
+    abs_p = Path(os.path.realpath(raw))
+    allowed_roots = (
+        Path(os.path.realpath(str(ROOT))),
+        Path(os.path.realpath(str(Path.home()))),
+        Path(os.path.realpath(str(Path.cwd()))),
+        Path(os.path.realpath(tempfile.gettempdir())),
+    )
+    if not any(
+        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        for root in allowed_roots
+    ):
+        raise ValueError(f"project_dir outside allowed roots: {project_dir}")
+    return abs_p
+
+
 def record_provenance(
     project_dir: Path,
     template_id: str,
@@ -324,15 +348,16 @@ def record_provenance(
     variant: str,
 ) -> dict[str, Any]:
     """Write a fresh, self-consistent provenance record and return it."""
+    safe_proj_dir = _validate_safe_project_dir(project_dir)
     cap_ok, _ = caption_display_verified(full_html, reels_html)
 
     # Collect visual assets if assets/visuals exists
-    visuals_dir = Path(project_dir) / "assets" / "visuals"
+    visuals_dir = safe_proj_dir / "assets" / "visuals"
     visual_assets: list[dict[str, str]] = []
     if visuals_dir.is_dir():
         for p in sorted(visuals_dir.rglob("*")):
             if p.is_file() and not p.is_symlink():
-                rel = str(p.relative_to(project_dir))
+                rel = str(p.relative_to(safe_proj_dir))
                 visual_assets.append({
                     "path": rel,
                     "sha256": _sha256_file(p),
@@ -340,14 +365,14 @@ def record_provenance(
 
     visual_plan_sha256: str | None = None
     for cand in ("artifacts/news_visual_plan.json", "news_visual_plan.json"):
-        vp = Path(project_dir) / cand
+        vp = safe_proj_dir / cand
         if vp.is_file() and not vp.is_symlink():
             visual_plan_sha256 = _sha256_file(vp)
             break
 
     visual_assets_manifest_sha256: str | None = None
     for cand in ("assets/visuals/manifest.json", "artifacts/news_visual_assets.json"):
-        vmp = Path(project_dir) / cand
+        vmp = safe_proj_dir / cand
         if vmp.is_file() and not vmp.is_symlink():
             visual_assets_manifest_sha256 = _sha256_file(vmp)
             break
@@ -365,7 +390,14 @@ def record_provenance(
         "visual_plan_sha256": visual_plan_sha256,
         "visual_assets_manifest_sha256": visual_assets_manifest_sha256,
     }
-    path = Path(project_dir) / PROVENANCE_FILE
+    path = (safe_proj_dir / os.path.basename(PROVENANCE_FILE)).resolve()
+    if (
+        not path.is_relative_to(safe_proj_dir)
+        or os.path.commonpath([str(path), str(safe_proj_dir)]) != str(safe_proj_dir)
+        or not str(path).startswith(str(safe_proj_dir) + os.sep)
+    ):
+        raise ValueError(f"Invalid provenance target path: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(provenance, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    with open(path, "w", encoding="utf-8") as out_fh:
+        out_fh.write(json.dumps(provenance, indent=2, ensure_ascii=False) + "\n")
     return provenance

@@ -333,7 +333,7 @@ def execute_replay(manifest_path: Path, stage_dir: str, max_source_age_hours: fl
                 "manifest_sha256": report["manifest_sha256"],
                 "source_bundle_sha256": hashlib.sha256("".join(sorted(hashes.values())).encode()).hexdigest(),
             }, indent=2) + "\n", encoding="utf-8")
-            os.chmod(marker_path, 0o444)
+            os.chmod(marker_path, 0o400)
             hashes[TEST_ONLY_MARKER] = _sha256(marker_path)
             report["staged_files"].update({f"projects/{project_id}/{name}": digest for name, digest in hashes.items()})
             video_path = _project_file(project_dir, entry.get("video"), f"projects[{index}].video")

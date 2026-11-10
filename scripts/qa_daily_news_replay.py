@@ -155,7 +155,7 @@ def _prepare_case(
         "factual_content_verified": False,
         "included_source_sha256": file_hashes,
     })
-    os.chmod(marker, 0o444)
+    os.chmod(marker, 0o400)
     copied_scope = sorted({relative.as_posix() for _, relative, _ in source_files} | {"metadata.json", marker.name})
 
     _write_json(bundle / "feed.json", _feed_fixture())

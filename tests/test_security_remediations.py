@@ -106,6 +106,22 @@ def test_check_qa_guards(tmp_path):
     assert stream_info(valid_file, "ffprobe", "v:0; rm -rf /") == "INVALID_SELECTOR"
     assert stream_info(valid_file, "ffprobe", "-show_data") == "INVALID_SELECTOR"
 
+    # Fail closed when requested project path is rejected or invalid
+    from scripts.check_qa import resolve_projects
+    import argparse
+
+    args_invalid = argparse.Namespace(projects=[str(tmp_path / ".." / "outside")], projects_root="projects")
+    assert resolve_projects(args_invalid) is None
+
+    args_missing = argparse.Namespace(projects=[str(tmp_path / "nonexistent")], projects_root="projects")
+    assert resolve_projects(args_missing) is None
+
+    good_dir = tmp_path / "proj"
+    good_dir.mkdir()
+    args_good = argparse.Namespace(projects=[str(good_dir)], projects_root="projects")
+    res = resolve_projects(args_good)
+    assert res == [good_dir.resolve()]
+
 
 def test_svg_optimize_security(tmp_path):
     # Path traversal in input
@@ -215,3 +231,60 @@ def test_validation_status_symlink(tmp_path, monkeypatch, capsys):
     assert ret == 1
     captured = capsys.readouterr()
     assert "Symlink detected" in captured.err
+
+
+def test_narration_text_bidi_and_cli_guards(tmp_path):
+    from tools.narration_text import normalize_text, main as narration_main
+
+    # Bidi characters are still rejected by _FORBIDDEN_PATTERN using \uXXXX escapes
+    with pytest.raises(ValueError, match="unrenderable characters"):
+        normalize_text("Xin chào \u202e thế giới")
+
+    # CLI path traversal blocked
+    ret = narration_main(["--in-file", str(tmp_path / ".." / "secret.txt")])
+    assert ret == 1
+
+
+def test_comfyui_random_seed_csprng():
+    from tools._comfyui.client import ComfyUIClient
+
+    seed = ComfyUIClient.random_seed()
+    assert isinstance(seed, int)
+    assert 0 <= seed < 2**32
+
+
+def test_dashscope_asr_url_validation():
+    from tools.analysis.dashscope_asr import DashscopeAsr
+
+    assert DashscopeAsr._is_public_url("https://example.com/audio.mp3")
+    assert DashscopeAsr._is_public_url("http://example.com/audio.mp3")
+    assert not DashscopeAsr._is_public_url("/etc/passwd")
+    assert not DashscopeAsr._is_public_url("file:///tmp/audio.mp3")
+
+
+def test_template_selector_and_provenance_guards(tmp_path):
+    from tools.news.template_selector import _validate_safe_brief_path
+    from tools.news.template_provenance import record_provenance
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        _validate_safe_brief_path(tmp_path / ".." / "brief.json")
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        record_provenance(
+            tmp_path / ".." / "proj",
+            "news-explainer",
+            "1.0.0",
+            {"title": "test"},
+            None,
+            None,
+            "short",
+        )
+
+
+def test_multishot_media_probe_clip_traversal(tmp_path):
+    from lib.multishot_media import probe_clip
+
+    res = probe_clip(tmp_path / ".." / "outside.mp4")
+    assert res["decode_ok"] is False
+    assert any("invalid or unsafe file path" in err for err in res["errors"])
+

@@ -370,9 +370,13 @@ def _stage_requires_approval(pipeline_type: Optional[str], stage: str) -> Option
         )
     except Exception as exc:
         import logging
+        safe_pipe = str(pipeline_type).replace("\r", " ").replace("\n", " ").strip()[:120]
+        safe_exc = str(exc).replace("\r", " ").replace("\n", " ").strip()[:200]
         logging.getLogger(__name__).warning(
-            "Gate policy unavailable for pipeline %r (%s) — falling back to "
-            "the caller's human_approval_required flag.", pipeline_type, exc,
+            "Gate policy unavailable for pipeline '%s' (%s) — falling back to "
+            "the caller's human_approval_required flag.",
+            safe_pipe,
+            safe_exc,
         )
         return None
     return get_stage_human_approval_default(manifest, stage)
@@ -561,7 +565,8 @@ def write_checkpoint(
         ):
             raise CheckpointValidationError("Project marker identity mismatch")
         if not pipeline_type and marker.get("pipeline_type"):
-            pipeline_type = marker["pipeline_type"]
+            raw_pt = str(marker["pipeline_type"]).replace("\r", "").replace("\n", "").strip()
+            pipeline_type = raw_pt
         if not style_playbook and marker.get("style_playbook"):
             style_playbook = marker["style_playbook"]
     _validate_style_playbook(style_playbook)

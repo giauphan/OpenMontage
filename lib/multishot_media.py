@@ -20,8 +20,10 @@ structured errors rather than raising raw subprocess exceptions.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -80,6 +82,29 @@ def _parse_rational(value: Optional[str]) -> Optional[float]:
 # TASK 012 — ffprobe wrapper
 # ------------------------------------------------------------------
 
+def _sanitize_clip_path(raw_path: str | Path) -> Path | None:
+    raw = str(raw_path)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts) or raw.startswith("-"):
+        return None
+    cand_abs = os.path.realpath(raw)
+    cand_p = Path(cand_abs)
+    allowed_roots = (
+        Path(os.path.realpath(str(Path(__file__).resolve().parents[1]))),
+        Path(os.path.realpath(str(Path.home()))),
+        Path(os.path.realpath(str(Path.cwd()))),
+        Path(os.path.realpath(tempfile.gettempdir())),
+    )
+    if not any(
+        cand_p.is_relative_to(root)
+        and os.path.commonpath([cand_abs, str(root)]) == str(root)
+        and (cand_abs == str(root) or cand_abs.startswith(str(root) + os.sep))
+        for root in allowed_roots
+    ):
+        return None
+    return cand_p
+
+
 def probe_clip(path: str | Path, *, timeout: float = 60.0) -> dict[str, Any]:
     """Probe a media file into a structured validation record.
 
@@ -87,22 +112,27 @@ def probe_clip(path: str | Path, *, timeout: float = 60.0) -> dict[str, Any]:
     has_audio, has_video, decode_ok, errors}``. ``errors`` is a list of
     human-readable problems (empty when clean).
     """
-    ffprobe = _require_binary("ffprobe")
-    result = _run(
-        [ffprobe, "-v", "quiet", "-print_format", "json",
-         "-show_format", "-show_streams", str(path)],
-        timeout=timeout,
-    )
     errors: list[str] = []
     probe: dict[str, Any] = {
         "duration_sec": None, "width": None, "height": None, "fps": None,
         "video_codec": None, "pixel_format": None, "has_audio": False,
         "has_video": False, "decode_ok": False, "errors": errors,
     }
-
-    if not Path(path).is_file():
+    safe_path = _sanitize_clip_path(path)
+    if safe_path is None:
+        errors.append(f"invalid or unsafe file path: {path}")
+        return probe
+    if not safe_path.is_file():
         errors.append(f"file not found: {path}")
         return probe
+
+    ffprobe = _require_binary("ffprobe")
+    result = _run(
+        [ffprobe, "-v", "quiet", "-print_format", "json",
+         "-show_format", "-show_streams", str(safe_path)],
+        timeout=timeout,
+    )
+
     if result.returncode != 0:
         errors.append(f"ffprobe failed: {result.stderr.strip()[:300]}")
         return probe
@@ -136,7 +166,7 @@ def probe_clip(path: str | Path, *, timeout: float = 60.0) -> dict[str, Any]:
     if probe["duration_sec"] is not None and probe["duration_sec"] <= 0:
         errors.append("duration must be > 0")
 
-    probe["decode_ok"] = _decode_validates(path, timeout=timeout)
+    probe["decode_ok"] = _decode_validates(safe_path, timeout=timeout)
     if not probe["decode_ok"]:
         errors.append("decode validation failed")
     return probe

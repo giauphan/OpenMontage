@@ -13,10 +13,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -30,15 +32,69 @@ NARRATION_TEXT = "artifacts/narration_vi_text.txt"
 DEFAULT_TOLERANCE = 3.0
 REELS_MAX_SECONDS = 60.0
 
+_ALLOWED_SELECTORS: dict[str, str] = {
+    "v:0": "v:0",
+    "a:0": "a:0",
+    "v": "v",
+    "a": "a",
+}
+
+
+def _safe_executable(binary_name: str, candidate: str | None = None) -> str:
+    """Resolve an executable securely, ensuring it matches the expected binary."""
+    if candidate:
+        resolved = shutil.which(candidate)
+        if resolved and os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+            cand_name = Path(resolved).name.lower()
+            base_name = binary_name.lower()
+            if (
+                cand_name == base_name
+                or cand_name == f"{base_name}.exe"
+                or cand_name.startswith(f"{base_name}-")
+                or cand_name.startswith(f"{base_name}_")
+            ):
+                return resolved
+            print(f"WARNING: Provided --{binary_name} candidate {candidate!r} rejected (unexpected binary name)", file=sys.stderr)
+            return ""
+        print(f"WARNING: Provided --{binary_name} candidate {candidate!r} not found or not executable", file=sys.stderr)
+        return ""
+    system_bin = shutil.which(binary_name)
+    if system_bin:
+        return system_bin
+    return binary_name
+
+
+def _validate_safe_media_path(path: Path) -> Path | None:
+    raw = str(path)
+    path_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in path_obj.parts) or path_obj.name.startswith("-") or path_obj.is_symlink():
+        return None
+    resolved = Path(os.path.realpath(raw))
+    allowed_roots = (
+        Path(os.path.realpath(str(_ROOT))),
+        Path(os.path.realpath(str(Path.home()))),
+        Path(os.path.realpath(str(Path.cwd()))),
+        Path(os.path.realpath(tempfile.gettempdir())),
+    )
+    if not any(
+        resolved.is_relative_to(root)
+        and os.path.commonpath([str(resolved), str(root)]) == str(root)
+        and (str(resolved) == str(root) or str(resolved).startswith(str(root) + os.sep))
+        for root in allowed_roots
+    ):
+        return None
+    if not resolved.is_file() or str(resolved).startswith("-"):
+        return None
+    return resolved
+
 
 def duration(path: Path, ffprobe: str) -> float | None:
-    path_obj = Path(path)
-    resolved = path_obj.resolve()
-    if not resolved.is_file() or resolved.stat().st_size == 0 or str(resolved).startswith("-"):
+    resolved = _validate_safe_media_path(path)
+    if resolved is None or resolved.stat().st_size == 0:
         return None
-    ffprobe_cmd = shutil.which(ffprobe) or ffprobe
+    ffprobe_bin = _safe_executable("ffprobe", ffprobe)
     result = subprocess.run(
-        [ffprobe_cmd, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", "--", str(resolved)],
+        [ffprobe_bin, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", "--", str(resolved)],
         check=False,
         capture_output=True,
         text=True,
@@ -53,15 +109,15 @@ def duration(path: Path, ffprobe: str) -> float | None:
 
 
 def stream_info(path: Path, ffprobe: str, selector: str) -> str:
-    path_obj = Path(path)
-    resolved = path_obj.resolve()
-    if not resolved.is_file() or str(resolved).startswith("-"):
+    resolved = _validate_safe_media_path(path)
+    if resolved is None:
         return "MISSING"
-    if not selector or selector.startswith("-") or any(c in selector for c in "\n\r\t;|&$><`\"'\\"):
+    safe_selector = _ALLOWED_SELECTORS.get(selector)
+    if not safe_selector:
         return "INVALID_SELECTOR"
-    ffprobe_cmd = shutil.which(ffprobe) or ffprobe
+    ffprobe_bin = _safe_executable("ffprobe", ffprobe)
     result = subprocess.run(
-        [ffprobe_cmd, "-v", "error", "-select_streams", selector,
+        [ffprobe_bin, "-v", "error", "-select_streams", safe_selector,
          "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", "--", str(resolved)],
         check=False,
         capture_output=True,
@@ -212,11 +268,42 @@ def check_project(project: Path, ffprobe: str, tolerance: float) -> bool:
         return passed and reels_ok
 
 
-def resolve_projects(args: argparse.Namespace) -> list[Path]:
+def _validate_safe_project_dir(raw_dir: str | Path) -> Path | None:
+    raw = str(raw_dir)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts) or raw.startswith("-"):
+        return None
+    abs_p = Path(os.path.realpath(raw))
+    allowed_roots = (
+        Path(os.path.realpath(str(_ROOT))),
+        Path(os.path.realpath(str(Path.home()))),
+        Path(os.path.realpath(str(Path.cwd()))),
+        Path(os.path.realpath(tempfile.gettempdir())),
+    )
+    if not any(
+        abs_p.is_relative_to(root)
+        and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        and (str(abs_p) == str(root) or str(abs_p).startswith(str(root) + os.sep))
+        for root in allowed_roots
+    ):
+        return None
+    return abs_p
+
+
+def resolve_projects(args: argparse.Namespace) -> list[Path] | None:
     if args.projects:
-        return [Path(item) for item in args.projects]
-    root = Path(args.projects_root)
-    return sorted(path for path in root.iterdir() if path.is_dir()) if root.is_dir() else []
+        valid: list[Path] = []
+        for item in args.projects:
+            safe_p = _validate_safe_project_dir(item)
+            if safe_p is None or not safe_p.is_dir():
+                print(f"GATE2=FAIL (rejected project path: {item!r})")
+                return None
+            valid.append(safe_p)
+        return valid
+    root = _validate_safe_project_dir(args.projects_root)
+    if root is None or not root.is_dir():
+        return []
+    return sorted(path for path in root.iterdir() if path.is_dir() and not path.is_symlink())
 
 
 def main() -> int:
@@ -227,11 +314,19 @@ def main() -> int:
     parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
     args = parser.parse_args()
 
-    ffprobe = args.ffprobe or shutil.which("ffprobe")
-    if not ffprobe:
-        print("GATE2=FAIL (ffprobe not found)")
-        return 1
+    if args.ffprobe:
+        ffprobe = _safe_executable("ffprobe", args.ffprobe)
+        if not ffprobe:
+            print(f"GATE2=FAIL (invalid explicit --ffprobe: {args.ffprobe!r})")
+            return 1
+    else:
+        ffprobe = shutil.which("ffprobe") or ""
+        if not ffprobe:
+            print("GATE2=FAIL (ffprobe not found)")
+            return 1
     projects = resolve_projects(args)
+    if projects is None:
+        return 1
     if not projects:
         print("GATE2=FAIL (no projects to check)")
         return 1

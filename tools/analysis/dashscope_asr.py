@@ -178,12 +178,14 @@ class DashscopeAsr(BaseTool):
                     "supported. Upload the audio to a public location first."
                 ),
             )
-        # DashScope ASR rejects http:// URLs with InvalidParameter.MalformedURL;
+        # DashScope ASR rejects non-TLS URLs with InvalidParameter.MalformedURL;
         # upgrade to https:// before submitting. Note: signed OSS URLs with
         # query params (Expires, Signature) may also be rejected — prefer clean
         # public file URLs when possible.
-        if audio_url.startswith("http://"):
-            audio_url = "https://" + audio_url[len("http://"):]
+        from urllib.parse import urlsplit, urlunsplit
+        parsed_url = urlsplit(audio_url)
+        if parsed_url.scheme.lower() == "http" and parsed_url.netloc:
+            audio_url = urlunsplit(("https", parsed_url.netloc, parsed_url.path, parsed_url.query, parsed_url.fragment))
             inputs = {**inputs, "audio_url": audio_url}
 
         start = time.time()
@@ -333,7 +335,9 @@ class DashscopeAsr(BaseTool):
 
     @staticmethod
     def _is_public_url(url: str) -> bool:
-        return url.startswith("http://") or url.startswith("https://")
+        from urllib.parse import urlsplit
+        parsed = urlsplit(url)
+        return parsed.scheme.lower() in ("http", "https") and bool(parsed.netloc)
 
     @staticmethod
     def _extract_words(

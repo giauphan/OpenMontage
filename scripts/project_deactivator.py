@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -100,15 +101,19 @@ def deactivate_project(
     pap = _pap()
     root = Path(getattr(pap, "ROOT", DEFAULT_ROOT)).resolve()
     config = Path(getattr(pap, "CONFIG", DEFAULT_CONFIG)).resolve()
-    try:
-        config.relative_to(root)
-    except ValueError:
+    if (
+        not config.is_relative_to(root)
+        or os.path.commonpath([str(config), str(root)]) != str(root)
+        or not str(config).startswith(str(root) + os.sep)
+    ):
         print(f"❌ Safety check failed: Config path {config} is not within root {root}", file=sys.stderr)
         return False
-    temp_config = config.with_suffix(".json.tmp").resolve()
-    try:
-        temp_config.relative_to(root)
-    except ValueError:
+    temp_config = (config.parent / f"{os.path.basename(config.name)}.tmp").resolve()
+    if (
+        not temp_config.is_relative_to(root)
+        or os.path.commonpath([str(temp_config), str(root)]) != str(root)
+        or not str(temp_config).startswith(str(root) + os.sep)
+    ):
         print(f"❌ Safety check failed: Temp config path {temp_config} is not within root {root}", file=sys.stderr)
         return False
     if temp_config.parent != config.parent:
@@ -290,18 +295,18 @@ def deactivate_project(
         # 4. Deactivate from active_projects queue inside lock
         if config.is_file():
             try:
-                schedule = json.loads(config.read_text(encoding="utf-8"))
+                with open(config, "r", encoding="utf-8") as cf:
+                    schedule = json.load(cf)
                 active_projects = schedule.get("active_projects", [])
                 if any((item.get("project_id") if isinstance(item, dict) else item) == project_id for item in active_projects):
                     schedule["active_projects"] = [
                         item for item in active_projects
                         if (item.get("project_id") if isinstance(item, dict) else item) != project_id
                     ]
-                    temp_config.write_text(
-                        json.dumps(schedule, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8",
-                    )
-                    temp_config.replace(config)
+                    serialized = json.dumps(schedule, ensure_ascii=False, indent=2) + "\n"
+                    with open(temp_config, "w", encoding="utf-8") as tf:
+                        tf.write(serialized)
+                    os.replace(temp_config, config)
                     print(f"✓ Deactivated published project: {project_id}")
                     try:
                         from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery

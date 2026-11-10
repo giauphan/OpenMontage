@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -57,15 +58,18 @@ class VisualAssetOrchestrator:
         word_timestamps: Optional[List[Dict[str, Any]]],
     ) -> Dict[str, Any]:
         """Extract and normalize execution context for a single storyboard beat."""
-        beat_id = beat.get("beat_id") or beat.get("id", f"vb-{idx+1:02d}")
+        raw_beat_id = str(beat.get("beat_id") or beat.get("id") or f"vb-{idx+1:02d}")
+        beat_id = re.sub(r"[^A-Za-z0-9_\-]", "_", os.path.basename(raw_beat_id)) or f"vb-{idx+1:02d}"
         fallback_policy = beat.get("fallback_policy", "use_builtin_verified_icon_diagram")
         intent = beat.get("visual_intent", "")
         asset_ids = beat.get("asset_ids") or ([beat.get("asset_id")] if beat.get("asset_id") else [f"asset_{beat_id}"])
+        raw_primary_asset_id = str(asset_ids[0] or f"asset_{beat_id}")
+        primary_asset_id = re.sub(r"[^A-Za-z0-9_\-]", "_", os.path.basename(raw_primary_asset_id)) or f"asset_{beat_id}"
         start_s = float(beat.get("start_seconds", 0.0))
         end_s = float(beat.get("end_seconds", 11.0))
         return {
             "beat_id": beat_id,
-            "primary_asset_id": asset_ids[0],
+            "primary_asset_id": primary_asset_id,
             "fallback_policy": fallback_policy,
             "intent": intent,
             "start_s": start_s,

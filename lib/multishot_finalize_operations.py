@@ -15,7 +15,7 @@ from lib.multishot_media import (
     ordered_concat,
     probe_clip,
 )
-from lib.multishot_session import MultishotSession, _hash, _file_hash
+from lib.multishot_session import MultishotSession, _hash, _file_hash, _sanitize_media_path
 from lib.multishot_workspace import project_lock, write_json_atomic, REPORTS_DIR
 
 
@@ -26,7 +26,7 @@ def _profile_config(profile: MediaProfile) -> dict:
 def _file_hash_or_none(path: Optional[str]) -> Optional[str]:
     if not path:
         return None
-    source = Path(path)
+    source = _sanitize_media_path(path)
     if not source.is_file():
         raise ValueError(f"Audio or subtitle file not found at {path}")
     return _file_hash(source)
@@ -76,7 +76,7 @@ def _shot_evidence(shot: dict) -> dict:
     file_path = media_result.get("file_path") if media_result else None
     if not file_path:
         raise ValueError(f"Shot {shot['id']} missing media file_path")
-    source = Path(file_path)
+    source = _sanitize_media_path(file_path)
     if not source.is_file():
         raise ValueError(f"Media file not found for shot {shot['id']} at {file_path}")
 
@@ -87,7 +87,7 @@ def _shot_evidence(shot: dict) -> dict:
     if not expected_input_hash:
         raise ValueError(f"Shot {shot['id']} has no accepted input hash")
 
-    fresh_probe = probe_clip(file_path)
+    fresh_probe = probe_clip(str(source))
     if not fresh_probe.get("decode_ok") or not fresh_probe.get("has_video"):
         raise ValueError(f"Shot {shot['id']} media is unreadable or has no video stream")
     from lib.multishot_media import validate_shot_clip
@@ -307,13 +307,14 @@ def _validate_final_output(
     profile: MediaProfile,
     shot_ids: list[str],
 ) -> Any:
-    if not Path(final_path).is_file():
+    safe_final_path = _sanitize_media_path(final_path)
+    if not safe_final_path.is_file():
         raise ValueError("Final video file missing")
     if not evidence.get("final_hash"):
         raise ValueError("Final video hash missing")
-    if _file_hash(Path(final_path)) != evidence["final_hash"]:
+    if _file_hash(safe_final_path) != evidence["final_hash"]:
         raise ValueError("Final video file tampered or altered")
-    probe = probe_clip(final_path)
+    probe = probe_clip(str(safe_final_path))
     audio_config = evidence.get("audio_config") or {}
     expected_audio = bool(
         audio_config.get("narration_path")

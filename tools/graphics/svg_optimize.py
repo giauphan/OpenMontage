@@ -10,9 +10,33 @@ while strictly preserving:
 """
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+
+def _validate_safe_svg_path(raw_path: Path | str, *, param_name: str) -> Path:
+    raw = str(raw_path)
+    p_obj = Path(raw)
+    if not raw or "\x00" in raw or any(part == ".." for part in p_obj.parts):
+        raise ValueError(f"Path traversal detected in {param_name}: {raw_path}")
+    if p_obj.is_symlink():
+        raise ValueError(f"Refusing to access symlink in {param_name}: {raw_path}")
+    abs_p = Path(os.path.realpath(raw))
+    allowed_roots = (
+        Path(os.path.realpath(str(Path(__file__).resolve().parents[2]))),
+        Path(os.path.realpath(str(Path.home()))),
+        Path(os.path.realpath(str(Path.cwd()))),
+        Path(os.path.realpath(tempfile.gettempdir())),
+    )
+    if not any(
+        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        for root in allowed_roots
+    ):
+        raise ValueError(f"Path traversal detected in {param_name}: {raw_path}")
+    return abs_p
 
 
 def optimize_svg_text(svg_content: str) -> str:
@@ -40,22 +64,17 @@ def optimize_svg_text(svg_content: str) -> str:
 
 def optimize_svg_file(input_path: Path | str, output_path: Path | str | None = None) -> Path:
     """Optimize an SVG file on disk."""
-    inp_obj = Path(input_path)
-    if any(part == ".." for part in inp_obj.parts):
-        raise ValueError(f"Path traversal detected in input_path: {input_path}")
-    src = inp_obj.resolve()
+    src = _validate_safe_svg_path(input_path, param_name="input_path")
     if not src.is_file():
         raise FileNotFoundError(f"Input SVG file not found: {input_path}")
 
-    if output_path:
-        out_obj = Path(output_path)
-        if any(part == ".." for part in out_obj.parts):
-            raise ValueError(f"Path traversal detected in output_path: {output_path}")
-        dst = out_obj.resolve()
+    if output_path is not None:
+        dst = _validate_safe_svg_path(output_path, param_name="output_path")
     else:
         dst = src
 
-    text = src.read_text(encoding="utf-8")
+    with open(src, "r", encoding="utf-8") as in_fh:
+        text = in_fh.read()
     opt = optimize_svg_text(text)
 
     # Validate output is still valid XML
@@ -64,8 +83,6 @@ def optimize_svg_file(input_path: Path | str, output_path: Path | str | None = N
     except ET.ParseError as exc:
         raise ValueError(f"Optimized SVG failed XML validation: {exc}") from exc
 
-    unresolved_dst = Path(output_path) if output_path else inp_obj
-    if unresolved_dst.is_symlink():
-        raise ValueError(f"Refusing to write to symlink: {unresolved_dst}")
-    dst.write_text(opt, encoding="utf-8")
+    with open(dst, "w", encoding="utf-8") as out_fh:
+        out_fh.write(opt)
     return dst
