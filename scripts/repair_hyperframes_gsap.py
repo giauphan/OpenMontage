@@ -15,14 +15,53 @@ import re
 from pathlib import Path
 
 
+def _split_js_args(args_str: str) -> list[str]:
+    args: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_quote: str | None = None
+    for char in args_str:
+        if in_quote:
+            current.append(char)
+            if char == in_quote:
+                in_quote = None
+        elif char in ('"', "'"):
+            in_quote = char
+            current.append(char)
+        elif char in ("{", "[", "("):
+            depth += 1
+            current.append(char)
+        elif char in ("}", "]", ")"):
+            depth -= 1
+            if depth < 0:
+                return []
+            current.append(char)
+        elif char == "," and depth == 0:
+            args.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    if depth != 0 or in_quote is not None:
+        return []
+    if current:
+        args.append("".join(current).strip())
+    return args
+
+
 def _fix_tl_to_signature(match: re.Match) -> str:
-    target = match.group(1)
-    vars1 = match.group(2).strip()
-    vars2 = match.group(3).strip()
-    pos_arg = match.group(4)
-    pos = f", {pos_arg.strip()}" if pos_arg else ""
-    # Strip scale: 1.035 from entrance tween so it doesn't conflict with full-scene drift
-    combined = vars1.rstrip(" }") + ", " + vars2.lstrip(" {")
+    raw_args = match.group(1).strip()
+    args = _split_js_args(raw_args)
+    if len(args) < 3 or len(args) > 4:
+        return match.group(0)
+
+    target, vars1, vars2 = args[0], args[1], args[2]
+    if not (vars1.startswith("{") and vars1.endswith("}") and vars2.startswith("{") and vars2.endswith("}")):
+        return match.group(0)
+
+    pos = f", {args[3]}" if len(args) > 3 else ""
+    inner1 = vars1[1:-1].strip()
+    inner2 = vars2[1:-1].strip()
+    combined = inner1.rstrip(" ,") + ", " + inner2.lstrip(" ,")
     combined = re.sub(r"(?:,\s*)?\bscale\s*:\s*1\.035\b", "", combined)
     combined = re.sub(r"(?:,\s*)?\by\s*:\s*-8\b", "", combined)
     combined = re.sub(r"^\s*,\s*", "", combined)
@@ -76,7 +115,7 @@ def repair_gsap_timeline(html: str, path: Path, narration_duration: float = 0.0)
             return m.group(0)
 
         # 1. Merge malformed tl.to(target, {vars1}, {vars2}, pos) calls
-        pattern = r"tl\.to\s*\(\s*(\"[^\"\n]+\"|'[^'\n]+'|[A-Za-z_$][\w$]*)\s*,\s*\{([^{}]+)\}\s*,\s*\{([^{}]+)\}(?:,\s*([^)\n;]+))?\s*\)"
+        pattern = r"tl\.to\s*\(([^;\n]+)\)"
         script_body = re.sub(pattern, _fix_tl_to_signature, script_body)
 
         # 2. Identify scenes in the HTML

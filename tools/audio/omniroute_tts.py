@@ -71,6 +71,30 @@ def _send_tts_request(
     return audio_bytes, None
 
 
+def _prepare_tts_request(
+    inputs: dict[str, Any],
+) -> tuple[str, dict[str, str], dict[str, Any], str, str]:
+    voice_id = inputs.get("voice_id", "rachel")
+    model_id = inputs.get("model_id", "el/eleven_multilingual_v2")
+    speed = float(inputs.get("speed", 1.0))
+    base_url = inputs.get("base_url") or os.environ.get("OMNIROUTE_BASE_URL", "http://127.0.0.1:20128/v1")
+    api_key = inputs.get("api_key") or os.environ.get("OMNIROUTE_API_KEY", "")
+
+    endpoint = f"{base_url.rstrip('/')}/audio/speech"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {
+        "model": model_id,
+        "input": inputs.get("text", "").strip(),
+        "voice": voice_id,
+        "response_format": "mp3",
+        "speed": speed,
+    }
+    return endpoint, headers, payload, voice_id, model_id
+
+
 class OmniRouteTTS(BaseTool):
     name = "omniroute_tts"
     version = "0.1.0"
@@ -124,8 +148,6 @@ class OmniRouteTTS(BaseTool):
         return ToolStatus.AVAILABLE
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        import requests
-
         text = inputs.get("text", "").strip()
         if not text:
             return ToolResult(success=False, error="Narration text is empty or missing")
@@ -134,25 +156,7 @@ class OmniRouteTTS(BaseTool):
         if err or output_path is None:
             return ToolResult(success=False, error=err or "Invalid output path")
 
-        voice_id = inputs.get("voice_id", "rachel")
-        model_id = inputs.get("model_id", "el/eleven_multilingual_v2")
-        speed = float(inputs.get("speed", 1.0))
-        base_url = inputs.get("base_url") or os.environ.get("OMNIROUTE_BASE_URL", "http://127.0.0.1:20128/v1")
-        api_key = inputs.get("api_key") or os.environ.get("OMNIROUTE_API_KEY", "")
-
-        endpoint = f"{base_url.rstrip('/')}/audio/speech"
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        payload = {
-            "model": model_id,
-            "input": text,
-            "voice": voice_id,
-            "response_format": "mp3",
-            "speed": speed,
-        }
-
+        endpoint, headers, payload, voice_id, model_id = _prepare_tts_request(inputs)
         tmp_out = output_path.with_suffix(".tmp.mp3")
         try:
             audio_bytes, req_err = _send_tts_request(endpoint, payload, headers)

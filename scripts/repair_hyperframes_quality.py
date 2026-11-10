@@ -438,18 +438,18 @@ def _bump_font_px(px: float, sel_low: str, fallback_match: str) -> str:
 
 
 def _fix_css_rule(rule_m: re.Match) -> str:
-    selector, space, body = rule_m.group(1), rule_m.group(2), rule_m.group(3)
+    selector, body = rule_m.group(1), rule_m.group(2)
     sel_low = selector.lower()
     if _is_excluded_selector(sel_low):
         return rule_m.group(0)
     new_body = re.sub(r"font-size\s*:\s*([\d.]+)px", lambda fm: _bump_font_px(float(fm.group(1)), sel_low, fm.group(0)), body)
     if "scene-content" in sel_low:
         new_body = re.sub(r"overflow\s*:\s*hidden", "overflow: visible", new_body)
-    return f"{selector}{space}{{{new_body}}}"
+    return f"{selector}{{{new_body}}}"
 
 
 def _upscale_css_block(style_m: re.Match) -> str:
-    return re.sub(r"([^{}@\r\n]+?)(\s*)\{([^}]+)\}", _fix_css_rule, style_m.group(0))
+    return re.sub(r"([^\r\n{}@]+)\{([^{}]+)\}", _fix_css_rule, style_m.group(0))
 
 
 def _bump_svg_font(m: re.Match) -> str:
@@ -575,7 +575,7 @@ def _sanitize_metrics_and_symbols(html: str) -> str:
         html = re.sub(rf'(<[a-zA-Z0-9]+\b[^>]*\bclass="[^"]*{cls}[^"]*"[^>]*>)(.*?)(</[a-zA-Z0-9]+>)', _strip_period, html, flags=re.DOTALL)
 
     # Strip trailing periods from unicode and ascii arrows (e.g. ->. or →.)
-    html = re.sub(r'([↓↑→←➔➜➡➤]|(?:-{1,2}>)|(?:={1,2}>)|(?:<-{1,2})|(?:<={1,2}))\.(?=\s*<)', r'\1', html)
+    html = re.sub(r'([↓↑→←➔➜➡➤]|-{1,2}>|={1,2}>|<-{1,2}|<={1,2})\.(?=\s*<)', r'\1', html)
     # Strip periods inside // separators (e.g. "2026. //" -> "2026 //")
     html = re.sub(r'\.\s*(//)', r' \1', html)
 

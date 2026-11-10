@@ -186,64 +186,61 @@ def _cue_groups(words: list[dict]) -> list[dict]:
     ]
 
 
+def _validate_safe_caption_path(
+    raw_path: Path | str,
+    param_name: str,
+    *,
+    must_exist: bool = True,
+    allowed_root: Path | str | None = None,
+) -> Path:
+    raw = str(raw_path)
+    if not raw or "\x00" in raw or any(part == ".." for part in Path(raw).parts):
+        raise ValueError(f"Path traversal detected in argument: {raw_path}")
+    p = Path(raw)
+    if p.is_symlink():
+        raise ValueError(f"Symlink detected in argument: {raw_path}")
+    abs_p = Path(os.path.realpath(raw))
+
+    repo_root = Path(os.path.realpath(str(Path(__file__).resolve().parents[1])))
+    cwd_dir = Path.cwd().resolve()
+    tmp_dir = Path(os.path.realpath(tempfile.gettempdir()))
+    allowed_roots: list[Path] = [repo_root]
+    if cwd_dir != Path(cwd_dir.anchor):
+        allowed_roots.append(cwd_dir)
+    allowed_roots.append(tmp_dir)
+    if allowed_root is not None:
+        allowed_roots.append(Path(os.path.realpath(str(allowed_root))))
+
+    abs_str = str(abs_p)
+    if not any(
+        abs_p.is_relative_to(root)
+        and os.path.commonpath([abs_str, str(root)]) == str(root)
+        and (abs_str == str(root) or abs_str.startswith(str(root) + os.sep))
+        for root in allowed_roots
+    ):
+        raise ValueError(f"{param_name} path outside allowed roots: {raw_path}")
+
+    if allowed_root is not None:
+        root_resolved = Path(os.path.realpath(str(allowed_root)))
+        try:
+            abs_p.relative_to(root_resolved)
+        except ValueError as exc:
+            raise ValueError(f"Path escapes allowed root {root_resolved}: {raw_path}") from exc
+
+    if must_exist and not abs_p.is_file():
+        raise ValueError(f"{param_name.capitalize()} file not found: {abs_p}")
+    return abs_p
+
+
 def _validate_install_paths(
     composition_path: Path | str,
     audio_path: Path | str,
     timings_path: Path | str,
     allowed_root: Path | str | None,
 ) -> tuple[Path, Path, Path]:
-    raw_comp_str = str(composition_path)
-    raw_audio_str = str(audio_path)
-    raw_timings_str = str(timings_path)
-
-    for p_str, p in (
-        (raw_comp_str, Path(raw_comp_str)),
-        (raw_audio_str, Path(raw_audio_str)),
-        (raw_timings_str, Path(raw_timings_str)),
-    ):
-        if "\x00" in p_str or any(part == ".." for part in p.parts):
-            raise ValueError(f"Path traversal detected in argument: {p_str}")
-        if p.is_symlink():
-            raise ValueError(f"Symlink detected in argument: {p_str}")
-
-    comp_resolved = Path(os.path.realpath(raw_comp_str))
-    audio_resolved = Path(os.path.realpath(raw_audio_str))
-    timings_resolved = Path(os.path.realpath(raw_timings_str))
-
-    repo_root = Path(os.path.realpath(str(Path(__file__).resolve().parents[1])))
-    cwd_dir = Path.cwd().resolve()
-    tmp_dir = Path(os.path.realpath(tempfile.gettempdir()))
-    allowed_roots = (
-        repo_root,
-        *([cwd_dir] if cwd_dir != Path(cwd_dir.anchor) else []),
-        tmp_dir,
-        *([Path(os.path.realpath(str(allowed_root)))] if allowed_root is not None else []),
-    )
-
-    for p_name, res in (("composition", comp_resolved), ("audio", audio_resolved), ("timings", timings_resolved)):
-        res_str = str(res)
-        if not any(
-            res.is_relative_to(root)
-            and os.path.commonpath([res_str, str(root)]) == str(root)
-            and (res_str == str(root) or res_str.startswith(str(root) + os.sep))
-            for root in allowed_roots
-        ):
-            raise ValueError(f"{p_name} path outside allowed roots: {res}")
-
-    if allowed_root is not None:
-        root_resolved = Path(os.path.realpath(str(allowed_root)))
-        for p in (comp_resolved, audio_resolved, timings_resolved):
-            try:
-                p.relative_to(root_resolved)
-            except ValueError as exc:
-                raise ValueError(f"Path escapes allowed root {root_resolved}: {p}") from exc
-
-    if not comp_resolved.is_file():
-        raise ValueError(f"Composition file not found: {comp_resolved}")
-    if not audio_resolved.is_file():
-        raise ValueError(f"Audio file not found: {audio_resolved}")
-    if not timings_resolved.is_file():
-        raise ValueError(f"Timings file not found: {timings_resolved}")
+    comp_resolved = _validate_safe_caption_path(composition_path, "composition", allowed_root=allowed_root)
+    audio_resolved = _validate_safe_caption_path(audio_path, "audio", allowed_root=allowed_root)
+    timings_resolved = _validate_safe_caption_path(timings_path, "timings", allowed_root=allowed_root)
     return comp_resolved, audio_resolved, timings_resolved
 
 
@@ -394,7 +391,10 @@ def main(argv=None) -> int:
     parser.add_argument("--allowed-root", type=str, default=None, help="Optional boundary root directory")
     args = parser.parse_args(argv)
     try:
-        count = install_captions(args.composition, args.audio, args.timings, allowed_root=args.allowed_root)
+        safe_comp = _validate_safe_caption_path(args.composition, "composition", allowed_root=args.allowed_root)
+        safe_audio = _validate_safe_caption_path(args.audio, "audio", allowed_root=args.allowed_root)
+        safe_timings = _validate_safe_caption_path(args.timings, "timings", allowed_root=args.allowed_root)
+        count = install_captions(safe_comp, safe_audio, safe_timings, allowed_root=args.allowed_root)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"Caption installation failed: {exc}", file=sys.stderr)
         return 1

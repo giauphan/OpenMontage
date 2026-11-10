@@ -116,3 +116,26 @@ def test_fix_malformed_tl_to_complex_selectors(tmp_path: Path):
     assert "tl.to('#scene-1 .card', {opacity: 1, duration: 0.5, ease: 'power2.out'}, 2)" in fixed
     assert 'tl.to(".a, .b", {x: 100, duration: 1.0})' in fixed
     assert "tl.to(cardEl, {y: 50, duration: 0.8})" in fixed
+
+
+def test_fix_malformed_tl_to_nested_position_and_chained_call(tmp_path: Path):
+    html = """
+    <html>
+    <body>
+      <div id="stage"><div id="scene-1" class="scene"></div></div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.to(targetEl, { opacity: 1 }, { duration: 0.4 }, getPosition());
+        tl.to(a, { x: 1 }, 0).to(b, { y: 2 }, 1);
+        window.__timelines['main'] = tl;
+      </script>
+    </body>
+    </html>
+    """
+    file_path = tmp_path / "hyperframes" / "index.html"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text(html, encoding="utf-8")
+
+    fixed = repair_gsap_timeline(html, file_path, narration_duration=10.0)
+    assert "tl.to(targetEl, {opacity: 1, duration: 0.4}, getPosition())" in fixed
+    assert "tl.to(a, { x: 1 }, 0).to(b, { y: 2 }, 1)" in fixed
