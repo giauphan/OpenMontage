@@ -156,12 +156,17 @@ def _validate_safe_cli_path(raw_path: Path | str, *, must_exist: bool = True) ->
         raise ValueError(f"Symlink not allowed in argument: {raw_path}")
     abs_p = Path(os.path.realpath(raw))
     repo_root = Path(os.path.realpath(str(Path(__file__).resolve().parents[1])))
-    home_dir = Path(os.path.realpath(str(Path.home())))
-    cwd_dir = Path(os.path.realpath(str(Path.cwd())))
+    cwd_dir = Path.cwd().resolve()
     tmp_dir = Path(os.path.realpath(tempfile.gettempdir()))
-    allowed_roots = (repo_root, home_dir, cwd_dir, tmp_dir)
+    allowed_roots = (
+        repo_root,
+        *([cwd_dir] if cwd_dir != Path(cwd_dir.anchor) else []),
+        tmp_dir,
+    )
     if not any(
-        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        abs_p.is_relative_to(root)
+        and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        and (str(abs_p) == str(root) or str(abs_p).startswith(str(root) + os.sep))
         for root in allowed_roots
     ):
         raise ValueError(f"Path traversal detected in argument: {raw_path}")
@@ -173,13 +178,13 @@ def _validate_safe_cli_path(raw_path: Path | str, *, must_exist: bool = True) ->
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("text_path", type=Path)
-    parser.add_argument("audio_path", type=Path)
-    parser.add_argument("output_srt", type=Path)
+    parser.add_argument("text_path", type=str)
+    parser.add_argument("audio_path", type=str)
+    parser.add_argument("output_srt", type=str)
     parser.add_argument("legacy_output_json", nargs="?")
     parser.add_argument("legacy_max_words", nargs="?", type=int)
     parser.add_argument("--output-json", dest="output_json")
-    parser.add_argument("--transcript-json", type=Path)
+    parser.add_argument("--transcript-json", type=str)
     parser.add_argument("--require-aligned", action="store_true")
     parser.add_argument(
         "--no-script-comparison",

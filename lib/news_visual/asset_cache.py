@@ -16,11 +16,14 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+EXT_JPEG = ".jpeg"
+EXT_WEBP = ".webp"
+
 _ALLOWED_CACHE_EXTS: Dict[str, str] = {
     ".png": ".png",
     ".jpg": ".jpg",
-    ".jpeg": ".jpeg",
-    ".webp": ".webp",
+    EXT_JPEG: EXT_JPEG,
+    EXT_WEBP: EXT_WEBP,
 }
 
 
@@ -76,11 +79,11 @@ class VisualAssetCache:
         target = Path(cache_dir or default_cache)
         try:
             self.cache_dir = _secure_cache_dir(target)
-        except (OSError, PermissionError) as exc:
+        except OSError as exc:
             logger.warning("Cache dir %s unusable (%s); using fallback %s", target, exc, fallback_cache)
             try:
                 self.cache_dir = _secure_cache_dir(fallback_cache)
-            except (OSError, PermissionError) as fallback_exc:
+            except OSError as fallback_exc:
                 logger.warning("Fallback cache %s unusable (%s); creating private temp dir", fallback_cache, fallback_exc)
                 secure_tmp = Path(tempfile.mkdtemp(prefix="openmontage_visual_cache_"))
                 self.cache_dir = _secure_cache_dir(secure_tmp)
@@ -125,7 +128,7 @@ class VisualAssetCache:
 
     def get_cached_asset(self, cache_key: str) -> Optional[Path]:
         """Return cached image path if present and content is non-empty."""
-        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        for ext in _ALLOWED_CACHE_EXTS:
             cached_file = self.cache_dir / f"{cache_key}{ext}"
             if cached_file.is_file() and cached_file.stat().st_size > 100:
                 return cached_file

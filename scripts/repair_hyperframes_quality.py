@@ -397,7 +397,7 @@ def _ensure_font_css_variables(html: str, path: Path) -> str:
 
 
 _EXCLUDE_SELECTOR_RE = re.compile(
-    r"(?<![\w-])(?:[.#])?(?:[\w-]*-)?(?:badge|tag|pill|kicker|source|credit|caption|om-asr)(?![\w-])"
+    r"(?<![-\w])(?:[.#])?(?:[a-z0-9]+-)?(?:badge|tag|pill|kicker|source|credit|caption|om-asr)(?![-\w])"
 )
 _H1_SELECTOR_RE = re.compile(r"(?<![\w-])(?:h1|headline|title-large)(?![\w-])")
 _H2_SELECTOR_RE = re.compile(r"(?<![\w-])(?:h2|subheadline|section-header)(?![\w-])")
@@ -405,47 +405,42 @@ _H3_SELECTOR_RE = re.compile(r"(?<![\w-])(?:card-title|h3)(?![\w-])")
 _METRIC_SELECTOR_RE = re.compile(r"(?<![\w-])(?:metric-value|metric)(?![\w-])")
 
 
+def _bump_font_px(px: float, sel_low: str, fallback_match: str) -> str:
+    if _H1_SELECTOR_RE.search(sel_low):
+        return f"font-size: {max(int(px), 50)}px"
+    if _H2_SELECTOR_RE.search(sel_low):
+        return f"font-size: {max(int(px), 38)}px"
+    if _H3_SELECTOR_RE.search(sel_low):
+        return f"font-size: {max(int(px), 32)}px"
+    if _METRIC_SELECTOR_RE.search(sel_low):
+        return f"font-size: {max(int(px), 54)}px" if "label" not in sel_low else ("font-size: 28px" if px < 28 else fallback_match)
+    return "font-size: 28px" if px < 28 else fallback_match
+
+
+def _fix_css_rule(rule_m: re.Match) -> str:
+    selector, body = rule_m.group(1), rule_m.group(2)
+    sel_low = selector.lower()
+    if _EXCLUDE_SELECTOR_RE.search(sel_low):
+        return rule_m.group(0)
+    new_body = re.sub(r"font-size\s*:\s*([\d.]+)px", lambda fm: _bump_font_px(float(fm.group(1)), sel_low, fm.group(0)), body)
+    if "scene-content" in sel_low:
+        new_body = re.sub(r"overflow\s*:\s*hidden", "overflow: visible", new_body)
+    return f"{selector}{{{new_body}}}"
+
+
+def _upscale_css_block(style_m: re.Match) -> str:
+    return re.sub(r"([^{}@\r\n]+)\{([^}]+)\}", _fix_css_rule, style_m.group(0))
+
+
+def _bump_svg_font(m: re.Match) -> str:
+    val = int(m.group(1))
+    return f'font-size="{max(18, val + 6)}"' if val < 18 else m.group(0)
+
+
 def _normalize_mobile_readable_css(html: str) -> str:
     """Upscale tiny desktop CSS font-sizes (< 26px) in scene/card/flow rules and SVG text."""
-    def _upscale_css_block(style_m: re.Match) -> str:
-        style_text = style_m.group(0)
-        def _fix_rule(rule_m: re.Match) -> str:
-            selector = rule_m.group(1)
-            body = rule_m.group(2)
-            sel_low = selector.lower()
-            if _EXCLUDE_SELECTOR_RE.search(sel_low):
-                return rule_m.group(0)
-            def _bump_font(fm: re.Match) -> str:
-                px = float(fm.group(1))
-                if _H1_SELECTOR_RE.search(sel_low):
-                    return f"font-size: {max(int(px), 50)}px"
-                if _H2_SELECTOR_RE.search(sel_low):
-                    return f"font-size: {max(int(px), 38)}px"
-                if _H3_SELECTOR_RE.search(sel_low):
-                    return f"font-size: {max(int(px), 32)}px"
-                if _METRIC_SELECTOR_RE.search(sel_low):
-                    if "label" not in sel_low:
-                        return f"font-size: {max(int(px), 54)}px"
-                if px < 28:
-                    return "font-size: 28px"
-                return fm.group(0)
-            new_body = re.sub(r"font-size\s*:\s*([0-9.]+)px", _bump_font, body)
-            if "scene-content" in sel_low:
-                new_body = re.sub(r"overflow\s*:\s*hidden", "overflow: visible", new_body)
-            return f"{selector}{{{new_body}}}"
-        return re.sub(r"([^{}@]+)\{([^{}]+)\}", _fix_rule, style_text)
-
     html = re.sub(r"<style\b[^>]*>[\s\S]*?</style>", _upscale_css_block, html, flags=re.IGNORECASE)
-
-    # Upscale tiny SVG text font-size="11..16" to readable sizes
-    def _bump_svg_font(m: re.Match) -> str:
-        val = int(m.group(1))
-        if val < 18:
-            return f'font-size="{max(18, val + 6)}"'
-        return m.group(0)
-
-    html = re.sub(r'\bfont-size=["\']([0-9]+)["\']', _bump_svg_font, html)
-    return html
+    return re.sub(r'\bfont-size=["\'](\d+)["\']', _bump_svg_font, html)
 
 
 def _build_visual_enhancement_css(html: str) -> str:
@@ -566,7 +561,7 @@ def _sanitize_metrics_and_symbols(html: str) -> str:
 
     def _strip_heading_span_period(h_match: re.Match) -> str:
         text = h_match.group(0)
-        text = re.sub(r'(?<!\.)\.(?=</span>(?:\s+[A-Za-z0-9]|(?:\s*</[^>]+>)*\s*$))', '', text)
+        text = re.sub(r'(?<!\.)\.(?=</span>(?:\s*\w|\s*$))', '', text)
         return re.sub(r'(?<!\.)\.(?=(?:\s*</[^>]+>)*\s*$)', '', text)
 
     html = re.sub(r'<h[1-6]\b[^>]*>[\s\S]*?</h[1-6]>', _strip_heading_span_period, html)

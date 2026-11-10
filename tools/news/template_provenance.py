@@ -338,6 +338,28 @@ def _validate_safe_project_dir(project_dir: Path | str) -> Path:
     return abs_p
 
 
+def _collect_visual_assets(safe_proj_dir: Path) -> list[dict[str, str]]:
+    visuals_dir = safe_proj_dir / "assets" / "visuals"
+    visual_assets: list[dict[str, str]] = []
+    if visuals_dir.is_dir():
+        for p in sorted(visuals_dir.rglob("*")):
+            if p.is_file() and not p.is_symlink():
+                rel = str(p.relative_to(safe_proj_dir))
+                visual_assets.append({
+                    "path": rel,
+                    "sha256": _sha256_file(p),
+                })
+    return visual_assets
+
+
+def _find_candidate_sha256(safe_proj_dir: Path, candidates: tuple[str, ...]) -> str | None:
+    for cand in candidates:
+        vp = safe_proj_dir / cand
+        if vp.is_file() and not vp.is_symlink():
+            return _sha256_file(vp)
+    return None
+
+
 def record_provenance(
     project_dir: Path,
     template_id: str,
@@ -351,31 +373,13 @@ def record_provenance(
     safe_proj_dir = _validate_safe_project_dir(project_dir)
     cap_ok, _ = caption_display_verified(full_html, reels_html)
 
-    # Collect visual assets if assets/visuals exists
-    visuals_dir = safe_proj_dir / "assets" / "visuals"
-    visual_assets: list[dict[str, str]] = []
-    if visuals_dir.is_dir():
-        for p in sorted(visuals_dir.rglob("*")):
-            if p.is_file() and not p.is_symlink():
-                rel = str(p.relative_to(safe_proj_dir))
-                visual_assets.append({
-                    "path": rel,
-                    "sha256": _sha256_file(p),
-                })
-
-    visual_plan_sha256: str | None = None
-    for cand in ("artifacts/news_visual_plan.json", "news_visual_plan.json"):
-        vp = safe_proj_dir / cand
-        if vp.is_file() and not vp.is_symlink():
-            visual_plan_sha256 = _sha256_file(vp)
-            break
-
-    visual_assets_manifest_sha256: str | None = None
-    for cand in ("assets/visuals/manifest.json", "artifacts/news_visual_assets.json"):
-        vmp = safe_proj_dir / cand
-        if vmp.is_file() and not vmp.is_symlink():
-            visual_assets_manifest_sha256 = _sha256_file(vmp)
-            break
+    visual_assets = _collect_visual_assets(safe_proj_dir)
+    visual_plan_sha256 = _find_candidate_sha256(
+        safe_proj_dir, ("artifacts/news_visual_plan.json", "news_visual_plan.json")
+    )
+    visual_assets_manifest_sha256 = _find_candidate_sha256(
+        safe_proj_dir, ("assets/visuals/manifest.json", "artifacts/news_visual_assets.json")
+    )
 
     provenance = {
         "template_id": template_id,

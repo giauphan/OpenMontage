@@ -28,6 +28,7 @@ fi
 # via a same-directory temporary file keeps readers from seeing partial JSON.
 # STRICT_HEARTBEAT_TRAPS_BEGIN
 RUN_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+STATUS_COMPLETED="completed"
 HEARTBEAT_TERMINAL=0
 write_heartbeat() {
   local status="$1"
@@ -476,8 +477,8 @@ if [[ "$NEXT_VALID_COUNT" -ge "$TARGET_SUCCESS_COUNT" && ( "$TARGET_TODAY_ALLOCA
     write_state "platform-schedule" "warning" "date=$NEXT_DATE"
   fi
 
-  write_state "workflow" "completed" "already_satisfied"
-  write_heartbeat "completed"
+  write_state "workflow" "$STATUS_COMPLETED" "already_satisfied"
+  write_heartbeat "$STATUS_COMPLETED"
   log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED (ALL SLOTS ALREADY SATISFIED) ====="
   exit 0
 elif [[ "$NEXT_VALID_COUNT" -gt 0 && "$NEXT_VALID_COUNT" -lt "$TARGET_SUCCESS_COUNT" ]]; then
@@ -606,8 +607,8 @@ else
       if [[ "$VALID_COUNT" -eq 0 ]]; then
         log "No eligible topics were found; ending this run without generation retries or queue changes."
         write_state "$GENERATE_STAGE" "no_eligible_topic"
-        write_state "workflow" "completed" "no_eligible_topic"
-        write_heartbeat "completed"
+        write_state "workflow" "$STATUS_COMPLETED" "no_eligible_topic"
+        write_heartbeat "$STATUS_COMPLETED"
         exit 0
       else
         log "No further eligible topics found; proceeding with $VALID_COUNT existing validated project(s)"
@@ -990,6 +991,6 @@ write_state "final-state" "ok"
 
 log "===== STRICT DOCKER PUBLISH WORKFLOW COMPLETED ====="
 log "all stages passed; videos platform-scheduled; IG on slot cron"
-write_state "workflow" "completed"
-write_heartbeat "completed"
+write_state "workflow" "$STATUS_COMPLETED"
+write_heartbeat "$STATUS_COMPLETED"
 exit 0

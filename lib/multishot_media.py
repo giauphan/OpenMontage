@@ -89,10 +89,10 @@ def _sanitize_clip_path(raw_path: str | Path) -> Path | None:
         return None
     cand_abs = os.path.realpath(raw)
     cand_p = Path(cand_abs)
+    cwd_dir = Path.cwd().resolve()
     allowed_roots = (
         Path(os.path.realpath(str(Path(__file__).resolve().parents[1]))),
-        Path(os.path.realpath(str(Path.home()))),
-        Path(os.path.realpath(str(Path.cwd()))),
+        *([cwd_dir] if cwd_dir != Path(cwd_dir.anchor) else []),
         Path(os.path.realpath(tempfile.gettempdir())),
     )
     if not any(
@@ -103,6 +103,26 @@ def _sanitize_clip_path(raw_path: str | Path) -> Path | None:
     ):
         return None
     return cand_p
+
+
+def _populate_probe_streams(probe: dict[str, Any], streams: list[dict[str, Any]], errors: list[str]) -> None:
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
+    probe["has_video"] = video_stream is not None
+    probe["has_audio"] = audio_stream is not None
+
+    if video_stream is None:
+        errors.append("no video stream")
+        return
+
+    probe["video_codec"] = video_stream.get("codec_name")
+    probe["pixel_format"] = video_stream.get("pix_fmt")
+    probe["width"] = video_stream.get("width")
+    probe["height"] = video_stream.get("height")
+    rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
+    probe["fps"] = _parse_rational(rate)
+    if not probe["width"] or not probe["height"]:
+        errors.append("invalid video dimensions")
 
 
 def probe_clip(path: str | Path, *, timeout: float = 60.0) -> dict[str, Any]:
@@ -146,22 +166,7 @@ def probe_clip(path: str | Path, *, timeout: float = 60.0) -> dict[str, Any]:
             errors.append("unreadable duration")
 
     streams = data.get("streams", [])
-    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
-    audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
-    probe["has_video"] = video_stream is not None
-    probe["has_audio"] = audio_stream is not None
-
-    if video_stream is None:
-        errors.append("no video stream")
-    else:
-        probe["video_codec"] = video_stream.get("codec_name")
-        probe["pixel_format"] = video_stream.get("pix_fmt")
-        probe["width"] = video_stream.get("width")
-        probe["height"] = video_stream.get("height")
-        rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
-        probe["fps"] = _parse_rational(rate)
-        if not probe["width"] or not probe["height"]:
-            errors.append("invalid video dimensions")
+    _populate_probe_streams(probe, streams, errors)
 
     if probe["duration_sec"] is not None and probe["duration_sec"] <= 0:
         errors.append("duration must be > 0")

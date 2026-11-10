@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class ValidationStatusLogger:
@@ -148,61 +148,70 @@ class ValidationStatusLogger:
         return failures
 
 
+def _load_details_file(details_arg: str) -> tuple[dict[str, Any] | None, str | None]:
+    details_obj = Path(details_arg)
+    if any(part == ".." for part in details_obj.parts):
+        return None, f"Error: Path traversal in --details: {details_arg}"
+    if details_obj.is_symlink() or any(p.is_symlink() for p in details_obj.parents):
+        return None, f"Error: Symlink detected in --details: {details_arg}"
+    details_path = details_obj.resolve()
+    if not details_path.is_file():
+        return None, f"Error: --details file not found: {details_arg}"
+    try:
+        with open(details_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                return None, "Error: --details file must contain a JSON object"
+            return data, None
+    except (OSError, ValueError) as exc:
+        return None, f"Error: cannot read --details file: {exc}"
+
+
+def _print_recent_status(logger: ValidationStatusLogger) -> None:
+    print("Usage: validation_status.py <project_id> <status> [--total N] [--passed N] [--failed N] [--details file.json]")
+    recent = logger.get_current_status()
+    if recent:
+        print("\nRecent Validation Status:")
+        for entry in recent[-5:]:
+            status_icon = entry.get("color", "⚪")
+            print(f"{status_icon} {entry.get('project_id', 'Unknown')}: {entry.get('status', 'Unknown')} ({entry.get('passed', 0)}/{entry.get('total_checks', 0)})")
+
+
 def main():
     """Main entry point for status logging."""
     logger = ValidationStatusLogger()
-    
-    if len(sys.argv) > 1:
-        # Parse command line arguments
-        import argparse
-        parser = argparse.ArgumentParser(description='Validation Status Logger')
-        parser.add_argument('project_id', help='Project ID')
-        parser.add_argument('status', help='PASS or FAIL')
-        parser.add_argument('--total', type=int, default=0, help='Total checks')
-        parser.add_argument('--passed', type=int, default=0, help='Passed checks')
-        parser.add_argument('--failed', type=int, default=0, help='Failed checks')
-        parser.add_argument('--details', help='JSON details file')
-        
-        args = parser.parse_args()
-        
-        # Read details if provided
-        details = {}
-        if args.details:
-            details_obj = Path(args.details)
-            if any(part == ".." for part in details_obj.parts):
-                print(f"Error: Path traversal in --details: {args.details}", file=sys.stderr)
-                return 1
-            if details_obj.is_symlink() or any(p.is_symlink() for p in details_obj.parents):
-                print(f"Error: Symlink detected in --details: {args.details}", file=sys.stderr)
-                return 1
-            details_path = details_obj.resolve()
-            if details_path.is_file():
-                with open(details_path, 'r', encoding='utf-8') as f:
-                    try:
-                        details = json.load(f)
-                    except Exception:
-                        details = {}
-        
-        # Log the result
-        logger.log_validation_result(
-            project_id=args.project_id,
-            status=args.status,
-            total_checks=args.total,
-            passed=args.passed,
-            failed=args.failed,
-            details=details
-        )
-    else:
-        # Show usage
-        print("Usage: validation_status.py <project_id> <status> [--total N] [--passed N] [--failed N] [--details file.json]")
-        
-        # Show recent status
-        recent = logger.get_current_status()
-        if recent:
-            print(f"\nRecent Validation Status:")
-            for entry in recent[-5:]:  # Show last 5
-                status_icon = entry.get('color', '⚪')
-                print(f"{status_icon} {entry.get('project_id', 'Unknown')}: {entry.get('status', 'Unknown')} ({entry.get('passed', 0)}/{entry.get('total_checks', 0)})")
+
+    if len(sys.argv) <= 1:
+        _print_recent_status(logger)
+        return
+
+    import argparse
+    parser = argparse.ArgumentParser(description="Validation Status Logger")
+    parser.add_argument("project_id", help="Project ID")
+    parser.add_argument("status", help="PASS or FAIL")
+    parser.add_argument("--total", type=int, default=0, help="Total checks")
+    parser.add_argument("--passed", type=int, default=0, help="Passed checks")
+    parser.add_argument("--failed", type=int, default=0, help="Failed checks")
+    parser.add_argument("--details", help="JSON details file")
+
+    args = parser.parse_args()
+
+    details = {}
+    if args.details:
+        loaded, err = _load_details_file(args.details)
+        if err:
+            print(err, file=sys.stderr)
+            return 1
+        details = loaded or {}
+
+    logger.log_validation_result(
+        project_id=args.project_id,
+        status=args.status,
+        total_checks=args.total,
+        passed=args.passed,
+        failed=args.failed,
+        details=details,
+    )
 
 
 if __name__ == '__main__':

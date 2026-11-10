@@ -414,12 +414,17 @@ def _validate_safe_cli_path(raw_path: Path | str, *, must_exist: bool) -> Path:
         raise ValueError(f"Symlink not permitted: {raw_path}")
     abs_p = Path(os.path.realpath(raw))
     repo_root = Path(os.path.realpath(str(Path(__file__).resolve().parents[1])))
-    home_dir = Path(os.path.realpath(str(Path.home())))
-    cwd_dir = Path(os.path.realpath(str(Path.cwd())))
+    cwd_dir = Path.cwd().resolve()
     tmp_dir = Path(os.path.realpath(tempfile.gettempdir()))
-    allowed_roots = (repo_root, home_dir, cwd_dir, tmp_dir)
+    allowed_roots = (
+        repo_root,
+        *([cwd_dir] if cwd_dir != Path(cwd_dir.anchor) else []),
+        tmp_dir,
+    )
     if not any(
-        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        abs_p.is_relative_to(root)
+        and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        and (str(abs_p) == str(root) or str(abs_p).startswith(str(root) + os.sep))
         for root in allowed_roots
     ):
         raise ValueError(f"Path outside allowed roots: {raw_path}")
@@ -431,8 +436,8 @@ def _validate_safe_cli_path(raw_path: Path | str, *, must_exist: bool) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare Vietnamese narration text for TTS")
-    parser.add_argument("--in-file", type=Path, help="Read source text from this file instead of stdin")
-    parser.add_argument("--out-file", type=Path, help="Write prepared text here instead of stdout")
+    parser.add_argument("--in-file", type=str, help="Read source text from this file instead of stdin")
+    parser.add_argument("--out-file", type=str, help="Write prepared text here instead of stdout")
     args = parser.parse_args(argv)
 
     try:

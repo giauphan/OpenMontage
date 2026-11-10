@@ -104,6 +104,8 @@ def test_t03_normalize_mobile_readable_css_stage_card():
 h1 { font-size: 24px; }
 .metric { font-size: 20px; }
 .geometric-card { font-size: 18px; }
+.card-tag-row { font-size: 16px; }
+.source-card { font-size: 15px; }
 </style>"""
     normalized = _normalize_mobile_readable_css(html)
     assert ".stage-card { font-size: 28px; color: #fff; }" in normalized
@@ -112,5 +114,7 @@ h1 { font-size: 24px; }
     assert "h1 { font-size: 50px; }" in normalized
     assert ".metric { font-size: 54px; }" in normalized
     assert ".geometric-card { font-size: 28px; }" in normalized
+    assert ".card-tag-row { font-size: 28px; }" in normalized
+    assert ".source-card { font-size: 28px; }" in normalized
 
 

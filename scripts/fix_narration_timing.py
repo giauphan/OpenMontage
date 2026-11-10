@@ -93,7 +93,7 @@ def hyperframes_command() -> list[str]:
 def synth(voice, text, out: Path, rate: str | None = None, locale: str = "en-US", provider: str | None = None):
     if not voice:
         return 1, "--voice: voice identifier is required"
-    if not re.fullmatch(r'[a-zA-Z0-9_][a-zA-Z0-9_\-]*', str(voice)):
+    if not re.fullmatch(r'(?a)\w[\w\-]*', str(voice)):
         return 1, f"invalid voice identifier: {voice}"
     out_path = Path(out).resolve()
     if str(out_path).startswith("-") or any(part == ".." for part in Path(out).parts):

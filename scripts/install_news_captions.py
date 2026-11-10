@@ -182,13 +182,12 @@ def _cue_groups(words: list[dict]) -> list[dict]:
     ]
 
 
-def install_captions(
+def _validate_install_paths(
     composition_path: Path,
     audio_path: Path,
     timings_path: Path,
-    *,
-    allowed_root: Path | None = None,
-) -> int:
+    allowed_root: Path | None,
+) -> tuple[Path, Path, Path]:
     raw_comp = Path(composition_path)
     raw_audio = Path(audio_path)
     raw_timings = Path(timings_path)
@@ -215,25 +214,27 @@ def install_captions(
         raise ValueError(f"Audio file not found: {audio_resolved}")
     if not timings_resolved.is_file():
         raise ValueError(f"Timings file not found: {timings_resolved}")
-    source = comp_resolved.read_text(encoding="utf-8")
-    timings = json.loads(timings_resolved.read_text(encoding="utf-8"))
+    return comp_resolved, audio_resolved, timings_resolved
 
+
+def _validate_timings_payload(timings: Any, audio_bytes: bytes) -> list[dict[str, Any]]:
     if not isinstance(timings, dict) or timings.get("timing_source") != "asr":
         raise ValueError("caption timings must declare timing_source='asr'")
     if timings.get("timing_verified") is not False:
         raise ValueError("caption timing verification must remain unasserted")
-    audio_hash = hashlib.sha256(audio_resolved.read_bytes()).hexdigest()
+    audio_hash = hashlib.sha256(audio_bytes).hexdigest()
     if timings.get("audio_sha256") != audio_hash:
         raise ValueError("caption timing audio_sha256 does not match composition audio")
     words = timings.get("word_timestamps")
     if not isinstance(words, list) or not words:
         raise ValueError("caption timing JSON has no word_timestamps")
+    return words
 
-    composition_base, managed_span = _remove_managed_block(source)
-    parser = CompositionParser(composition_base)
+
+def _validate_composition_root(parser: CompositionParser, source: str) -> tuple[str, float, int]:
     if len(parser.root_records) != 1:
         raise ValueError("expected exactly one main HyperFrames composition root")
-    tag, attrs, _, closing_offset, parent = parser.root_records[0]
+    _, attrs, _, closing_offset, parent = parser.root_records[0]
     if parent != "body" or closing_offset is None:
         raise ValueError("main composition root must be a closed direct child of body")
     root_id = attrs.get("id")
@@ -253,10 +254,12 @@ def install_captions(
         raise ValueError("unsupported composition: expected a synchronously created paused GSAP timeline")
     if not re.search(r"window\.__timelines\s*(?:\[\s*(['\"])main\1\s*\]|\.\s*main\b)", source):
         raise ValueError("unsupported composition: expected timeline registered as window.__timelines['main']")
-
     if parser.has_existing_caption_markup:
         raise ValueError("unsupported composition: existing caption markup must be removed or explicitly migrated")
+    return root_id, composition_duration, closing_offset
 
+
+def _parse_and_validate_words(words: list[dict[str, Any]], composition_duration: float) -> list[dict[str, Any]]:
     parsed_words = []
     previous_end = -1.0
     for item in words:
@@ -270,11 +273,15 @@ def install_captions(
             raise ValueError("ASR word timings must be chronological and within composition duration")
         parsed_words.append({"word": item["word"], "start": float(start), "end": float(end)})
         previous_end = end
+    return parsed_words
 
-    track_index = max(parser.track_indices, default=-1) + 1
-    if track_index < 0:
-        raise ValueError("could not allocate a caption track")
-    groups = _cue_groups(parsed_words)
+
+def _build_caption_block(
+    groups: list[dict[str, Any]],
+    root_id: str,
+    track_index: int,
+    composition_duration: float,
+) -> str:
     css_to_use = (
         CAPTION_CSS
         if root_id == "main"
@@ -291,7 +298,34 @@ def install_captions(
             f'data-track-index="{track_index}">{html.escape(cue["text"], quote=True)}</div>'
         )
     caption_html.append(END_MARKER)
-    managed_block = "\n".join(caption_html)
+    return "\n".join(caption_html)
+
+
+def install_captions(
+    composition_path: Path,
+    audio_path: Path,
+    timings_path: Path,
+    *,
+    allowed_root: Path | None = None,
+) -> int:
+    comp_resolved, audio_resolved, timings_resolved = _validate_install_paths(
+        composition_path, audio_path, timings_path, allowed_root
+    )
+    source = comp_resolved.read_text(encoding="utf-8")
+    timings = json.loads(timings_resolved.read_text(encoding="utf-8"))
+    words = _validate_timings_payload(timings, audio_resolved.read_bytes())
+
+    composition_base, managed_span = _remove_managed_block(source)
+    parser = CompositionParser(composition_base)
+    root_id, composition_duration, closing_offset = _validate_composition_root(parser, source)
+
+    parsed_words = _parse_and_validate_words(words, composition_duration)
+    track_index = max(parser.track_indices, default=-1) + 1
+    if track_index < 0:
+        raise ValueError("could not allocate a caption track")
+    groups = _cue_groups(parsed_words)
+    managed_block = _build_caption_block(groups, root_id, track_index, composition_duration)
+
     if managed_span is not None:
         start, end = managed_span
         updated = source[:start] + managed_block + source[end:]

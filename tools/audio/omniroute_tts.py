@@ -28,6 +28,33 @@ from tools.base_tool import (
 )
 
 
+def _resolve_tts_output_path(raw_out: str | None) -> tuple[Path | None, str | None]:
+    from lib.audio.narration_orchestrator import _safe_user_tmp_dir
+
+    default_out = str(_safe_user_tmp_dir("tts") / "omniroute_out.mp3")
+    target = raw_out or default_out
+    raw_path = Path(target)
+    if any(part == ".." for part in raw_path.parts):
+        return None, "Path traversal detected in output_path"
+    if raw_path.is_symlink():
+        return None, "Refusing to write to symlink"
+    output_path = raw_path.resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return output_path, None
+
+
+def _probe_and_commit_audio(tmp_out: Path, output_path: Path) -> tuple[float | None, str | None]:
+    from lib.audio.narration_orchestrator import probe_audio_duration
+
+    duration = probe_audio_duration(tmp_out)
+    if duration <= 0:
+        if tmp_out.exists():
+            tmp_out.unlink()
+        return None, "Generated audio failed ffprobe duration check"
+    os.replace(tmp_out, output_path)
+    return round(duration, 3), None
+
+
 class OmniRouteTTS(BaseTool):
     name = "omniroute_tts"
     version = "0.1.0"
@@ -87,27 +114,18 @@ class OmniRouteTTS(BaseTool):
         if not text:
             return ToolResult(success=False, error="Narration text is empty or missing")
 
+        output_path, err = _resolve_tts_output_path(inputs.get("output_path"))
+        if err or output_path is None:
+            return ToolResult(success=False, error=err or "Invalid output path")
+
         voice_id = inputs.get("voice_id", "rachel")
         model_id = inputs.get("model_id", "el/eleven_multilingual_v2")
         speed = float(inputs.get("speed", 1.0))
-        from lib.audio.narration_orchestrator import _safe_user_tmp_dir
-        default_out = str(_safe_user_tmp_dir("tts") / "omniroute_out.mp3")
-        raw_out = inputs.get("output_path") or default_out
-        raw_path = Path(raw_out)
-        if any(part == ".." for part in raw_path.parts):
-            return ToolResult(success=False, error="Path traversal detected in output_path")
-        if raw_path.is_symlink():
-            return ToolResult(success=False, error="Refusing to write to symlink")
-        output_path = raw_path.resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-
         base_url = inputs.get("base_url") or os.environ.get("OMNIROUTE_BASE_URL", "http://127.0.0.1:20128/v1")
         api_key = inputs.get("api_key") or os.environ.get("OMNIROUTE_API_KEY", "")
 
         endpoint = f"{base_url.rstrip('/')}/audio/speech"
-        headers = {
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
@@ -136,21 +154,15 @@ class OmniRouteTTS(BaseTool):
                 )
 
             tmp_out.write_bytes(audio_bytes)
-
-            from lib.audio.narration_orchestrator import probe_audio_duration
-            duration = probe_audio_duration(tmp_out)
-            if duration <= 0:
-                if tmp_out.exists():
-                    tmp_out.unlink()
-                return ToolResult(success=False, error="Generated audio failed ffprobe duration check")
-
-            os.replace(tmp_out, output_path)
+            duration, probe_err = _probe_and_commit_audio(tmp_out, output_path)
+            if probe_err or duration is None:
+                return ToolResult(success=False, error=probe_err or "Failed to commit audio")
 
             return ToolResult(
                 success=True,
                 data={
                     "audio_path": str(output_path),
-                    "duration_seconds": round(duration, 3),
+                    "duration_seconds": duration,
                     "provider": self.provider,
                     "model": model_id,
                     "voice": voice_id,

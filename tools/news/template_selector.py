@@ -128,12 +128,13 @@ def _validate_safe_brief_path(raw_path: Path | str) -> Path:
     cwd_dir = Path.cwd().resolve()
     allowed_roots = (
         Path(os.path.realpath(str(ROOT))),
-        Path(os.path.realpath(str(Path.home()))),
         *([cwd_dir] if cwd_dir != Path(cwd_dir.anchor) else []),
         Path(os.path.realpath(tempfile.gettempdir())),
     )
     if not any(
-        abs_p.is_relative_to(root) and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        abs_p.is_relative_to(root)
+        and os.path.commonpath([str(abs_p), str(root)]) == str(root)
+        and (str(abs_p) == str(root) or str(abs_p).startswith(str(root) + os.sep))
         for root in allowed_roots
     ):
         raise ValueError(f"Brief path outside allowed roots: {raw_path}")
@@ -147,7 +148,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Select news template for a brief")
-    parser.add_argument("--brief", type=Path, required=True)
+    parser.add_argument("--brief", type=str, required=True)
     args = parser.parse_args()
 
     safe_brief = _validate_safe_brief_path(args.brief)
