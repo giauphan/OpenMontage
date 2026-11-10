@@ -378,6 +378,18 @@ def _verify_scene_timeline_and_render_coverage(
                 continue
 
             std_val = _frame_std_dev(frame_bytes)
+            if std_val < 5.0 and (clamped_end - b_start) >= 3.0:
+                for offset in (1.5, -1.5):
+                    alt_ts = min(max(b_start + 0.4, mid_ts + offset), max(0.1, clamped_end - 0.4))
+                    alt_bytes = _sample_upper_frame_gray(render_mp4, alt_ts)
+                    if alt_bytes is not None:
+                        alt_std = _frame_std_dev(alt_bytes)
+                        if alt_std > std_val:
+                            frame_bytes = alt_bytes
+                            std_val = alt_std
+                            mid_ts = alt_ts
+                            if std_val >= 5.0:
+                                break
             if std_val < 5.0:
                 _add_visual_not_rendered(
                     f"Beat '{bid}' rendered frame at {mid_ts:.2f}s in {render_mp4.name} is visually blank or low-contrast (std_dev={std_val:.2f} < 5.0)",
