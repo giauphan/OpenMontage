@@ -429,3 +429,51 @@ def test_hydrate_from_hybrid_discovery_fallback_trigger(monkeypatch):
     assert call_count == 2
 
 
+def test_produce_limits_respects_allow_partial_daily_batch(monkeypatch):
+    """Test _produce_limits respects ALLOW_PARTIAL_DAILY_BATCH environment flag."""
+    args = argparse.Namespace(require_latest_news=False, max_age_days=7)
+
+    # Disallowed: min_required defaults to min(count, EXPECTED_SUCCESS_COUNT)
+    monkeypatch.delenv("ALLOW_PARTIAL_DAILY_BATCH", raising=False)
+    monkeypatch.setenv("EXPECTED_SUCCESS_COUNT", "3")
+    min_req, _ = news_pipeline_cli._produce_limits(args, count=3)
+    assert min_req == 3
+
+    # Allowed via env var: min_required drops to 1
+    monkeypatch.setenv("ALLOW_PARTIAL_DAILY_BATCH", "1")
+    min_req, _ = news_pipeline_cli._produce_limits(args, count=3)
+    assert min_req == 1
+
+    # Allowed via CLI flag: min_required drops to 1
+    monkeypatch.delenv("ALLOW_PARTIAL_DAILY_BATCH", raising=False)
+    args_with_flag = argparse.Namespace(require_latest_news=False, max_age_days=7, allow_partial_daily_batch=True)
+    min_req, _ = news_pipeline_cli._produce_limits(args_with_flag, count=3)
+    assert min_req == 1
+
+
+def test_require_ranked_candidates_partial_batch_behavior(monkeypatch):
+    """Test _require_ranked_candidates allows partial pool when enabled and rejects when disabled."""
+    test_pool = [candidate(1), candidate(2)]
+
+    # Mock scorer to return the 2 candidates
+    class MockScorer:
+        def rank_candidates(self, pool, limit=30):
+            return pool
+
+    monkeypatch.setattr(news_pipeline_cli, "NewsCandidateScorer", MockScorer)
+
+    # 1. Partial allowed: should succeed and return the 2 available candidates
+    ranked = news_pipeline_cli._require_ranked_candidates(
+        test_pool, count=3, min_required=3, allow_partial=True
+    )
+    assert len(ranked) == 2
+
+    # 2. Partial disallowed: should call sys.exit(1)
+    with pytest.raises(SystemExit) as exc:
+        news_pipeline_cli._require_ranked_candidates(
+            test_pool, count=3, min_required=3, allow_partial=False
+        )
+    assert exc.value.code == 1
+
+
+

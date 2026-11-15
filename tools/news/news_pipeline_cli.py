@@ -28,7 +28,6 @@ from tools.news.gateway_daily_news_feed import write_feed
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 def run_ingest(args: argparse.Namespace) -> None:
     """Ingest, normalize, and score raw news."""
     input_path = _validate_safe_input_path(args.input)
@@ -52,7 +51,6 @@ def run_ingest(args: argparse.Namespace) -> None:
         json.dump(ranked, f, indent=2)
 
     logger.info("Wrote %d ranked candidates to %s", len(ranked), _sanitize_log_val(out_path))
-
 
 def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]) -> str:
     """Build research brief and initialize one OpenMontage project for a candidate."""
@@ -110,39 +108,11 @@ def _init_candidate_project(candidate: Dict[str, Any], selection: Dict[str, Any]
     logger.info("Project initialized: projects/%s", _sanitize_log_val(project_id))
     return project_id
 
-
-def _sanitize_log_val(val: Any) -> str:
-    """Sanitize strings before logging to prevent log injection (CWE-117)."""
-    clean = str(val).replace("\r", " ").replace("\n", " ").strip()
-    return clean[:120]
-
-
-def _validate_safe_input_path(path: Path | str, *, must_exist: bool = True) -> Path:
-    """Validate path against traversal attacks (CWE-22 / CWE-73)."""
-    import tempfile
-    raw_obj = Path(path)
-    if any(part == ".." for part in raw_obj.parts) or raw_obj.is_symlink():
-        logger.error("Path traversal or symlink detected: %s", _sanitize_log_val(path))
-        sys.exit(1)
-    p = raw_obj.expanduser().resolve()
-    repo_root, home_dir, cwd_dir = Path(__file__).resolve().parents[2], Path.home().resolve(), Path.cwd().resolve()
-    tmp_dir = Path(tempfile.gettempdir()).resolve()
-    is_in_tmp = p.is_relative_to(tmp_dir)
-    if not (p.is_relative_to(repo_root) or p.is_relative_to(home_dir) or (cwd_dir != Path(cwd_dir.anchor) and p.is_relative_to(cwd_dir)) or is_in_tmp):
-        logger.error("Path traversal detected or path outside allowed root: %s", _sanitize_log_val(path))
-        sys.exit(1)
-    if must_exist and not p.is_file():
-        logger.error("Input file not found: %s", _sanitize_log_val(path))
-        sys.exit(1)
-    if must_exist and is_in_tmp and hasattr(os, "getuid") and p.stat().st_uid != os.getuid():
-        logger.error("Input file in temp directory must be owned by current user: %s", _sanitize_log_val(path))
-        sys.exit(1)
-    return p
-
-
-def _validate_safe_output_path(path: Path | str) -> Path:
-    return _validate_safe_input_path(path, must_exist=False)
-
+from tools.news.news_cli_helpers import (
+    _sanitize_log_val,
+    _validate_safe_input_path,
+    _validate_safe_output_path,
+)
 
 def run_fetch(args: argparse.Namespace) -> None:
     """Fetch discovery leads and write the established raw feed format."""
@@ -169,7 +139,6 @@ def run_fetch(args: argparse.Namespace) -> None:
             count = write_feed(gw_url, Path(args.output), minimum=args.min_items)
     logger.info(f"Wrote {count} raw items to {args.output}")
 
-
 def _collect_scheduled_ids() -> Set[str]:
     sched_path = Path("config/publish_schedule.json")
     if not sched_path.is_file():
@@ -185,7 +154,6 @@ def _collect_scheduled_ids() -> Set[str]:
     except Exception:
         return set()
 
-
 def _is_completed_project_dir(p: Path) -> bool:
     if not p.is_dir():
         return False
@@ -194,12 +162,10 @@ def _is_completed_project_dir(p: Path) -> bool:
     renders = p / "renders"
     return renders.is_dir() and any(renders.glob("*.mp4"))
 
-
 def _collect_directory_project_ids(p_dir: Path) -> Set[str]:
     if not p_dir.is_dir():
         return set()
     return {p.name for p in p_dir.iterdir() if _is_completed_project_dir(p)}
-
 
 def _collect_used_project_ids() -> Set[str]:
     """Collect project IDs that are already scheduled, completed, quarantined, or consumed."""
@@ -228,7 +194,6 @@ def _collect_used_project_ids() -> Set[str]:
         used_ids.update(p.name for p in history.iterdir() if re.fullmatch(r"cand_[0-9a-f]{16}", p.name) and p.is_file() and not p.is_symlink())
     return used_ids
 
-
 def _mark_muse_used(candidate_id: str) -> None:
     if not re.fullmatch(r"cand_[0-9a-f]{16}", candidate_id):
         raise ValueError("Invalid Muse candidate ID")
@@ -245,9 +210,7 @@ def _mark_muse_used(candidate_id: str) -> None:
         return
     os.close(fd)
 
-
 NO_ELIGIBLE_MARKER_PATH = Path("data/.no_eligible_topic_marker")
-
 
 def _record_no_eligible_marker() -> None:
     try:
@@ -256,14 +219,12 @@ def _record_no_eligible_marker() -> None:
     except OSError:
         pass
 
-
 def _clear_no_eligible_marker() -> None:
     if NO_ELIGIBLE_MARKER_PATH.is_file():
         try:
             NO_ELIGIBLE_MARKER_PATH.unlink()
         except OSError:
             pass
-
 
 def _filter_by_scope_gate(
     candidate_pool: List[Dict[str, Any]],
@@ -295,7 +256,6 @@ def _filter_by_scope_gate(
         _clear_no_eligible_marker()
     return niche_filtered
 
-
 def _ingest_and_filter_candidates(
     input_path: Path,
     count: int,
@@ -319,7 +279,6 @@ def _ingest_and_filter_candidates(
         freshness_window_hours=freshness_window_hours,
     )
 
-
 def _normalize_and_filter_candidates(
     raw_items: List[Dict[str, Any]],
     used_ids: Set[str],
@@ -335,7 +294,6 @@ def _normalize_and_filter_candidates(
 
     available = [c for c in candidates if c.get("candidate_id") not in used_ids]
     return _filter_by_scope_gate(available, fail_closed=fail_closed)
-
 
 def _gateway_candidate_to_raw_item(candidate: Dict[str, Any]) -> Dict[str, Any]:
     """Adapt a Gateway discovery candidate to the strict raw-news input contract."""
@@ -358,7 +316,6 @@ def _gateway_candidate_to_raw_item(candidate: Dict[str, Any]) -> Dict[str, Any]:
         "scoring": candidate.get("scoring"),
     }
     return raw
-
 
 def _select_single_candidate(
     selector: NewsSelector,
@@ -397,7 +354,6 @@ def _select_single_candidate(
         return None
 
     return candidate, selection
-
 
 def _select_and_initialize_projects(
     selector: NewsSelector,
@@ -442,7 +398,6 @@ def _select_and_initialize_projects(
 
     return project_ids, attempts
 
-
 def _merge_unique_candidates(
     target_pool: List[Dict[str, Any]],
     new_candidates: List[Dict[str, Any]],
@@ -454,7 +409,6 @@ def _merge_unique_candidates(
         if cid and cid not in seen_ids and cid not in used_ids:
             target_pool.append(c)
             seen_ids.add(cid)
-
 
 def _run_discovery_fallback(
     disc_result: Any,
@@ -480,7 +434,6 @@ def _run_discovery_fallback(
     if not disc_result.is_eligible and disc_result.candidates:
         disc_result.status = "ELIGIBLE"
 
-
 def _filter_fresh_candidates(candidates, max_age_hours, now=None):
     """Keep only items with a known publication time inside the freshness window."""
     from lib.fixed_niche.candidate_helpers import parse_timestamp
@@ -492,7 +445,6 @@ def _filter_fresh_candidates(candidates, max_age_hours, now=None):
         c.get("published_at") or c.get("published_at_utc")
     ) <= end]
 
-
 def _hydrate_from_hybrid_discovery(
     candidate_pool: List[Dict[str, Any]],
     count: int,
@@ -501,12 +453,14 @@ def _hydrate_from_hybrid_discovery(
     args: argparse.Namespace,
 ) -> List[Dict[str, Any]]:
     """Augment candidate pool with Tier 1 / Tier 2 discovery candidates if below required minimum."""
-    if len(candidate_pool) >= min_required:
+    target_count = max(count, min_required)
+    if len(candidate_pool) >= target_count:
         return candidate_pool
 
     logger.info(
-        "Candidate pool has %d eligible candidate(s) (need %d); activating HybridCandidateDiscovery.",
+        "Candidate pool has %d eligible candidate(s) (target %d, min %d); activating HybridCandidateDiscovery.",
         len(candidate_pool),
+        target_count,
         min_required,
     )
     from lib.fixed_niche.hybrid_discovery import HybridCandidateDiscovery
@@ -517,27 +471,32 @@ def _hydrate_from_hybrid_discovery(
         max_age_days=max_age_days,
     )
     try:
-        disc_result = discovery.discover_candidates(count=max(count, min_required * 2), used_ids=used_ids)
+        disc_result = discovery.discover_candidates(count=max(target_count, min_required * 2), used_ids=used_ids)
     except TypeError:
-        disc_result = discovery.discover_candidates(count=max(count, min_required * 2))
-    need_fallback = (not disc_result.is_eligible or len(disc_result.candidates) < min_required) and require_latest
+        disc_result = discovery.discover_candidates(count=max(target_count, min_required * 2))
+    need_fallback = (not disc_result.is_eligible or len(disc_result.candidates) < target_count) and require_latest
     if need_fallback:
         logger.info(
             "Latest discovery yielded fewer than %d candidates; supplementing from the authorized backlog.",
-            min_required,
+            target_count,
         )
-        _run_discovery_fallback(disc_result, count, min_required, max_age_days, used_ids)
+        _run_discovery_fallback(disc_result, target_count, min_required, max_age_days, used_ids)
 
     if disc_result.is_eligible:
         _merge_unique_candidates(candidate_pool, disc_result.candidates, used_ids)
     return candidate_pool
-
 
 def _produce_limits(args: argparse.Namespace, count: int) -> tuple[int, float | None]:
     min_produce = int(os.environ.get("MIN_PRODUCE_COUNT") or os.environ.get("EXPECTED_SUCCESS_COUNT") or os.environ.get("TARGET_SUCCESS_COUNT") or 3)
     min_required = min(count, min_produce)
     if getattr(args, "no_hybrid_discovery", False):
         min_required = 1
+    allow_partial = (
+        os.environ.get("ALLOW_PARTIAL_DAILY_BATCH") in ("1", "true", "True")
+        or getattr(args, "allow_partial_daily_batch", False)
+    )
+    if allow_partial:
+        min_required = int(os.environ.get("MIN_PRODUCE_COUNT") or 1)
     max_age_hours = None
     if getattr(args, "require_latest_news", True):
         configured_age = os.environ.get("NEWS_MAX_SOURCE_AGE_HOURS")
@@ -549,7 +508,6 @@ def _produce_limits(args: argparse.Namespace, count: int) -> tuple[int, float | 
             logger.error("Invalid NEWS_MAX_SOURCE_AGE_HOURS freshness policy")
             sys.exit(1)
     return min_required, max_age_hours
-
 
 def _produce_candidate_pool(args: argparse.Namespace, count: int, min_required: int, used_ids: Set[str], max_age_hours: float | None) -> List[Dict[str, Any]]:
     candidate_pool: List[Dict[str, Any]] = []
@@ -591,8 +549,12 @@ def _produce_candidate_pool(args: argparse.Namespace, count: int, min_required: 
             candidate_pool = _filter_fresh_candidates(candidate_pool, max_age_hours)
     return candidate_pool
 
-
-def _require_ranked_candidates(candidate_pool: List[Dict[str, Any]], count: int, min_required: int) -> List[Dict[str, Any]]:
+def _require_ranked_candidates(
+    candidate_pool: List[Dict[str, Any]],
+    count: int,
+    min_required: int,
+    allow_partial: bool = False,
+) -> List[Dict[str, Any]]:
     if not candidate_pool:
         logger.info("STATUS=NO_ELIGIBLE_TOPIC: No candidates passed FixedNicheScopeGate across input and hybrid discovery.")
         print("STATUS=NO_ELIGIBLE_TOPIC")
@@ -605,18 +567,29 @@ def _require_ranked_candidates(candidate_pool: List[Dict[str, Any]], count: int,
         logger.error("No valid candidates found.")
         sys.exit(1)
     if len(ranked) < min_required:
+        if allow_partial and len(ranked) > 0:
+            logger.warning(
+                "Candidate pool has %d distinct candidates (less than %d required); "
+                "proceeding with partial batch under ALLOW_PARTIAL_DAILY_BATCH=1.",
+                len(ranked),
+                min_required,
+            )
+            return ranked
         logger.error(f"Need at least {min_required} distinct candidates but only {len(ranked)} available.")
         sys.exit(1)
     return ranked
 
-
 def run_produce(args: argparse.Namespace) -> None:
     """Full pipeline: ingest -> score -> LLM select -> research brief -> checkpoint."""
     count = max(1, getattr(args, "count", 1))
+    allow_partial = (
+        os.environ.get("ALLOW_PARTIAL_DAILY_BATCH") in ("1", "true", "True")
+        or getattr(args, "allow_partial_daily_batch", False)
+    )
     used_ids = _collect_used_project_ids()
     min_required, max_age_hours = _produce_limits(args, count)
     candidate_pool = _produce_candidate_pool(args, count, min_required, used_ids, max_age_hours)
-    ranked = _require_ranked_candidates(candidate_pool, count, min_required)
+    ranked = _require_ranked_candidates(candidate_pool, count, min_required, allow_partial=allow_partial)
 
     if args.dry_run:
         logger.info("[DRY RUN] Skipping Codex CLI and checkpoint generation.")
@@ -628,11 +601,17 @@ def run_produce(args: argparse.Namespace) -> None:
     project_ids, attempts = _select_and_initialize_projects(selector, ranked, used_ids, count)
 
     if len(project_ids) < min_required:
-        logger.error(
-            f"Initialized {len(project_ids)} of {count} requested project(s) (minimum {min_required} required) after "
-            f"{attempts} selection attempts."
-        )
-        sys.exit(1)
+        if allow_partial and len(project_ids) > 0:
+            logger.warning(
+                f"Initialized {len(project_ids)} of {count} requested project(s) (minimum {min_required} required); "
+                f"proceeding with partial batch under ALLOW_PARTIAL_DAILY_BATCH=1."
+            )
+        else:
+            logger.error(
+                f"Initialized {len(project_ids)} of {count} requested project(s) (minimum {min_required} required) after "
+                f"{attempts} selection attempts."
+            )
+            sys.exit(1)
     if len(project_ids) < count:
         logger.warning(
             f"Initialized {len(project_ids)} of {count} requested project(s) after "
@@ -647,8 +626,6 @@ def run_produce(args: argparse.Namespace) -> None:
         except Exception as e:
             logger.debug("Candidate consume sync to gateway skipped: %s", e)
     logger.info(f"Initialized {len(project_ids)} project(s). Research stage completed.")
-
-
 
 def run_capture_source(args: argparse.Namespace) -> int:
     """Capture one source for review without advancing the production pipeline."""
@@ -677,7 +654,6 @@ def run_capture_source(args: argparse.Namespace) -> int:
     print(json.dumps(provenance, ensure_ascii=False, indent=2))
     return 0
 
-
 def run_prepare_review(args: argparse.Namespace) -> int:
     """Build a hash-bound, review-pending worksheet from explicit revisions."""
     selected = []
@@ -704,7 +680,6 @@ def run_prepare_review(args: argparse.Namespace) -> int:
         return 1
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
-
 
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Gateway Daily News to OpenMontage CLI")
@@ -736,6 +711,12 @@ def main(argv: List[str] | None = None) -> int:
         type=int,
         default=7,
         help="Sliding freshness window in days (default: 7 days, meaning [run_date - 7 days, run_date]).",
+    )
+    produce_parser.add_argument(
+        "--allow-partial-daily-batch",
+        action="store_true",
+        default=False,
+        help="Allow producing fewer than --count candidates if candidate pool is lean (minimum 1)",
     )
 
     fetch_parser = subparsers.add_parser("fetch", help="Fetch latest news feeds via Toolcase Gateway Daily News service")
@@ -785,7 +766,6 @@ def main(argv: List[str] | None = None) -> int:
     elif args.command == "prepare-review":
         return run_prepare_review(args)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
