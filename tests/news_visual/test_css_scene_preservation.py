@@ -178,4 +178,38 @@ def test_t05_visual_mode_enhancement_css_selector_safety():
         assert "border-radius: 24px" in css, f"Mode {mode} missing 24px border radius for cards"
 
 
+def test_t06_repatch_updates_existing_enhancement_css(tmp_path: Path):
+    """Verify that re-patching an already-repaired HTML file cleanly updates the enhancement block."""
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    for font in ("BeVietnamPro-Regular.ttf", "BeVietnamPro-Bold.ttf", "BeVietnamPro-ExtraBold.ttf"):
+        (assets_dir / font).write_bytes(b"mock font data")
+
+    html_content = """<!doctype html>
+<html>
+<head>
+<style>
+body { margin: 0; }
+/* Visual Quality Enhancement (Context-Aware Visual Mode) */
+.brand-name, .badge, .category, .tag, [class*="badge"], [class*="tag"] { border-radius: 9999px; }
+</style>
+</head>
+<body>
+<div id="stage" class="composition" data-composition-id="main" data-start="0" data-duration="60" data-width="1080" data-height="1920">
+  <div class="stage-card">Card</div>
+</div>
+</body>
+</html>"""
+    test_html_path = tmp_path / "index.html"
+    test_html_path.write_text(html_content, encoding="utf-8")
+
+    patch_html(test_html_path, narration_duration=60.0, strict=True)
+    repaired_html = test_html_path.read_text(encoding="utf-8")
+
+    assert '[class*="tag"]' not in repaired_html
+    assert ".scene .stage-card, .stage-card" in repaired_html
+    assert "border-radius: 24px" in repaired_html
+
+
+
 

@@ -179,7 +179,15 @@ def _patch_typography_and_css(html: str, path: Path) -> str:
     if legacy_scene in html and len(re.findall(r"(?<![-\w])\.scene\s*\{", html)) > 1:
         html = html.replace(legacy_scene, ".scene {\n    box-sizing: border-box;\n}")
 
-    if "/* Visual Quality Enhancement" not in html and STYLE_CLOSE_TAG in html:
+    if "/* Visual Quality Enhancement" in html:
+        enhancement_css = _build_visual_enhancement_css(html).replace(STYLE_CLOSE_TAG, "").strip()
+        html = re.sub(
+            r"/\* Visual Quality Enhancement[^*]*\*/[\s\S]*?(?=\s*</style>)",
+            enhancement_css,
+            html,
+            count=1,
+        )
+    elif STYLE_CLOSE_TAG in html:
         html = html.replace(STYLE_CLOSE_TAG, _build_visual_enhancement_css(html), 1)
 
     return html
