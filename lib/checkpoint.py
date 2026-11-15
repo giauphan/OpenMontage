@@ -91,191 +91,44 @@ PROJECT_MARKER_FILENAME = "project.json"
 HISTORY_DIRNAME = "history"
 
 
-class CheckpointValidationError(ValueError):
-    """Raised when a checkpoint or its canonical artifacts are invalid."""
+from lib.checkpoint_validation import (
+    CheckpointValidationError,
+    validate_checkpoint,
+    _validate_style_playbook,
+    _load_checkpoint_schema,
+    _validate_artifacts_for_stage,
+    _validate_hook_plan_status,
+)
 
 
-def _validate_style_playbook(style_playbook: str | None) -> None:
-    """Fail closed when a checkpoint names a visual identity that cannot load."""
+def _validate_safe_identifier(val: str, name: str = "identifier") -> str:
+    if not isinstance(val, str) or not val.strip():
+        raise CheckpointValidationError(f"Invalid {name}: must be a non-empty string")
+    if "\x00" in val or "/" in val or "\\" in val or ".." in val:
+        raise CheckpointValidationError(f"Invalid {name} {val!r}: traversal tokens are forbidden")
+    return val
 
-    if style_playbook is None:
-        return
+
+def _resolve_safe_pipeline_path(pipeline_dir: Path, *parts: str) -> Path:
+    for part in parts:
+        _validate_safe_identifier(part, name="path component")
+    base = Path(pipeline_dir).resolve()
+    raw_path = base.joinpath(*parts)
+    curr = base
+    for part in parts:
+        curr = curr / part
+        if curr.is_symlink():
+            raise CheckpointValidationError(f"Symlinks are not allowed in pipeline paths: {curr}")
+    cand = raw_path.resolve()
     try:
-        from styles.playbook_loader import list_playbooks, load_playbook
-
-        load_playbook(style_playbook)
-    except Exception as exc:
-        try:
-            available = list_playbooks()
-        except Exception:
-            available = []
-        raise CheckpointValidationError(
-            f"Unknown or invalid style_playbook {style_playbook!r}. "
-            f"Available playbooks: {available}. Underlying error: {exc}"
-        ) from exc
-
-
-@lru_cache(maxsize=1)
-def _load_checkpoint_schema() -> dict[str, Any]:
-    with open(CHECKPOINT_SCHEMA_PATH, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _validate_artifacts_for_stage(
-    stage: str,
-    status: str,
-    artifacts: dict[str, Any],
-    pipeline_type: str | None = None,
-) -> None:
-    # Valid stages come from the pipeline manifest (get_pipeline_stages), which
-    # can declare stages beyond the 9 canonical ones (e.g. character-animation's
-    # `character_design`/`rig_plan`, screen-demo's `real_capture`). Those have no
-    # canonical artifact, so look it up defensively — a missing entry means the
-    # stage simply has no required artifact, not a crash.
-    required_artifact = CANONICAL_STAGE_ARTIFACTS.get(stage)
-    if (
-        required_artifact is not None
-        and status in {"completed", "awaiting_human"}
-        and required_artifact not in artifacts
-    ):
-        raise CheckpointValidationError(
-            f"Stage {stage!r} with status {status!r} must include "
-            f"canonical artifact {required_artifact!r}"
-        )
-
-    if pipeline_type == "multi-shot" and status in {"completed", "awaiting_human"}:
-        from lib.pipeline_loader import load_pipeline_readonly
-        manifest = load_pipeline_readonly(pipeline_type)
-        definition = next(s for s in manifest["stages"] if s["name"] == stage)
-        for name in definition.get("produces", []):
-            if name not in artifacts:
-                raise CheckpointValidationError(f"Stage {stage!r} must include artifact {name!r}")
-
-    for artifact_name, artifact_data in artifacts.items():
-        if artifact_name not in ARTIFACT_NAMES:
-            if pipeline_type == "multi-shot":
-                raise CheckpointValidationError(f"Unknown artifact {artifact_name!r}; register a schema first")
-            continue
-        if not isinstance(artifact_data, dict):
-            raise CheckpointValidationError(
-                f"Artifact {artifact_name!r} must be a JSON object matching its schema"
-            )
-        try:
-            validate_artifact(artifact_name, artifact_data)
-        except Exception as exc:
-            raise CheckpointValidationError(
-                f"Artifact {artifact_name!r} failed schema validation: {exc}"
-            ) from exc
-
-    _validate_hook_plan_status(stage, status, artifacts, pipeline_type)
-
-
-def _validate_hook_plan_status(
-    stage: str,
-    status: str,
-    artifacts: dict[str, Any],
-    pipeline_type: str | None = None,
-) -> None:
-    try:
-        from lib.hook_guard.config import load_hook_policy
-        policy = load_hook_policy()
-    except Exception:
-        policy = None
-
-    hook_plan = artifacts.get("hook_plan")
-    policy_mode = policy.mode if policy else "off"
-
-    # HookGuard policy only applies if policy is enabled/active
-    if not policy or not policy.is_active():
-        if not hook_plan:
-            return
-
-    # Check whether this pipeline supports hook_plan
-    is_hook_pipeline = False
-    if pipeline_type:
-        if pipeline_type == "clip-factory":
-            is_hook_pipeline = True
-        else:
-            try:
-                from lib.pipeline_loader import load_pipeline_readonly
-                manifest = load_pipeline_readonly(pipeline_type)
-                for st_def in manifest.get("stages", []) or []:
-                    if isinstance(st_def, dict) and (
-                        "hook_plan" in st_def.get("produces", [])
-                        or "hook_plan" in st_def.get("optional_artifacts_in", [])
-                        or "hook_plan" in st_def.get("required_artifacts_in", [])
-                    ):
-                        is_hook_pipeline = True
-                        break
-            except Exception:
-                is_hook_pipeline = False
-    else:
-        is_hook_pipeline = bool(hook_plan)
-
-    # Non-hook pipelines without hook_plan should never be blocked
-    if not is_hook_pipeline and not hook_plan:
-        return
-
-    # If policy mode is required, edit stage must include hook_plan with PASS
-    if policy_mode == "required" and stage == "edit" and status in {"completed", "awaiting_human"}:
-        if not hook_plan:
-            raise CheckpointValidationError(
-                "HookGuard mode is 'required' but 'hook_plan' artifact is missing from edit stage."
-            )
-        guard_res = hook_plan.get("guard_result", {})
-        if guard_res.get("status") != "PASS":
-            raise CheckpointValidationError(
-                f"HookGuard mode is 'required' but hook_plan status is {guard_res.get('status')!r} "
-                f"({guard_res.get('reason_codes')})."
-            )
-
-    # If hook_plan is present, enforce status cannot be REJECTED for completed/awaiting_human
-    if hook_plan and status in {"completed", "awaiting_human"}:
-        guard_res = hook_plan.get("guard_result", {})
-        g_status = guard_res.get("status")
-        if g_status == "REJECTED":
-            raise CheckpointValidationError(
-                f"Cannot advance stage with REJECTED hook_plan: {guard_res.get('reason_codes')}. "
-                "In auto mode, rejected hooks must be skipped or reverted before checkpointing."
-            )
-
-
-def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
-    """Validate checkpoint structure and canonical artifact payloads.
-
-    Uses pipeline_type (if present) to resolve the valid stage list.
-    Falls back to ALL_KNOWN_STAGES when pipeline_type is absent.
-    """
-    stage = checkpoint.get("stage")
-    status = checkpoint.get("status")
-    artifacts = checkpoint.get("artifacts")
-    pipeline_type = checkpoint.get("pipeline_type")
-
-    valid_stages = (
-        set(get_pipeline_stages(pipeline_type)) if pipeline_type
-        else ALL_KNOWN_STAGES
-    )
-
-    if not isinstance(stage, str) or stage not in valid_stages:
-        raise CheckpointValidationError(
-            f"Invalid stage: {stage!r} for pipeline {pipeline_type!r}. "
-            f"Valid stages: {sorted(valid_stages)}"
-        )
-    if not isinstance(status, str):
-        raise CheckpointValidationError(f"Invalid status: {status!r}")
-    if not isinstance(artifacts, dict):
-        raise CheckpointValidationError("Checkpoint artifacts must be a dictionary")
-
-    _validate_artifacts_for_stage(stage, status, artifacts, pipeline_type)
-
-    try:
-        jsonschema.validate(instance=checkpoint, schema=_load_checkpoint_schema())
-    except jsonschema.ValidationError as exc:
-        raise CheckpointValidationError(f"Checkpoint failed schema validation: {exc.message}") from exc
+        cand.relative_to(base)
+    except ValueError:
+        raise CheckpointValidationError(f"Path traversal detected: {cand} is outside {base}")
+    return cand
 
 
 def _checkpoint_path(pipeline_dir: Path, project_id: str, stage: str) -> Path:
-    return pipeline_dir / project_id / f"checkpoint_{stage}.json"
+    return _resolve_safe_pipeline_path(pipeline_dir, project_id, f"checkpoint_{stage}.json")
 
 
 def init_project(
@@ -306,7 +159,8 @@ def init_project(
     except Exception:
         pass
     base = pipeline_dir or PROJECTS_DIR
-    project_dir = base / project_id
+    _validate_safe_identifier(project_id, name="project_id")
+    project_dir = _resolve_safe_pipeline_path(base, project_id)
     for sub in (
         "artifacts",
         "assets/images",
@@ -319,6 +173,8 @@ def init_project(
         (project_dir / sub).mkdir(parents=True, exist_ok=True)
 
     marker_path = project_dir / PROJECT_MARKER_FILENAME
+    if marker_path.is_symlink():
+        raise CheckpointValidationError(f"Project marker cannot be a symlink: {marker_path}")
     marker: dict[str, Any] = {}
     if marker_path.exists():
         try:
@@ -409,7 +265,7 @@ def _enforce_stage_prerequisites(
     unapproved: list[str] = []
     for predecessor in stages[: stages.index(stage)]:
         path = _checkpoint_path(pipeline_dir, project_id, predecessor)
-        if not path.exists():
+        if not path.exists() or path.is_symlink():
             incomplete.append(predecessor)
             continue
         try:
@@ -459,7 +315,7 @@ def _archive_superseded_checkpoint(path: Path, stage: str) -> None:
     Backlot watcher may hold the file open (Windows denies renames of open
     files), so we copy rather than move, and swallow archival I/O failures.
     """
-    if not path.exists():
+    if not path.exists() or path.is_symlink():
         return
     try:
         with open(path, encoding="utf-8") as f:
@@ -473,21 +329,27 @@ def _archive_superseded_checkpoint(path: Path, stage: str) -> None:
         import shutil
         stamp = str(existing.get("timestamp", ""))
         safe_stamp = "".join(c for c in stamp if c.isalnum()) or f"{path.stat().st_mtime_ns}"
-        history_dir = path.parent / HISTORY_DIRNAME
+        history_dir = (path.parent / HISTORY_DIRNAME).resolve()
         history_dir.mkdir(parents=True, exist_ok=True)
-        target = history_dir / f"checkpoint_{stage}_{safe_stamp}.json"
+        safe_stage = "".join(c for c in stage if c.isalnum() or c in ("-", "_")) or "unknown"
+        target = (history_dir / f"checkpoint_{safe_stage}_{safe_stamp}.json").resolve()
+        if not target.is_relative_to(history_dir):
+            return
         if target.exists():
-            target = history_dir / f"checkpoint_{stage}_{safe_stamp}_{path.stat().st_mtime_ns}.json"
+            target = (history_dir / f"checkpoint_{safe_stage}_{safe_stamp}_{path.stat().st_mtime_ns}.json").resolve()
+            if not target.is_relative_to(history_dir):
+                return
         shutil.copyfile(path, target)
     except OSError:
         import logging
+        safe_path_str = str(path).replace("\r", " ").replace("\n", " ").strip()[:200]
         logging.getLogger(__name__).warning(
-            "Could not archive superseded checkpoint %s to history/", path
+            "Could not archive superseded checkpoint %s to history/", safe_path_str
         )
 
 
 def _decision_log_path(pipeline_dir: Path, project_id: str) -> Path:
-    return pipeline_dir / project_id / "decision_log.json"
+    return _resolve_safe_pipeline_path(pipeline_dir, project_id, "decision_log.json")
 
 
 def _merge_decision_log(
@@ -500,9 +362,15 @@ def _merge_decision_log(
     full audit trail.
     """
     path = _decision_log_path(pipeline_dir, project_id)
+    if path.is_symlink():
+        raise CheckpointValidationError(f"Invalid decision log symlink: {path}")
     if path.exists():
         with open(path, encoding="utf-8") as f:
             existing = json.load(f)
+        if not isinstance(existing, dict):
+            existing = {}
+        if "decisions" not in existing or not isinstance(existing["decisions"], list):
+            existing["decisions"] = []
     else:
         existing = {
             "version": "1.0",
@@ -516,8 +384,11 @@ def _merge_decision_log(
             existing["decisions"].append(decision)
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp_path = path.with_suffix(".json.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(existing, f, indent=2)
+    import os
+    os.replace(tmp_path, path)
 
 
 def write_checkpoint(
@@ -551,8 +422,8 @@ def write_checkpoint(
     # Backfill identity fields from the project marker so omitted kwargs
     # cannot bypass either gate enforcement or style validation.
     marker = None
-    marker_path = pipeline_dir / project_id / PROJECT_MARKER_FILENAME
-    if marker_path.exists():
+    marker_path = _resolve_safe_pipeline_path(pipeline_dir, project_id, PROJECT_MARKER_FILENAME)
+    if marker_path.exists() and not marker_path.is_symlink():
         try:
             with open(marker_path, encoding="utf-8") as f:
                 marker = json.load(f)
@@ -667,12 +538,16 @@ def write_checkpoint(
     validate_checkpoint(checkpoint)
 
     path = _checkpoint_path(pipeline_dir, project_id, stage)
+    if path.is_symlink():
+        raise CheckpointValidationError(f"Checkpoint path cannot be a symlink: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     # Serialize to a temp file first so a mid-write failure (disk full,
     # unserializable metadata) can never leave the stage with a truncated
     # current checkpoint; then archive the superseded file and swap in the
     # new one atomically.
     tmp_path = path.with_suffix(".json.tmp")
+    if tmp_path.is_symlink():
+        raise CheckpointValidationError(f"Temporary checkpoint path cannot be a symlink: {tmp_path}")
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(checkpoint, f, indent=2)
     # Preserve run history: a superseded completed/awaiting_human checkpoint
@@ -696,35 +571,47 @@ def read_checkpoint(
     pipeline_dir: Path, project_id: str, stage: str
 ) -> Optional[dict[str, Any]]:
     """Read a checkpoint file. Returns None if not found."""
-    path = _checkpoint_path(pipeline_dir, project_id, stage)
-    if not path.exists():
+    try:
+        path = _checkpoint_path(pipeline_dir, project_id, stage)
+    except CheckpointValidationError:
         return None
-    with open(path, encoding="utf-8") as f:
-        checkpoint = json.load(f)
-    validate_checkpoint(checkpoint)
-    return checkpoint
+    if not path.exists() or path.is_symlink():
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            checkpoint = json.load(f)
+        validate_checkpoint(checkpoint)
+        return checkpoint
+    except (OSError, json.JSONDecodeError, CheckpointValidationError):
+        return None
 
 
 def get_latest_checkpoint(
     pipeline_dir: Path, project_id: str
 ) -> Optional[dict[str, Any]]:
     """Find the most recent checkpoint for a project (by file mtime)."""
-    project_dir = pipeline_dir / project_id
-    if not project_dir.exists():
+    try:
+        project_dir = _resolve_safe_pipeline_path(pipeline_dir, project_id)
+    except CheckpointValidationError:
+        return None
+    if not project_dir.exists() or project_dir.is_symlink():
         return None
 
     checkpoints = sorted(
-        project_dir.glob("checkpoint_*.json"),
+        [p for p in project_dir.glob("checkpoint_*.json") if not p.is_symlink()],
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
     if not checkpoints:
         return None
 
-    with open(checkpoints[0], encoding="utf-8") as f:
-        checkpoint = json.load(f)
-    validate_checkpoint(checkpoint)
-    return checkpoint
+    try:
+        with open(checkpoints[0], encoding="utf-8") as f:
+            checkpoint = json.load(f)
+        validate_checkpoint(checkpoint)
+        return checkpoint
+    except (OSError, json.JSONDecodeError, CheckpointValidationError):
+        return None
 
 
 def get_completed_stages(

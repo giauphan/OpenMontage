@@ -399,17 +399,29 @@ class NarrationOrchestrator:
 
     def _invoke_flite(self, text: str, output_path: Path, voice: str) -> ToolResult:
         flite_voice = voice if voice in ("slt", "rms", "awb", "kal", "kal16") else "slt"
-        out_resolved = output_path.resolve()
+        raw_out = str(output_path)
+        if "\x00" in raw_out:
+            return ToolResult(success=False, error="Invalid output path: contains null byte")
+        if raw_out.startswith("-") or Path(output_path).name.startswith("-"):
+            return ToolResult(success=False, error="Invalid output path: begins with dash")
+        try:
+            out_resolved = output_path.resolve()
+        except (ValueError, OSError) as exc:
+            return ToolResult(success=False, error=f"Invalid output path: {exc}")
+        out_str = str(out_resolved)
+        ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
         with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as f:
             f.write(text)
             txt_path = Path(f.name)
         try:
             esc = str(txt_path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
             cmd = [
-                "ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-f", "lavfi",
+                ffmpeg_bin, "-nostdin", "-y", "-loglevel", "error", "-f", "lavfi",
                 "-i", f"flite=textfile='{esc}':voice={flite_voice}",
                 "-af", "highpass=f=80,lowpass=f=7500,volume=1.5,loudnorm",
-                "-c:a", "libmp3lame", "-b:a", "192k", str(out_resolved),
+                "-c:a", "libmp3lame", "-b:a", "192k",
+                "--",
+                out_str,
             ]
             timeout_s = max(30, int(len(text) / 15))
             res_flite = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
@@ -427,12 +439,18 @@ class NarrationOrchestrator:
     def _invoke_synthetic_sine_fallback(self, text: str, out_resolved: Path, flite_voice: str) -> ToolResult | None:
         if os.environ.get("CI") != "true" and os.environ.get("GITHUB_ACTIONS") != "true" and "PYTEST_CURRENT_TEST" not in os.environ:
             return None
+        out_str = str(out_resolved)
+        if out_str.startswith("-") or "\x00" in out_str:
+            return None
+        ffmpeg_bin = shutil.which("ffmpeg") or "ffmpeg"
         words = max(1, len(text.split()))
         dur_s = min(68.0, max(3.0, round(words / 2.6, 1)))
         synth_cmd = [
-            "ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-f", "lavfi",
+            ffmpeg_bin, "-nostdin", "-y", "-loglevel", "error", "-f", "lavfi",
             "-i", f"sine=frequency=320:duration={dur_s}",
-            "-c:a", "libmp3lame", "-b:a", "192k", str(out_resolved),
+            "-c:a", "libmp3lame", "-b:a", "192k",
+            "--",
+            out_str,
         ]
         res_synth = subprocess.run(synth_cmd, capture_output=True, text=True, timeout=30)
         if res_synth.returncode == 0 and out_resolved.exists() and out_resolved.stat().st_size > 0:

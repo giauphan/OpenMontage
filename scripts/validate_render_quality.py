@@ -239,6 +239,24 @@ def measure_static_ratio(path: Path, ffmpeg: str, duration: float, strict: bool 
     return min(total_freeze / duration, 1.0)
 
 
+def _read_safe_narration_text(path: Path) -> str:
+    p = Path(path)
+    raw_str = str(p)
+    if "\x00" in raw_str or raw_str.startswith("-") or p.name.startswith("-") or any(part == ".." for part in p.parts):
+        raise ValueError(f"Unsafe path traversal token in file path: {p}")
+    if p.is_symlink():
+        raise ValueError(f"Symlink rejected for text file: {p}")
+    resolved = p.resolve()
+    if resolved.is_symlink():
+        raise ValueError(f"Resolved symlink rejected for text file: {p}")
+    if not resolved.is_file():
+        raise ValueError(f"File not found or not a regular file: {resolved}")
+    if resolved.stat().st_size > 5_000_000:
+        raise ValueError(f"File too large: {resolved}")
+    with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
 def validate_video(
     path: Path,
     narration: Path,
@@ -260,19 +278,22 @@ def validate_video(
     if path.stat().st_mtime_ns <= narration.stat().st_mtime_ns:
         errors.append(f"{path}: render is stale relative to narration")
     if narration_text:
-        if not narration_text.is_file():
-            errors.append(f"{narration_text}: missing narration text")
-        else:
+        try:
+            text_content = _read_safe_narration_text(narration_text)
             from lib.artifact_paths import is_english_locale
             from lib.language_validation import get_language_validator
             if is_english_locale(locale):
                 validator = get_language_validator(locale)
-                language_errors = validator.validate_prose(narration_text.read_text(encoding="utf-8"))
+                language_errors = validator.validate_prose(text_content)
             else:
-                language_errors = validate_vietnamese_narration(narration_text.read_text(encoding="utf-8"))
+                language_errors = validate_vietnamese_narration(text_content)
             errors.extend(f"{narration_text}: {error}" for error in language_errors)
             if narration.stat().st_mtime_ns < narration_text.stat().st_mtime_ns:
                 errors.append(f"{narration}: narration audio is stale relative to text {narration_text}")
+        except ValueError as exc:
+            errors.append(f"{narration_text}: {exc}")
+        except OSError as exc:
+            errors.append(f"{narration_text}: cannot read narration text ({exc})")
     try:
         rendered = probe(path, ffprobe)
         spoken = probe(narration, ffprobe)

@@ -291,3 +291,187 @@ def test_multishot_media_probe_clip_traversal(tmp_path):
     assert res["decode_ok"] is False
     assert any("invalid or unsafe file path" in err for err in res["errors"])
 
+
+
+# ---------------------------------------------------------------------------
+# Remediations for 13 SonarQube Security Findings
+# ---------------------------------------------------------------------------
+
+from lib.checkpoint import (
+    CheckpointValidationError,
+    _checkpoint_path,
+    _decision_log_path,
+    _archive_superseded_checkpoint,
+    _merge_decision_log,
+    write_checkpoint,
+)
+from lib.news_visual.qa import run_news_visual_qa
+from lib.audio.narration_orchestrator import NarrationOrchestrator
+from lib.local_agent_handoff import (
+    HandoffError,
+    submit_local_response,
+    _atomic_json,
+    _validate_safe_root,
+)
+from scripts.validate_render_quality import validate_video, _read_safe_narration_text
+
+
+class TestCheckpointSecurity:
+    """Security tests for lib/checkpoint.py."""
+
+    def test_checkpoint_path_rejects_traversal(self, tmp_path: Path):
+        with pytest.raises(CheckpointValidationError):
+            _checkpoint_path(tmp_path, "../escaped", "script")
+
+        with pytest.raises(CheckpointValidationError):
+            _checkpoint_path(tmp_path, "proj", "../escaped")
+
+        with pytest.raises(CheckpointValidationError):
+            _checkpoint_path(tmp_path, "proj\x00null", "script")
+
+    def test_decision_log_path_rejects_traversal(self, tmp_path: Path):
+        with pytest.raises(CheckpointValidationError):
+            _decision_log_path(tmp_path, "../../etc")
+
+    def test_write_checkpoint_rejects_traversal_project_id(self, tmp_path: Path):
+        with pytest.raises(CheckpointValidationError):
+            write_checkpoint(
+                tmp_path,
+                "../../escaped",
+                "script",
+                "completed",
+                artifacts={"script": {"title": "Test"}},
+            )
+
+    def test_archive_superseded_sanitizes_crlf_log(self, tmp_path: Path, caplog):
+        malicious_path = tmp_path / "checkpoint_test\r\nINJECTED_LOG_LINE:admin\n.json"
+        with caplog.at_level("WARNING"):
+            _archive_superseded_checkpoint(malicious_path, "script\r\nINJECTED")
+        for record in caplog.records:
+            assert "\r" not in record.message
+            assert "\n" not in record.message
+
+    def test_merge_decision_log_rejects_symlink(self, tmp_path: Path):
+        proj_dir = tmp_path / "test_proj"
+        proj_dir.mkdir(parents=True)
+        target = tmp_path / "secret.json"
+        target.write_text("{}", encoding="utf-8")
+        symlink_log = proj_dir / "decision_log.json"
+        symlink_log.symlink_to(target)
+
+        with pytest.raises(CheckpointValidationError, match="(?i)symlink"):
+            _merge_decision_log(tmp_path, "test_proj", {"decisions": [{"decision_id": "d1"}]})
+
+
+class TestNewsVisualQASecurity:
+    """Security tests for lib/news_visual/qa.py."""
+
+    def test_run_news_visual_qa_rejects_path_traversal(self, tmp_path: Path):
+        traversal_path = tmp_path / ".." / "escaped_project"
+        report = run_news_visual_qa(traversal_path, mode="strict")
+        assert report["passed"] is False
+        assert "INVALID_PROJECT_DIR" in report["failure_categories"]
+
+    def test_run_news_visual_qa_rejects_symlinked_report_path(self, tmp_path: Path):
+        proj_dir = tmp_path / "proj"
+        art_dir = proj_dir / "artifacts"
+        art_dir.mkdir(parents=True)
+        target = tmp_path / "external_report.json"
+        target.write_text("{}", encoding="utf-8")
+        symlink_report = art_dir / "news_visual_qa_report.json"
+        symlink_report.symlink_to(target)
+
+        with pytest.raises(ValueError, match="Invalid news visual QA report path"):
+            run_news_visual_qa(proj_dir, mode="strict")
+
+
+class TestNarrationOrchestratorSecurity:
+    """Security tests for lib/audio/narration_orchestrator.py."""
+
+    def test_invoke_flite_rejects_dash_prefixed_output(self, tmp_path: Path):
+        orchestrator = NarrationOrchestrator()
+        dash_output = tmp_path / "-malicious_flag.mp3"
+        res = orchestrator._invoke_flite("Hello world", dash_output, "slt")
+        assert res.success is False
+        assert "Invalid output path" in res.error or "begins with dash" in res.error
+
+    def test_invoke_flite_rejects_null_byte_output(self, tmp_path: Path):
+        orchestrator = NarrationOrchestrator()
+        null_output = tmp_path / "test\x00out.mp3"
+        res = orchestrator._invoke_flite("Hello world", null_output, "slt")
+        assert res.success is False
+
+
+class TestLocalAgentHandoffSecurity:
+    """Security tests for lib/local_agent_handoff.py."""
+
+    def test_validate_safe_root_rejects_null_byte_and_dash(self):
+        with pytest.raises(HandoffError):
+            _validate_safe_root("/tmp/path\x00evil")
+
+        with pytest.raises(HandoffError):
+            _validate_safe_root("-dash_dir")
+
+    def test_submit_local_response_rejects_symlink_dir(self, tmp_path: Path):
+        root = tmp_path / "handoff"
+        root.mkdir()
+        secret_dir = tmp_path / "secret"
+        secret_dir.mkdir()
+        symlink_req = root / "0123456789abcdef0123456789abcdef"
+        symlink_req.symlink_to(secret_dir)
+
+        with pytest.raises(HandoffError, match="symlink"):
+            submit_local_response(
+                root,
+                "0123456789abcdef0123456789abcdef",
+                "dummy_sha",
+                {"action": "test"},
+            )
+
+    def test_atomic_json_rejects_symlink_parent_or_target(self, tmp_path: Path):
+        secret_file = tmp_path / "secret.json"
+        secret_file.write_text("{}", encoding="utf-8")
+        symlink_target = tmp_path / "symlink.json"
+        symlink_target.symlink_to(secret_file)
+
+        with pytest.raises(HandoffError):
+            _atomic_json(symlink_target, {"key": "val"})
+
+
+class TestValidateRenderQualitySecurity:
+    """Security tests for scripts/validate_render_quality.py."""
+
+    def test_read_safe_narration_text_rejects_traversal_and_symlinks(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="Unsafe path traversal token"):
+            _read_safe_narration_text(tmp_path / ".." / "secret.txt")
+
+        with pytest.raises(ValueError, match="Unsafe path traversal token"):
+            _read_safe_narration_text(tmp_path / "-flag.txt")
+
+        # Symlink rejection
+        real_file = tmp_path / "real.txt"
+        real_file.write_text("Valid narration text", encoding="utf-8")
+        symlink_file = tmp_path / "symlink.txt"
+        symlink_file.symlink_to(real_file)
+
+        with pytest.raises(ValueError, match="Symlink rejected"):
+            _read_safe_narration_text(symlink_file)
+
+    def test_validate_video_handles_unsafe_narration_path_gracefully(self, tmp_path: Path):
+        dummy_video = tmp_path / "video.mp4"
+        dummy_video.write_bytes(b"test" * 100)
+        dummy_audio = tmp_path / "audio.mp3"
+        dummy_audio.write_bytes(b"test" * 100)
+        unsafe_narration = tmp_path / ".." / "secret.txt"
+
+        errors = validate_video(
+            dummy_video,
+            dummy_audio,
+            ffprobe="ffprobe",
+            ffmpeg="ffmpeg",
+            min_duration=1.0,
+            tolerance=1.0,
+            expected_dimensions=(1080, 1920),
+            narration_text=unsafe_narration,
+        )
+        assert any("Unsafe path traversal token" in e for e in errors)

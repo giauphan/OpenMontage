@@ -24,15 +24,47 @@ class HandoffError(RuntimeError):
     """A local-agent handoff could not be completed safely."""
 
 
-def _read_request(root: Path, request_id: str) -> dict[str, Any]:
+def _validate_safe_root(root: Path | str) -> Path:
+    if not root:
+        raise HandoffError("empty handoff root directory")
+    raw_str = str(root)
+    if "\x00" in raw_str or raw_str.startswith("-"):
+        raise HandoffError("invalid handoff root path")
+    path = Path(root).resolve()
+    if path.is_symlink():
+        raise HandoffError("handoff root cannot be a symlink")
+    return path
+
+
+def _validate_safe_request_dir(root: Path, request_id: str) -> Path:
     if not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id):
         raise HandoffError("invalid local-agent request ID")
-    directory = Path(root) / request_id
-    path = directory / "request.json"
+    safe_root = _validate_safe_root(root)
+    unresolved_dir = safe_root / request_id
+    if unresolved_dir.is_symlink():
+        raise HandoffError("request directory cannot be a symlink")
+    directory = unresolved_dir.resolve()
     try:
-        if directory.is_symlink() or path.is_symlink() or path.stat().st_size > 20_000_000:
+        directory.relative_to(safe_root)
+    except ValueError:
+        raise HandoffError("request directory escapes handoff root")
+    if directory.is_symlink():
+        raise HandoffError("request directory cannot be a symlink")
+    return directory
+
+
+def _read_request(root: Path, request_id: str) -> dict[str, Any]:
+    directory = _validate_safe_request_dir(root, request_id)
+    path = (directory / "request.json").resolve()
+    try:
+        path.relative_to(directory)
+    except ValueError:
+        raise HandoffError("request file escapes request directory")
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 20_000_000:
             raise HandoffError("invalid local-agent request file")
-        request = json.loads(path.read_text(encoding="utf-8"))
+        with open(path, "r", encoding="utf-8") as f:
+            request = json.load(f)
         digest = request.pop("request_sha256")
         encoded = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
         if request.get("request_id") != request_id or not isinstance(digest, str) or hashlib.sha256(encoded).hexdigest() != digest:
@@ -44,29 +76,38 @@ def _read_request(root: Path, request_id: str) -> dict[str, Any]:
 
 
 def list_pending_requests(root: Path) -> list[dict[str, Any]]:
-    root = Path(root)
-    if not root.is_dir():
+    try:
+        safe_root = _validate_safe_root(root)
+    except HandoffError:
+        return []
+    if not safe_root.is_dir():
         return []
     pending = []
-    for directory in sorted(root.iterdir()):
+    for directory in sorted(safe_root.iterdir()):
         if not re.fullmatch(r"[0-9a-f]{32}", directory.name) or directory.is_symlink() or not directory.is_dir():
             continue
         if (directory / "terminal.json").exists() or (directory / "response.json").exists():
             continue
         try:
-            pending.append(_read_request(root, directory.name))
+            pending.append(_read_request(safe_root, directory.name))
         except HandoffError:
             continue
     return pending
 
 
 def submit_local_response(root: Path, request_id: str, request_sha256: str, result: dict[str, Any], *, status: str = "ok") -> None:
-    root = Path(root)
+    directory = _validate_safe_request_dir(root, request_id)
     request = _read_request(root, request_id)
     if request_sha256 != request["request_sha256"] or not isinstance(result, dict) or status not in ("ok", "error"):
         raise HandoffError("local-agent response does not match request")
-    directory = root / request_id
-    lock_fd = os.open(directory / "response.lock", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    lock_path = (directory / "response.lock").resolve()
+    try:
+        lock_path.relative_to(directory)
+    except ValueError:
+        raise HandoffError("lock file escapes request directory")
+    if lock_path.is_symlink():
+        raise HandoffError("lock file cannot be a symlink")
+    lock_fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
         if (directory / "terminal.json").exists() or (directory / "response.json").exists():
@@ -78,14 +119,31 @@ def submit_local_response(root: Path, request_id: str, request_sha256: str, resu
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+    p = Path(path)
+    raw_str = str(p)
+    if "\x00" in raw_str or raw_str.startswith("-") or p.is_symlink():
+        raise HandoffError("invalid atomic json target path")
+    parent_dir = p.parent
+    if parent_dir.is_symlink():
+        raise HandoffError("invalid atomic json parent directory")
+    target_path = p.resolve()
+    if target_path.is_symlink():
+        raise HandoffError("invalid atomic json target path")
+    resolved_parent = target_path.parent.resolve()
+    if not resolved_parent.is_dir() or resolved_parent.is_symlink():
+        raise HandoffError("invalid atomic json parent directory")
+    try:
+        target_path.relative_to(resolved_parent)
+    except ValueError:
+        raise HandoffError("target path escapes parent directory")
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    fd, temporary = tempfile.mkstemp(prefix=".handoff-", dir=path.parent)
+    fd, temporary = tempfile.mkstemp(prefix=".handoff-", dir=resolved_parent)
     try:
         with os.fdopen(fd, "wb") as stream:
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        os.replace(temporary, target_path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -99,23 +157,24 @@ def request_local_agent(
         raise HandoffError("unsupported local-agent request kind")
     if not isinstance(payload, dict) or timeout_seconds <= 0 or poll_seconds <= 0:
         raise HandoffError("invalid local-agent request or timeout")
-    root = Path(root)
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    safe_root = _validate_safe_root(root)
+    safe_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     request_id = uuid.uuid4().hex
-    request_dir = root / request_id
+    request_dir = (safe_root / request_id).resolve()
     request_dir.mkdir(mode=0o700)
     request = {"request_id": request_id, "kind": kind, "payload": payload}
     digest_input = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     request["request_sha256"] = hashlib.sha256(digest_input).hexdigest()
     _atomic_json(request_dir / "request.json", request)
     deadline = time.monotonic() + timeout_seconds
-    response_path = request_dir / "response.json"
+    response_path = (request_dir / "response.json").resolve()
     while time.monotonic() < deadline:
         if response_path.exists():
             try:
                 if response_path.is_symlink() or response_path.stat().st_size > 5_000_000:
                     raise ValueError("invalid response file")
-                response = json.loads(response_path.read_text(encoding="utf-8"))
+                with open(response_path, "r", encoding="utf-8") as f:
+                    response = json.load(f)
                 if not isinstance(response, dict) or response.get("request_id") != request_id or response.get("request_sha256") != request["request_sha256"]:
                     raise HandoffError("local-agent response does not match request")
                 if response.get("status") != "ok" or not isinstance(response.get("result"), dict):
