@@ -118,3 +118,64 @@ h1 { font-size: 24px; }
     assert ".source-card { font-size: 28px; }" in normalized
 
 
+def test_t04_stage_card_preserves_card_geometry_not_pill(tmp_path: Path):
+    """Regression test: .stage-card must NOT be matched by tag/badge pill selector (border-radius: 9999px)."""
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    for font in ("BeVietnamPro-Regular.ttf", "BeVietnamPro-Bold.ttf", "BeVietnamPro-ExtraBold.ttf"):
+        (assets_dir / font).write_bytes(b"mock font data")
+
+    html_content = """<!doctype html>
+<html>
+<head>
+<style>
+body { margin: 0; overflow: hidden; }
+#stage { width: 1080px; height: 1920px; position: relative; }
+.stage-card { background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 24px; padding: 34px 38px; }
+.card-tag { font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="stage" class="composition" data-composition-id="main" data-start="0" data-duration="60" data-width="1080" data-height="1920">
+  <div id="scene-1" class="scene" data-start="0" data-duration="60">
+    <div class="stage-card danger" id="card-1-1">
+      <div class="card-title"><span>Prefix Invalidation</span></div>
+      <div class="metric-value">10x Cost Multiplier</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>"""
+    test_html_path = tmp_path / "index.html"
+    test_html_path.write_text(html_content, encoding="utf-8")
+
+    patch_html(test_html_path, narration_duration=60.0, strict=True)
+    repaired_html = test_html_path.read_text(encoding="utf-8")
+
+    # Invariant 1: [class*="tag"] must NEVER be injected into stylesheets (it matches .stage-card)
+    assert '[class*="tag"]' not in repaired_html, (
+        "FAIL: repair_hyperframes_quality injected [class*='tag'], which falsely matches .stage-card as a pill!"
+    )
+
+    # Invariant 2: Explicit .stage-card geometry guard must be present
+    assert ".stage-card" in repaired_html
+    assert "border-radius: 24px" in repaired_html
+
+    # Invariant 3: Tag selector matches valid tags without matching stage cards
+    assert '[class~="tag"]' in repaired_html or '[class*="-tag"]' in repaired_html
+
+
+def test_t05_visual_mode_enhancement_css_selector_safety():
+    """Verify that _build_visual_enhancement_css uses safe tag selectors in both visual and legacy modes."""
+    from scripts.repair_hyperframes_quality import _build_visual_enhancement_css
+    import os
+
+    for mode in ("0", "1"):
+        os.environ["NEWS_VISUAL_MODE"] = mode
+        css = _build_visual_enhancement_css("<style></style>")
+        assert '[class*="tag"]' not in css, f"Mode {mode} contains dangerous substring match [class*='tag']"
+        assert ".stage-card" in css, f"Mode {mode} missing explicit .stage-card guard"
+        assert "border-radius: 24px" in css, f"Mode {mode} missing 24px border radius for cards"
+
+
+
