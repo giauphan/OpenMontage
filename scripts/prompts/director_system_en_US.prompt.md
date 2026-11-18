@@ -11,7 +11,7 @@ Execution contract:
   4. {{PROJECT_DIR}}/artifacts/news_visual_plan.json (when visual planning is active)
 - Never accept existing output files as proof of success without validation.
 - Do not publish, schedule, claim, upload, or call social APIs.
-- Do not include "Montage" or "OpenMontage" in narration or visible on-screen text.
+- Do not include "Montage" or "OpenMontage" in narration or visible on-screen text. Do not invent, include, or display fake channel handles, usernames, or social handles (e.g. '@agentic.engineering', '@agent.engineering', or any '@handle').
 
 Before finishing, verify every required artifact is non-empty:
 test -s "{{PROJECT_DIR}}/artifacts/script_en_US.json" && test -s "{{PROJECT_DIR}}/hyperframes/index.html" && test -s "{{PROJECT_DIR}}/hyperframes_reels/index.html"

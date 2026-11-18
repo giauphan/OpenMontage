@@ -577,6 +577,28 @@ def audit_project(
     results["claims"] = claims
     results["cue_count"] = cue_count
 
+    # 6. Prohibited Branding & Fake Channel Handles Audit
+    prohibited_handles = [
+        "@agentic.engineering",
+        "@agent.engineering",
+        "agentic.engineering",
+        "agent.engineering",
+        "openmontage",
+        "montage",
+    ]
+    for comp_path in (
+        project_dir / "hyperframes/index.html",
+        project_dir / "hyperframes_reels/index.html",
+    ):
+        if comp_path.is_file():
+            comp_content = comp_path.read_text(encoding="utf-8", errors="ignore").lower()
+            for ph in prohibited_handles:
+                if ph in comp_content:
+                    results["errors"].append(
+                        f"Prohibited brand name or fake channel handle '{ph}' found in {comp_path.name}"
+                    )
+                    results["passed"] = False
+
     if results["passed"]:
         if sign_approval:
             approval_data = grant_supervisor_approval(

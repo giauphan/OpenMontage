@@ -139,3 +139,20 @@ def test_fix_malformed_tl_to_nested_position_and_chained_call(tmp_path: Path):
     fixed = repair_gsap_timeline(html, file_path, narration_duration=10.0)
     assert "tl.to(targetEl, {opacity: 1, duration: 0.4}, getPosition())" in fixed
     assert "tl.to(a, { x: 1 }, 0).to(b, { y: 2 }, 1)" in fixed
+
+
+def test_patch_badges_strips_fake_channel_handles():
+    from scripts.repair_hyperframes_quality import _patch_badges_and_attributions
+    html = """
+    <div class="cta-card">
+      <div class="card-title">Star The Repo</div>
+      <div class="card-body">Daily engineering patterns</div>
+      <div class="cta-handle">@agentic.engineering</div>
+      <span>@agent.engineering</span>
+    </div>
+    """
+    cleaned = _patch_badges_and_attributions(html)
+    assert "@agentic.engineering" not in cleaned
+    assert "@agent.engineering" not in cleaned
+    assert "cta-handle" not in cleaned
+    assert "Star The Repo" in cleaned

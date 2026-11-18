@@ -348,8 +348,13 @@ def _patch_badges_and_attributions(html: str) -> str:
         r"<div\b[^>]*\bclass=[\"'][^>]*\bbadge\b[^>]*[\"'][^>]*>.*?//.*?</div>",
         r"<(?:div|span)\b[^>]*\bclass=[\"'][^>]*\b(?:date-badge|stage-badge|date-pill)\b[^>]*[\"'][^>]*>.*?</(?:div|span)>",
         r"<section\b[^>]*\bclass=[\"'][^>]*\bbadge-overlay\b[^>]*[\"'][^>]*>\s*</section>",
+        r"<(?:div|span|p)\b[^>]*\bclass=[\"'][^>]*\b(?:cta-handle|channel-handle|social-handle)\b[^>]*[\"'][^>]*>.*?</(?:div|span|p)>",
+        r"<(?:div|span|p)\b[^>]*>\s*@\s*(?:agentic|agent)\.engineering\s*</(?:div|span|p)>",
     ):
         html = re.sub(pat, "", html, flags=re.IGNORECASE | re.DOTALL)
+
+    html = re.sub(r"@\s*agentic\.engineering", "", html, flags=re.IGNORECASE)
+    html = re.sub(r"@\s*agent\.engineering", "", html, flags=re.IGNORECASE)
 
     html = html.replace("#source-badge, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")
     html = html.replace("#source-badge, .source, [class*='source-badge'], [id*='source-badge'] { display: none !important; opacity: 0 !important; visibility: hidden !important; }", "")

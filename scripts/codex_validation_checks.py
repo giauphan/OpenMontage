@@ -636,15 +636,28 @@ def _check_autonomous_audio(has_video: bool, common_details: dict, result_factor
 
 
 def _check_autonomous_brand(metadata_text: str, comp_text: str, common_details: dict, result_factory: Any):
-    prohibited_brands = ["openmontage", "montage"]
+    prohibited_brands = [
+        "openmontage",
+        "montage",
+        "agentic.engineering",
+        "agent.engineering",
+        "@agentic.engineering",
+        "@agent.engineering",
+    ]
     brand_violation = None
     for brand in prohibited_brands:
         if brand in metadata_text.lower():
             brand_violation = f"Found '{brand}' in metadata"
             break
         if comp_text and brand in comp_text.lower():
-            brand_violation = f"Found '{brand}' in composition HTML"
+            brand_violation = f"Found prohibited brand or fake channel handle '{brand}' in composition HTML"
             break
+
+    if not brand_violation and comp_text:
+        if re.search(r"class=[\"'][^\"']*\b(?:cta-handle|channel-handle)\b", comp_text, re.IGNORECASE):
+            brand_violation = "Found unauthorized cta-handle/channel-handle element in composition HTML"
+        elif re.search(r"@\s*(?:agentic|agent)\.engineering", comp_text, re.IGNORECASE):
+            brand_violation = "Found unauthorized fake channel handle in composition HTML"
 
     if brand_violation:
         notes = f"Prohibited brand violation: {brand_violation}"
@@ -654,7 +667,7 @@ def _check_autonomous_brand(metadata_text: str, comp_text: str, common_details: 
             message=f"Brand Compliance: ✗ FAIL (Heuristic) - {notes}",
             details={**common_details, "score": 0, "notes": notes},
         )
-    notes = "No prohibited brand names such as Montage or OpenMontage detected in visible HTML text, title, metadata content, or narration."
+    notes = "No prohibited brand names (Montage/OpenMontage) or fake channel handles detected in visible HTML text, title, metadata content, or narration."
     return result_factory(
         check_name="Brand Compliance",
         passed=True,

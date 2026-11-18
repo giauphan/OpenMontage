@@ -393,6 +393,22 @@ class TestCodexAgentValidator:
         assert brand_check.passed is False
         assert "Prohibited brand violation" in brand_check.message
 
+    def test_autonomous_quality_review_fake_channel_handle_violation(self):
+        test_dir = Path(tempfile.mkdtemp())
+        (test_dir / "hyperframes").mkdir(parents=True, exist_ok=True)
+        (test_dir / "hyperframes" / "index.html").write_text(
+            '<html><body><div class="cta-card"><div class="cta-handle">@agentic.engineering</div></div></body></html>'
+        )
+        validator = CodexAgentValidator(test_dir, strict_mode=True)
+        video_path = test_dir / "video.mp4"
+        video_path.write_bytes(b"x" * 2000)
+        meta_path = test_dir / "publish_metadata.json"
+        meta_path.write_text(json.dumps({"title": "Clean AI Engineering Video"}), encoding="utf-8")
+        results = validator._autonomous_quality_review(video_path, meta_path)
+        brand_check = next(r for r in results if r.check_name == "Brand Compliance")
+        assert brand_check.passed is False
+        assert "Prohibited brand violation" in brand_check.message
+
     def test_parse_codex_review_json(self):
         review = {
             "visual_quality": {"passed": True, "score": 95, "notes": "clear"},
