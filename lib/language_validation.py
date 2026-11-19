@@ -31,7 +31,8 @@ VIETNAMESE_LEAK_WORDS = {
 
 # Unresolved currency markers that should not be quietly converted
 VIETNAM_CURRENCY_PATTERNS = [
-    re.compile(r"\b\d+\s*(?:triệu|tỷ|nghìn|k|vnd|đ|dong|đồng)\b", re.IGNORECASE),
+    re.compile(r"\b\d+\s*(?:triệu|tỷ|nghìn|vnd|đ|dong|đồng)\b", re.IGNORECASE),
+    re.compile(r"\b\d+\s*k\s*(?:vnd|đ|dong|đồng)\b", re.IGNORECASE),
 ]
 
 UNIDIOMATIC_ENGLISH_PATTERNS = [

@@ -31,11 +31,20 @@ def test_english_rejects_vietnamese_leak_words():
 def test_english_metadata_validation():
     validator = get_language_validator("en-US")
     errors = validator.validate_metadata(
-        title="New AI Code Assistant Tested #AI #Tech",
-        description="Hands-on walkthrough of the latest developer tool released this week.",
+        title="AST Repo Map Context Compression: Fitting 100k Lines of Code into Agent Context Windows #AI #Tech",
+        description="Hands-on walkthrough with 32k context and 128k tokens for developers.",
         tags=["ai", "coding", "devtools"]
     )
     assert not errors
+
+    # With Vietnamese currency leak
+    bad_currency_errors = validator.validate_metadata(
+        title="AI Assistant subscription price is 100k vnd #AI",
+        description="Cost is 50k đ per month.",
+        tags=["ai", "coding"]
+    )
+    assert bad_currency_errors
+    assert any("Vietnamese currency format" in err for err in bad_currency_errors)
 
     # With Vietnamese tag
     bad_errors = validator.validate_metadata(
