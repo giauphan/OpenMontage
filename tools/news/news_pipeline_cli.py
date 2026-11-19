@@ -287,10 +287,22 @@ def _normalize_and_filter_candidates(
 ) -> List[Dict[str, Any]]:
     """Normalize in-memory raw items and apply the production scope gate."""
     logger.info("Ingesting and normalizing...")
-    adapter = NewsNowAdapter(freshness_window_hours=freshness_window_hours)
-    candidates, diagnostics = adapter.ingest_and_normalize(raw_items)
-    if diagnostics:
-        logger.warning(f"Encountered {len(diagnostics)} invalid items during ingestion.")
+    already_normalized: List[Dict[str, Any]] = []
+    to_ingest: List[Dict[str, Any]] = []
+
+    for item in raw_items:
+        if isinstance(item, dict) and item.get("candidate_id") and ("topic_family" in item or "viewer_question" in item or "canonical_url" in item):
+            already_normalized.append(item)
+        elif isinstance(item, dict):
+            to_ingest.append(item)
+
+    candidates: List[Dict[str, Any]] = list(already_normalized)
+    if to_ingest:
+        adapter = NewsNowAdapter(freshness_window_hours=freshness_window_hours)
+        ingested, diagnostics = adapter.ingest_and_normalize(to_ingest)
+        candidates.extend(ingested)
+        if diagnostics:
+            logger.warning(f"Encountered {len(diagnostics)} invalid items during ingestion.")
 
     available = [c for c in candidates if c.get("candidate_id") not in used_ids]
     return _filter_by_scope_gate(available, fail_closed=fail_closed)
@@ -440,7 +452,7 @@ def _filter_fresh_candidates(candidates, max_age_hours, now=None):
 
     now = now or datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=max_age_hours)).timestamp()
-    end = now.timestamp()
+    end = (now + timedelta(hours=24)).timestamp()
     return [c for c in candidates if cutoff <= parse_timestamp(
         c.get("published_at") or c.get("published_at_utc")
     ) <= end]
