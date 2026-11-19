@@ -636,28 +636,29 @@ def _check_autonomous_audio(has_video: bool, common_details: dict, result_factor
 
 
 def _check_autonomous_brand(metadata_text: str, comp_text: str, common_details: dict, result_factory: Any):
-    prohibited_brands = [
-        "openmontage",
-        "montage",
-        "agentic.engineering",
-        "agent.engineering",
-        "@agentic.engineering",
-        "@agent.engineering",
-    ]
     brand_violation = None
-    for brand in prohibited_brands:
-        if brand in metadata_text.lower():
+    for brand in ["openmontage", "montage", "agentic.engineering", "agent.engineering"]:
+        if re.search(rf"\b{re.escape(brand)}\b", metadata_text, re.IGNORECASE):
             brand_violation = f"Found '{brand}' in metadata"
-            break
-        if comp_text and brand in comp_text.lower():
-            brand_violation = f"Found prohibited brand or fake channel handle '{brand}' in composition HTML"
             break
 
     if not brand_violation and comp_text:
-        if re.search(r"class=[\"'][^\"']*\b(?:cta-handle|channel-handle)\b", comp_text, re.IGNORECASE):
-            brand_violation = "Found unauthorized cta-handle/channel-handle element in composition HTML"
-        elif re.search(r"@\s*(?:agentic|agent)\.engineering", comp_text, re.IGNORECASE):
-            brand_violation = "Found unauthorized fake channel handle in composition HTML"
+        cleaned = re.sub(r"<!--.*?-->", "", comp_text, flags=re.DOTALL)
+        cleaned = re.sub(r"//.*", "", cleaned)
+        cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
+        cleaned = re.sub(r"\bom-asr-caption(?:-style)?\b", "", cleaned, flags=re.IGNORECASE)
+
+        prohibited_comp_patterns = [
+            (re.compile(r"@\s*(?:agentic|agent)\.engineering", re.IGNORECASE), "unauthorized fake channel handle"),
+            (re.compile(r"\b(?:agentic|agent)\.engineering\b", re.IGNORECASE), "unauthorized fake channel handle"),
+            (re.compile(r"class=[\"'][^\"']*\b(?:cta-handle|channel-handle)\b", re.IGNORECASE), "unauthorized cta-handle/channel-handle element"),
+            (re.compile(r"\bopenmontage\b", re.IGNORECASE), "prohibited brand name 'OpenMontage'"),
+            (re.compile(r"\bmontage\b", re.IGNORECASE), "prohibited brand name 'Montage'"),
+        ]
+        for pat, desc in prohibited_comp_patterns:
+            if pat.search(cleaned):
+                brand_violation = f"Found {desc} in composition HTML"
+                break
 
     if brand_violation:
         notes = f"Prohibited brand violation: {brand_violation}"

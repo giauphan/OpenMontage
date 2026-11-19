@@ -235,6 +235,21 @@ def grant_supervisor_approval(
     return approval_data
 
 
+def _filter_composition_for_brand_check(content: str) -> str:
+    """Strip non-rendered HTML/JS comments and internal pipeline infrastructure markers
+    so internal metadata (e.g. <!-- OPENMONTAGE_ASR_CAPTIONS_BEGIN -->, .om-asr-caption)
+    is not falsely flagged as visible branding."""
+    # Strip HTML comments
+    cleaned = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+    # Strip JS line comments
+    cleaned = re.sub(r"//.*", "", cleaned)
+    # Strip JS block comments
+    cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
+    # Strip om-asr-caption internal CSS class / style identifier
+    cleaned = re.sub(r"\bom-asr-caption(?:-style)?\b", "", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
 def audit_project(
     project_dir: Path,
     expected_format: str = "short",
@@ -578,24 +593,24 @@ def audit_project(
     results["cue_count"] = cue_count
 
     # 6. Prohibited Branding & Fake Channel Handles Audit
-    prohibited_handles = [
-        "@agentic.engineering",
-        "@agent.engineering",
-        "agentic.engineering",
-        "agent.engineering",
-        "openmontage",
-        "montage",
+    prohibited_patterns = [
+        (re.compile(r"@\s*(?:agentic|agent)\.engineering", re.IGNORECASE), "fake channel handle '@agentic.engineering'"),
+        (re.compile(r"\b(?:agentic|agent)\.engineering\b", re.IGNORECASE), "fake channel handle 'agentic.engineering'"),
+        (re.compile(r"class=[\"'][^\"']*\b(?:cta-handle|channel-handle)\b", re.IGNORECASE), "unauthorized cta-handle/channel-handle element"),
+        (re.compile(r"\bopenmontage\b", re.IGNORECASE), "prohibited brand name 'OpenMontage'"),
+        (re.compile(r"\bmontage\b", re.IGNORECASE), "prohibited brand name 'Montage'"),
     ]
     for comp_path in (
         project_dir / "hyperframes/index.html",
         project_dir / "hyperframes_reels/index.html",
     ):
         if comp_path.is_file():
-            comp_content = comp_path.read_text(encoding="utf-8", errors="ignore").lower()
-            for ph in prohibited_handles:
-                if ph in comp_content:
+            comp_content = comp_path.read_text(encoding="utf-8", errors="ignore")
+            cleaned_content = _filter_composition_for_brand_check(comp_content)
+            for pat, desc in prohibited_patterns:
+                if pat.search(cleaned_content):
                     results["errors"].append(
-                        f"Prohibited brand name or fake channel handle '{ph}' found in {comp_path.name}"
+                        f"Prohibited branding or fake handle violation ({desc}) found in {comp_path.name}"
                     )
                     results["passed"] = False
 

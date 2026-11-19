@@ -409,6 +409,45 @@ class TestCodexAgentValidator:
         assert brand_check.passed is False
         assert "Prohibited brand violation" in brand_check.message
 
+    def test_autonomous_quality_review_internal_openmontage_comments_pass(self):
+        test_dir = Path(tempfile.mkdtemp())
+        (test_dir / "hyperframes").mkdir(parents=True, exist_ok=True)
+        (test_dir / "hyperframes" / "index.html").write_text(
+            '<html><body>'
+            '<div class="scene"><h1>Deterministic Agent Checkpoints</h1></div>'
+            '<!-- OPENMONTAGE_ASR_CAPTIONS_BEGIN -->'
+            '<style id="om-asr-caption-style">.om-asr-caption { color: #fff; }</style>'
+            '<!-- OPENMONTAGE_ASR_CAPTIONS_END -->'
+            '<script>// OPENMONTAGE_CONTINUOUS_MOTION\nconst x = 1;</script>'
+            '</body></html>'
+        )
+        validator = CodexAgentValidator(test_dir, strict_mode=True)
+        video_path = test_dir / "video.mp4"
+        video_path.write_bytes(b"x" * 2000)
+        meta_path = test_dir / "publish_metadata.json"
+        meta_path.write_text(json.dumps({"title": "State Serialization Explainer"}), encoding="utf-8")
+        results = validator._autonomous_quality_review(video_path, meta_path)
+        brand_check = next(r for r in results if r.check_name == "Brand Compliance")
+        assert brand_check.passed is True
+        assert "No prohibited brand names" in brand_check.message
+
+    def test_independent_qa_filter_composition_strips_internal_comments(self):
+        from scripts.independent_editorial_qa import _filter_composition_for_brand_check
+        raw_html = (
+            '<html><body>'
+            '<div class="scene"><h1>Deterministic State Serialization</h1></div>'
+            '<!-- OPENMONTAGE_ASR_CAPTIONS_BEGIN -->'
+            '<style id="om-asr-caption-style">.om-asr-caption { color: #fff; }</style>'
+            '<!-- OPENMONTAGE_ASR_CAPTIONS_END -->'
+            '<script>// OPENMONTAGE_CONTINUOUS_MOTION\nconst x = 1;</script>'
+            '</body></html>'
+        )
+        cleaned = _filter_composition_for_brand_check(raw_html)
+        assert "openmontage" not in cleaned.lower()
+        assert "montage" not in cleaned.lower()
+        assert "om-asr-caption" not in cleaned.lower()
+        assert "Deterministic State Serialization" in cleaned
+
     def test_parse_codex_review_json(self):
         review = {
             "visual_quality": {"passed": True, "score": 95, "notes": "clear"},
