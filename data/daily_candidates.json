@@ -1,6 +1,6 @@
 [
   {
-    "candidate_id": "cand_ast_repo_map_tree_sitter_20261121",
+    "candidate_id": "cand_ast_repo_map_tree_sitter_v2_20261121",
     "title": "AST Repo Mapping with Tree-Sitter: Compressing Codebases for Coding Agents",
     "topic_family": "context_memory",
     "canonical_url": "https://github.com/features/copilot",
@@ -9,8 +9,8 @@
     "normalized_publisher": "github engineering",
     "content_kind": "news",
     "is_evergreen": false,
-    "published_at_utc": "2026-11-19T21:30:00Z",
-    "published_at": "2026-11-19T21:30:00Z",
+    "published_at_utc": "2026-11-20T00:00:00Z",
+    "published_at": "2026-11-20T00:00:00Z",
     "summary": "Dumping raw source files into LLM context windows exhausts token limits and introduces dependency hallucinations. Extracting AST symbol definitions with Tree-Sitter generates compact repository maps that fit entire codebases into agent context windows.",
     "hook": "Dumping raw source code into your coding agent destroys your context window. Here is how Tree-Sitter AST repo maps pack entire repositories into high-density prompts.",
     "viewer_question": "How do coding agents navigate massive codebases without blowing through context window limits?",

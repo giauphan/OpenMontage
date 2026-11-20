@@ -607,12 +607,12 @@ def patch_html(path: Path, narration_duration: float = 0.0, **_kwargs: object) -
     )
     html = _patch_audio_bindings(html, path, narration_src)
 
-    _validate_seek_safety(path, html)
     if (path.parent / "assets").is_dir():
         html = html.replace("../assets/", "assets/")
     html = repair_missing_composition_assets(path, html)
     html = _ensure_gsap_script(html)
     html = repair_gsap_timeline(html, path, narration_duration)
+    _validate_seek_safety(path, html)
 
     path.write_text(html, encoding="utf-8")
 

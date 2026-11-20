@@ -156,3 +156,26 @@ def test_patch_badges_strips_fake_channel_handles():
     assert "@agent.engineering" not in cleaned
     assert "cta-handle" not in cleaned
     assert "Star The Repo" in cleaned
+
+
+def test_repair_gsap_timeline_heals_infinite_repeats(tmp_path: Path):
+    html = """
+    <html>
+    <body>
+      <div id="stage"><div id="scene-1" class="scene"></div></div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.to('.card', { scale: 1.015, y: -4, duration: 3.5, repeat: -1, yoyo: true }, 0);
+        window.__timelines['main'] = tl;
+      </script>
+    </body>
+    </html>
+    """
+    file_path = tmp_path / "hyperframes" / "index.html"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text(html, encoding="utf-8")
+
+    fixed = repair_gsap_timeline(html, file_path, narration_duration=10.0)
+    assert "repeat: -1" not in fixed
+    assert "repeat: 0" in fixed
+

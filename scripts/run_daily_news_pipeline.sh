@@ -584,6 +584,7 @@ raise SystemExit(0 if any(p.is_file() and p.stat().st_mtime_ns >= cutoff for p i
       "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
     fi
   fi
+  "$PY" "$ROOT/scripts/repair_hyperframes_quality.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
   output=$("$PY" "$ROOT/scripts/validate_newsnow_director_artifacts.py" "$ROOT/projects/$PROJECT_ID" \
     --min-mtime-ns "$cutoff_ns" --require-compositions 2>&1)
   status=$?

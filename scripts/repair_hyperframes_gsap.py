@@ -118,6 +118,9 @@ def repair_gsap_timeline(html: str, path: Path, narration_duration: float = 0.0)
         pattern = r"tl\.to\s*\(([^;\n]+)\)"
         script_body = re.sub(pattern, _fix_tl_to_signature, script_body)
 
+        # 1.1 Sanitize infinite repeats which break HyperFrames seek safety
+        script_body = re.sub(r"\brepeat\s*:\s*['\"]?-\s*1['\"]?\b", "repeat: 0", script_body)
+
         # 2. Identify scenes in the HTML
         scene_ids = re.findall(r"<[a-zA-Z0-9]+\b[^>]*\bid=[\x27\x22](scene-\d+)[\x27\x22][^>]*>", html)
         if not scene_ids:
