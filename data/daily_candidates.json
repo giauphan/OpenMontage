@@ -1,6 +1,6 @@
 [
   {
-    "candidate_id": "cand_prompt_caching_prefix_stability_20261121",
+    "candidate_id": "cand_prompt_caching_prefix_alignment_20261121",
     "title": "Prompt Caching Prefix Stability: Why Dynamic Timestamps Invalidate Agent Context Windows",
     "topic_family": "context_memory",
     "canonical_url": "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching",
@@ -28,7 +28,7 @@
     }
   },
   {
-    "candidate_id": "cand_mcp_client_timeout_circuit_breaker_20261121",
+    "candidate_id": "cand_mcp_circuit_breaker_timeout_20261121",
     "title": "MCP Client Circuit Breakers: Halting Cascading Retries When Subagent Tools Hang",
     "topic_family": "agent_tool_use",
     "canonical_url": "https://modelcontextprotocol.io/specification/architecture",
@@ -56,7 +56,7 @@
     }
   },
   {
-    "candidate_id": "cand_swe_bench_hermetic_eval_harness_20261121",
+    "candidate_id": "cand_swe_bench_hermetic_sandbox_20261121",
     "title": "Hermetic Evaluation Environments: Why Leaky Host State Produces False SWE-bench Scores",
     "topic_family": "agent_evaluation",
     "canonical_url": "https://www.swebench.com/",
