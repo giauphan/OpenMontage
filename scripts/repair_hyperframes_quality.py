@@ -313,6 +313,32 @@ def _patch_root_tag_attributes(
     return new_tag
 
 
+def _ensure_root_closed(html: str) -> str:
+    """Ensure the HyperFrames main composition root tag is properly closed before script or body."""
+    from scripts.install_news_captions import CompositionParser
+    for _ in range(5):
+        try:
+            parser = CompositionParser(html)
+            if len(parser.root_records) == 1:
+                tag_name, attrs, start_offset, closing_offset, parent = parser.root_records[0]
+                if closing_offset is None:
+                    sub = html[start_offset:]
+                    script_m = re.search(r"<script\b", sub, flags=re.IGNORECASE)
+                    body_m = re.search(r"</body>", sub, flags=re.IGNORECASE)
+                    if script_m:
+                        insert_idx = start_offset + script_m.start()
+                    elif body_m:
+                        insert_idx = start_offset + body_m.start()
+                    else:
+                        insert_idx = len(html)
+                    html = html[:insert_idx].rstrip() + f"\n  </{tag_name}>\n" + html[insert_idx:]
+                    continue
+            break
+        except Exception:
+            break
+    return html
+
+
 def _normalize_root_element(
     html: str,
     path: Path,
@@ -332,6 +358,7 @@ def _normalize_root_element(
     )
     if new_tag != tag:
         html = html[:root_open.start()] + new_tag + html[root_open.end():]
+    html = _ensure_root_closed(html)
     return html
 
 

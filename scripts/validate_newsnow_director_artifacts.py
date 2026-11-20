@@ -324,6 +324,35 @@ def validate_composition_seek_safety(project_dir: Path) -> list[str]:
     return errors
 
 
+def validate_composition_root_structure(project_dir: Path) -> list[str]:
+    """Validate that if a composition root element is present, it must be a closed direct child of body."""
+    from scripts.install_news_captions import CompositionParser
+    errors: list[str] = []
+    compositions = (
+        ("hyperframes", "Hyperframes"),
+        ("hyperframes_reels", "Hyperframes_reels"),
+    )
+    for names in compositions:
+        index = next((project_dir / name / "index.html" for name in names
+                      if (project_dir / name / "index.html").is_file()), None)
+        if index is None:
+            continue
+        html = index.read_text(encoding="utf-8")
+        if "data-composition-id" not in html and '<div id="stage"' not in html and "<div id='stage'" not in html:
+            continue
+        try:
+            parser = CompositionParser(html)
+            if len(parser.root_records) == 1:
+                _, attrs, _, closing_offset, parent = parser.root_records[0]
+                if parent != "body" or closing_offset is None:
+                    errors.append(f"{index}: main composition root must be a closed direct child of body")
+            elif len(parser.root_records) > 1:
+                errors.append(f"{index}: expected exactly one main HyperFrames composition root")
+        except Exception as exc:
+            errors.append(f"{index}: {exc}")
+    return errors
+
+
 def _synthesize_director_artifacts_from_brief(project_dir: Path) -> bool:
     """Autonomously synthesize valid script_vi.json and hyperframes compositions from research_brief.json."""
     # Free-form/generic HTML synthesis is blocked on the templated path. A
@@ -669,6 +698,10 @@ def validate_and_promote_director_artifacts(
     if require_compositions and _has_required_compositions(project_dir):
         LAST_VALIDATION_ERRORS = validate_composition_seek_safety(project_dir)
         if LAST_VALIDATION_ERRORS:
+            return False
+        root_errors = validate_composition_root_structure(project_dir)
+        if root_errors:
+            LAST_VALIDATION_ERRORS = root_errors
             return False
 
     # Fail closed if research brief is explicitly invalid / non-Vietnamese

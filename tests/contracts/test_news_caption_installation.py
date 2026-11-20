@@ -208,3 +208,49 @@ def test_rejects_caption_timing_beyond_render_duration(tmp_path):
 
     with pytest.raises(ValueError, match="within composition duration"):
         installer.install_captions(composition, audio, timings)
+
+
+def test_unclosed_composition_root_is_healed_by_repair_and_installs_captions(tmp_path):
+    from scripts.repair_hyperframes_quality import _ensure_root_closed
+    composition, audio, timings = _inputs(tmp_path)
+    # Simulate LLM omitting the closing </div> of #stage before <script>
+    source = composition.read_text(encoding="utf-8")
+    assert "  </div>\n  <script>" in source
+    broken_source = source.replace("  </div>\n  <script>", "  <script>", 1)
+    composition.write_text(broken_source, encoding="utf-8")
+
+    # Before repair, install_captions must fail because root is unclosed
+    with pytest.raises(ValueError, match="main composition root must be a closed direct child of body"):
+        installer.install_captions(composition, audio, timings)
+
+    # Apply _ensure_root_closed
+    healed = _ensure_root_closed(broken_source)
+    composition.write_text(healed, encoding="utf-8")
+
+    # After repair, root is auto-healed and install_captions succeeds cleanly
+    assert installer.install_captions(composition, audio, timings) == 2
+    updated = composition.read_text(encoding="utf-8")
+    assert 'class="clip om-asr-caption"' in updated
+
+
+def test_validate_composition_root_structure_detects_unclosed_stage(tmp_path):
+    from scripts.validate_newsnow_director_artifacts import validate_composition_root_structure
+    proj_dir = tmp_path / "test_proj"
+    hf_dir = proj_dir / "hyperframes"
+    hf_reels_dir = proj_dir / "hyperframes_reels"
+    hf_dir.mkdir(parents=True)
+    hf_reels_dir.mkdir(parents=True)
+
+    unclosed_html = """<!doctype html>
+<html><body>
+<div id="stage" data-composition-id="main">
+  <div class="scene">Scene 1</div>
+  <script>const tl = gsap.timeline({paused:true}); window.__timelines={main:tl};</script>
+</body></html>"""
+    (hf_dir / "index.html").write_text(unclosed_html, encoding="utf-8")
+    (hf_reels_dir / "index.html").write_text(unclosed_html, encoding="utf-8")
+
+    errors = validate_composition_root_structure(proj_dir)
+    assert len(errors) == 2
+    assert all("main composition root must be a closed direct child of body" in err for err in errors)
+
