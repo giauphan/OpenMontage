@@ -362,3 +362,60 @@ def test_bind_news_evidence_extracted_json_capture_hash_and_long_excerpt(tmp_pat
     assert claim["source"]["snapshot_sha256"] == expected_file_sha
     assert "3.5" in claim["evidence_excerpt"]
 
+
+def test_bind_news_evidence_normalizes_missing_duration_and_title(tmp_path: Path):
+    from schemas.artifacts import validate_artifact
+
+    project_dir = tmp_path / "cand_missing_duration"
+    artifacts_dir = project_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+
+    script_data = {
+        "version": "1.0",
+        "sections": [
+            {
+                "id": "sec_0",
+                "text_vi": "Hệ thống pipeline tự động cần chuẩn hóa dữ liệu chặt chẽ.",
+                "text": "Autonomous pipelines require deterministic schema normalization.",
+                "start_seconds": 0.0,
+                "end_seconds": 25.0,
+            },
+            {
+                "id": "sec_1",
+                "text_vi": "Chuẩn hóa metadata đảm bảo các bước kết xuất video thành công.",
+                "text": "Normalizing metadata ensures downstream rendering passes succeed.",
+                "start_seconds": 25.0,
+                "end_seconds": 55.0,
+            },
+        ],
+    }
+    (artifacts_dir / "script_vi.json").write_text(json.dumps(script_data, indent=2), encoding="utf-8")
+    brief_data = {
+        "version": "1.0",
+        "topic": "Hệ thống pipeline tự động",
+        "sources": [
+            {
+                "url": "https://example.com/agent-pipelines",
+                "title": "Agent Pipelines",
+                "used_for": "Background context",
+            }
+        ],
+    }
+    (artifacts_dir / "research_brief.json").write_text(json.dumps(brief_data, indent=2), encoding="utf-8")
+    (project_dir / "project.json").write_text(json.dumps({"pipeline_type": "newsnow"}), encoding="utf-8")
+
+    assert bind_news_evidence(project_dir) is True
+    normalized_script = json.loads((artifacts_dir / "script_vi.json").read_text(encoding="utf-8"))
+    assert normalized_script["title"] == "AI Agent Engineering Explainer"
+    assert normalized_script["total_duration_seconds"] == 55.0
+
+    # Ensure it passes strict artifact schema validation
+    validate_artifact("script", normalized_script)
+
+    # Ensure evidence sha matches normalized script
+    evidence = json.loads((artifacts_dir / "news_evidence.json").read_text(encoding="utf-8"))
+    import hashlib
+    actual_sha = hashlib.sha256((artifacts_dir / "script_vi.json").read_bytes()).hexdigest()
+    assert evidence["script_sha256"] == actual_sha
+
+

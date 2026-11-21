@@ -90,9 +90,21 @@ def _normalize_script_sections(script_data: dict[str, Any]) -> bool:
     if script_data.get("version") != "1.0":
         script_data["version"] = "1.0"
         modified = True
+    if not script_data.get("title") or not str(script_data.get("title")).strip():
+        script_data["title"] = "AI Agent Engineering Explainer"
+        modified = True
+
     sections = script_data.get("sections")
     if not isinstance(sections, list):
         return modified
+
+    valid_sec_keys = {
+        "id", "label", "text", "start_seconds", "end_seconds",
+        "speaker_directions", "delivery_cues", "enhancement_cues",
+        "pronunciation_guides", "source_ref",
+    }
+    accumulated_time = 0.0
+
     for idx, sec in enumerate(sections):
         if not isinstance(sec, dict):
             continue
@@ -100,12 +112,44 @@ def _normalize_script_sections(script_data: dict[str, Any]) -> bool:
         if sid is None or (isinstance(sid, str) and not sid.strip()) or isinstance(sid, bool):
             sec["id"] = f"sec_{idx}"
             modified = True
+
+        if not sec.get("text") and (sec.get("text_vi") or sec.get("narration_vi") or sec.get("narration")):
+            sec["text"] = str(sec.get("text_vi") or sec.get("narration_vi") or sec.get("narration") or "").strip()
+            modified = True
+        elif "text" not in sec:
+            sec["text"] = ""
+            modified = True
+
+        if "start_seconds" not in sec or not isinstance(sec["start_seconds"], (int, float)):
+            sec["start_seconds"] = float(accumulated_time)
+            modified = True
+        if "end_seconds" not in sec or not isinstance(sec["end_seconds"], (int, float)) or sec["end_seconds"] <= sec["start_seconds"]:
+            sec["end_seconds"] = float(sec["start_seconds"] + 5.0)
+            modified = True
+        accumulated_time = float(sec["end_seconds"])
+
         delivery_cues = sec.get("delivery_cues")
         if isinstance(delivery_cues, dict):
             pace = delivery_cues.get("pace")
             if pace and pace not in {"slow", "measured", "conversational", "brisk", "fast", "energetic", "technical", "custom"}:
                 delivery_cues["pace"] = "custom"
                 modified = True
+
+        for k in list(sec.keys()):
+            if k not in valid_sec_keys:
+                del sec[k]
+                modified = True
+
+    valid_root_keys = {"version", "title", "total_duration_seconds", "voice_performance", "sections", "hook_intent", "metadata"}
+    for rk in list(script_data.keys()):
+        if rk not in valid_root_keys:
+            del script_data[rk]
+            modified = True
+
+    if not script_data.get("total_duration_seconds") or float(script_data.get("total_duration_seconds", 0)) < 1:
+        dur = max((float(s.get("end_seconds", 0)) for s in sections if isinstance(s, dict) and isinstance(s.get("end_seconds"), (int, float))), default=60.0)
+        script_data["total_duration_seconds"] = dur if dur >= 1 else 60.0
+        modified = True
     return modified
 
 
