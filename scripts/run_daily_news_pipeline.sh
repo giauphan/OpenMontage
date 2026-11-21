@@ -581,6 +581,19 @@ root = pathlib.Path(sys.argv[1]); cutoff = int(sys.argv[2])
 scripts = [root / "artifacts" / name for name in ("script_en_US.json", "script_vi.json", "script.json")]
 raise SystemExit(0 if any(p.is_file() and p.stat().st_mtime_ns >= cutoff for p in scripts) else 1)' \
         "$PROJECT_DIR" "$cutoff_ns"; then
+      "$PY" -c 'import pathlib,sys,json
+root = pathlib.Path(sys.argv[1])
+for name in ("script_en_US.json", "script_vi.json", "script.json"):
+    p = root / "artifacts" / name
+    if p.is_file():
+        try:
+            d = json.loads(p.read_text("utf-8"))
+            if isinstance(d, dict) and "sections" in d and ("total_duration_seconds" not in d or not d.get("total_duration_seconds")):
+                dur = max((float(s.get("end_seconds", 0)) for s in d["sections"] if isinstance(s, dict)), default=60.0)
+                d["total_duration_seconds"] = dur or 60.0
+                p.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", "utf-8")
+        except Exception:
+            pass' "$PROJECT_DIR" 2>/dev/null || true
       "$PY" "$ROOT/scripts/bind_news_evidence.py" "$PROJECT_DIR" >/dev/null 2>&1 || true
     fi
   fi
